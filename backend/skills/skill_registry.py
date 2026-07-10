@@ -4,6 +4,7 @@
 """
 
 import json
+import threading
 import uuid
 from typing import Dict, List, Optional
 from loguru import logger
@@ -20,6 +21,9 @@ class SkillRegistry:
         """初始化技能注册表：绑定数据库会话，初始化内存缓存字典。"""
         self.db = db_session
         self._cache: Dict[str, Skill] = {}
+        # list_all 结果缓存：与单条 get() 的 _cache 独立，避免每次对话都查全表
+        self._list_cache: Optional[List[Skill]] = None
+        self._list_cache_lock = threading.Lock()
 
     def register(self, skill_config: Dict) -> Skill:
         """注册新技能：若同名技能已存在则更新，否则创建新记录并加入缓存。"""
@@ -46,6 +50,9 @@ class SkillRegistry:
 
         self._cache[skill_name] = skill
         logger.info(f"Skill '{skill_name}' registered successfully with id {skill_id}")
+        # 失效 list_all 缓存：技能集合已变化
+        with self._list_cache_lock:
+            self._list_cache = None
 
         return skill
 
@@ -65,6 +72,9 @@ class SkillRegistry:
 
         self._cache[skill.name] = skill
         logger.info(f"Skill '{skill.name}' updated successfully")
+        # 失效 list_all 缓存：技能字段已变化
+        with self._list_cache_lock:
+            self._list_cache = None
 
         return skill
 
@@ -80,6 +90,9 @@ class SkillRegistry:
 
         if skill_name in self._cache:
             del self._cache[skill_name]
+        # 失效 list_all 缓存：技能已删除
+        with self._list_cache_lock:
+            self._list_cache = None
 
         logger.info(f"Skill '{skill_name}' unregistered successfully")
         return True
@@ -103,7 +116,17 @@ class SkillRegistry:
         """
         列出all相关内容，便于调用方查看、筛选或批量处理。
         返回结果通常会被页面展示、审计流程或后续操作复用。
+
+        无 filters 时使用进程级缓存（避免每次对话都查全表）；
+        传入 filters 时仍直接查数据库（缓存场景以全量列表为主）。
         """
+        # 无 filters 走缓存路径
+        if filters is None:
+            with self._list_cache_lock:
+                if self._list_cache is not None:
+                    logger.debug("list_all cache hit")
+                    return list(self._list_cache)
+
         query = self.db.query(Skill)
 
         if filters:
@@ -120,6 +143,11 @@ class SkillRegistry:
         for skill in skills:
             self._cache[skill.name] = skill
         logger.debug(f"Listed {len(skills)} skills with filters: {filters}")
+
+        # 仅当无 filters 时写入全量缓存
+        if filters is None:
+            with self._list_cache_lock:
+                self._list_cache = list(skills)
         return skills
 
     def enable(self, skill_name: str) -> bool:
@@ -137,6 +165,9 @@ class SkillRegistry:
         self.db.commit()
         self._cache[skill_name] = skill
         logger.info(f"Skill '{skill_name}' enabled successfully")
+        # 失效 list_all 缓存：enabled 状态变化会影响 filters 查询结果
+        with self._list_cache_lock:
+            self._list_cache = None
         return True
 
     def disable(self, skill_name: str) -> bool:
@@ -154,6 +185,9 @@ class SkillRegistry:
         self.db.commit()
         self._cache[skill_name] = skill
         logger.info(f"Skill '{skill_name}' disabled successfully")
+        # 失效 list_all 缓存：enabled 状态变化会影响 filters 查询结果
+        with self._list_cache_lock:
+            self._list_cache = None
         return True
 
     def increment_usage(self, skill_name: str) -> bool:
@@ -170,6 +204,9 @@ class SkillRegistry:
         self.db.commit()
         self._cache[skill_name] = skill
         logger.debug(f"Skill '{skill_name}' usage count incremented to {skill.usage_count}")
+        # 失效 list_all 缓存：usage_count 变化会影响 min_usage_count 过滤结果
+        with self._list_cache_lock:
+            self._list_cache = None
         return True
 
     def get_usage_count(self, skill_name: str) -> Optional[int]:
@@ -189,6 +226,9 @@ class SkillRegistry:
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         self._cache.clear()
+        # 同步失效 list_all 缓存，确保下次 list_all 重新查库
+        with self._list_cache_lock:
+            self._list_cache = None
         logger.info("Skill cache cleared")
 
     def refresh_cache(self) -> int:
@@ -197,6 +237,9 @@ class SkillRegistry:
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         self._cache.clear()
+        # 失效 list_all 缓存：强制下次 list_all 重新查库（refresh 后 list_all 应反映最新状态）
+        with self._list_cache_lock:
+            self._list_cache = None
         skills = self.db.query(Skill).all()
         for skill in skills:
             self._cache[skill.name] = skill

@@ -16,6 +16,8 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+from loguru import logger
+
 from acp_host.core import ACPAgentConfig
 
 
@@ -47,8 +49,12 @@ def discover_agents() -> dict[str, ACPAgentConfig]:
         full_module_name = f"{package_name}.{module_name}"
         try:
             module = importlib.import_module(full_module_name)
-        except Exception:
-            # 模块导入失败时跳过，不影响其他 agent 的发现
+        except Exception as e:
+            # 模块导入失败时记录 WARNING 日志，便于排查配置错误；不阻塞其他 agent 的发现
+            logger.warning(
+                f"加载 ACP agent 模块 {full_module_name} 失败: {e}",
+                exc_info=True,
+            )
             continue
         agent_config = getattr(module, "AGENT_CONFIG", None)
         if not isinstance(agent_config, ACPAgentConfig):

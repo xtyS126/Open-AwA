@@ -142,21 +142,43 @@ class AIAgent:
     封装与AIAgent相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
+    # 能力缓存 TTL：30 秒内复用 skills/plugins/mcp 查询结果
+    # 过期后下一次 process_stream 重新构建，保证插件/MCP 状态变化最终可见
+    _CAPABILITIES_CACHE_TTL: float = 30.0
+
     def __init__(self, db_session: Session = None):
         """
         初始化 AI Agent，包含理解层、规划层、执行层、反馈层以及记忆管理。
         """
+        # TTFT 诊断：AIAgent 构造耗时分解（定位 agent_registry 首次 10s 根因）
+        _init_t0 = time.time()
         self.comprehension = ComprehensionLayer()
         self.planner = PlanningLayer()
         self.executor = ExecutionLayer()
         self.feedback = FeedbackLayer()
         self.experience_extractor = ExperienceExtractor()
-        
-        self._db_session = db_session
+        _init_layers_ms = round((time.time() - _init_t0) * 1000, 2)
+
+        # 绑定态 db：__init__ 时传入的 db，作为兜底
+        # 请求级 db：由 bind_db 设置，优先级最高（用于 AIAgent 实例复用场景）
+        self._db_session_bound: Optional[Session] = db_session
+        self._db_session_request: Optional[Session] = None
+        # 能力缓存（Task 7 使用），实例复用场景下按需失效
+        # 采用 TTL + 显式 invalidate：避免 _compute_tools_version 依赖 context["agent_capabilities"]
+        # 导致的循环依赖问题（fresh context 中 capabilities 未构建，version 为空字符串）
+        self._capabilities_cache: Optional[Dict[str, Any]] = None
+        self._capabilities_cache_ts: float = 0.0
+
+        _skill_t0 = time.time()
         self.skill_engine = SkillEngine(self._db_session)
+        _skill_engine_ms = round((time.time() - _skill_t0) * 1000, 2)
+
+        _plugin_t0 = time.time()
         self.plugin_manager = plugin_instance.get()
+        _plugin_manager_ms = round((time.time() - _plugin_t0) * 1000, 2)
+
         self._closed = False
-        
+
         self.skill_results: List[Dict[str, Any]] = []
         self.plugin_results: List[Dict[str, Any]] = []
 
@@ -165,6 +187,7 @@ class AIAgent:
         self._record_semaphore = asyncio.Semaphore(_agent_settings.RECORD_SEMAPHORE_SIZE)
 
         # 初始化记忆管理器，并注入到反馈层
+        _mem_t0 = time.time()
         self.memory_manager = None
         self.workflow_engine = None
         if self._db_session:
@@ -174,7 +197,8 @@ class AIAgent:
             self.memory_manager = MemoryManager(SessionLocal)
             self.feedback.set_memory_manager(self.memory_manager)
             self.workflow_engine = WorkflowEngine(db_session=self._db_session, skill_engine=self.skill_engine)
-        
+        _memory_engine_ms = round((time.time() - _mem_t0) * 1000, 2)
+
         # 初始化灵魂状态管理器（默认工作区）
         self.soul_state_manager = SoulStateManager(workspace_id="default")
 
@@ -188,7 +212,101 @@ class AIAgent:
         # 流结束时 abort 清理所有子任务（工具执行、子代理等）
         self.root_abort_controller: Optional[AbortController] = None
 
+        # 工具定义实例级缓存：按技能/插件/MCP 工具版本失效
+        # 避免每次 process_stream 重复构建 _build_native_tools 的开销
+        self._tools_cache: Optional[List[Dict[str, Any]]] = None
+        self._tools_cache_version: str = ""
+
+        _init_total_ms = round((time.time() - _init_t0) * 1000, 2)
+        logger.bind(
+            event="agent_init_breakdown",
+            module="agent",
+            layers_ms=_init_layers_ms,
+            skill_engine_ms=_skill_engine_ms,
+            plugin_manager_ms=_plugin_manager_ms,
+            memory_engine_ms=_memory_engine_ms,
+            total_ms=_init_total_ms,
+        ).info(f"AIAgent 构造耗时分解: layers={_init_layers_ms}ms, skill_engine={_skill_engine_ms}ms, plugin_manager={_plugin_manager_ms}ms, memory_engine={_memory_engine_ms}ms, total={_init_total_ms}ms")
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
+
+    def bind_db(self, db_session: Session) -> None:
+        """
+        绑定请求级数据库会话。
+        在 AIAgentRegistry.get_or_create 中调用，确保复用实例时使用本次请求的 db。
+        同时更新已构造的子引擎（SkillEngine/WorkflowEngine）及其内部 registry 的 db 引用。
+        请求结束后由 FastAPI Depends get_db 自动关闭，本方法不负责 close。
+
+        注意：SkillRegistry 内部持有 db 引用与缓存（_cache/_list_cache），
+        缓存的 Skill 对象绑定到旧 session，访问属性会触发 DetachedInstanceError。
+        因此 bind_db 时必须同步更新 registry.db 并清空其缓存，强制下次查询使用新 session。
+        """
+        self._db_session_request = db_session
+        # 同步更新子引擎的 db 引用（SkillEngine/WorkflowEngine 均使用 db_session 属性名）
+        if hasattr(self, 'skill_engine') and self.skill_engine is not None:
+            try:
+                self.skill_engine.db_session = db_session
+            except (AttributeError, TypeError):
+                # 子引擎可能用其他属性名或不可变，尝试常见属性名
+                for attr_name in ('_db', 'db', '_db_session'):
+                    if hasattr(self.skill_engine, attr_name):
+                        try:
+                            setattr(self.skill_engine, attr_name, db_session)
+                            break
+                        except (AttributeError, TypeError):
+                            continue
+            # 同步更新 SkillRegistry 的 db 引用并清空缓存
+            # 缓存的 Skill 对象绑定到旧 session，复用会触发 DetachedInstanceError
+            registry = getattr(self.skill_engine, 'registry', None)
+            if registry is not None:
+                try:
+                    registry.db = db_session
+                except (AttributeError, TypeError):
+                    pass
+                # 清空单条缓存与 list_all 缓存，强制下次查询使用新 session
+                _cache = getattr(registry, '_cache', None)
+                if isinstance(_cache, dict):
+                    _cache.clear()
+                _list_cache = getattr(registry, '_list_cache', None)
+                if _list_cache is not None:
+                    try:
+                        setattr(registry, '_list_cache', None)
+                    except (AttributeError, TypeError):
+                        pass
+        if hasattr(self, 'workflow_engine') and self.workflow_engine is not None:
+            try:
+                self.workflow_engine.db_session = db_session
+            except (AttributeError, TypeError):
+                for attr_name in ('_db', 'db', '_db_session'):
+                    if hasattr(self.workflow_engine, attr_name):
+                        try:
+                            setattr(self.workflow_engine, attr_name, db_session)
+                            break
+                        except (AttributeError, TypeError):
+                            continue
+
+    @property
+    def _db_session(self) -> Optional[Session]:
+        """动态返回当前有效的 db session：优先请求级 bind 的 db，回退到 __init__ 的 db。"""
+        if self._db_session_request is not None:
+            return self._db_session_request
+        return self._db_session_bound
+
+    def invalidate_capabilities_cache(self) -> None:
+        """
+        主动失效实例级 capabilities 与 tools 缓存。
+
+        在插件 load/unload、MCP server connect/disconnect、技能启用/禁用等
+        影响能力集合的事件发生后调用，确保下一次 process_stream 重建 capabilities。
+        若不调用，TTL（默认 30 秒）到期后也会自动失效重建。
+        """
+        self._capabilities_cache = None
+        self._capabilities_cache_ts = 0.0
+        self._tools_cache = None
+        self._tools_cache_version = ""
+        logger.bind(
+            event="capabilities_cache_invalidated",
+            module="agent",
+        ).debug("capabilities 与 tools 实例级缓存已主动失效")
 
     async def _record_with_backpressure(self, coro) -> Any:
         """
@@ -283,43 +401,6 @@ class AIAgent:
             context["db"] = self._db_session
 
         context["_record_hook"] = self._schedule_record
-
-        # SoulEngine 画像注入：将用户画像摘要注入到上下文
-        self._inject_soul_profile(context)
-
-    def _inject_soul_profile(self, context: Dict[str, Any]) -> None:
-        """
-        将 SoulEngine 用户画像注入到上下文中，供 LLM 调用时使用。
-        画像信息会附加到 system_prompt 或 context 中，帮助 Agent 个性化响应。
-        """
-        try:
-            from soul.engine import SoulEngine
-            # 获取全局 SoulEngine 实例
-            soul_engine = getattr(self, '_soul_engine', None)
-            if soul_engine is None:
-                return
-
-            user_id = context.get("user_id", "")
-            if not user_id:
-                return
-
-            profile_summary = soul_engine.get_profile_for_prompt(user_id)
-            if profile_summary:
-                # 注入到 context 中，供 system prompt 构建时使用
-                existing_user_context = context.get("user_context", "")
-                if existing_user_context:
-                    context["user_context"] = f"{existing_user_context}\n\n{profile_summary}"
-                else:
-                    context["user_context"] = profile_summary
-
-                logger.bind(
-                    user_id=user_id,
-                ).debug("SoulEngine 画像已注入到上下文")
-
-        except Exception as e:
-            logger.bind(event="soul_profile_inject_error").warning(
-                f"SoulEngine 画像注入失败: {e}"
-            )
 
     def _build_multimodal_context(self, user_input: str, context: Dict[str, Any]) -> None:
         """
@@ -748,9 +829,31 @@ class AIAgent:
         在进入最终模型回答前，把当前会话可用的技能、插件和 MCP 连接态写入上下文。
         这样模型在回答“我能不能调用某能力”时能基于真实运行态，而不是凭空猜测。
         """
+        # 保留：同一次 process_stream 内的二次访问直接 return
         if isinstance(context.get("agent_capabilities"), dict):
             return
 
+        # 检查实例级 capabilities 缓存（TTL 策略）
+        # 用 TTL 替代原 version 比对，避免 _compute_tools_version 依赖
+        # context["agent_capabilities"] 导致的循环依赖（fresh context 中
+        # capabilities 未构建，version 为空字符串，缓存检查永不命中）
+        now = time.time()
+        if (
+            self._capabilities_cache is not None
+            and self._tools_cache is not None
+            and (now - self._capabilities_cache_ts) < self._CAPABILITIES_CACHE_TTL
+        ):
+            context["agent_capabilities"] = self._capabilities_cache
+            context["_tools"] = self._tools_cache
+            logger.bind(
+                event="capabilities_instance_cache_hit",
+                module="agent",
+                session_id=context.get("session_id", ""),
+                cache_age=round(now - self._capabilities_cache_ts, 3),
+            ).debug("复用实例级缓存的 capabilities 与工具定义")
+            return
+
+        # 缓存未命中，正常构建 capabilities
         skill_plugin_enabled = bool(context.get("enable_skill_plugin", True))
         skills: List[Dict[str, Any]] = []
         plugins: List[Dict[str, Any]] = []
@@ -786,23 +889,75 @@ class AIAgent:
             context.setdefault("agent_type_hint", "你是一个通用Agent，具备完整的读写和执行能力。")
 
         # 从运行态能力摘要构建原生 tool_calls 定义，使 LLM 能通过 function calling 协议触发工具
-        # 会话级缓存：同一会话内工具定义只在首次构建，后续调用复用
-        if not context.get("_tools"):
-            tools = self._build_native_tools(context["agent_capabilities"])
-            context["_tools"] = tools
-            logger.bind(
-                event="tool_definition_built",
-                module="agent",
-                tool_count=len(tools),
-                session_id=context.get("session_id", ""),
-            ).debug("会话级工具定义已构建并缓存")
-        else:
-            logger.bind(
-                event="tool_definition_cached",
-                module="agent",
-                tool_count=len(context["_tools"]),
-                session_id=context.get("session_id", ""),
-            ).debug("复用缓存的工具定义")
+        # 实例级缓存：与 capabilities 缓存共用同一 TTL，跨 process_stream 调用复用同一份工具定义
+        # capabilities 缓存未命中时 tools 缓存必然也未命中（TTL 同步过期），此时重建 tools
+        tools = self._build_native_tools(context["agent_capabilities"])
+        self._tools_cache = tools
+        logger.bind(
+            event="tool_definition_built",
+            module="agent",
+            tool_count=len(tools),
+            session_id=context.get("session_id", ""),
+        ).debug("工具定义已构建并写入实例级缓存")
+
+        # 写入实例级 capabilities 缓存与时间戳
+        # 下次同一实例在 TTL 内进入可直接复用，跳过 skills/plugins/mcp 三次查询
+        self._capabilities_cache = context["agent_capabilities"]
+        self._capabilities_cache_ts = time.time()
+
+        # 同一次 process_stream 内的二次访问仍走 context 缓存
+        context["_tools"] = tools
+
+    @staticmethod
+    def _compute_tools_version(context: Dict[str, Any]) -> str:
+        """
+        基于当前会话可用的技能/插件/MCP 工具集合生成版本字符串。
+        任一关键能力变更（启用/禁用、工具增减、MCP 派发开关）时版本变化，
+        触发 AIAgent 实例级工具定义缓存失效，避免返回过期 tool 定义。
+        """
+        import hashlib
+
+        capabilities = context.get("agent_capabilities")
+        if not isinstance(capabilities, dict):
+            return ""
+
+        skills_raw = capabilities.get("skills")
+        skills_signature = [
+            {"name": str(s.get("name", ""))}
+            for s in (skills_raw if isinstance(skills_raw, list) else [])
+            if isinstance(s, dict)
+        ]
+
+        plugins_raw = capabilities.get("plugins")
+        plugins_signature = [
+            {
+                "name": str(p.get("name", "")),
+                "loaded": bool(p.get("loaded", False)),
+                "tool_names": [
+                    str(t.get("name", ""))
+                    for t in (p.get("tools") if isinstance(p.get("tools"), list) else [])
+                    if isinstance(t, dict)
+                ],
+            }
+            for p in (plugins_raw if isinstance(plugins_raw, list) else [])
+            if isinstance(p, dict)
+        ]
+
+        mcp_raw = capabilities.get("mcp")
+        mcp = mcp_raw if isinstance(mcp_raw, dict) else {}
+        mcp_tools = mcp.get("tools") if isinstance(mcp.get("tools"), list) else []
+        mcp_signature = {
+            "chat_dispatch_enabled": bool(mcp.get("chat_dispatch_enabled", False)),
+            "tool_count": len(mcp_tools),
+        }
+
+        payload = {
+            "skills": skills_signature,
+            "plugins": plugins_signature,
+            "mcp": mcp_signature,
+        }
+        payload_json = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+        return hashlib.md5(payload_json.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _build_native_tools(capabilities: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1617,30 +1772,43 @@ class AIAgent:
     async def get_available_plugins(self) -> List[Dict[str, Any]]:
         """
         获取available、plugins相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        未 loaded 的插件返回 loaded=False, tools=[]，不再触发 lazy load。
         """
         logger.info("Getting available plugins")
         try:
             discovered_plugins = self.plugin_manager.discover_plugins()
-            
+
             plugin_list = []
             for plugin_info in discovered_plugins:
                 plugin_name = plugin_info.get('name')
-                if plugin_name and plugin_name not in self.plugin_manager.loaded_plugins:
-                    self.plugin_manager.load_plugin(plugin_name)
+                if not plugin_name:
+                    continue
 
+                if plugin_name not in self.plugin_manager.loaded_plugins:
+                    # 未 loaded 的插件不再 lazy load，直接返回空 tools
+                    # lifespan startup 已加载所有 enabled 插件，未 loaded 意味着用户禁用或加载失败
+                    plugin_list.append({
+                        'name': plugin_name,
+                        'version': plugin_info.get('version'),
+                        'description': plugin_info.get('description'),
+                        'loaded': False,
+                        'tools': [],
+                    })
+                    continue
+
+                # 已 loaded 的插件正常读取 tools 与 info
                 tools = self.plugin_manager.get_plugin_tools(plugin_name)
                 info = self.plugin_manager.get_plugin_info(plugin_name)
-                
+
                 plugin_list.append({
                     'name': plugin_name,
                     'version': plugin_info.get('version'),
                     'description': plugin_info.get('description'),
                     'loaded': info.get('loaded', False) if info else False,
-                    'tools': tools
+                    'tools': tools,
                 })
-            
-            logger.info(f"Found {len(plugin_list)} available plugins")
+
+            logger.info(f"Found {len(plugin_list)} available plugins (loaded: {len(self.plugin_manager.loaded_plugins)})")
             return plugin_list
         except Exception as e:
             logger.bind(
@@ -1789,7 +1957,14 @@ class AIAgent:
         支持多模态附件和思考模式参数。
         优先检测魔法命令，匹配时跳过 LLM 处理。
         """
+        # TTFT 诊断计时点：记录 process_stream 入口时间，用于定位首个事件延迟根因
+        _ttft_t0 = time.time()
+        _ttft_session_id = context.get("session_id", "")
         logger.info(f"Processing user input (stream), length={len(user_input)}")
+
+        # 清空上一次请求的残留状态（AIAgent 实例复用场景下必需）
+        self.skill_results = []
+        self.plugin_results = []
 
         # 创建本轮流的根中止控制器，所有工具执行和子代理共享其子 controller
         # 流结束（正常或异常）时调用 abort() 清理所有子任务
@@ -1810,6 +1985,14 @@ class AIAgent:
 
         yield self._build_status_event("starting", "正在准备对话上下文")
 
+        # TTFT 诊断：首个 SSE 事件已发出，记录从入口到此处的耗时
+        logger.bind(
+            event="ttft_first_event",
+            module="agent",
+            session_id=_ttft_session_id,
+            elapsed_ms=round((time.time() - _ttft_t0) * 1000, 2),
+        ).info("首个 SSE 事件已发送（TTFT 基准点）")
+
         self._prepare_context(user_input, context)
 
         # 灵魂注入开关检查：若禁用则跳过角色引擎
@@ -1829,12 +2012,16 @@ class AIAgent:
 
         # 角色引擎集成：如果上下文中有 role_id，加载角色配置并应用
         if role_id and soul_injection_enabled:
-            try:
-                from core.role_engine import RoleEngine
-                from db.models import SessionLocal
-                _role_db = SessionLocal()
+            request_db = context.get("db")
+            if request_db is None:
+                logger.bind(event="role_engine_no_db", module="agent").warning(
+                    "context['db'] 不可用，跳过角色引擎加载"
+                )
+            else:
                 try:
-                    role_engine = RoleEngine(db=_role_db)
+                    _role_t0 = time.time()
+                    from core.role_engine import RoleEngine
+                    role_engine = RoleEngine(db=request_db)
                     role = role_engine.load_role(role_id)
                     if role:
                         context = role_engine.apply_role_to_context(role, context)
@@ -1846,12 +2033,27 @@ class AIAgent:
                                 logger.bind(event="soul_state_mark_error", module="agent").warning(
                                     f"标记灵魂注入完成失败: {e}"
                                 )
-                finally:
-                    _role_db.close()
-            except Exception as e:
-                logger.bind(event="role_engine_error", module="agent").warning(f"角色引擎加载失败: {e}")
+                    logger.bind(
+                        event="ttft_stage",
+                        module="agent",
+                        stage="role_engine",
+                        session_id=_ttft_session_id,
+                        elapsed_ms=round((time.time() - _role_t0) * 1000, 2),
+                        total_ms=round((time.time() - _ttft_t0) * 1000, 2),
+                    ).info("阶段耗时: role_engine")
+                except Exception as e:
+                    logger.bind(event="role_engine_error", module="agent").warning(f"角色引擎加载失败: {e}")
 
+        _cap_t0 = time.time()
         await self._inject_runtime_capabilities(context)
+        logger.bind(
+            event="ttft_stage",
+            module="agent",
+            stage="inject_capabilities",
+            session_id=_ttft_session_id,
+            elapsed_ms=round((time.time() - _cap_t0) * 1000, 2),
+            total_ms=round((time.time() - _ttft_t0) * 1000, 2),
+        ).info("阶段耗时: inject_capabilities")
 
         # 构建多模态消息内容（若用户上传了附件）
         self._build_multimodal_context(user_input, context)
@@ -1874,36 +2076,97 @@ class AIAgent:
         _stream_start_time = time.time()
 
         try:
+            _hist_t0 = time.time()
             conversation_history = await self._build_conversation_history(session_id)
+            logger.bind(
+                event="ttft_stage",
+                module="agent",
+                stage="build_history",
+                session_id=_ttft_session_id,
+                elapsed_ms=round((time.time() - _hist_t0) * 1000, 2),
+                total_ms=round((time.time() - _ttft_t0) * 1000, 2),
+            ).info("阶段耗时: build_history")
+            # 触发压缩前向用户发送状态事件，避免长时间无响应被误认为卡死
+            # 简单判断：消息数超过 40 时先 yield 进度，与 _auto_compress_context 内部阈值一致
+            if len(conversation_history) > 40:
+                yield self._build_status_event("compressing", "正在压缩对话上下文")
             # 自动检测并压缩上下文
+            _compress_t0 = time.time()
             context["conversation_history"] = await self._auto_compress_context(
                 context, conversation_history
             )
+            if _compress_t0 and (time.time() - _compress_t0) > 0.05:
+                logger.bind(
+                    event="ttft_stage",
+                    module="agent",
+                    stage="auto_compress",
+                    session_id=_ttft_session_id,
+                    elapsed_ms=round((time.time() - _compress_t0) * 1000, 2),
+                    total_ms=round((time.time() - _ttft_t0) * 1000, 2),
+                ).info("阶段耗时: auto_compress")
 
             effective_user_input = self._build_effective_user_input(user_input, context)
 
             # 自动检索相关长期记忆（stream 路径）
             if context.get("retrieve_long_term_memory", True) and self.memory_manager:
                 try:
+                    _mem_t0 = time.time()
                     relevant_memories = await self._retrieve_relevant_memories(
                         user_input=effective_user_input,
                         context=context,
                     )
+                    logger.bind(
+                        event="ttft_stage",
+                        module="agent",
+                        stage="retrieve_memories",
+                        session_id=_ttft_session_id,
+                        elapsed_ms=round((time.time() - _mem_t0) * 1000, 2),
+                        total_ms=round((time.time() - _ttft_t0) * 1000, 2),
+                        memory_count=len(relevant_memories) if relevant_memories else 0,
+                    ).info("阶段耗时: retrieve_memories")
                     if relevant_memories:
                         context["vector_retrieved_memories"] = relevant_memories
                         logger.info(f"Stream: 检索到 {len(relevant_memories)} 条相关长期记忆")
                 except (SQLAlchemyError, asyncio.TimeoutError, ValueError) as mem_err:
                     logger.warning(f"Stream 自动记忆检索失败: {mem_err}")
 
+            _intent_t0 = time.time()
             intent = await self.comprehension.recognize_intent(effective_user_input)
+            logger.bind(
+                event="ttft_stage",
+                module="agent",
+                stage="recognize_intent",
+                session_id=_ttft_session_id,
+                elapsed_ms=round((time.time() - _intent_t0) * 1000, 2),
+                total_ms=round((time.time() - _ttft_t0) * 1000, 2),
+            ).info("阶段耗时: recognize_intent")
+
+            _entity_t0 = time.time()
             entities = await self.comprehension.extract_entities(effective_user_input)
+            logger.bind(
+                event="ttft_stage",
+                module="agent",
+                stage="extract_entities",
+                session_id=_ttft_session_id,
+                elapsed_ms=round((time.time() - _entity_t0) * 1000, 2),
+                total_ms=round((time.time() - _ttft_t0) * 1000, 2),
+            ).info("阶段耗时: extract_entities")
 
             yield self._build_status_event("planning", "正在生成执行计划")
+            _plan_t0 = time.time()
             plan = await self.planner.create_plan(
                 intent=intent,
                 entities=entities,
                 context=context,
             )
+            logger.bind(
+                event="ttft_stage",
+                module="agent",
+                stage="create_plan",
+                session_id=_ttft_session_id,
+                elapsed_ms=round((time.time() - _plan_t0) * 1000, 2),
+                total_ms=round((time.time() - _ttft_t0) * 1000, 2),
+            ).info("阶段耗时: create_plan")
             context["plan"] = plan
             yield {
                 "type": "plan",

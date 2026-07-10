@@ -141,6 +141,18 @@ async def get_current_user(
         # 路径 1: API Key 认证
         if api_key and token and _secrets.compare_digest(token, api_key):
             has_api_key_auth = True
+            # 优先使用 core.owner.get_owner_user 的缓存（带双重检查锁），
+            # 避免 _get_owner_from_settings 每次新建 SessionLocal + 查 DB 的固有开销
+            try:
+                from core.owner import get_owner_user
+                owner = await get_owner_user(db)
+                if owner is not None:
+                    return owner
+            except Exception as exc:
+                logger.bind(event="owner_resolution_failed", module="auth").warning(
+                    "加载 owner 用户失败（缓存路径），回退到 _get_owner_from_settings",
+                    exc_info=exc,
+                )
             owner = _get_owner_from_settings()
             if owner is not None:
                 return owner

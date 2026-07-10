@@ -1,0 +1,162 @@
+import '@testing-library/jest-dom/vitest'
+import { renderHook } from '@testing-library/react'
+import { createElement, StrictMode, type ReactNode } from 'react'
+import { MemoryRouter } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// 使用 vi.hoisted 提前建立 mock 引用
+const apiMocks = vi.hoisted(() => ({
+  getHistory: vi.fn(),
+  createSession: vi.fn(),
+  listSessions: vi.fn(),
+}))
+
+vi.mock('@/shared/api/api', () => ({
+  chatAPI: {
+    getHistory: apiMocks.getHistory,
+  },
+  conversationAPI: {
+    createSession: apiMocks.createSession,
+    listSessions: apiMocks.listSessions,
+  },
+}))
+
+vi.mock('@/shared/utils/logger', () => ({
+  appLogger: {
+    info: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
+  },
+}))
+
+import { useChatConversationActions, type UseChatConversationActionsParams } from '@/features/chat/hooks/useChatConversationActions'
+
+/** 构造默认的 hook 入参，所有依赖均 mock */
+function buildParams(overrides: Partial<UseChatConversationActionsParams> = {}): UseChatConversationActionsParams {
+  return {
+    conversationId: undefined,
+    sessionId: 'default',
+    conversations: [],
+    includeDeleted: false,
+    historyInitialized: false,
+    historyLoading: false,
+    historyPage: 1,
+    conversationsHasMore: false,
+    isCompactViewport: false,
+    loadConversationList: vi.fn(() => Promise.resolve()),
+    closeHistorySidebar: vi.fn(),
+    clearHistoryError: vi.fn(),
+    setSessionId: vi.fn(),
+    setMessages: vi.fn(),
+    upsertConversation: vi.fn(),
+    removeConversation: vi.fn(),
+    resetStreamExecutionState: vi.fn(),
+    resetTaskPanelState: vi.fn(),
+    setMessageMeta: vi.fn(),
+    setStreamingAssistantId: vi.fn(),
+    setFeedbackState: vi.fn(),
+    broadcastConversationChange: vi.fn(),
+    getLocalMessagesForRestore: vi.fn(() => []),
+    mergeServerHistoryWithCached: vi.fn((_server, cached) => cached),
+    flushConversationCache: vi.fn(),
+    getActiveConversationId: vi.fn(() => undefined),
+    buildMessageMetaFromMessages: vi.fn(() => ({})),
+    t: vi.fn((key: string) => key),
+    handleSendRef: { current: undefined },
+    ...overrides,
+  }
+}
+
+/** MemoryRouter wrapper，供 renderHook 使用 */
+function routerWrapper({ children }: { children: ReactNode }) {
+  return createElement(MemoryRouter, { initialEntries: ['/chat'] }, children)
+}
+
+/** StrictMode + MemoryRouter wrapper，用于验证 StrictMode 双 mount 行为 */
+function strictModeWrapper({ children }: { children: ReactNode }) {
+  return createElement(
+    StrictMode,
+    null,
+    createElement(MemoryRouter, { initialEntries: ['/chat'] }, children)
+  )
+}
+
+describe('useChatConversationActions - StrictMode 守卫', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.getHistory.mockResolvedValue({ data: [] })
+    apiMocks.createSession.mockResolvedValue({
+      data: {
+        session_id: 'new-session',
+        title: '新对话',
+        user_id: 'u1',
+        summary: '',
+        last_message_preview: '',
+        last_message_role: null,
+        message_count: 0,
+        created_at: '2026-04-19T00:00:00Z',
+        updated_at: '2026-04-19T00:00:00Z',
+        last_message_at: null,
+        deleted_at: null,
+        restored_at: null,
+        purge_after: null,
+        conversation_metadata: {},
+      },
+    })
+    apiMocks.listSessions.mockResolvedValue({
+      data: { items: [], total: 0, page: 1, page_size: 20, has_more: false },
+    })
+  })
+
+  it('mount 时调用 loadConversationList', async () => {
+    const loadConversationList = vi.fn(() => Promise.resolve())
+    const params = buildParams({ loadConversationList })
+
+    renderHook(() => useChatConversationActions(params), {
+      wrapper: routerWrapper,
+    })
+
+    // mount effect 应立即调用 loadConversationList(1, false)
+    expect(loadConversationList).toHaveBeenCalledTimes(1)
+    expect(loadConversationList).toHaveBeenCalledWith(1, false)
+  })
+
+  it('StrictMode 双 mount 时仅触发一次 loadConversationList', async () => {
+    const loadConversationList = vi.fn(() => Promise.resolve())
+    const params = buildParams({ loadConversationList })
+
+    // 使用 StrictMode wrapper，dev 模式下 React 会执行 mount -> unmount -> mount
+    // loadOnceRef 守卫应确保 loadConversationList 仅被调用一次
+    renderHook(() => useChatConversationActions(params), {
+      wrapper: strictModeWrapper,
+    })
+
+    // 即使 StrictMode 双 mount，loadConversationList 应只被调用 1 次
+    // 若无守卫，StrictMode dev 下会调用 2 次
+    expect(loadConversationList).toHaveBeenCalledTimes(1)
+    expect(loadConversationList).toHaveBeenCalledWith(1, false)
+  })
+
+  it('loadConversationList 在 conversationId 变化时不被重复触发（仅 mount 一次）', async () => {
+    const loadConversationList = vi.fn(() => Promise.resolve())
+
+    const { rerender } = renderHook(
+      ({ conversationId }: { conversationId: string | undefined }) =>
+        useChatConversationActions(buildParams({ conversationId, loadConversationList })),
+      {
+        wrapper: routerWrapper,
+        initialProps: { conversationId: undefined },
+      }
+    )
+
+    // mount 时调用一次
+    expect(loadConversationList).toHaveBeenCalledTimes(1)
+
+    // rerender 改变 conversationId，不应再次触发 loadConversationList
+    rerender({ conversationId: 'session-abc' })
+    expect(loadConversationList).toHaveBeenCalledTimes(1)
+
+    rerender({ conversationId: 'session-def' })
+    expect(loadConversationList).toHaveBeenCalledTimes(1)
+  })
+})

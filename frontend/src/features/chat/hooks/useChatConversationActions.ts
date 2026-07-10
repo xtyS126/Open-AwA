@@ -157,6 +157,9 @@ export function useChatConversationActions({
   const navigate = useNavigate()
   // 并发创建守卫：同一时间只允许一个 createSession 请求
   const pendingConversationCreationRef = useRef<Promise<string> | null>(null)
+  // mount 一次性守卫：StrictMode dev 下双 mount 时仅首次执行 loadConversationList，
+  // 生产环境单 mount 不受影响。ref 在组件卸载时随闭包释放，重新进入页面会重置。
+  const loadOnceRef = useRef(false)
   // 待确认删除会话 ID（控制删除确认对话框的显示）
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null)
 
@@ -219,7 +222,11 @@ export function useChatConversationActions({
   }, [broadcastConversationChange, createConversationAndNavigate, navigate, removeConversation, resetStreamExecutionState, setMessageMeta, setMessages, setStreamingAssistantId])
 
   // mount 时拉取第一页会话列表
+  // StrictMode dev 下双 mount 时，loadOnceRef 守卫仅首次执行，
+  // 避免重复请求与短暂的列表闪烁。生产环境单 mount 不受影响。
   useEffect(() => {
+    if (loadOnceRef.current) return
+    loadOnceRef.current = true
     void loadConversationList(1, false)
   }, [loadConversationList])
 

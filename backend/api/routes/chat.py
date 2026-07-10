@@ -3,8 +3,9 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 import asyncio
+import functools
 import json
 import os
 import uuid
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 from loguru import logger
 
 from api.dependencies import get_current_user
+from api.routes._session_guard import assert_session_owner
 from api.schemas import ChatMessage, ChatResponse, ChatUndoOperationRequest, ConfirmationRequest, UserFeedbackRequest
 from api.security.ws_auth import extract_token_from_subprotocol, validate_ws_origin
 from api.services.chat_protocol import build_sse_response, handle_websocket_session
@@ -26,6 +28,7 @@ from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_
 from core.litellm_adapter import CLIENT_VERSION_HEADER
 from config.security import decode_access_token
 from core.agent import AIAgent
+from core.agent_registry import get_registry
 from db.models import ConversationRecord, SessionLocal, User, get_db
 
 
@@ -99,7 +102,60 @@ def _read_metadata_sync(metadata_path: Path) -> Dict[str, Any]:
         return json.load(f)
 
 
+def _get_user_id_for_rate_limit(request: Request) -> str:
+    """从 Authorization header 提取用户标识用于限流，降级用客户端 IP。
+
+    认证依赖 get_current_user 仅返回 User 对象，未将 user_id 写入 request.state，
+    因此需从 Bearer token 解析 sub（用户名）作为限流键。token 解析失败时
+    降级为 IP 限流，保证限流不因 token 异常而失效。
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        try:
+            payload = decode_access_token(token)
+            if payload and payload.get("sub"):
+                return f"user:{payload['sub']}"
+        except Exception:
+            pass
+    return request.client.host if request.client else "unknown"
+
+
+def _user_rate_limit(limit_str: str) -> Callable[[Callable], Callable]:
+    """运行时从 request.app.state.limiter 获取限流器并应用的装饰器。
+
+    避免顶层 ``from main import limiter`` 导致循环导入：
+    main.py L24 导入 chat.py，而 limiter 在 main.py L1296 才定义。
+    本装饰器在首次请求时从 app.state.limiter 取得 slowapi Limiter 实例，
+    对原函数应用 ``limiter.limit(...)`` 并缓存，后续请求直接复用缓存。
+
+    limiter 未配置（如测试环境）时直接执行原函数，不阻塞业务。
+    """
+    def decorator(func: Callable) -> Callable:
+        cache: Dict[str, Any] = {"decorated": None}
+
+        @functools.wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            request: Optional[Request] = kwargs.get("request")
+            if request is None and args:
+                request = args[0]
+            app_state = getattr(getattr(request, "app", None), "state", None)
+            limiter = getattr(app_state, "limiter", None) if app_state else None
+            if limiter is None:
+                return await func(*args, **kwargs)
+            if cache["decorated"] is None:
+                cache["decorated"] = limiter.limit(
+                    limit_str, key_func=_get_user_id_for_rate_limit
+                )(func)
+            return await cache["decorated"](*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 @router.post("", response_model=Union[ChatResponse, str])
+@_user_rate_limit("30/minute")
 async def chat(
     request: Request,
     message: ChatMessage,
@@ -110,6 +166,13 @@ async def chat(
     处理chat相关逻辑，并为调用方返回对应结果。
     如果请求 mode='stream'，则返回 SSE。否则返回 JSON。
     """
+    # 校验 session 归属，防止用户越权使用他人 session_id 污染记忆
+    assert_session_owner(db, message.session_id, current_user.id)
+
+    # TTFT 诊断：路由入口计时起点（中间件+认证已在此前完成）
+    import time as _chat_time
+    _chat_t0 = _chat_time.time()
+
     context = {
         "user_id": current_user.id,
         "session_id": message.session_id,
@@ -140,7 +203,18 @@ async def chat(
     ).info("chat request received")
 
     try:
-        agent = AIAgent(db_session=db)
+        # 通过 AIAgentRegistry 复用 AIAgent 实例，避免每请求重复构造重量级依赖
+        # get_or_create 内部会调用 agent.bind_db(db) 绑定当前请求的数据库会话
+        _registry_t0 = _chat_time.time()
+        agent = get_registry().get_or_create(current_user.id, db)
+        logger.bind(
+            event="ttft_stage",
+            module="chat",
+            stage="agent_registry",
+            session_id=message.session_id,
+            elapsed_ms=round((_chat_time.time() - _registry_t0) * 1000, 2),
+            total_ms=round((_chat_time.time() - _chat_t0) * 1000, 2),
+        ).info("阶段耗时: agent_registry")
 
         if message.mode == "stream":
             return await build_sse_response(agent.process_stream(message.message, context))

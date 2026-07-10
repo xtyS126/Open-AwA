@@ -40,6 +40,8 @@ interface UsePermissionRequestReturn {
 const RECONNECT_BASE_DELAY = 1000
 /** 最大重连延迟（毫秒） */
 const MAX_RECONNECT_DELAY = 30000
+/** 最大重连次数：超过后停止重连，避免无限重连占用网络资源 */
+const MAX_RECONNECT_ATTEMPTS = 5
 
 /**
  * 检测当前 document.cookie 中是否包含 access_token 键。
@@ -118,6 +120,7 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
     }
 
     let cancelled = false
+    let connectTimer: ReturnType<typeof setTimeout> | null = null
 
     const connect = async () => {
       if (cancelled) return
@@ -192,6 +195,16 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
         eventSource.close()
         eventSourceRef.current = null
 
+        // 最大重连次数限制：超过后停止重连，避免频繁重连占用网络资源
+        if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+          appLogger.warning({
+            event: 'permission_sse_max_reconnect_reached',
+            module: 'usePermissionRequest',
+            message: `SSE 连接断开已达最大重连次数 ${MAX_RECONNECT_ATTEMPTS}，停止重连`,
+          })
+          return
+        }
+
         // 指数退避重连
         const delay = Math.min(
           RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
@@ -211,10 +224,19 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
       }
     }
 
-    connect()
+    // 延迟 100ms 连接，StrictMode dev 双 mount 时第一次 cleanup 取消定时器，
+    // 第二次 mount 才真正建立 SSE 连接，避免重复请求 ticket。
+    // 生产环境单 mount 无影响，100ms 后正常连接。
+    connectTimer = setTimeout(() => {
+      void connect()
+    }, 100)
 
     return () => {
       cancelled = true
+      if (connectTimer) {
+        clearTimeout(connectTimer)
+        connectTimer = null
+      }
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
         eventSourceRef.current = null

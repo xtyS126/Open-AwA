@@ -410,6 +410,9 @@ export const chatAPI = {
       extra: { url },
     })
 
+    // TTFT 诊断：记录 fetch 发起时间，用于定位"正在连接流式通道"延迟根因
+    const _ttft_t0 = Date.now()
+
     try {
       const apiKey = getCachedApiKey()
       const headers: Record<string, string> = {
@@ -434,6 +437,16 @@ export const chatAPI = {
         body: JSON.stringify(
           buildChatRequestPayload(message, sessionId, provider, model, 'stream', executionOptions, attachments)
         )
+      })
+
+      // TTFT 诊断：fetch 返回响应头的时间（TTFB 的网络+中间件+认证部分）
+      const _ttft_fetch_ms = Date.now() - _ttft_t0
+      appLogger.info({
+        event: 'ttft_fetch_responded',
+        module: 'api',
+        request_id: requestId,
+        message: `fetch 响应到达（含网络+中间件+认证）`,
+        extra: { fetch_ms: _ttft_fetch_ms, status: response.status },
       })
 
       const responseRequestId = response.headers.get('x-request-id') || requestId
@@ -483,6 +496,7 @@ export const chatAPI = {
       const decoder = new TextDecoder('utf-8')
       let done = false
       let buffer = ''
+      let _first_chunk_logged = false
 
       // SSE 流式响应最大大小限制 —— 防止后端异常/恶意推送导致前端内存耗尽
       const MAX_RESPONSE_BYTES = 10 * 1024 * 1024 // 10MB 上限
@@ -492,6 +506,21 @@ export const chatAPI = {
         const { value, done: doneReading } = await reader.read()
         done = doneReading
         if (value) {
+          // TTFT 诊断：首次读到响应体的时间（完整 TTFT）
+          if (!_first_chunk_logged) {
+            _first_chunk_logged = true
+            const _ttft_total_ms = Date.now() - _ttft_t0
+            appLogger.info({
+              event: 'ttft_first_chunk',
+              module: 'api',
+              request_id: requestId,
+              message: `首次收到流式数据（完整 TTFT）`,
+              extra: {
+                total_ms: _ttft_total_ms,
+                fetch_to_first_chunk_ms: _ttft_total_ms - _ttft_fetch_ms,
+              },
+            })
+          }
           // 累计已接收字节数，超过上限主动取消流并抛出错误
           totalBytes += value.byteLength
           if (totalBytes > MAX_RESPONSE_BYTES) {

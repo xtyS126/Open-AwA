@@ -191,20 +191,24 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
     const currentAttachments = attachments
 
     // 将图片/音频/视频附件编码为 base64，用于多模态 API 调用
-    const attachmentsWithBase64: FileAttachment[] = []
-    for (const att of currentAttachments) {
-      const ext = getFileExtension(att.file.name)
-      if (IMAGE_EXTENSIONS.has(ext) || AUDIO_VIDEO_EXTENSIONS.has(ext)) {
-        try {
-          const { data, mimeType } = await fileToBase64(att.file)
-          attachmentsWithBase64.push({ ...att, base64Data: data, mimeType })
-        } catch {
-          appLogger.warning({ event: 'base64_encode_failed', module: 'chat_input', message: `failed to encode: ${att.file.name}` })
+    // 使用 Promise.all 并行编码，多个附件总耗时约为单个耗时（而非 N 倍）
+    // 保持原错误处理语义：单个附件编码失败时记录 warning 并跳过该附件，不影响其他附件
+    const encodeResults = await Promise.all(
+      currentAttachments.map(async (att): Promise<FileAttachment | null> => {
+        const ext = getFileExtension(att.file.name)
+        if (IMAGE_EXTENSIONS.has(ext) || AUDIO_VIDEO_EXTENSIONS.has(ext)) {
+          try {
+            const { data, mimeType } = await fileToBase64(att.file)
+            return { ...att, base64Data: data, mimeType }
+          } catch {
+            appLogger.warning({ event: 'base64_encode_failed', module: 'chat_input', message: `failed to encode: ${att.file.name}` })
+            return null
+          }
         }
-      } else {
-        attachmentsWithBase64.push(att)
-      }
-    }
+        return att
+      })
+    )
+    const attachmentsWithBase64 = encodeResults.filter((a): a is FileAttachment => a !== null)
 
     setInput('')
     // 清理 Blob URL 避免内存泄漏

@@ -173,12 +173,13 @@ async def build_sse_response(stream_generator: AsyncGenerator) -> StreamingRespo
         except Exception as exc:
             # 生成器异常时向前端发送错误事件，避免前端无限等待
             # 从异常中提取底层 error code/message，不再统一显示「流式响应异常，请重试」
+            # 注意：必须用 .opt(exception=True) 记录完整堆栈，否则只看消息无法定位 numpy/Qdrant 等底层错误
             logger.bind(
                 event="sse_generator_error",
                 module="chat_protocol",
                 error_type=type(exc).__name__,
                 error_message=sanitize_for_logging(str(exc)),
-            ).error(f"SSE 生成器异常: {exc}")
+            ).opt(exception=True).error(f"SSE 生成器异常: {exc}")
             error_code, error_message = _extract_error_from_exception(exc)
             yield f"data: {json.dumps({'type': 'error', 'error': {'code': error_code, 'message': error_message}}, ensure_ascii=False)}\n\n"
         finally:

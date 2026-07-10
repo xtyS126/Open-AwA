@@ -208,9 +208,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   setSessionId: (id) => {
     setActiveSessionId(id)
-    // 先设空，异步加载
+    // 不再 set({ messages: [] }) 清空消息，保留旧消息直到新数据到达，
+    // 避免 StrictMode dev 双 mount 或快速切换会话时出现空白闪烁。
+    // IndexedDB 加载完成后由 loadSequenceNumber 防护再 set({ messages })。
+    // 服务端历史（useChatConversationActions 的 loadHistory）到达后也会调用 setMessages，
+    // 两条路径都受 loadSequenceNumber 与 cancelled 标志保护，不会出现脏数据。
     const seq = ++loadSequenceNumber
-    set({ sessionId: id, messages: [] })
+    set({ sessionId: id })
     void loadMessages(id).then((msgs) => {
       // 仅当此请求仍为最新时才写入 state，防止竞态
       if (seq === loadSequenceNumber) {

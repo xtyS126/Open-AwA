@@ -1145,7 +1145,7 @@ class ExecutionLayer:
             "context": serialized_context,
         }
 
-        resolved = self._resolve_llm_configuration(context)
+        resolved = await asyncio.to_thread(self._resolve_llm_configuration, context)
         if not resolved.get("ok"):
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             if callable(record_hook):
@@ -1351,7 +1351,7 @@ class ExecutionLayer:
             if key not in {"_record_hook", "db"}
         }
 
-        resolved = self._resolve_llm_configuration(context)
+        resolved = await asyncio.to_thread(self._resolve_llm_configuration, context)
         if not resolved.get("ok"):
             yield {"error": resolved.get("error")}
             return

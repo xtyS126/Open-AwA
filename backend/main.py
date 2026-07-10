@@ -73,6 +73,7 @@ from core.litellm_adapter import (
 )
 from core.scheduled_task_manager import scheduled_task_manager
 from core.startup.profiler import StartupProfiler
+from core.task_runtime import task_runtime
 from config.security import generate_csrf_token, verify_csrf_token
 from config.settings import is_production_environment, settings
 from db.models import engine, init_db
@@ -167,42 +168,41 @@ def _check_model_provider_availability() -> None:
     优先查询数据库 provider_credentials 表（spec 重构后 API Key 统一存数据库），
     同时保留 .env 环境变量检查作为向后兼容补充。
     未配置任何 Key 时发出警告（不阻塞启动），方便开发者第一时间发现配置缺失。
+
+    本函数在 _startup_data_init 的 init_db 之后执行，provider_credentials 表已存在，
+    无需再通过 inspector 检查表存在性。OperationalError 视为表结构异常（DEBUG），
+    其他异常视为数据库连接失败（WARNING，生产环境需可见）。
     """
     configured = []
 
     # 1. 查询数据库 provider_credentials 表中有效凭据（is_active 且 api_key 非空且非 enc: 旧密文）
-    # 注意：本函数在 _startup_infrastructure 阶段执行，早于 _startup_data_init 的 init_db 调用，
-    # 因此 provider_credentials 表可能尚未创建。先通过 inspector 检查表是否存在，
-    # 避免触发 OperationalError 噪声日志（虽然 try/except 兜底，但 SQLAlchemy handle_error
-    # 事件监听器仍会以 ERROR 级别记录完整 traceback，干扰 E2E 启动日志）。
     try:
-        from db.models import SessionLocal, engine as _engine
-        from sqlalchemy import text as _sql_text, inspect as _sql_inspect
+        from db.models import SessionLocal
+        from sqlalchemy import text as _sql_text
+        from sqlalchemy.exc import OperationalError
         db = SessionLocal()
         try:
-            # 表存在性检查：init_db 未执行时跳过 DB 查询，避免 OperationalError
-            _inspector = _sql_inspect(_engine)
-            if "provider_credentials" not in _inspector.get_table_names():
-                logger.bind(event="provider_check_table_missing", module="main").debug(
-                    "provider_credentials 表尚未创建（init_db 未执行），跳过数据库凭据查询"
+            # 统计有效 provider：api_key 非空且不以 enc: 开头（enc: 旧密文已失效）
+            result = db.execute(
+                _sql_text(
+                    "SELECT provider FROM provider_credentials "
+                    "WHERE is_active = 1 AND api_key IS NOT NULL AND api_key != '' "
+                    "AND api_key NOT LIKE 'enc:%'"
                 )
-            else:
-                # 统计有效 provider：api_key 非空且不以 enc: 开头（enc: 旧密文已失效）
-                result = db.execute(
-                    _sql_text(
-                        "SELECT provider FROM provider_credentials "
-                        "WHERE is_active = 1 AND api_key IS NOT NULL AND api_key != '' "
-                        "AND api_key NOT LIKE 'enc:%'"
-                    )
-                )
-                for row in result:
-                    configured.append(str(row[0]))
+            )
+            for row in result:
+                configured.append(str(row[0]))
         finally:
             db.close()
+    except OperationalError as exc:
+        # 表不存在或结构异常时降级为 DEBUG，不阻塞启动
+        logger.bind(event="provider_check_table_missing", module="main").debug(
+            f"provider_credentials 表查询失败（可能结构异常）: {exc}"
+        )
     except Exception as exc:
-        # 数据库尚未初始化（表不存在）或查询失败时降级为 DEBUG，不阻塞启动
-        logger.bind(event="provider_check_db_skipped", module="main").debug(
-            f"数据库凭据查询跳过（表可能尚未初始化）: {exc}"
+        # 其他异常（数据库连接失败等）记录 WARNING，确保生产环境可见
+        logger.bind(event="provider_check_db_error", module="main").warning(
+            f"数据库凭据查询失败（连接异常）: {exc}"
         )
 
     # 2. 补充检查 .env 环境变量（向后兼容，数据库无凭据时作为兜底提示）
@@ -269,7 +269,11 @@ def _ensure_api_key() -> None:
 
 
 async def _startup_infrastructure(profiler: StartupProfiler) -> None:
-    """基础设施层初始化：依赖检测、模型供应商可用性检查。"""
+    """基础设施层初始化：依赖检测、API Key 校验。
+
+    模型供应商可用性检查已迁移到 _startup_data_init 的 init_db 之后执行，
+    以确保 provider_credentials 表已创建（避免 inspector workaround）。
+    """
     with profiler.step("litellm_check"):
         if is_litellm_available():
             logger.bind(event="litellm_available", module="main").info("LiteLLM dependency detected, unified LLM gateway enabled")
@@ -279,11 +283,6 @@ async def _startup_infrastructure(profiler: StartupProfiler) -> None:
                 "Please run `pip install litellm` to enable unified LLM gateway. "
                 "Model API requests will fail until LiteLLM is installed."
             )
-
-    # 检查至少有一个模型供应商配置了有效凭据
-    with profiler.step("provider_credential_check"):
-        # 同步函数包装为 to_thread，避免阻塞事件循环（影响健康检查并发响应）
-        await asyncio.to_thread(_check_model_provider_availability)
 
     # API Key 初始化（未设置时自动生成并持久化到 .env.local）
     with profiler.step("api_key_init"):
@@ -375,6 +374,11 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
                 logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
             raise RuntimeError(f"数据库初始化失败，服务无法启动: {exc}") from exc
 
+    # 检查至少有一个模型供应商配置了有效凭据（init_db 完成后，provider_credentials 表已存在）
+    with profiler.step("provider_credential_check"):
+        # 同步函数包装为 to_thread，避免阻塞事件循环
+        await asyncio.to_thread(_check_model_provider_availability)
+
     # 初始化预设角色
     with profiler.step("preset_roles_init"):
         try:
@@ -389,9 +393,6 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
                 _preset_db.close()
         except Exception as e:
             logger.bind(event="preset_roles_init_error", module="startup").warning(f"预设角色初始化失败: {e}")
-
-    with profiler.step("billing_tables"):
-        logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
 
     from billing.pricing_manager import PricingManager
     with profiler.step("pricing_init"):
@@ -596,66 +597,87 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
 
         # 同步 DB 查询包装为 to_thread，避免阻塞事件循环
         enabled_plugins_data = await asyncio.to_thread(_load_enabled_plugins_sync)
-        for p_data in enabled_plugins_data:
-            p_name = p_data["name"]
-            if p_name in pm.plugin_metadata:
-                try:
-                    # 同步插件加载（importlib + 初始化）包装为 to_thread，避免阻塞事件循环
-                    await asyncio.to_thread(pm.load_plugin, p_name)
-                    logger.bind(event="plugin_loaded", module="main", plugin=p_name).info(
-                        f"plugin loaded: {p_name}"
-                    )
-                    # 内置插件不需要权限审批，跳过 restore_plugin_permissions
-                    if p_data["source"] == "builtin":
-                        # 检查内置插件是否以 loaded_with_warnings 状态加载
-                        loaded_instance = pm.loaded_plugins.get(p_name)
-                        if loaded_instance is not None and hasattr(
-                            loaded_instance, "get_dependency_warnings"
-                        ):
-                            warnings_list = loaded_instance.get_dependency_warnings()
-                            if warnings_list:
-                                logger.bind(
-                                    event="plugin_loaded_with_warnings",
-                                    module="main",
-                                    plugin=p_name,
-                                    warning_count=len(warnings_list),
-                                ).info(
-                                    f"内置插件 {p_name} 以 loaded_with_warnings 状态加载，"
-                                    f"warnings={len(warnings_list)}"
-                                )
-                    else:
-                        granted = p_data["granted_permissions"]
-                        if granted:
-                            pm.restore_plugin_permissions(p_name, granted)
-                except BuiltinPluginDependencyError as dep_exc:
-                    # 内置插件依赖缺失：仅记录 WARNING，不阻塞启动
-                    logger.bind(
-                        event="builtin_plugin_dependency_missing",
-                        module="main",
-                        plugin=p_name,
-                        missing_packages=dep_exc.missing_packages,
-                    ).warning(
-                        f"内置插件 {p_name} 依赖缺失，跳过加载: "
-                        f"missing_packages={dep_exc.missing_packages}"
-                    )
-                except Exception as exc:
-                    logger.bind(event="plugin_load_error", module="main", plugin=p_name).warning(
-                        f"plugin load failed: {exc}"
-                    )
+        # 收集需要加载的插件（仅加载 pm.plugin_metadata 中已发现的，预过滤避免无效并发任务）
+        plugins_to_load = [
+            (p_data["name"], p_data)
+            for p_data in enabled_plugins_data
+            if p_data["name"] in pm.plugin_metadata
+        ]
+        # 并行加载所有已启用插件（同步 importlib + 初始化包装为 to_thread，gather 并发执行）
+        # return_exceptions=True 保留单插件异常，避免一个失败影响其他插件加载
+        load_results = await asyncio.gather(
+            *[asyncio.to_thread(pm.load_plugin, name) for name, _ in plugins_to_load],
+            return_exceptions=True,
+        )
+        # 遍历 gather 结果对齐原 tasks，做后处理（日志、权限恢复、内置插件 warnings 检查）
+        for (p_name, p_data), result in zip(plugins_to_load, load_results):
+            if isinstance(result, BuiltinPluginDependencyError):
+                # 内置插件依赖缺失：仅记录 WARNING，不阻塞启动
+                logger.bind(
+                    event="builtin_plugin_dependency_missing",
+                    module="main",
+                    plugin=p_name,
+                    missing_packages=result.missing_packages,
+                ).warning(
+                    f"内置插件 {p_name} 依赖缺失，跳过加载: "
+                    f"missing_packages={result.missing_packages}"
+                )
+                continue
+            if isinstance(result, Exception):
+                # 单插件加载失败：记录 WARNING，不阻塞其他插件
+                logger.bind(event="plugin_load_error", module="main", plugin=p_name).warning(
+                    f"plugin load failed: {result}"
+                )
+                continue
+            # 加载成功：记录日志并做后处理
+            logger.bind(event="plugin_loaded", module="main", plugin=p_name).info(
+                f"plugin loaded: {p_name}"
+            )
+            # 内置插件不需要权限审批，跳过 restore_plugin_permissions
+            if p_data["source"] == "builtin":
+                # 检查内置插件是否以 loaded_with_warnings 状态加载
+                loaded_instance = pm.loaded_plugins.get(p_name)
+                if loaded_instance is not None and hasattr(
+                    loaded_instance, "get_dependency_warnings"
+                ):
+                    warnings_list = loaded_instance.get_dependency_warnings()
+                    if warnings_list:
+                        logger.bind(
+                            event="plugin_loaded_with_warnings",
+                            module="main",
+                            plugin=p_name,
+                            warning_count=len(warnings_list),
+                        ).info(
+                            f"内置插件 {p_name} 以 loaded_with_warnings 状态加载，"
+                            f"warnings={len(warnings_list)}"
+                        )
+            else:
+                granted = p_data["granted_permissions"]
+                if granted:
+                    pm.restore_plugin_permissions(p_name, granted)
         logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info(
             "plugin system initialized"
         )
 
 
 async def _startup_background_tasks(profiler: StartupProfiler) -> None:
-    """后台任务初始化：定时任务管理器、微信自动回复。"""
+    """后台任务初始化：定时任务管理器、微信自动回复。
+
+    SKIP_INIT_DB 设置时 scheduled_task_manager 与 weixin_auto_reply 均依赖 DB 表，
+    需在启动前检查并跳过，避免 OperationalError 崩溃。
+    """
     from db.models import SessionLocal
+
+    if os.getenv("SKIP_INIT_DB"):
+        # scheduled_task_manager 与 weixin_auto_reply 均依赖 DB 表（scheduled_tasks / weixin_bindings），
+        # SKIP_INIT_DB=true 时表可能不存在，跳过避免 OperationalError
+        logger.bind(event="skip_init_db_background_tasks", module="main").info(
+            "SKIP_INIT_DB 已设置，跳过 scheduled_task_manager 启动"
+        )
+        return
 
     with profiler.step("scheduled_task_start"):
         await scheduled_task_manager.start()
-
-    if os.getenv("SKIP_INIT_DB"):
-        return
 
     with profiler.step("weixin_auto_reply"):
         from db.models import WeixinBinding
@@ -789,6 +811,17 @@ def _startup_mcp_sse_origin(profiler: StartupProfiler) -> None:
             )
 
 
+async def _startup_mcp_preheat(profiler: StartupProfiler) -> None:
+    """MCPManager 启动期预热：触发单例构造与配置恢复，避免首次对话时同步阻塞。"""
+    with profiler.step("mcp_preheat"):
+        try:
+            from mcp.manager import MCPManager
+            MCPManager()
+            logger.bind(event="mcp_preheat_done", module="startup").info("MCPManager 预热完成")
+        except Exception as e:
+            logger.bind(event="mcp_preheat_error", module="startup").warning(f"MCPManager 预热失败: {e}")
+
+
 async def _shutdown_autonomous_mode() -> None:
     """关闭自主模式管理器。"""
     try:
@@ -825,6 +858,15 @@ async def lifespan(app: FastAPI):
         await _startup_data_init(profiler)
         await _startup_plugin_system(profiler)
         await _startup_background_tasks(profiler)
+        # task_runtime 初始化：回收悬挂会话（原 @router.on_event("startup") 迁移至 lifespan）
+        # task_runtime.initialize 为 async 函数，直接 await 调用（asyncio.to_thread 不适用于 async 函数）
+        try:
+            with profiler.step("task_runtime_init"):
+                await task_runtime.initialize()
+        except Exception as e:
+            logger.bind(event="task_runtime_init_error", module="main").warning(
+                f"task_runtime 初始化失败: {e}"
+            )
         # 17. 自主运行模式初始化（在所有其他初始化之后）
         await _startup_autonomous_mode(profiler)
         # 18. ACP 服务初始化（数据库初始化之后，按 agent 注册 ACPService 实例）
@@ -838,6 +880,8 @@ async def lifespan(app: FastAPI):
             logger.bind(event="data_collector_init_error", module="startup").warning(f"数据收集器初始化失败: {e}")
         # 20. 配置 MCP SSE 传输层 origin 白名单
         _startup_mcp_sse_origin(profiler)
+        # 21. MCPManager 预热：触发单例构造与持久化配置恢复，避免首次对话同步阻塞
+        await _startup_mcp_preheat(profiler)
     except Exception:
         logger.bind(event="app_startup_failed", module="main").error("启动过程发生异常，服务将终止")
         raise
@@ -845,6 +889,14 @@ async def lifespan(app: FastAPI):
     profiler.finish()
 
     yield
+    # task_runtime 关闭：触发 Stop 钩子，通知后台 agent（原 @router.on_event("startup") 迁移至 lifespan）
+    # task_runtime.shutdown 为 async 函数，直接 await 调用（asyncio.to_thread 不适用于 async 函数）
+    try:
+        await task_runtime.shutdown()
+    except Exception as exc:
+        logger.bind(event="task_runtime_shutdown_error", module="main").warning(
+            f"task_runtime 关闭失败: {exc}"
+        )
     # 关闭流程：每个步骤独立 try/except，确保一个失败不影响其他步骤
     shutdown_errors: list[str] = []
     for step_name, step_fn in (

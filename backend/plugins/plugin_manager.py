@@ -16,6 +16,7 @@ import shutil
 import sys
 import ssl
 import tempfile
+import threading
 import urllib.parse
 import zipfile
 from contextlib import contextmanager
@@ -152,6 +153,10 @@ class PluginManager:
         # bundle 格式检测器：识别 OpenClaw/Codex/Claude/Cursor 等兼容格式
         self._bundle_detector = BundleDetector()
         self._bundle_adapter = BundleManifestAdapter()
+        # discover_plugins 进程级缓存：按目录 mtime 失效，避免每次对话 os.walk
+        self._discover_cache: Optional[List[Any]] = None
+        self._discover_cache_mtime: float = 0.0
+        self._discover_cache_lock = threading.Lock()
         logger.info(f"PluginManager initialized with plugins_dir: {self.plugins_dir}")
 
     def _get_default_plugins_dir(self) -> str:
@@ -935,19 +940,56 @@ class PluginManager:
     def discover_plugins(self) -> List[Dict[str, Any]]:
         """
         在插件目录中发现所有可用插件。
-        
-        Returns:
-            发现的插件信息列表。
-        """
-        logger.info(f"Discovering plugins in directory: {self.plugins_dir}")
 
+        进程级缓存：按 plugins_dir 的 mtime 失效；load_plugin/unload_plugin
+        会主动调用 invalidate_discover_cache 触发失效。短时间内多次对话命中缓存，
+        避免每次都执行 os.walk 扫描。
+
+        Returns:
+            发现的插件信息列表（拷贝，调用方修改不影响缓存）。
+        """
         if not os.path.exists(self.plugins_dir):
             logger.warning(f"Plugins directory does not exist: {self.plugins_dir}")
             return []
 
+        try:
+            current_mtime = os.stat(self.plugins_dir).st_mtime
+        except OSError as stat_err:
+            logger.warning(f"Failed to stat plugins_dir for mtime: {stat_err}")
+            current_mtime = 0.0
+
+        # 加锁检查缓存：若 mtime 一致且缓存非空，直接返回拷贝
+        with self._discover_cache_lock:
+            if (
+                self._discover_cache is not None
+                and current_mtime == self._discover_cache_mtime
+                and current_mtime != 0.0
+            ):
+                logger.debug(
+                    "discover_plugins cache hit (mtime={})".format(current_mtime)
+                )
+                return list(self._discover_cache)
+
+        logger.info(f"Discovering plugins in directory: {self.plugins_dir}")
         discovered_plugins = self._discover_plugins_in_directory(self.plugins_dir)
         logger.info(f"Plugin discovery completed. Found {len(discovered_plugins)} plugins")
-        return discovered_plugins
+
+        # 写入缓存（覆盖式）
+        with self._discover_cache_lock:
+            self._discover_cache = list(discovered_plugins)
+            self._discover_cache_mtime = current_mtime
+
+        return list(discovered_plugins)
+
+    def invalidate_discover_cache(self) -> None:
+        """主动失效 discover_plugins 缓存。
+
+        在 load_plugin / unload_plugin 等会改变插件目录内容的操作后调用，
+        确保下一次 discover_plugins 重新扫描目录。
+        """
+        with self._discover_cache_lock:
+            self._discover_cache = None
+            self._discover_cache_mtime = 0.0
 
     def register_plugin_from_local_zip(
         self,
@@ -1827,6 +1869,8 @@ class PluginManager:
         加载plugin相关资源或运行时对象。
         它通常负责把外部配置、持久化内容或缓存状态转换为内部可用结构。
         """
+        # 失效 discover 缓存：插件加载可能伴随目录内容变化（如解压新插件）
+        self.invalidate_discover_cache()
         if plugin_name in self.loaded_plugins:
             logger.warning(f"Plugin '{plugin_name}' is already loaded")
             self._ensure_runtime_route(plugin_name)
@@ -1990,6 +2034,8 @@ class PluginManager:
         处理unload、plugin相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
+        # 失效 discover 缓存：卸载后插件目录可能被清理或更新
+        self.invalidate_discover_cache()
         if plugin_name not in self.loaded_plugins:
             logger.warning(f"Plugin '{plugin_name}' is not loaded")
             return False

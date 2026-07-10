@@ -8,6 +8,7 @@ import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { useModelStore } from '@/features/chat/store/modelStore'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
+import { preloadModelOptions } from '@/features/chat/utils/preloadModelOptions'
 
 interface UserProfile {
   username: string
@@ -120,6 +121,12 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
           status: 'success',
           message: 'API Key validated',
         })
+
+        // 模型选项预加载：复用 GeneralTabContainer.loadGlobalModelOptions 的核心逻辑，
+        // 确保首次登录用户进入 /chat 时 selectedModel 已就位，避免发送消息时报错。
+        // preloadModelOptions 内部已 try/catch 不抛出，await 不会阻塞登录流程。
+        // await 确保进入 ChatPage 前 modelOptions 已就绪，避免 ChatPage 渲染时 selectedModel 为空。
+        await preloadModelOptions()
 
         const data = meResponse.data || {}
         cachedInitializationResult = {

@@ -324,13 +324,17 @@ api.interceptors.response.use(
       const errorMessage = error?.message || ''
       const backendDetail = error?.response?.data?.detail || ''
 
-      appLogger.error({
+      // 409 Conflict 通常是业务预期内的冲突（如配置已存在），业务代码会静默跳过或处理。
+      // 降级为 warning 避免污染 ERROR 日志，让真正的异常更易定位。
+      const logLevel = errorStatus === 409 ? 'warning' : 'error'
+      const logStatus = errorStatus === 409 ? 'warning' : 'failure'
+      appLogger[logLevel]({
         event: 'api_response',
         module: 'api',
         action: error?.config?.method?.toUpperCase() || 'GET',
-        status: 'failure',
+        status: logStatus,
         request_id: responseRequestId,
-        message: `[API ERROR] ${error?.config?.method?.toUpperCase() || 'GET'} ${errorUrl} -> ${errorStatus}` +
+        message: `[API ${errorStatus === 409 ? 'WARN' : 'ERROR'}] ${error?.config?.method?.toUpperCase() || 'GET'} ${errorUrl} -> ${errorStatus}` +
           (errorMessage ? ` | ${errorMessage}` : '') +
           (backendDetail ? ` | Detail: ${backendDetail}` : '') +
           (responseRequestId ? ` | Request-ID: ${responseRequestId}` : ''),

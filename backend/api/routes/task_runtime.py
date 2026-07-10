@@ -5,7 +5,6 @@
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from loguru import logger
 
 from api.dependencies import get_current_user
 from core.task_runtime import task_runtime
@@ -24,13 +23,6 @@ def _raise_not_found_from_result(result: Dict[str, Any]) -> None:
     error = result.get("error")
     if result.get("ok") is False and isinstance(error, str) and "不存在" in error:
         _raise_not_found(error)
-
-
-@router.on_event("startup")
-async def startup():
-    """路由启动时初始化任务运行时（回收悬挂会话）。"""
-    await task_runtime.initialize()
-    logger.bind(module="task_runtime_api").info("任务运行时路由已启动")
 
 
 @router.get("/agents")

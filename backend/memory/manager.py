@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 from sqlalchemy import func, case
@@ -36,6 +38,18 @@ class MemoryManager:
                     self.__class__._shared_vector_store = VectorStoreManager()
         self.vector_store = self.__class__._shared_vector_store
         self.working_memory = working_memory_store
+        # 向量检索查询级 LRU 缓存：相同 (query, user_id) 短时间内复用结果，避免重复嵌入计算与 Qdrant 查询
+        self._vector_search_cache: "OrderedDict[Tuple[str, Optional[str]], List[Any]]" = OrderedDict()
+        self._vector_search_cache_lock = Lock()
+        self._VECTOR_CACHE_MAX = 128
+        # 对话历史请求级缓存：同 (session_id, limit, workspace_id) 在 5 秒内复用，避免连续对话重复查询 DB
+        # 新消息写入时通过 invalidate_history_cache 失效
+        self._history_cache: "OrderedDict[Tuple[str, int, str], Tuple[List[ShortTermMemory], float]]" = OrderedDict()
+        self._history_cache_maxsize = 128
+        self._history_cache_ttl = 5.0  # 5 秒 TTL
+        self._history_cache_lock = Lock()
+        # 短消息阈值：低于此长度的查询跳过向量检索，只做关键词检索
+        self._SHORT_QUERY_THRESHOLD = 20
         logger.info("MemoryManager initialized")
 
     def _source_score(self, metadata: Optional[Dict[str, Any]]) -> float:
@@ -191,6 +205,8 @@ class MemoryManager:
             )
             db.add(memory)
             db.commit()
+            # 提交成功后失效对话历史缓存，避免后续读取拿到陈旧数据
+            self.invalidate_history_cache(session_id)
             db.refresh(memory)
             # expunge 使对象脱离会话但保留已加载的列属性，供调用方使用
             db.expunge(memory)
@@ -265,6 +281,8 @@ class MemoryManager:
                 )
 
             db.commit()
+            # 提交成功后失效对话历史缓存，避免后续读取拿到陈旧数据
+            self.invalidate_history_cache(session_id)
             db.refresh(memory)
             db.expunge(memory)
             return memory
@@ -294,7 +312,55 @@ class MemoryManager:
             return memories
 
     async def get_short_term_memories(self, session_id: str, limit: int = 50, workspace_id: str = "default") -> List[ShortTermMemory]:
-        return await asyncio.to_thread(self._get_short_term_memories_sync, session_id, limit, workspace_id)
+        """从短期记忆中获取指定会话的历史消息（带 5 秒 TTL 缓存）。"""
+        cache_key: Tuple[str, int, str] = (session_id, limit, workspace_id)
+        now = time.time()
+
+        # 缓存命中检查
+        with self._history_cache_lock:
+            cached = self._history_cache.get(cache_key)
+            if cached is not None:
+                memories, expired_at = cached
+                if now < expired_at:
+                    # 命中，move_to_end 维护 LRU 顺序
+                    self._history_cache.move_to_end(cache_key)
+                    logger.bind(
+                        event="history_cache_hit",
+                        module="memory",
+                        session_id=session_id,
+                    ).debug("对话历史缓存命中")
+                    return memories
+                else:
+                    # 已过期，移除 stale 条目
+                    self._history_cache.pop(cache_key, None)
+
+        # 缓存未命中，查询 DB（保留原有查询逻辑）
+        memories = await asyncio.to_thread(self._get_short_term_memories_sync, session_id, limit, workspace_id)
+
+        # 写入缓存
+        with self._history_cache_lock:
+            self._history_cache[cache_key] = (memories, now + self._history_cache_ttl)
+            self._history_cache.move_to_end(cache_key)
+            # LRU 淘汰：超过容量时移除最久未使用的条目
+            if len(self._history_cache) > self._history_cache_maxsize:
+                self._history_cache.popitem(last=False)
+
+        return memories
+
+    def invalidate_history_cache(self, session_id: str) -> None:
+        """失效指定 session_id 的对话历史缓存（新消息写入后调用）。"""
+        with self._history_cache_lock:
+            # 遍历所有 key，移除 session_id 匹配的（不同 limit、workspace_id 都要失效）
+            keys_to_remove = [k for k in self._history_cache if k[0] == session_id]
+            for k in keys_to_remove:
+                self._history_cache.pop(k, None)
+            if keys_to_remove:
+                logger.bind(
+                    event="history_cache_invalidated",
+                    module="memory",
+                    session_id=session_id,
+                    invalidated_count=len(keys_to_remove),
+                ).debug("对话历史缓存已失效")
 
     def _clear_short_term_memory_sync(self, session_id: str, workspace_id: str = "default") -> int:
         with self.session_factory() as db:
@@ -303,6 +369,8 @@ class MemoryManager:
                 ShortTermMemory.workspace_id == workspace_id,
             ).delete()
             db.commit()
+            # 清空后旧缓存不再有效，失效对话历史缓存
+            self.invalidate_history_cache(session_id)
             return count
 
     async def clear_short_term_memory(self, session_id: str, workspace_id: str = "default") -> int:
@@ -573,12 +641,33 @@ class MemoryManager:
 
         vector_scores: Dict[int, float] = {}
         if use_vector:
-            vector_hits = await self.vector_store.search(
-                query,
-                user_id=user_id,
-                limit=limit,
-                include_archived=include_archived,
-            )
+            # 短消息跳过向量检索：避免短查询（如"你好"）触发嵌入计算与 Qdrant 查询，只保留关键词检索结果
+            if len(query) < self._SHORT_QUERY_THRESHOLD:
+                logger.debug(
+                    f"Query too short ({len(query)} chars), skipping vector search"
+                )
+                vector_hits = []
+            else:
+                # 查询级 LRU 缓存：相同 (query, user_id) 短时间内复用向量检索结果
+                cache_key: Tuple[str, Optional[str]] = (query, user_id)
+                cached_hits: Optional[List[Any]] = None
+                with self._vector_search_cache_lock:
+                    if cache_key in self._vector_search_cache:
+                        self._vector_search_cache.move_to_end(cache_key)
+                        cached_hits = self._vector_search_cache[cache_key]
+                if cached_hits is not None:
+                    vector_hits = cached_hits
+                else:
+                    vector_hits = await self.vector_store.search(
+                        query,
+                        user_id=user_id,
+                        limit=limit,
+                        include_archived=include_archived,
+                    )
+                    with self._vector_search_cache_lock:
+                        self._vector_search_cache[cache_key] = vector_hits
+                        if len(self._vector_search_cache) > self._VECTOR_CACHE_MAX:
+                            self._vector_search_cache.popitem(last=False)
             vector_scores = {hit.memory_id: hit.score for hit in vector_hits}
 
         candidate_ids = list(dict.fromkeys([*keyword_scores.keys(), *vector_scores.keys()]))

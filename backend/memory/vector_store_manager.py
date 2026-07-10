@@ -506,7 +506,25 @@ class VectorStoreManager:
         通过 query_filter 实现用户隔离与归档过滤。
         """
         query_filter = self._build_filter(user_id=user_id, include_archived=include_archived)
-        dense_vector = (await self.embedding_provider.embed_texts([query_text]))[0]
+        # 防御性检查：embedding 返回空列表时 [0] 会触发 IndexError，
+        # 此时跳过向量检索返回空结果，避免整个 SSE 流因 numpy 错误中断
+        try:
+            embedded = await self.embedding_provider.embed_texts([query_text])
+        except Exception as exc:
+            logger.bind(
+                event="vector_search_embedding_error",
+                module="vector_store",
+                error_type=type(exc).__name__,
+            ).opt(exception=True).warning(f"嵌入查询失败，跳过向量检索: {exc}")
+            return []
+        if not embedded or not embedded[0]:
+            logger.bind(
+                event="vector_search_empty_embedding",
+                module="vector_store",
+                query_len=len(query_text),
+            ).warning("嵌入返回空结果，跳过向量检索")
+            return []
+        dense_vector = embedded[0]
         sparse_vector = compute_sparse_vector(query_text)
 
         # 单次调用 Qdrant 原生混合检索：prefetch 双路召回 + RRF 融合
