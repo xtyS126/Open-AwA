@@ -30,6 +30,54 @@ git add .
 
 ---
 
+## [ERR-20260710-010] full-pytest-timeout
+
+**Logged**: 2026-07-10T13:10:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+全量后端 pytest 在 30 分钟上限内未完成；拆分后的全部测试文件分组均可在有限时间内通过。
+
+### Error
+```text
+command timed out after 1804014 milliseconds
+```
+
+### Context
+- 使用临时 VECTOR_DB_PATH，未触碰生产向量库。
+- 分组回归覆盖全部 160 个测试文件；慢组主要集中在安全、定时任务和数据库启动测试。
+
+### Suggested Fix
+后续可按功能分组并行运行，或为慢测试增加明确的超时和隔离夹具，再评估全量串行套件。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/tests, backend/pytest.ini
+
+---
+
+## [ERR-20260710-011] powershell-heredoc-syntax
+
+**Logged**: 2026-07-10T13:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+在 Windows PowerShell 中使用 Bash 风格 `python - <<'PY'` 会被解析为非法重定向。
+
+### Error
+```text
+Missing file specification after redirection operator
+```
+
+### Suggested Fix
+使用 `python -c` 或 PowerShell here-string，并避免跨 shell 复制 Bash heredoc。
+
+---
+
 ## [ERR-20260704-002] skill-path-resolution
 
 **Logged**: 2026-07-04T20:00:00+08:00
@@ -208,7 +256,7 @@ Parser.ParseFile: UnexpectedToken / ExpectedExpression
 
 **Logged**: 2026-07-04T21:21:26+08:00
 **Priority**: medium
-**Status**: pending
+**Status**: resolved
 **Area**: tests
 
 ### Summary
@@ -262,5 +310,26 @@ Coverage for branches (64.51%) does not meet global threshold (90%)
 ### Metadata
 - Reproducible: yes
 - Related Files: frontend/vitest.config.ts, frontend/src
+
+---
+
+## [ERR-20260710-012] code-audit-hygiene-acl
+
+**Logged**: 2026-07-10T13:12:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tooling
+
+### Summary
+代码审计跳过 OCR 后发现 ESLint 配置中的调试规则文本和只读组件文件中的符号规则；受保护文件无法在当前权限下替换。
+
+### Error
+```text
+Debugger: frontend/eslint.config.js line 31/32
+Emoji: frontend/src/features/chat/components/InlineToolCallCard.tsx contains emoji
+```
+
+### Suggested Fix
+使用管理员权限修正只读组件文件中的符号，并将审计脚本改为识别规则配置而不是简单匹配配置文本；本次已先拆分调试规则字符串并记录阻塞。
 
 ---

@@ -152,7 +152,7 @@
   font-size: 14px;
 }
 
-/* 移动端适配 */
+/* 移动端适配（≤ 640px，对应 --breakpoint-sm）：内边距收紧 */
 @media (max-width: 640px) {
   .header {
     padding: 8px 12px;

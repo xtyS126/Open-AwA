@@ -858,15 +858,27 @@
 }
 
 /* 响应式 */
+/* 移动端（≤ 768px，对应 --breakpoint-md）：页面紧凑、卡片堆叠、字号缩放 */
 @media (max-width: 768px) {
   .user-page {
     padding: 16px;
   }
 
-  .user-layout {
-    flex-direction: column;
+  .page-header {
+    margin-bottom: 16px;
   }
 
+  .page-header h1 {
+    font-size: 20px;
+  }
+
+  /* 主布局：左侧导航与右侧内容垂直堆叠 */
+  .user-layout {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* 左侧导航在移动端变为水平 Tab 条 */
   .tabs-nav {
     flex-direction: row;
     width: 100%;
@@ -878,31 +890,295 @@
   .tab-btn {
     white-space: nowrap;
     padding: 8px 14px;
+    min-height: var(--touch-target-min);
+    font-size: 13px;
   }
 
+  /* 内容区紧凑 */
+  .section {
+    gap: 16px;
+  }
+
+  .section h2 {
+    font-size: 16px;
+  }
+
+  .section h3 {
+    font-size: 14px;
+    margin: 0 0 10px;
+  }
+
+  .section-desc {
+    font-size: 12px;
+  }
+
+  /* 子分区紧凑 */
+  .sub-section {
+    gap: 12px;
+    padding-top: 16px;
+  }
+
+  /* 头像区垂直堆叠，间距缩小 */
   .profile-section {
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
+    gap: 16px;
   }
 
+  .avatar-section {
+    align-items: center;
+    gap: 8px;
+  }
+
+  .avatar-preview {
+    width: 80px;
+    height: 80px;
+  }
+
+  .avatar-placeholder {
+    font-size: 30px;
+  }
+
+  .upload-label {
+    min-height: var(--touch-target-min);
+    padding: 8px 14px;
+    font-size: 13px;
+    justify-content: center;
+  }
+
+  /* 表单紧凑 */
   .info-form {
     width: 100%;
+    min-width: 0;
+    gap: 12px;
   }
 
+  .form-field span {
+    font-size: 12px;
+  }
+
+  .form-field input {
+    min-height: var(--touch-target-min);
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .form-actions {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .form-actions > * {
+    width: 100%;
+    min-height: var(--touch-target-min);
+  }
+
+  /* 密码表单全宽 */
   .password-form {
     max-width: 100%;
+    gap: 12px;
+  }
+
+  /* 退出登录区紧凑 */
+  .logout-section {
+    margin-top: 24px;
+    padding-top: 16px;
+    gap: 8px;
+  }
+
+  /* 设备列表项紧凑，允许换行 */
+  .device-list {
+    gap: 8px;
   }
 
   .device-item {
     flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px;
   }
 
+  .device-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .device-type {
+    font-size: 13px;
+  }
+
+  .device-ip,
+  .device-time {
+    font-size: 11px;
+  }
+
+  .revoke-btn {
+    min-height: var(--touch-target-min);
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+
+  /* 摘要栏换行 */
   .summary-bar {
     flex-wrap: wrap;
     gap: 16px;
+    padding: 12px 14px;
+  }
+
+  .summary-label {
+    font-size: 11px;
+  }
+
+  .summary-value {
+    font-size: 14px;
+  }
+
+  /* 画像仪表盘容器间距 */
+  .dashboard-wrapper {
+    margin-top: 4px;
+  }
+
+  /* 事实管理 Tab 紧凑 */
+  .facts-top-bar {
+    gap: 8px;
+  }
+
+  .facts-top-actions {
+    margin-left: 0;
+    width: 100%;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .facts-top-actions > * {
+    width: 100%;
+    min-height: var(--touch-target-min);
+  }
+
+  .facts-toolbar {
+    gap: 8px;
+  }
+
+  .search-box {
+    min-height: var(--touch-target-min);
+    padding: 8px 12px;
+  }
+
+  .search-box input {
+    font-size: 13px;
+  }
+
+  .category-filters {
+    gap: 4px;
+  }
+
+  .filter-btn {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  /* 添加表单紧凑 */
+  .add-form {
+    padding: 12px;
+  }
+
+  .add-form h3 {
+    font-size: 13px;
+    margin: 0 0 10px;
+  }
+
+  .add-form-fields {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .add-form-fields select,
+  .add-form-fields input {
+    width: 100%;
+    min-height: var(--touch-target-min);
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  /* 事实列表与卡片紧凑 */
+  .facts-container {
+    gap: 16px;
+  }
+
+  .category-title {
+    font-size: 14px;
+    margin: 0 0 8px;
+    padding-bottom: 6px;
+  }
+
+  .category-count {
+    font-size: 11px;
+  }
+
+  .facts-list {
+    gap: 8px;
+  }
+
+  .fact-card {
+    padding: 12px;
+  }
+
+  .fact-key {
+    font-size: 12px;
+  }
+
+  .conf-badge {
+    font-size: 10px;
+  }
+
+  .fact-val {
+    font-size: 13px;
+  }
+
+  .edit-input {
+    min-height: var(--touch-target-min);
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .action-btn-sm {
+    width: 36px;
+    height: 36px;
+  }
+
+  .fact-footer {
+    gap: 8px;
+  }
+
+  .fact-meta {
+    font-size: 11px;
+  }
+
+  /* 洋葱画像区紧凑 */
+  .soul-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .header-subtitle {
+    font-size: 12px;
+  }
+
+  .soul-section-title {
+    font-size: 16px;
+    margin: 0 0 12px;
+  }
+
+  .retry-btn {
+    min-height: var(--touch-target-min);
+    padding: 10px 20px;
+    font-size: 13px;
   }
 }
 
+/* 小手机（≤ 480px，对应 --breakpoint-xs）：Tab 按钮紧凑缩放 */
 @media (max-width: 480px) {
   .tabs-nav {
     gap: 2px;

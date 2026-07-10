@@ -490,6 +490,7 @@
 }
 
 /* 响应式 */
+/* 平板（≤ 1024px，对应 --breakpoint-lg）：测试项网格 2 列 */
 @media (max-width: 1024px) {
   .test-page {
     padding: 16px;

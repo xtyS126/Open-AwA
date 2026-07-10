@@ -18,7 +18,8 @@ function InitializationShell() {
       <Suspense fallback={<div className="sidebar-skeleton" />}>
         <Sidebar />
       </Suspense>
-      <main id="main-content" className="main-content">
+      {/* a11y: tabIndex={-1} 使 #main-content 可被 skip-link 编程式聚焦 */}
+      <main id="main-content" className="main-content" tabIndex={-1}>
         <div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>
       </main>
     </div>
@@ -53,10 +54,13 @@ export function RootGuard() {
     if (location.pathname !== '/login') {
       content = <Navigate to="/login" replace />
     } else {
+      // a11y: 包裹 <main id="main-content" tabIndex={-1}> 提供 landmark 与 skip-link 聚焦目标
       content = (
-        <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={3} /></div>}>
-          <Outlet />
-        </Suspense>
+        <main id="main-content" tabIndex={-1}>
+          <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={3} /></div>}>
+            <Outlet />
+          </Suspense>
+        </main>
       )
     }
   } else {

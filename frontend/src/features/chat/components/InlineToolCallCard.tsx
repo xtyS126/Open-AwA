@@ -1,4 +1,5 @@
 import type { ToolEventMeta } from '@/features/chat/types'
+import { asRecord } from '@/shared/types/api'
 import { ToolParamViewer } from './ToolParamViewer'
 import { useI18nStore, t as i18nT } from '@/i18n'
 import styles from './InlineToolCallCard.module.css'
@@ -28,13 +29,13 @@ export function InlineToolCallCard({ tool, onUndo }: InlineToolCallCardProps) {
 
   const canUndo = tool.status === 'completed'
     && ['write_file', 'delete_file', 'terminal_executor'].some(n => tool.name?.includes(n))
-    && typeof (tool.output as Record<string, unknown> | undefined)?.operation_id === 'string'
+    && typeof asRecord(tool.output).operation_id === 'string'
 
   const handleUndoClick = async () => {
     if (!canUndo || !onUndo || undoState !== 'idle') return
     setUndoState('undoing')
     try {
-      await onUndo(String((tool.output as Record<string, unknown>).operation_id))
+      await onUndo(String(asRecord(tool.output).operation_id))
       setUndoState('undone')
     } catch {
       setUndoState('idle')

@@ -184,6 +184,7 @@
   color: var(--color-success-strong);
 }
 
+/* 移动端（≤ 768px，对应 --breakpoint-md）：预设网格 2 列 */
 @media (max-width: 768px) {
   .preset-grid {
     grid-template-columns: repeat(2, 1fr);

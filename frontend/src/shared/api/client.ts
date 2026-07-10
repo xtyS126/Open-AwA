@@ -12,6 +12,7 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
 import { safeGetItem, safeSetItem, safeSessionGetItem, safeSessionSetItem } from '@/shared/utils/safeStorage'
+import { asRecord } from '@/shared/types/api'
 
 export type RetriableApiRequest = InternalAxiosRequestConfig & {
   _apiKeyRetried?: boolean
@@ -241,7 +242,7 @@ api.interceptors.request.use(async (config) => {
 
   // 防御性清洗：移除 header 值中的非 ISO-8859-1 字符
   // 防止浏览器 setRequestHeader 抛出异常导致请求静默失败
-  sanitizeHeaders(config.headers as unknown as Record<string, unknown>)
+  sanitizeHeaders(asRecord(config.headers))
 
   appLogger.info({
     event: 'api_request',

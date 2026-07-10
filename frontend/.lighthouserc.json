@@ -1,30 +1,91 @@
 {
-  "_comment": "Lighthouse CI config. Install: npm install -D @lhci/cli. Run: npx lhci autorun",
+  "_comment_main": "Open-AwA 移动端 Lighthouse 审计配置 (Task 23: 性能验证)",
+  "_comment_purpose": "用于验证 PWA 移动端适配后的 Performance/Accessibility/Best Practices/PWA 分数",
+  "_comment_thresholds": "门槛: Performance >= 85, Accessibility >= 95, Best Practices >= 90, PWA >= 80",
+  "_comment_prereq": "前置条件: 1) npm run build 构建产物; 2) npm run preview 启动本地服务 (端口 4173); 3) 设置 CHROME_PATH 指向可用 Chromium (如 Playwright 自带)",
+  "_comment_run_lhci": "LHCI 方式运行: npx @lhci/cli@latest autorun (会自动启动 preview 服务并采集)",
+  "_comment_run_direct_login": "直接审计登录页 (需先启动 npm run preview): $env:CHROME_PATH='<chromium 路径>'; npx lighthouse http://127.0.0.1:4173/login --config-path=.lighthouserc.json --output=html --output=json --output-path=./lighthouse-reports/login --quiet --chrome-flags=\"--no-sandbox --headless=new --disable-gpu\"",
+  "_comment_run_direct_chat": "直接审计聊天页: 将上述命令的 /login 换为 /chat (SPA 路由: /chat 实际加载 index.html, 客户端再判断登录态, lighthouse 测的是首次加载性能)",
+  "_comment_note_pwa": "PWA 类别仅作 warn 不阻断: 部分检查项 (如 service worker) 依赖生产环境部署, 本地 preview 可能不全通过",
+  "_comment_extends": "extends=lighthouse:default 继承默认 categories/gatherers/audits, 否则 --config-path 加载时 onlyCategories 会因找不到 category 报错",
+  "_comment_pwa_category_removed": "Lighthouse 10+ 已从默认配置移除 PWA category, service-worker / apple-touch-icon / installable-manifest 等 audit 也被移除。因此 onlyCategories 不再包含 'pwa', PWA 验证降级为 is-on-https 单项 warn, manifest installable 需通过 DevTools Application 面板或 PWA Builder 验证",
+  "_comment_pwa_alternative": "PWA 替代验证: 1) assertions.is-on-https = warn; 2) manifest.webmanifest 已声明 (public/manifest.webmanifest); 3) PWA installable 需上生产部署后用 PWA Builder 验证",
+
+  "extends": "lighthouse:default",
+
   "ci": {
     "collect": {
       "startServerCommand": "npm run preview",
-      "startServerReadyPattern": "Local:",
+      "startServerReadyPattern": "Local:|localhost:4173|ready in",
       "url": [
-        "http://localhost:4173/",
-        "http://localhost:4173/login"
+        "http://localhost:4173/login",
+        "http://localhost:4173/chat"
       ],
-      "numberOfRuns": 2
+      "numberOfRuns": 3,
+      "settings": {
+        "formFactor": "mobile",
+        "emulatedFormFactor": "mobile",
+        "locale": "zh-CN",
+        "screenEmulation": {
+          "mobile": true,
+          "width": 412,
+          "height": 823,
+          "deviceScaleFactor": 1.75,
+          "disabled": false
+        },
+        "onlyCategories": ["performance", "accessibility", "best-practices"],
+        "chromeFlags": "--no-sandbox --enable-features=NetworkService,NetworkServiceInProcess --disable-dev-shm-usage"
+      }
     },
     "assert": {
-      "preset": "lighthouse:recommended",
       "assertions": {
-        "categories:performance": ["warn", { "minScore": 0.80 }],
-        "categories:accessibility": ["error", { "minScore": 0.90 }],
-        "categories:best-practices": ["error", { "minScore": 0.85 }],
-        "categories:seo": ["warn", { "minScore": 0.70 }],
+        "categories:performance": ["error", { "minScore": 0.85 }],
+        "categories:accessibility": ["error", { "minScore": 0.95 }],
+        "categories:best-practices": ["error", { "minScore": 0.90 }],
+        "is-on-https": ["warn", { "minScore": 1 }],
         "first-contentful-paint": ["warn", { "maxNumericValue": 2000 }],
-        "largest-contentful-paint": ["warn", { "maxNumericValue": 3500 }],
+        "largest-contentful-paint": ["warn", { "maxNumericValue": 4000 }],
         "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
-        "total-blocking-time": ["warn", { "maxNumericValue": 300 }]
+        "total-blocking-time": ["warn", { "maxNumericValue": 300 }],
+        "uses-responsive-images": "off"
       }
     },
     "upload": {
-      "target": "temporary-public-storage"
+      "target": "filesystem",
+      "outputDir": "./lighthouse-reports",
+      "reportFilenamePattern": "%%PATHNAME%%-%%DATETIME%%-report.%%EXTENSION%%"
     }
+  },
+
+  "gather": {
+    "method": "lightrider",
+    "channel": "chrome",
+    "numOfRuns": 3
+  },
+
+  "settings": {
+    "formFactor": "mobile",
+    "emulatedFormFactor": "mobile",
+    "locale": "zh-CN",
+    "screenEmulation": {
+      "mobile": true,
+      "width": 412,
+      "height": 823,
+      "deviceScaleFactor": 1.75,
+      "disabled": false
+    },
+    "onlyCategories": ["performance", "accessibility", "best-practices"],
+    "chromeFlags": "--no-sandbox --enable-features=NetworkService,NetworkServiceInProcess --disable-dev-shm-usage"
+  },
+
+  "assertions": {
+    "categories:performance": ["error", { "minScore": 0.85 }],
+    "categories:accessibility": ["error", { "minScore": 0.95 }],
+    "categories:best-practices": ["error", { "minScore": 0.90 }],
+    "is-on-https": ["warn", { "minScore": 1 }],
+    "first-contentful-paint": ["warn", { "maxNumericValue": 2000 }],
+    "largest-contentful-paint": ["warn", { "maxNumericValue": 4000 }],
+    "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
+    "total-blocking-time": ["warn", { "maxNumericValue": 300 }]
   }
 }

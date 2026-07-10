@@ -21,3 +21,70 @@
 .installBtn:hover { background: #4338ca; }
 .uninstallBtn { width: 100%; padding: 8px; background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .empty { text-align: center; color: #9ca3af; padding: 48px; }
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+
+  .header h1 {
+    font-size: 18px;
+  }
+
+  .subtitle {
+    font-size: 12px;
+  }
+
+  /* 工具栏垂直堆叠 */
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .search {
+    max-width: none;
+    min-height: 40px;
+    padding: 10px 14px;
+  }
+
+  .filters {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .filter {
+    min-height: 36px;
+    padding: 6px 14px;
+  }
+
+  /* 网格改为单列，间距缩小到 var(--space-3) */
+  .grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .cardHeader h3 {
+    font-size: 14px;
+  }
+
+  .desc {
+    font-size: 12px;
+  }
+
+  .installBtn,
+  .uninstallBtn {
+    min-height: 40px;
+    padding: 10px;
+    font-size: 13px;
+  }
+
+  .empty {
+    padding: 32px 16px;
+  }
+}

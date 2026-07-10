@@ -219,10 +219,10 @@ function ApiSettings({
                       {(() => {
                         const localIcon = getProviderIcon(provider.id)
                         if (localIcon) {
-                          return <img src={localIcon} alt={displayName} />
+                          return <img src={localIcon} alt={displayName} loading="lazy" decoding="async" />
                         }
                         if (provider.icon) {
-                          return <img src={provider.icon} alt={displayName} />
+                          return <img src={provider.icon} alt={displayName} loading="lazy" decoding="async" />
                         }
                         return <span>{displayName.slice(0, 1).toUpperCase()}</span>
                       })()}

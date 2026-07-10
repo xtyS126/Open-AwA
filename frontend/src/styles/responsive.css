@@ -1,0 +1,288 @@
+/*
+ * 响应式工具类 —— 统一管理各页面共用的响应式样式
+ * 所有断点引用 tokens.css 中的 --breakpoint-* 令牌
+ * 导入顺序：tokens.css → global.css → responsive.css → 各组件 CSS 模块
+ *
+ * 断点说明（@media 中无法使用 CSS 变量，故此处硬编码对应 token 值）：
+ * - xs: < 480px（小手机）           对应 --breakpoint-xs: 480px
+ * - sm: 480px ~ 640px（普通手机）    对应 --breakpoint-sm: 640px
+ * - md: 640px ~ 768px（大手机 / 小平板）对应 --breakpoint-md: 768px
+ * - lg: 768px ~ 1024px（平板）       对应 --breakpoint-lg: 1024px
+ * - xl: ≥ 1024px（桌面）             对应 --breakpoint-xl: 1440px
+ *
+ * 移动端约定：≤ 768px 视为移动端（与 --breakpoint-md / --breakpoint-mobile 等价）
+ * 平板约定：769px ~ 1024px
+ * 桌面约定：≥ 1025px
+ */
+
+/* ============================================================
+ * 显隐控制
+ * ============================================================ */
+
+/* 仅在移动端（≤ 768px）显示 */
+.show-mobile-only {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .show-mobile-only {
+    display: revert;
+  }
+}
+
+/* 仅在平板（769px ~ 1024px）显示 */
+.show-tablet-only {
+  display: none;
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .show-tablet-only {
+    display: revert;
+  }
+}
+
+/* 仅在桌面（≥ 1025px）显示 */
+.show-desktop-only {
+  display: none;
+}
+
+@media (min-width: 1025px) {
+  .show-desktop-only {
+    display: revert;
+  }
+}
+
+/* 在移动端（≤ 768px）隐藏 */
+.hide-mobile {
+  display: revert;
+}
+
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none !important;
+  }
+}
+
+/* 在平板（769px ~ 1024px）隐藏 */
+.hide-tablet {
+  display: revert;
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .hide-tablet {
+    display: none !important;
+  }
+}
+
+/* 在桌面（≥ 1025px）隐藏 */
+.hide-desktop {
+  display: revert;
+}
+
+@media (min-width: 1025px) {
+  .hide-desktop {
+    display: none !important;
+  }
+}
+
+/* ============================================================
+ * 布局工具
+ * ============================================================ */
+
+/* 移动端单列堆叠（flex-direction: column） */
+.stack-mobile {
+  flex-direction: row;
+}
+
+@media (max-width: 768px) {
+  .stack-mobile {
+    flex-direction: column;
+  }
+}
+
+/* 移动端占满宽度 */
+.full-width-mobile {
+  width: auto;
+}
+
+@media (max-width: 768px) {
+  .full-width-mobile {
+    width: 100%;
+  }
+}
+
+/* 移动端取消水平 padding（用于容器在小屏贴边） */
+.flush-mobile {
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+
+@media (max-width: 768px) {
+  .flush-mobile {
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+  }
+}
+
+/* ============================================================
+ * 触摸优化
+ * ============================================================ */
+
+/* 最小触摸目标 44x44px（iOS HIG / Material 推荐） */
+.touch-target {
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+
+/* 移动端触摸目标（桌面端不强制） */
+.touch-target-mobile {
+  min-width: auto;
+  min-height: auto;
+}
+
+@media (max-width: 768px) {
+  .touch-target-mobile {
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+  }
+}
+
+/* 移动端按下反馈（scale 0.96 + 背景色变化） */
+.tap-feedback {
+  transition: transform var(--transition-fast), background-color var(--transition-fast);
+}
+
+@media (max-width: 768px) {
+  .tap-feedback:active {
+    transform: scale(0.96);
+  }
+}
+
+/* ============================================================
+ * 安全区域适配
+ * ============================================================ */
+
+/* 顶部安全区域 padding（适配 notch / Dynamic Island） */
+.safe-area-top {
+  padding-top: var(--safe-area-top);
+}
+
+/* 底部安全区域 padding（适配 Home Indicator） */
+.safe-area-bottom {
+  padding-bottom: var(--safe-area-bottom);
+}
+
+/* 左侧安全区域 padding */
+.safe-area-left {
+  padding-left: var(--safe-area-left);
+}
+
+/* 右侧安全区域 padding */
+.safe-area-right {
+  padding-right: var(--safe-area-right);
+}
+
+/* 全方位安全区域 padding */
+.safe-area-all {
+  padding-top: var(--safe-area-top);
+  padding-right: var(--safe-area-right);
+  padding-bottom: var(--safe-area-bottom);
+  padding-left: var(--safe-area-left);
+}
+
+/* ============================================================
+ * 字号响应式
+ * ============================================================ */
+
+/* 移动端字号缩放（小屏整体缩小到 0.875） */
+.text-scale-mobile {
+  font-size: var(--text-base);
+}
+
+@media (max-width: 768px) {
+  .text-scale-mobile {
+    font-size: calc(var(--text-base) * var(--space-mobile-scale));
+  }
+}
+
+/* 响应式标题（移动端缩小、桌面端正常） */
+.responsive-title {
+  font-size: var(--text-xl);
+}
+
+@media (max-width: 768px) {
+  .responsive-title {
+    font-size: var(--text-lg);
+  }
+}
+
+@media (max-width: 480px) {
+  .responsive-title {
+    font-size: var(--text-base);
+  }
+}
+
+/* ============================================================
+ * 间距响应式
+ * ============================================================ */
+
+/* 移动端紧凑间距（padding 从 --space-4 缩小到 --space-2） */
+.compact-spacing-mobile {
+  padding: var(--space-4);
+}
+
+@media (max-width: 768px) {
+  .compact-spacing-mobile {
+    padding: var(--space-2);
+  }
+}
+
+/* 移动端紧凑 gap（gap 从 --space-4 缩小到 --space-2） */
+.compact-gap-mobile {
+  gap: var(--space-4);
+}
+
+@media (max-width: 768px) {
+  .compact-gap-mobile {
+    gap: var(--space-2);
+  }
+}
+
+/* ============================================================
+ * 容器响应式
+ * ============================================================ */
+
+/* 移动端全屏容器（用于模态框/抽屉） */
+.fullscreen-mobile {
+  width: auto;
+  height: auto;
+  border-radius: var(--radius-lg);
+}
+
+@media (max-width: 768px) {
+  .fullscreen-mobile {
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+  }
+}
+
+/* 移动端抽屉化（从底部滑入） */
+.bottom-sheet-mobile {
+  position: static;
+  transform: none;
+}
+
+@media (max-width: 768px) {
+  .bottom-sheet-mobile {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 80vh;
+    overflow-y: auto;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-modal);
+  }
+}

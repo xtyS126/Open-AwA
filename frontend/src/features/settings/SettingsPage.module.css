@@ -814,6 +814,7 @@
   word-break: break-all;
 }
 
+/* 平板（≤ 1024px，对应 --breakpoint-lg）：API 配置双栏单列、操作按钮换行 */
 @media (max-width: 1024px) {
   .api-config-layout {
     grid-template-columns: 1fr;
@@ -975,6 +976,7 @@
   margin-bottom: 16px;
 }
 
+/* 移动端（≤ 768px，对应 --breakpoint-md）：模型参数网格单列堆叠 */
 @media (max-width: 768px) {
   .model-param-grid {
     grid-template-columns: 1fr;
@@ -1630,4 +1632,253 @@
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border);
+}
+
+/* ============================================================
+ * 移动端适配（≤ 768px，对应 --breakpoint-md 令牌）
+ * 覆盖 SubTask 9.1 / 9.2 / 9.3 / 9.4 的移动端要求：
+ * - 9.1: 二级 Tab 水平滚动 + 触摸目标 44px
+ * - 9.2: 表单/卡片单列堆叠，间距缩小
+ * - 9.3: 模态框全屏
+ * - 9.4: 供应商表单字段垂直堆叠（CSS-only，未改 JSX）
+ * ============================================================ */
+
+@media (max-width: 768px) {
+  /* ── 9.1: 二级 Tab 水平滚动适配 ── */
+  /* 主标签栏：缩小负边距和内边距，使分割线在小屏仍能贯穿容器 */
+  .tab-bar {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    margin-bottom: 20px;
+  }
+
+  /* 单个标签按钮：确保最小触摸目标 44px，缩小水平内边距 */
+  .tab-item {
+    min-height: var(--touch-target-min);
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  /* 高级子标签栏：同样缩小边距 */
+  .sub-tab-bar {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    margin-bottom: 16px;
+  }
+
+  .sub-tab-item {
+    min-height: var(--touch-target-min);
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  /* ── 9.2: 表单单列堆叠 ── */
+  /* 设置区块：缩小内边距和间距 */
+  .settings-section {
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  .settings-section h2 {
+    font-size: 16px;
+    margin-bottom: 16px;
+  }
+
+  /* 表单行：垂直堆叠 */
+  .form-row {
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  /* 表单输入框：取消最大宽度限制，占满容器 */
+  .setting-item select,
+  .setting-item input[type="password"],
+  .setting-item input[type="text"],
+  .setting-item input[type="number"] {
+    max-width: 100%;
+  }
+
+  .settings-select {
+    max-width: 100%;
+  }
+
+  /* 配置列表：单列 */
+  .configs-list {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  /* 供应商卡片网格：单列 */
+  .provider-cards-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  /* API 配置布局：单列堆叠（与 1024px 断点保持一致） */
+  .api-config-layout {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  /* 供应商详情面板：缩小内边距 */
+  .provider-detail-panel {
+    padding: var(--space-3);
+  }
+
+  /* 供应商详情操作按钮：垂直堆叠并占满宽度 */
+  .provider-detail-actions {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .provider-detail-actions .btn {
+    width: 100%;
+  }
+
+  /* 模型详情网格：单列 */
+  .model-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* 模型配置固定字段：单列堆叠 */
+  .model-config-fixed-fields {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .model-config-fixed-fields .form-group {
+    min-width: 0;
+  }
+
+  /* 模型配置卡片操作：垂直堆叠 */
+  .model-config-card-actions {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .model-config-card-actions .btn {
+    width: 100%;
+  }
+
+  /* 模型参数操作按钮：垂直堆叠 */
+  .model-param-actions {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .model-param-actions .btn {
+    width: 100%;
+  }
+
+  /* 模型管理表格容器：水平滚动（表格在小屏保持可读性，不堆叠单元格） */
+  .model-mgmt-table-container {
+    overflow-x: auto;
+  }
+
+  .model-mgmt-table th,
+  .model-mgmt-table td {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+
+  /* 采集统计网格：单列 */
+  .collection-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* 采集记录行：垂直堆叠 */
+  .collection-record-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  /* 操作按钮组：垂直堆叠 */
+  .action-buttons {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .action-buttons .btn {
+    width: 100%;
+  }
+
+  /* 添加配置表单：缩小内边距 */
+  .add-config-form {
+    padding: var(--space-3);
+  }
+
+  /* 模态框头部/主体/底部：缩小内边距 */
+  .modal-header,
+  .provider-modal-header {
+    padding: var(--space-3);
+  }
+
+  .modal-body,
+  .provider-modal-body {
+    padding: var(--space-3);
+  }
+
+  /* 模态框底部操作按钮：垂直堆叠（column-reverse 使主操作在下，符合移动端拇指操作） */
+  .modal-footer,
+  .provider-modal-actions,
+  .provider-modal-footer {
+    flex-direction: column-reverse;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .modal-footer .btn,
+  .provider-modal-actions .btn,
+  .provider-modal-footer .btn {
+    width: 100%;
+  }
+
+  /* ── 9.3: 模态框移动端全屏 ── */
+  /* 模态框遮罩：取消内边距，使模态框占满视口 */
+  .modal-overlay,
+  .provider-modal-overlay {
+    padding: 0;
+  }
+
+  /* 模态框内容：全屏显示（width/height/max-width/max-height/border-radius 全部覆盖） */
+  .modal-content,
+  .provider-modal {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  /*
+   * 覆盖内联样式：ImportModelsModal 和 ModelsTab 的模态框通过 style 属性设置了
+   * maxWidth/maxHeight，需用 !important 强制覆盖以实现全屏。
+   * 保留内联的 display:flex / flexDirection:column（有利于全屏布局）。
+   */
+  .provider-modal[style],
+  .modal-content[style] {
+    max-width: none !important;
+    max-height: none !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+  }
+
+  /* ImportModelsModal 内部模型网格：单列堆叠，避免横向溢出 */
+  .provider-modal-body .provider-model-list {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 模态复选框组：单列堆叠 */
+  .modality-checkbox-group {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
 }

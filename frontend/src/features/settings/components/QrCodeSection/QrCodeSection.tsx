@@ -154,6 +154,8 @@ export function QrCodeSection() {
               className={styles.qrImage}
               width={240}
               height={240}
+              loading="lazy"
+              decoding="async"
             />
           ) : qrError ? (
             <div className={styles.qrError}>{qrError}</div>

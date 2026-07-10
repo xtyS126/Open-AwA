@@ -72,7 +72,7 @@ for (const viewport of VIEWPORTS) {
 
         await loginAsAdminPage(page)
         const response = await page.goto(pageInfo.path)
-        await page.waitForLoadState('networkidle')
+        await page.waitForLoadState('domcontentloaded')
 
         expect(
           response?.status(),
@@ -88,7 +88,7 @@ for (const viewport of VIEWPORTS) {
       test(`${pageInfo.label} (${pageInfo.path}) - 页面标题存在`, async ({ page }) => {
         await loginAsAdminPage(page)
         await page.goto(pageInfo.path)
-        await page.waitForLoadState('networkidle')
+        await page.waitForLoadState('domcontentloaded')
 
         const title = await page.title()
         expect(title, '页面标题不应为空').toBeTruthy()
@@ -97,7 +97,7 @@ for (const viewport of VIEWPORTS) {
       test(`${pageInfo.label} (${pageInfo.path}) - 关键 UI 元素可见`, async ({ page }) => {
         await loginAsAdminPage(page)
         await page.goto(pageInfo.path)
-        await page.waitForLoadState('networkidle')
+        await page.waitForLoadState('domcontentloaded')
 
         if (checks?.keySelectors) {
           for (const selector of checks.keySelectors) {
@@ -113,7 +113,9 @@ for (const viewport of VIEWPORTS) {
       test(`${pageInfo.label} (${pageInfo.path}) - 无水平溢出`, async ({ page }) => {
         await loginAsAdminPage(page)
         await page.goto(pageInfo.path)
-        await page.waitForLoadState('networkidle')
+        await page.waitForLoadState('domcontentloaded')
+        // 等待主内容区渲染完成（替代 networkidle，避免 SSE 长连接导致超时）
+        await expect(page.locator('.main-content').first()).toBeVisible({ timeout: 15_000 })
 
         const bodyWidth = await page.evaluate(() => document.body.scrollWidth)
         const viewportWidth = viewport.width
@@ -130,7 +132,9 @@ for (const viewport of VIEWPORTS) {
         test(`${pageInfo.label} (${pageInfo.path}) - 移动端触摸目标友好`, async ({ page }) => {
           await loginAsAdminPage(page)
           await page.goto(pageInfo.path)
-          await page.waitForLoadState('networkidle')
+          await page.waitForLoadState('domcontentloaded')
+          // 等待主内容区渲染完成（替代 networkidle，避免 SSE 长连接导致超时）
+          await expect(page.locator('.main-content').first()).toBeVisible({ timeout: 15_000 })
 
           // 检查按钮和链接是否满足最小触摸尺寸（44×44 CSS 像素，WCAG 2.5.5）
           const undersizedTargets = await page.evaluate(() => {

@@ -266,3 +266,37 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ============================================================
+ * 移动端适配（≤ 768px，对应 --breakpoint-md 令牌）
+ * ChatInput 固定在视口底部，应用 safe-area-bottom padding，
+ * 半透明背景 + backdrop-filter blur 模糊，z-index 高于消息列表
+ * ============================================================ */
+@media (max-width: 768px) {
+  .chat-input-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: var(--z-sticky);
+    /* 底部安全区域 padding，适配 Home Indicator */
+    padding-bottom: var(--safe-area-bottom);
+    /* 半透明背景 + 毛玻璃模糊，避免遮挡消息内容时突兀 */
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--color-border);
+    /* bottom 属性变化时平滑过渡，配合键盘弹起适配 */
+    transition: bottom 0.2s ease, transform 0.2s ease;
+  }
+
+  /* 暗色主题：使用更深的毛玻璃背景 */
+  :global(.dark) .chat-input-container {
+    background: rgba(15, 23, 42, 0.92);
+  }
+
+  /* 键盘弹起状态：通过 inline style 覆盖 bottom，此处保留过渡动画 */
+  .chat-input-container.is-keyboard-open {
+    /* bottom 由 inline style 动态设置 */
+  }
+}

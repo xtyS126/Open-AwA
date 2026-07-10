@@ -16,6 +16,7 @@ import { Input, Textarea, Button } from '@/shared/components/ui'
 import { useI18nStore } from '@/i18n'
 import { useDiscussionStore } from '../store/discussionStore'
 import type { ProposedAction } from '@/shared/api/discussionsApi'
+import { asRecord } from '@/shared/types/api'
 import styles from './ReviseForm.module.css'
 
 interface ReviseFormProps {
@@ -166,7 +167,7 @@ const ReviseForm: React.FC<ReviseFormProps> = ({
     try {
       let payload: Record<string, unknown>
       try {
-        payload = JSON.parse(values.actionPayload) as Record<string, unknown>
+        payload = asRecord(JSON.parse(values.actionPayload))
       } catch {
         setErrors({ actionPayload: '动作参数 JSON 解析失败' })
         return

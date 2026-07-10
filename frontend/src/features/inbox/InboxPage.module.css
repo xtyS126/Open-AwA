@@ -26,3 +26,122 @@
 .msgAction:hover { text-decoration: underline; }
 .deleteBtn { background: none; border: none; color: #d1d5db; cursor: pointer; font-size: 16px; padding: 2px 6px; flex-shrink: 0; }
 .deleteBtn:hover { color: #dc2626; }
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+
+  /* 头部垂直堆叠 */
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .header h1 {
+    font-size: 18px;
+  }
+
+  .actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .actionBtn {
+    min-height: var(--touch-target-min);
+    padding: 8px 14px;
+    font-size: 12px;
+    flex: 1;
+    text-align: center;
+  }
+
+  /* 筛选按钮换行 + 触摸目标放大 */
+  .filters {
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .filterBtn {
+    min-height: 36px;
+    padding: 6px 14px;
+    font-size: 11px;
+  }
+
+  /* 通知列表单列（继承）+ 间距缩小 */
+  .list {
+    gap: 6px;
+  }
+
+  /* 通知卡片紧凑布局：padding 缩小、字号缩放 */
+  .message {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .icon {
+    font-size: 18px;
+    margin-top: 2px;
+  }
+
+  .msgContent {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .msgHeader {
+    margin-bottom: 3px;
+  }
+
+  .msgCategory {
+    font-size: 10px;
+  }
+
+  .msgTime {
+    font-size: 10px;
+  }
+
+  /* 标题字号缩放：14px → var(--text-sm) (13px) */
+  .msgTitle {
+    font-size: 13px;
+    margin: 0 0 3px 0;
+  }
+
+  /* 内容字号缩放：13px → var(--text-xs) (12px) */
+  .msgText {
+    font-size: 12px;
+    white-space: normal;
+    line-height: 1.4;
+  }
+
+  .msgAction {
+    margin-top: 4px;
+    font-size: 11px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* 删除按钮触摸目标放大 */
+  .deleteBtn {
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+    font-size: 18px;
+    padding: 4px 8px;
+  }
+
+  .empty {
+    padding: 32px 16px;
+    font-size: 13px;
+  }
+
+  .error {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+}

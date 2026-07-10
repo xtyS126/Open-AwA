@@ -141,7 +141,7 @@
   }
 }
 
-/* 移动端适配 */
+/* 移动端适配（≤ 640px，对应 --breakpoint-sm） */
 @media (max-width: 640px) {
   .content {
     padding: var(--space-2) var(--space-3);

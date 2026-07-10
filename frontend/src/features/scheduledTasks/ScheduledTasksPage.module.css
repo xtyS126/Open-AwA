@@ -1,4 +1,12 @@
-/* 定时任务管理页面 - 现代设计系统 */
+/* 定时任务管理页面 - 现代设计系统
+ *
+ * 响应式断点说明（@media 中无法使用 CSS 变量，故硬编码对应 token 值）：
+ * - 1440px 对应 --breakpoint-xl（桌面大屏）
+ * - 1200px 非标准断点（介于 lg 与 xl 之间，用于本页 AI/Plugin 双栏布局降级）
+ * - 1024px 对应 --breakpoint-lg（平板）
+ * - 768px  对应 --breakpoint-md（移动端）
+ * - 480px  对应 --breakpoint-xs（小手机）
+ */
 
 /* === 页面容器 === */
 
@@ -723,12 +731,14 @@
 
 /* === 响应式 === */
 
+/* 桌面大屏（≤ 1440px，对应 --breakpoint-xl）：统计网格降为 3 列 */
 @media (max-width: 1440px) {
   .stats-grid {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
+/* 非标准断点（≤ 1200px，介于 lg 与 xl 之间）：AI/Plugin 双栏布局降为单列 */
 @media (max-width: 1200px) {
   .ai-layout,
   .plugin-layout {
@@ -740,6 +750,7 @@
   }
 }
 
+/* 平板（≤ 1024px，对应 --breakpoint-lg）：统计网格 2 列、隐藏 Tab 右侧装饰 */
 @media (max-width: 1024px) {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -750,6 +761,7 @@
   }
 }
 
+/* 移动端（≤ 768px，对应 --breakpoint-md）：紧凑间距、单列堆叠、触摸目标 44px */
 @media (max-width: 768px) {
   .page {
     padding: 16px;
@@ -784,13 +796,109 @@
   .tab {
     padding: 8px 14px;
     font-size: 13px;
+    min-height: var(--touch-target-min);
   }
 
   .inline-fields {
     grid-template-columns: 1fr;
   }
+
+  /* 任务网格在移动端单列显示 */
+  .task-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* 操作按钮触摸目标放大到 44px */
+  .action-btn,
+  .action-btn-danger {
+    min-height: var(--touch-target-min);
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  .submit-btn {
+    min-height: var(--touch-target-min);
+    padding: 12px 24px;
+    font-size: 14px;
+    width: 100%;
+  }
+
+  .refresh-btn {
+    min-height: var(--touch-target-min);
+    padding: 8px 16px;
+  }
+
+  /* 视图切换按钮触摸目标放大 */
+  .view-btn {
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+    padding: 8px 12px;
+  }
+
+  /* 筛选下拉与搜索框触摸目标放大 */
+  .filter-select {
+    min-height: var(--touch-target-min);
+    padding: 8px 12px;
+  }
+
+  .search-wrap input {
+    font-size: 13px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .search-wrap {
+    flex: 1;
+    min-height: var(--touch-target-min);
+  }
+
+  /* 表单字段输入触摸目标放大 */
+  .field input,
+  .field textarea,
+  .field select {
+    min-height: var(--touch-target-min);
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  /* 表单按钮区贴底 */
+  .form-actions {
+    width: 100%;
+  }
+
+  /* 任务卡片紧凑 */
+  .task-card {
+    padding: 14px;
+  }
+
+  .task-info h3 {
+    font-size: 13px;
+  }
+
+  /* 批量取消按钮触摸目标放大 */
+  .batch-cancel-btn {
+    min-height: var(--touch-target-min);
+    padding: 8px 14px;
+  }
+
+  /* 任务列表与网格在小屏内边距收紧 */
+  .task-list,
+  .task-grid {
+    padding: 12px;
+  }
+
+  .card-header {
+    padding: 12px 14px;
+  }
+
+  .form {
+    padding: 16px;
+    gap: 14px;
+  }
 }
 
+/* 小手机（≤ 480px，对应 --breakpoint-xs）：统计与任务网格全部单列 */
 @media (max-width: 480px) {
   .stats-grid {
     grid-template-columns: 1fr;

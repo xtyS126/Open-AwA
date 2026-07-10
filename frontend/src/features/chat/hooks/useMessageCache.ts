@@ -10,6 +10,7 @@ import {
   applyToolUpdate,
   hasExecutionMeta,
 } from '@/features/chat/utils/executionMeta'
+import { asRecord } from '@/shared/types/api'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 
 /**
@@ -32,10 +33,10 @@ function buildMessageMetaFromSegments(
       meta.intent = segment.intent
     }
     for (const step of segment.steps) {
-      meta = applyTaskUpdate(meta, step as unknown as Record<string, unknown>)
+      meta = applyTaskUpdate(meta, asRecord(step))
     }
     for (const tool of segment.toolEvents) {
-      meta = applyToolUpdate(meta, tool as unknown as Record<string, unknown>)
+      meta = applyToolUpdate(meta, asRecord(tool))
     }
     if (segment.usage) {
       meta.usage = segment.usage

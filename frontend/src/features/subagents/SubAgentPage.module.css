@@ -1056,6 +1056,7 @@
 }
 
 /* ---- 响应式 ---- */
+/* 移动端（≤ 768px，对应 --breakpoint-md）：头部换行、Tab 横滚、布局单列堆叠 */
 @media (max-width: 768px) {
   .header {
     flex-wrap: wrap;
@@ -1169,6 +1170,7 @@
   }
 }
 
+/* 小手机（≤ 480px，对应 --breakpoint-xs）：标题字号缩小、卡片紧凑 */
 @media (max-width: 480px) {
   .headerLeft h1 {
     font-size: 18px;

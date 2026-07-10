@@ -230,3 +230,29 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+
+/* ============================================================
+ * 移动端适配（≤ 768px，对应 --breakpoint-md 令牌）
+ * 展开状态的 TaskPanel 改为从底部滑入的抽屉，
+ * 覆盖 ChatInput（z-index 高于 ChatInput），
+ * 用户可折叠面板以恢复输入。
+ * ============================================================ */
+@media (max-width: 768px) {
+  .panel.expanded {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 80vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--color-bg-secondary);
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-modal);
+    /* 底部安全区域 padding，适配 Home Indicator */
+    padding-bottom: var(--safe-area-bottom);
+  }
+
+  .panel-content {
+    max-height: calc(80vh - 60px);
+  }
+}

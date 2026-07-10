@@ -52,6 +52,18 @@ vi.mock('@/shared/api/notificationsApi', () => ({
   listNotifications: notificationsApiMocks.listNotifications,
 }))
 
+// mock useBreakpoint 返回桌面端布局，使测试与桌面端三栏布局期望对齐。
+// jsdom 默认未实现 window.matchMedia，useBreakpoint 会回落到 xs（isMobile=true），
+// 导致渲染移动端布局而测试期望桌面端 segmented control。
+vi.mock('@/shared/hooks/useBreakpoint', () => ({
+  useBreakpoint: () => ({
+    breakpoint: 'xl',
+    isMobile: false,
+    isTablet: false,
+    isDesktop: true,
+  }),
+}))
+
 /** 构造 mock EventSource，记录实例并提供事件触发能力 */
 class MockEventSource {
   static instances: MockEventSource[] = []

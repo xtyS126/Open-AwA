@@ -116,3 +116,31 @@ export interface ConversationSessionSummary {
   purge_after?: string | null
   conversation_metadata: Record<string, unknown>
 }
+
+/**
+ * ask_user 工具下发的问题卡片载荷。
+ *
+ * 后端通过 SSE 事件 type="ask_user" 下发，前端 dispatchStructuredStreamEvent
+ * 解析后设置到 ChatPage state，由 AskUserCard 组件渲染。
+ * 同一时刻最多只有一个挂起的 ask_user 请求（后端 is_concurrency_safe=False）。
+ */
+export interface AskUserRequest {
+  /** 请求唯一标识，提交回答时回传 */
+  request_id: string
+  /** 会话 ID，提交回答时用于鉴权校验 */
+  session_id: string
+  /** 向用户展示的问题文本 */
+  question: string
+  /** 预设选项列表（为空则只有自由文本输入） */
+  options: string[]
+  /** 是否允许多选 */
+  allow_multiple: boolean
+  /** 是否允许自由文本输入 */
+  allow_free_text: boolean
+  /** 输入框占位提示 */
+  placeholder: string
+  /** 超时秒数（60-600） */
+  timeout: number
+  /** 创建时间戳（秒） */
+  created_at?: number
+}

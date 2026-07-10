@@ -185,7 +185,7 @@
   overflow: hidden;
 }
 
-/* 响应式：小屏幕单列堆叠 */
+/* 响应式：移动端（≤ 768px，对应 --breakpoint-md）单列堆叠，详情面板在小屏全屏覆盖列表 */
 @media (max-width: 768px) {
   .toolbar {
     flex-direction: column;
@@ -199,6 +199,10 @@
     text-align: center;
   }
 
+  .title {
+    font-size: var(--text-base, 16px);
+  }
+
   .actions {
     flex-wrap: wrap;
     justify-content: center;
@@ -209,20 +213,41 @@
     justify-content: space-between;
   }
 
+  .filterBtn {
+    min-height: 36px;
+    padding: var(--space-2, 8px) var(--space-3, 12px);
+  }
+
+  /* body 改为堆叠，listPane 在上，detailPane 在下全屏覆盖 */
   .body {
     flex-direction: column;
+    position: relative;
   }
 
   .listPane {
     width: 100%;
     min-width: 0;
-    max-height: 40vh;
+    max-height: 35vh;
     border-right: none;
     border-bottom: 1px solid var(--color-border-subtle, #e5e7eb);
   }
 
+  /* 详情面板在小屏全屏覆盖 listPane（mobile master-detail 模式） */
   .detailPane {
-    flex: 1;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100dvh;
+    z-index: var(--z-modal, 1000);
+    background: var(--color-bg-secondary, #f9fafb);
+    overflow-y: auto;
+    animation: slideUp 0.2s ease;
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
   }
 
   .errorBanner {

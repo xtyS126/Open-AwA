@@ -137,3 +137,79 @@
   background: var(--color-bg-tertiary);
   border-radius: var(--radius-md);
 }
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+@media (max-width: 768px) {
+  /* 头部垂直堆叠 */
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .header-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .header-actions select {
+    width: 100%;
+    min-width: 0;
+    min-height: var(--touch-target-min);
+    font-size: var(--text-sm);
+  }
+
+  .subtitle {
+    font-size: var(--text-xs);
+  }
+
+  /* 工具栏垂直堆叠 */
+  .toolbox {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .toolbox > * {
+    width: 100%;
+    min-height: var(--touch-target-min);
+  }
+
+  /* 表单网格转为单列卡片列表 */
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  /* 字段卡片紧凑布局 */
+  .field-card {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .field-card input,
+  .field-card select,
+  .field-card textarea,
+  .model-selector {
+    min-height: var(--touch-target-min);
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .field-card input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* 文件选择器垂直堆叠 */
+  .file-picker {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* 空状态紧凑 */
+  .empty-state {
+    padding: 16px;
+    font-size: var(--text-sm);
+  }
+}

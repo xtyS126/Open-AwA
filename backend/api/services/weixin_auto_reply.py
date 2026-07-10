@@ -72,17 +72,24 @@ class WeixinEventBus:
             self._subscribers.setdefault(user_key, []).append(queue)
         return queue
 
-    async def unsubscribe(self, user_id: str, queue: asyncio.Queue[Dict[str, Any]]) -> None:
-        """移除指定设备的订阅队列，不影响该用户其他设备。"""
+    async def unsubscribe(
+        self,
+        user_id: str,
+        queue: Optional[asyncio.Queue[Dict[str, Any]]] = None,
+    ) -> None:
+        """移除指定设备订阅；未传队列时兼容旧调用并清理该用户全部订阅。"""
         user_key = _safe_text(user_id)
         async with self._lock:
             queues = self._subscribers.get(user_key)
             if not queues:
                 return
-            try:
-                queues.remove(queue)
-            except ValueError:
-                pass
+            if queue is None:
+                queues.clear()
+            else:
+                try:
+                    queues.remove(queue)
+                except ValueError:
+                    pass
             if not queues:
                 self._subscribers.pop(user_key, None)
 

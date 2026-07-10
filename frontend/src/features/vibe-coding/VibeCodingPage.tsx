@@ -6,13 +6,15 @@
  *   中栏（main children）：ACP 会话面板 / 终端面板（占位实现）
  *   右栏：文件预览面板（占位实现）
  *
- * 状态管理：本地 useState + useEffect，mount 时拉取 agents/sessions/notifications，
+ * 状态管理：数据层（agents/sessions/notifications）由本组件直接管理，
+ * 布局层（中栏面板切换、移动端 Tab、文件预览状态）由 useVibeCodingLayout hook 管理。
  * 通知列表通过 EventSource 订阅 /api/notifications/stream 长连接。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { useI18nStore } from '@/i18n'
+import { useBreakpoint } from '@/shared/hooks/useBreakpoint'
 import { appLogger } from '@/shared/utils/logger'
 import {
   listAgents,
@@ -26,6 +28,7 @@ import {
   listNotifications,
   type NotificationItem,
 } from '@/shared/api/notificationsApi'
+import { useVibeCodingLayout, resolveTerminalCwd } from './hooks/useVibeCodingLayout'
 import AgentSelector from './components/AgentSelector'
 import SessionList from './components/SessionList'
 import NotificationList from './components/NotificationList'
@@ -37,32 +40,26 @@ import styles from './VibeCodingPage.module.css'
 /** 通知列表保留的最大条数 */
 const MAX_NOTIFICATIONS = 50
 
-/** 中栏面板类型 —— ACP 会话面板或终端面板 */
-type ActivePane = 'acp' | 'terminal'
-
-/** 终端面板使用的工作目录：选中会话则用其 cwd，否则回退到当前工作目录 */
-function resolveTerminalCwd(sessions: AcpSession[], selectedSessionId: string | null): string {
-  if (selectedSessionId) {
-    const matched = sessions.find((s) => s.session_id === selectedSessionId)
-    if (matched?.cwd) return matched.cwd
-  }
-  return '.'
-}
-
 function VibeCodingPage() {
   const { t } = useI18nStore()
+  const { isMobile } = useBreakpoint()
+  // 布局层状态：中栏面板切换、移动端 Tab、右栏文件预览状态
+  const {
+    activePane,
+    setActivePane,
+    activePanel,
+    setActivePanel,
+    selectedFilePath,
+    previewPort,
+  } = useVibeCodingLayout()
+  // 数据层状态：agents / sessions / notifications 与会话操作
   const [agents, setAgents] = useState<AcpAgent[]>([])
   const [sessions, setSessions] = useState<AcpSession[]>([])
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string>('')
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-  const [activePane, setActivePane] = useState<ActivePane>('acp')
   const [creating, setCreating] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
-  // 右栏文件预览：外部传入的文件路径与网页预览端口（由 FilePreviewPane 内部输入框驱动，
-  // 未来接入文件树后可通过 setter 编程式设置）
-  const [selectedFilePath, _setSelectedFilePath] = useState<string | null>(null)
-  const [previewPort, _setPreviewPort] = useState<number | null>(null)
 
   /** mount 时拉取 agents / sessions / notifications，并建立通知 SSE 订阅 */
   useEffect(() => {
@@ -209,6 +206,94 @@ function VibeCodingPage() {
     setSelectedSessionId(sessionId)
   }, [])
 
+  // ===== 移动端布局：单栏 + 顶部 Tab 切换（会话 / 终端 / 预览） =====
+  if (isMobile) {
+    return (
+      <div className={styles['vibe-coding-mobile']}>
+        <div className={styles['mobile-tab-bar']} role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activePanel === 'session'}
+            onClick={() => setActivePanel('session')}
+            className={`${styles['mobile-tab']} ${activePanel === 'session' ? styles['active'] : ''}`}
+          >
+            {t('vibeCoding.sessions')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activePanel === 'terminal'}
+            onClick={() => setActivePanel('terminal')}
+            className={`${styles['mobile-tab']} ${activePanel === 'terminal' ? styles['active'] : ''}`}
+          >
+            {t('vibeCoding.terminalPanel')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activePanel === 'preview'}
+            onClick={() => setActivePanel('preview')}
+            className={`${styles['mobile-tab']} ${activePanel === 'preview' ? styles['active'] : ''}`}
+          >
+            {t('vibeCoding.filePreview')}
+          </button>
+        </div>
+
+        {error && <div className={styles['error-text']}>{error}</div>}
+
+        <div className={styles['mobile-panel']}>
+          {activePanel === 'session' && (
+            <div className={styles['mobile-session-pane']}>
+              <div className={styles['sidebar-section']}>
+                <AgentSelector
+                  agents={agents}
+                  value={selectedAgent}
+                  onChange={setSelectedAgent}
+                />
+                <button
+                  type="button"
+                  className={styles['create-btn']}
+                  onClick={() => { void handleCreateSession() }}
+                  disabled={creating || !selectedAgent}
+                >
+                  <Plus size={14} />
+                  {creating ? t('app.loading') : t('vibeCoding.createSession')}
+                </button>
+              </div>
+
+              <div className={styles['sidebar-section']}>
+                <span className={styles['sidebar-section-title']}>
+                  {t('vibeCoding.sessions')}
+                </span>
+                <SessionList
+                  sessions={sessions}
+                  selectedId={selectedSessionId}
+                  onSelect={handleSelectSession}
+                  onClose={(id) => { void handleCloseSession(id) }}
+                />
+              </div>
+
+              <div className={styles['sidebar-section']}>
+                <span className={styles['sidebar-section-title']}>
+                  {t('vibeCoding.notifications')}
+                </span>
+                <NotificationList notifications={notifications} />
+              </div>
+            </div>
+          )}
+          {activePanel === 'terminal' && (
+            <TerminalPane cwd={resolveTerminalCwd(sessions, selectedSessionId)} />
+          )}
+          {activePanel === 'preview' && (
+            <FilePreviewPane filePath={selectedFilePath} previewPort={previewPort} />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ===== 桌面端布局：原三栏（左栏 + 中栏 + 右栏） =====
   return (
     <PageLayout
       title={t('vibeCoding.title')}

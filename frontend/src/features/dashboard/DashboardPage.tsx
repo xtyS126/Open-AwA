@@ -10,7 +10,7 @@ import { behaviorAPI, skillsAPI, pluginsAPI, memoryAPI } from '@/shared/api/api'
 import { billingAPI } from '@/features/billing/billingApi'
 import { getDataStats, type DataStats } from '@/shared/api/dataApi'
 import { BehaviorStats, BillingStats } from '@/features/dashboard/dashboard'
-import { StatCard, Badge } from '@/shared/components/ui'
+import { StatCard, Badge, Skeleton } from '@/shared/components/ui'
 import styles from './DashboardPage.module.css'
 
 /* ============================================================
@@ -396,7 +396,34 @@ function DashboardPage() {
   }, [dataStats])
 
   if (loading) {
-    return <div className={styles.loading}>加载中...</div>
+    /* 加载中：使用 Skeleton 模拟统计卡片网格与图表区域，减少布局抖动 */
+    return (
+      <div className={styles.dashboardPage}>
+        <div className={styles.pageHeader}>
+          <h1 className={styles.pageTitle}>仪表盘</h1>
+          <p className={styles.pageSubtitle}>系统运行状态概览</p>
+        </div>
+        <div className={styles.statGrid}>
+          <Skeleton variant="rectangular" height="100px" />
+          <Skeleton variant="rectangular" height="100px" />
+          <Skeleton variant="rectangular" height="100px" />
+          <Skeleton variant="rectangular" height="100px" />
+        </div>
+        <div className={styles.chartGrid}>
+          <Skeleton variant="rectangular" height="220px" />
+          <Skeleton variant="rectangular" height="220px" />
+        </div>
+        <div className={styles.section}>
+          <Skeleton variant="rectangular" height="var(--space-8)" width="20%" />
+          <div className={styles.systemGrid} style={{ marginTop: 'var(--space-3)' }}>
+            <Skeleton variant="rectangular" height="100px" />
+            <Skeleton variant="rectangular" height="100px" />
+            <Skeleton variant="rectangular" height="100px" />
+            <Skeleton variant="rectangular" height="100px" />
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const totalCost = billingStats?.total_cost || 0

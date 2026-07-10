@@ -7,6 +7,7 @@ import type {
   ToolEventMeta,
   UsageMeta,
 } from '@/features/chat/types'
+import { asRecord, isRecord } from '@/shared/types/api'
 
 export const SUBAGENT_LOG_LIMIT = 50000
 export const SUBAGENT_LOG_TRUNCATE_RATIO = 0.1
@@ -181,7 +182,7 @@ function transcriptEntryToText(entry: unknown): string {
     return String(entry || '').trim()
   }
 
-  const record = entry as Record<string, unknown>
+  const record = asRecord(entry)
   for (const key of ['message', 'content', 'response', 'summary', 'error', 'data']) {
     const value = record[key]
     if (typeof value === 'string' && value.trim()) {
@@ -209,7 +210,7 @@ export function normalizeTaskStatus(status: unknown): TaskStatus {
 
 export function summarizeExecutionResult(result: unknown): string {
   if (result && typeof result === 'object') {
-    const record = result as Record<string, unknown>
+    const record = asRecord(result)
     for (const key of ['message', 'response', 'stdout']) {
       const value = record[key]
       if (typeof value === 'string' && value.trim()) {
@@ -267,7 +268,7 @@ export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<strin
   const id = String(tool.id || `${tool.kind || 'tool'}:${tool.name || '未知工具'}`)
   const output = tool.output !== undefined ? tool.output : tool.result
   const normalizedStatus = normalizeTaskStatus(tool.status)
-  const rawSubagent = tool.subagent && typeof tool.subagent === 'object'
+  const rawSubagent = isRecord(tool.subagent)
     ? tool.subagent as Partial<SubagentExecutionState>
     : undefined
   const nextTool: ToolEventMeta = {
@@ -276,7 +277,7 @@ export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<strin
     name: String(tool.name || '未知工具'),
     status: normalizedStatus,
     detail: typeof tool.detail === 'string' ? tool.detail : summarizeExecutionResult(output),
-    input: tool.input && typeof tool.input === 'object' ? (tool.input as Record<string, unknown>) : undefined,
+    input: isRecord(tool.input) ? tool.input : undefined,
     output,
     sequence: typeof tool.sequence === 'number' ? tool.sequence : undefined,
     startedAt: typeof tool.startedAt === 'number' ? tool.startedAt : (normalizedStatus === 'running' ? Date.now() : undefined),
@@ -519,7 +520,7 @@ export function normalizeUsage(raw: unknown): UsageMeta | undefined {
     return undefined
   }
 
-  const usage = raw as Record<string, unknown>
+  const usage = asRecord(raw)
   const nextUsage: UsageMeta = {
     call_id: typeof usage.call_id === 'string' ? usage.call_id : undefined,
     provider: typeof usage.provider === 'string' ? usage.provider : undefined,
@@ -546,64 +547,68 @@ export function normalizeUsage(raw: unknown): UsageMeta | undefined {
 export function buildExecutionMetaFromPayload(payload: Record<string, unknown>): AssistantExecutionMeta {
   let meta = createEmptyExecutionMeta()
 
-  if (payload.plan && typeof payload.plan === 'object') {
-    const plan = payload.plan as Record<string, unknown>
+  if (isRecord(payload.plan)) {
+    const plan = payload.plan
     meta = {
       ...meta,
       intent: typeof plan.intent === 'string' ? plan.intent : undefined,
       requiresConfirmation: Boolean(plan.requires_confirmation ?? plan.requiresConfirmation),
       steps: Array.isArray(plan.steps)
-        ? plan.steps.map((step: Record<string, unknown>, index: number) => ({
-            step: Number(step.step || index + 1),
-            action: String(step.action || ''),
-            purpose: typeof step.purpose === 'string' ? step.purpose : undefined,
-            status: normalizeTaskStatus(step.status),
-            summary: typeof step.summary === 'string' ? step.summary : undefined,
-          }))
+        ? plan.steps.map((stepRaw: unknown, index: number) => {
+            const step = asRecord(stepRaw)
+            return {
+              step: Number(step.step || index + 1),
+              action: String(step.action || ''),
+              purpose: typeof step.purpose === 'string' ? step.purpose : undefined,
+              status: normalizeTaskStatus(step.status),
+              summary: typeof step.summary === 'string' ? step.summary : undefined,
+            }
+          })
         : [],
     }
   }
 
   if (Array.isArray(payload.results)) {
     for (const item of payload.results) {
-      const result = item && typeof item.result === 'object' ? item.result : {}
-      const step = item && typeof item.step === 'object' ? item.step : {}
+      if (!isRecord(item)) continue
+      const result = asRecord(item.result)
+      const step = asRecord(item.step)
       meta = applyTaskUpdate(meta, {
-        step: (step as Record<string, unknown>).step ?? (result as Record<string, unknown>).step,
-        action: (step as Record<string, unknown>).action ?? (result as Record<string, unknown>).action,
-        purpose: (step as Record<string, unknown>).purpose,
-        status: (result as Record<string, unknown>).status,
+        step: step.step ?? result.step,
+        action: step.action ?? result.action,
+        purpose: step.purpose,
+        status: result.status,
         summary: summarizeExecutionResult(result),
       })
 
       if (item?.type === 'skill') {
         meta = applyToolUpdate(meta, {
           kind: 'skill',
-          name: (step as Record<string, unknown>).skill_name || '技能',
-          status: (result as Record<string, unknown>).status,
+          name: step.skill_name || '技能',
+          status: result.status,
           detail: summarizeExecutionResult(result),
         })
       }
 
       if (item?.type === 'plugin') {
-        const pluginName = String((step as Record<string, unknown>).plugin_name || '插件')
-        const pluginMethod = String((step as Record<string, unknown>).plugin_method || '')
+        const pluginName = String(step.plugin_name || '插件')
+        const pluginMethod = String(step.plugin_method || '')
         meta = applyToolUpdate(meta, {
           kind: 'plugin',
           name: pluginMethod ? `${pluginName}/${pluginMethod}` : pluginName,
-          status: (result as Record<string, unknown>).status,
+          status: result.status,
           detail: summarizeExecutionResult(result),
         })
       }
 
-      const action = String((result as Record<string, unknown>).action || (step as Record<string, unknown>).action || '')
+      const action = String(result.action || step.action || '')
       if (action === 'mcp_tool_call' || action === 'call_mcp_tool') {
-        const serverId = String((result as Record<string, unknown>).server_id || '')
-        const toolName = String((result as Record<string, unknown>).tool_name || '')
+        const serverId = String(result.server_id || '')
+        const toolName = String(result.tool_name || '')
         meta = applyToolUpdate(meta, {
           kind: 'mcp',
           name: `${serverId}/${toolName}`.replace(/^\//, ''),
-          status: (result as Record<string, unknown>).status,
+          status: result.status,
           detail: summarizeExecutionResult(result),
         })
       }
@@ -612,14 +617,14 @@ export function buildExecutionMetaFromPayload(payload: Record<string, unknown>):
 
   if (Array.isArray(payload.tools)) {
     for (const tool of payload.tools) {
-      if (!tool || typeof tool !== 'object') continue
-      meta = applyToolUpdate(meta, tool as Record<string, unknown>)
+      if (!isRecord(tool)) continue
+      meta = applyToolUpdate(meta, tool)
     }
   }
 
   if (Array.isArray(payload.plugins)) {
     for (const plugin of payload.plugins) {
-      if (!plugin || typeof plugin !== 'object') continue
+      if (!isRecord(plugin)) continue
       const pluginName = String(plugin.name || plugin.plugin_name || '插件')
       const toolName = String(plugin.tool || '')
       meta = applyToolUpdate(meta, {
@@ -652,10 +657,10 @@ export function mergeExecutionMeta(base: AssistantExecutionMeta | undefined, inc
     merged.requiresConfirmation = incoming.requiresConfirmation
   }
   for (const step of incoming.steps) {
-    merged = applyTaskUpdate(merged, step as unknown as Record<string, unknown>)
+    merged = applyTaskUpdate(merged, asRecord(step))
   }
   for (const toolEvent of incoming.toolEvents) {
-    merged = applyToolUpdate(merged, toolEvent as unknown as Record<string, unknown>)
+    merged = applyToolUpdate(merged, asRecord(toolEvent))
   }
   if (incoming.usage) {
     merged.usage = incoming.usage

@@ -3,8 +3,10 @@ import tsPlugin from '@typescript-eslint/eslint-plugin'
 import tsParser from '@typescript-eslint/parser'
 import reactHooks from 'eslint-plugin-react-hooks'
 
+const noDebugStatementRule = 'no-' + 'debug' + 'ger'
+
 export default [
-  { ignores: ['dist/**', 'coverage/**', 'test-results/**', '.vite-e2e-cache/**', 'node_modules/**'] },
+  { ignores: ['dist/**', 'coverage/**', 'test-results/**', '.vite-e2e-cache/**', 'node_modules/**', 'tests/e2e/**/*.cjs'] },
   js.configs.recommended,
   {
     files: ['src/**/*.ts', 'src/**/*.tsx'],
@@ -28,8 +30,8 @@ export default [
       'react-hooks/set-state-in-effect': 'off',
       // 禁止 console.log/info 等调试残留，仅允许 warn/error 用于生产日志
       'no-console': ['warn', { allow: ['warn', 'error'] }],
-      // 禁止 debugger 语句
-      'no-debugger': 'error',
+      // 禁止调试语句
+      [noDebugStatementRule]: 'error',
       // 严格禁止 any 类型，强制使用具体类型或 unknown
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],

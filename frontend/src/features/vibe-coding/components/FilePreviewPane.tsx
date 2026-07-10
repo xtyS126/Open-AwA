@@ -398,6 +398,8 @@ export default function FilePreviewPane({ filePath, previewPort }: FilePreviewPa
               src={objectUrl}
               alt={currentPath}
               className={styles.image}
+              loading="lazy"
+              decoding="async"
             />
           </div>
         )}

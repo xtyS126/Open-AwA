@@ -15,6 +15,7 @@ import ModeSwitcher, { type ExecutionMode } from './components/ModeSwitcher'
 import { useCodingStore } from './store/codingStore'
 import { codingApi } from './codingApi'
 import { appLogger } from '@/shared/utils/logger'
+import { useBreakpoint } from '@/shared/hooks/useBreakpoint'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import styles from './CodingPage.module.css'
 
@@ -28,6 +29,9 @@ interface SearchResultItem {
   context?: string
   col?: number
 }
+
+// 移动端主面板 Tab 标识：文件树 / 编辑器 / 聊天
+type MobileMainPanel = 'files' | 'editor' | 'chat'
 
 const CodingPage: React.FC = () => {
   // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
@@ -55,6 +59,9 @@ const CodingPage: React.FC = () => {
     gitPanelHeight: 180,
     terminalPanelHeight: 220,
   })
+  // 移动端主面板 Tab 切换：默认展示编辑器（最常用）
+  const { isMobile } = useBreakpoint()
+  const [mobileMainPanel, setMobileMainPanel] = useState<MobileMainPanel>('editor')
 
   useEffect(() => {
     if (!projectDir) {
@@ -139,6 +146,158 @@ const CodingPage: React.FC = () => {
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath)
 
+  // ===== 移动端布局：单栏 + 顶部 Tab 切换（文件 / 编辑器 / 聊天） =====
+  if (isMobile) {
+    return (
+      <div className={styles.container}>
+        {/* 工具栏 —— 移动端紧凑化 */}
+        <div className={styles.toolbar}>
+          <div className={styles.toolbarLeft}>
+            <button
+              className={`${styles.gitToggle} ${showTerminal ? styles.gitActive : ''}`}
+              onClick={() => setShowTerminal(!showTerminal)}
+              title={showTerminal ? '隐藏终端面板' : '显示终端面板'}
+            >
+              终端
+            </button>
+            <button
+              className={`${styles.gitToggle} ${showGit ? styles.gitActive : ''}`}
+              onClick={() => setShowGit(!showGit)}
+            >
+              Git
+            </button>
+            <button
+              className={`${styles.ccToggle} ${ccModeEnabled ? styles.ccActive : ''}`}
+              onClick={toggleCCMode}
+              title={ccModeEnabled ? 'Claude Code 模式已启用' : '启用 Claude Code 模式'}
+            >
+              {ccModeEnabled ? 'CC ON' : 'CC OFF'}
+            </button>
+          </div>
+          <div className={styles.toolbarCenter}>
+            <input
+              type="text"
+              className={styles.searchInput}
+              placeholder="搜索..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            />
+          </div>
+        </div>
+
+        {/* 主面板 Tab 切换条 */}
+        <div className={styles.mobileTabBar} role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileMainPanel === 'files'}
+            onClick={() => setMobileMainPanel('files')}
+            className={`${styles.mobileTab} ${mobileMainPanel === 'files' ? styles.active : ''}`}
+          >
+            文件
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileMainPanel === 'editor'}
+            onClick={() => setMobileMainPanel('editor')}
+            className={`${styles.mobileTab} ${mobileMainPanel === 'editor' ? styles.active : ''}`}
+          >
+            编辑器
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileMainPanel === 'chat'}
+            onClick={() => setMobileMainPanel('chat')}
+            className={`${styles.mobileTab} ${mobileMainPanel === 'chat' ? styles.active : ''}`}
+          >
+            聊天
+          </button>
+        </div>
+
+        {/* 主面板：根据 Tab 显示对应面板 */}
+        <div className={styles.mobileMainPanel}>
+          {mobileMainPanel === 'files' && (
+            <ErrorBoundary name="FileTree">
+              <FileTree />
+            </ErrorBoundary>
+          )}
+          {mobileMainPanel === 'editor' && (
+            <ErrorBoundary name="EditorPane">
+              {diffMode && diffData ? (
+                <DiffView
+                  original={diffData.original}
+                  modified={diffData.modified}
+                  filePath={diffData.filePath}
+                  language={activeFile?.language}
+                  onAccept={handleAcceptDiff}
+                  onReject={handleRejectDiff}
+                />
+              ) : (
+                <EditorPane />
+              )}
+            </ErrorBoundary>
+          )}
+          {mobileMainPanel === 'chat' && (
+            <ErrorBoundary name="CodingChatPanel">
+              <CodingChatPanel />
+            </ErrorBoundary>
+          )}
+
+          {/* 搜索结果覆盖层 —— 仅在编辑器 Tab 显示 */}
+          {mobileMainPanel === 'editor' && searchResults.length > 0 && (
+            <div className={styles.searchResults}>
+              <div className={styles.searchHeader}>
+                搜索结果 ({searchResults.length})
+                <button onClick={() => setSearchResults([])}>×</button>
+              </div>
+              {searchResults.slice(0, 50).map((r, i) => (
+                <div
+                  key={i}
+                  className={styles.searchItem}
+                  onClick={() => handleResultClick(r)}
+                >
+                  <span className={styles.searchType}>
+                    {r.type || r.match ? 'match' : 'def'}
+                  </span>
+                  <span className={styles.searchFile}>{r.file}</span>
+                  <span className={styles.searchLine}>:{r.line}</span>
+                  {(r.name || r.match) && (
+                    <span className={styles.searchName}>{r.name || r.match}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 底部：终端面板（受工具栏按钮控制） */}
+        {showTerminal && (
+          <div className={styles.bottomPanel} style={{ height: layouts.terminalPanelHeight }}>
+            <ErrorBoundary name="TerminalPanel">
+              <TerminalPanel
+                cwd={projectDir || undefined}
+                onClose={() => setShowTerminal(false)}
+              />
+            </ErrorBoundary>
+          </div>
+        )}
+
+        {/* 底部：Git 面板（受工具栏按钮控制） */}
+        {showGit && (
+          <div className={styles.bottomPanel} style={{ height: layouts.gitPanelHeight }}>
+            <ErrorBoundary name="GitPanel">
+              <GitPanel onFileClick={handleGitFileClick} />
+            </ErrorBoundary>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ===== 桌面端布局：原三栏 + 底部可选面板 =====
   return (
     <div className={styles.container}>
       {/* 工具栏 */}

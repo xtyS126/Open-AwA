@@ -74,6 +74,7 @@ const Avatar: React.FC<AvatarProps> = ({
       className={containerCls}
       style={customStyle}
       onError={handleError}
+      decoding="async"
     />
   )
 }

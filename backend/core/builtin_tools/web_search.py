@@ -140,12 +140,18 @@ class WebSearchSkill:
         cfg = _load_provider_config()
         provider = cfg.get("provider", "duckduckgo")
         base_url = cfg.get("base_url")
+        extra_config = cfg.get("extra_config") or {}
 
         # SearXNG 路径：配置为 searxng 且提供 base_url 时尝试
         if provider == "searxng" and base_url:
             try:
                 results = await asyncio.wait_for(
-                    self._searxng_search(query, max_results, base_url),
+                    self._searxng_search(
+                        query,
+                        max_results,
+                        base_url,
+                        allow_private=bool(extra_config.get("allow_private_network", False)),
+                    ),
                     timeout=REQUEST_TIMEOUT,
                 )
                 logger.info(
@@ -246,7 +252,11 @@ class WebSearchSkill:
         return results
 
     async def _searxng_search(
-        self, query: str, max_results: int, base_url: str
+        self,
+        query: str,
+        max_results: int,
+        base_url: str,
+        allow_private: bool = False,
     ) -> List[Dict[str, str]]:
         """
         通过 SearXNG 实例搜索。
@@ -262,7 +272,7 @@ class WebSearchSkill:
         try:
             from security.search_ssrf import validate_search_url
 
-            is_valid, err = validate_search_url(base_url, allow_private=False)
+            is_valid, err = validate_search_url(base_url, allow_private=allow_private)
             if not is_valid:
                 raise ValueError(f"SearXNG base_url SSRF 校验失败: {err}")
         except ImportError:

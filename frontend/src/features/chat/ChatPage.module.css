@@ -523,11 +523,14 @@
   margin: 0;
 }
 
+/* 移动端（≤ 768px，对应 --breakpoint-md）：聊天头部换行 + 顶部安全区域适配 */
 @media (max-width: 768px) {
   .chat-header {
     flex-wrap: wrap;
     padding: 14px 16px;
     margin: 12px 12px 0;
+    /* 顶部安全区域 padding，适配 notch / Dynamic Island */
+    padding-top: var(--safe-area-top);
   }
 
   .chat-header-title {
@@ -547,6 +550,8 @@
 
   .chat-main {
     width: 100%;
+    /* 留出 fixed 定位的 ChatInput 高度（约 140px）+ 底部安全区域，避免消息列表被遮挡 */
+    padding-bottom: calc(140px + var(--safe-area-bottom));
   }
 
   .history-overlay {
@@ -559,7 +564,8 @@
   }
 
   .message {
-    max-width: 100%;
+    /* 移动端消息气泡最大宽度：85vw，留出气泡两侧的视觉呼吸空间 */
+    max-width: 85vw;
   }
 
   .execution-header,

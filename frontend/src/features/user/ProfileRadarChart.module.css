@@ -68,3 +68,32 @@
   font-weight: 600;
   color: var(--text-primary);
 }
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+@media (max-width: 768px) {
+  /* 雷达图容器紧凑 */
+  .radar-container {
+    gap: 0.5rem;
+  }
+
+  /* SVG 雷达图在小屏全宽 */
+  .radar-svg {
+    max-width: 220px;
+  }
+
+  /* 标签字号缩小 */
+  .label {
+    font-size: 10px;
+  }
+
+  /* 图例紧凑 */
+  .legend {
+    gap: 0.35rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .legend-dot {
+    width: 7px;
+    height: 7px;
+  }
+}

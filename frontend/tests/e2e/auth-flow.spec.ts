@@ -1,34 +1,33 @@
 import { test, expect } from '@playwright/test'
-import { E2E_ADMIN_USERNAME, E2E_ADMIN_PASSWORD, loginAndSaveState } from './auth'
+import { E2E_API_KEY, loginAndSaveState } from './auth'
 
 test.describe('认证流程 E2E', () => {
   test('登录页面渲染正常', async ({ page }) => {
     await page.goto('/login')
 
-    await expect(page.getByRole('button', { name: '登录' })).toBeVisible({ timeout: 20_000 })
-    await expect(page.locator('#username')).toBeVisible()
-    await expect(page.locator('#password')).toBeVisible()
+    // 单用户模式：登录页只有 API Key 输入框 + "连接" 按钮
+    await expect(page.locator('#apiKey')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('button', { name: '连接' })).toBeVisible()
   })
 
-  test('输入有效凭据点击登录后跳转到聊天页面', async ({ page }) => {
+  test('输入有效 API Key 点击连接后跳转到聊天页面', async ({ page }) => {
     await page.goto('/login')
-    await expect(page.getByRole('button', { name: '登录' })).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('#apiKey')).toBeVisible({ timeout: 20_000 })
 
-    await page.locator('#username').fill(E2E_ADMIN_USERNAME)
-    await page.locator('#password').fill(E2E_ADMIN_PASSWORD)
-    await page.getByRole('button', { name: '登录' }).click()
+    await page.locator('#apiKey').fill(E2E_API_KEY)
+    await page.getByRole('button', { name: '连接' }).click()
 
     await page.waitForURL(/\/chat/, { timeout: 30_000 })
     await expect(page).toHaveURL(/\/chat/)
   })
 
-  test('输入错误密码显示错误提示', async ({ page }) => {
+  test('输入错误 API Key 显示错误提示', async ({ page }) => {
     await page.goto('/login')
-    await expect(page.getByRole('button', { name: '登录' })).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('#apiKey')).toBeVisible({ timeout: 20_000 })
 
-    await page.locator('#username').fill(E2E_ADMIN_USERNAME)
-    await page.locator('#password').fill('错误的密码')
-    await page.getByRole('button', { name: '登录' }).click()
+    // 填入长度不足的 API Key 触发前端 zod 校验
+    await page.locator('#apiKey').fill('invalid-short-key')
+    await page.getByRole('button', { name: '连接' }).click()
 
     // 登录失败后应留在登录页或显示错误信息
     const errorIndicator = page.locator('.error-message, [role="alert"], .toast-error').first()
@@ -63,7 +62,8 @@ test.describe('认证流程 E2E', () => {
       if (await logoutButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
         await logoutButton.click()
         await page.waitForURL(/\/login/, { timeout: 15_000 })
-        await expect(page.getByRole('button', { name: '登录' })).toBeVisible({ timeout: 20_000 })
+        // 登出后登录页按钮文案为"连接"
+        await expect(page.getByRole('button', { name: '连接' })).toBeVisible({ timeout: 20_000 })
       }
     }
     // 如果找不到登出按钮，测试仍然通过（UI 可能尚未实现该功能）

@@ -1558,6 +1558,23 @@ async def get_models_by_provider(
                         provider=provider_id,
                         status_code=error_status,
                     ).warning(f"提供商 {provider_id} 模型列表拉取失败（HTTP {error_status}），回退到本地数据")
+                    # 用户显式提交凭证时，远端认证失败必须返回错误，避免把本地模型列表误报为验证成功。
+                    if request_api_key is not None or request_api_endpoint is not None:
+                        return {
+                            "success": False,
+                            "provider": provider_id,
+                            "models": [],
+                            "selected_models": selected_models,
+                            "source": "remote",
+                            "error": build_standard_error(
+                                error_detail.get("code", "provider_models_fetch_failed"),
+                                error_detail.get("message", "模型列表获取失败"),
+                                request_id=request_id,
+                                details=error_detail.get("details", {}),
+                                retryable=error_detail.get("retryable", True),
+                                status_code=error_status,
+                            ),
+                        }
             except RuntimeError:
                 raise
             except asyncio.TimeoutError:

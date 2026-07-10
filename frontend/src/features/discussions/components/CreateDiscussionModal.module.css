@@ -13,6 +13,8 @@
   gap: var(--space-3, 12px);
 }
 
+/* 非标准断点（≤ 600px，介于 --breakpoint-sm 640px 与 --breakpoint-xs 480px 之间）：
+ * 表单行单列堆叠，提前在 600px 触发以适配小屏手机与窄弹窗 */
 @media (max-width: 600px) {
   .row {
     grid-template-columns: 1fr;

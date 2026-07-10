@@ -18,6 +18,7 @@ import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
 import { getErrorMessage } from '@/shared/utils/errorMessages'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 
 const GeneralSettings = lazy(() => import('@/features/settings/components/GeneralSettings').then(m => ({ default: m.GeneralSettings })))
 
@@ -430,7 +431,12 @@ export function GeneralTabContainer() {
           {message.text}
         </div>
       )}
-      <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center', color: '#9ca3af' }}>加载中...</div>}>
+      <Suspense fallback={(
+        <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <Skeleton variant="rectangular" height="var(--space-10)" width="40%" />
+          <Skeleton.Paragraph lines={6} />
+        </div>
+      )}>
         <GeneralSettings
           settings={settings}
           outputMode={outputMode}

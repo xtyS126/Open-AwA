@@ -91,7 +91,7 @@ export function ModelManagementTable({
                         {(() => {
                           const icon = config.icon || getProviderIcon(config.provider)
                           if (icon) {
-                            return <img src={icon} alt={config.provider} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            return <img src={icon} alt={config.provider} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           }
                           return config.provider.charAt(0).toUpperCase()
                         })()}

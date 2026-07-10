@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { Modal } from '@/shared/components/ui'
 import { useI18nStore } from '@/i18n'
+import { useBreakpoint } from '@/shared/hooks/useBreakpoint'
 import type { SuspendedPermission } from '@/shared/api/acpApi'
 import styles from './PermissionDialog.module.css'
 
@@ -27,6 +28,7 @@ export default function PermissionDialog({
   onCancel,
 }: PermissionDialogProps) {
   const { t } = useI18nStore()
+  const { isMobile } = useBreakpoint()
   // 当前正在提交的选项 ID，用于禁用其他按钮并显示 loading
   const [submittingId, setSubmittingId] = useState<string | null>(null)
 
@@ -52,7 +54,7 @@ export default function PermissionDialog({
       open
       onClose={onCancel}
       title={t('vibeCoding.permission.title')}
-      width="560px"
+      width={isMobile ? '100vw' : '560px'}
       footer={
         <div className={styles.footer}>
           <button
@@ -66,91 +68,94 @@ export default function PermissionDialog({
         </div>
       }
     >
-      {/* 标题行：工具名 + kind 徽章 */}
-      <div className={styles.headerRow} style={{ marginBottom: 'var(--space-3)' }}>
-        {permission.tool_name && (
-          <span className={styles.toolName}>{permission.tool_name}</span>
-        )}
-        {permission.tool_kind && (
-          <span className={styles.kindBadge}>{permission.tool_kind}</span>
-        )}
-      </div>
-
-      {/* 目标 + 动作 —— 仅在对应字段存在时渲染 */}
-      {(permission.target || permission.action) && (
-        <div className={styles.section} style={{ marginBottom: 'var(--space-3)' }}>
-          {permission.target && (
-            <div className={styles.kvRow}>
-              <span className={styles.kvLabel}>{t('vibeCoding.permission.target')}</span>
-              <span className={styles.kvValue}>{permission.target}</span>
-            </div>
+      {/* wrapper 用于在 CSS Module 中通过 :has() 定位本组件渲染的 Modal，实现移动端全屏覆盖 */}
+      <div className={styles['permission-root']}>
+        {/* 标题行：工具名 + kind 徽章 */}
+        <div className={styles.headerRow} style={{ marginBottom: 'var(--space-3)' }}>
+          {permission.tool_name && (
+            <span className={styles.toolName}>{permission.tool_name}</span>
           )}
-          {permission.action && (
-            <div className={styles.kvRow}>
-              <span className={styles.kvLabel}>{t('vibeCoding.permission.action')}</span>
-              <span className={styles.kvValue}>{permission.action}</span>
-            </div>
+          {permission.tool_kind && (
+            <span className={styles.kindBadge}>{permission.tool_kind}</span>
           )}
         </div>
-      )}
 
-      {/* 摘要 —— 仅在存在时渲染 */}
-      {permission.summary && (
-        <div className={styles.section} style={{ marginBottom: 'var(--space-3)' }}>
-          <span className={styles.kvLabel}>{t('vibeCoding.permission.summary')}</span>
-          <p className={styles.summary}>{permission.summary}</p>
-        </div>
-      )}
+        {/* 目标 + 动作 —— 仅在对应字段存在时渲染 */}
+        {(permission.target || permission.action) && (
+          <div className={styles.section} style={{ marginBottom: 'var(--space-3)' }}>
+            {permission.target && (
+              <div className={styles.kvRow}>
+                <span className={styles.kvLabel}>{t('vibeCoding.permission.target')}</span>
+                <span className={styles.kvValue}>{permission.target}</span>
+              </div>
+            )}
+            {permission.action && (
+              <div className={styles.kvRow}>
+                <span className={styles.kvLabel}>{t('vibeCoding.permission.action')}</span>
+                <span className={styles.kvValue}>{permission.action}</span>
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* 命令展示 —— 等宽字体 */}
-      {hasCommand && (
-        <div className={styles.section} style={{ marginBottom: 'var(--space-3)' }}>
-          <span className={styles.kvLabel}>{t('vibeCoding.permission.command')}</span>
-          <pre className={styles.command}>{permission.command}</pre>
-        </div>
-      )}
+        {/* 摘要 —— 仅在存在时渲染 */}
+        {permission.summary && (
+          <div className={styles.section} style={{ marginBottom: 'var(--space-3)' }}>
+            <span className={styles.kvLabel}>{t('vibeCoding.permission.summary')}</span>
+            <p className={styles.summary}>{permission.summary}</p>
+          </div>
+        )}
 
-      {/* 影响路径列表 */}
-      {hasPaths && (
-        <div className={styles.section} style={{ marginBottom: 'var(--space-3)' }}>
-          <span className={styles.kvLabel}>{t('vibeCoding.permission.paths')}</span>
-          <ul className={styles.pathList}>
-            {permission.paths!.map((p, idx) => (
-              <li key={`${idx}-${p}`} className={styles.pathItem}>{p}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+        {/* 命令展示 —— 等宽字体 */}
+        {hasCommand && (
+          <div className={styles.section} style={{ marginBottom: 'var(--space-3)' }}>
+            <span className={styles.kvLabel}>{t('vibeCoding.permission.command')}</span>
+            <pre className={styles.command}>{permission.command}</pre>
+          </div>
+        )}
 
-      {/* 选项列表 */}
-      <span className={styles.optionsTitle}>{t('vibeCoding.permission.selectOption')}</span>
-      <ul className={styles.options} style={{ marginTop: 'var(--space-2)' }}>
-        {options.map((opt) => {
-          const isSubmitting = submittingId === opt.id
-          const isDisabled = submittingId !== null && !isSubmitting
-          return (
-            <li key={opt.id}>
-              <button
-                type="button"
-                className={styles.option}
-                onClick={() => { void handleSelect(opt.id) }}
-                disabled={isDisabled}
-              >
-                <span className={styles.optionLabel}>
-                  <span>{opt.label}</span>
-                  <span className={styles.optionKind}>{opt.kind}</span>
-                </span>
-                {opt.hint && <span className={styles.optionHint}>{opt.hint}</span>}
-                {isSubmitting && (
-                  <span className={styles.optionHint}>
-                    {t('vibeCoding.permission.processing')}
+        {/* 影响路径列表 */}
+        {hasPaths && (
+          <div className={styles.section} style={{ marginBottom: 'var(--space-3)' }}>
+            <span className={styles.kvLabel}>{t('vibeCoding.permission.paths')}</span>
+            <ul className={styles.pathList}>
+              {permission.paths!.map((p, idx) => (
+                <li key={`${idx}-${p}`} className={styles.pathItem}>{p}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* 选项列表 */}
+        <span className={styles.optionsTitle}>{t('vibeCoding.permission.selectOption')}</span>
+        <ul className={styles.options} style={{ marginTop: 'var(--space-2)' }}>
+          {options.map((opt) => {
+            const isSubmitting = submittingId === opt.id
+            const isDisabled = submittingId !== null && !isSubmitting
+            return (
+              <li key={opt.id}>
+                <button
+                  type="button"
+                  className={styles.option}
+                  onClick={() => { void handleSelect(opt.id) }}
+                  disabled={isDisabled}
+                >
+                  <span className={styles.optionLabel}>
+                    <span>{opt.label}</span>
+                    <span className={styles.optionKind}>{opt.kind}</span>
                   </span>
-                )}
-              </button>
-            </li>
-          )
-        })}
-      </ul>
+                  {opt.hint && <span className={styles.optionHint}>{opt.hint}</span>}
+                  {isSubmitting && (
+                    <span className={styles.optionHint}>
+                      {t('vibeCoding.permission.processing')}
+                    </span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
     </Modal>
   )
 }

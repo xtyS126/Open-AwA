@@ -17,7 +17,8 @@ export function AppShell() {
         <Sidebar />
       </Suspense>
       {/* 主内容区，skip-link 目标锚点 */}
-      <main id="main-content" className="main-content">
+      {/* a11y: tabIndex={-1} 使 #main-content 可被 skip-link 编程式聚焦 */}
+      <main id="main-content" className="main-content" tabIndex={-1}>
         <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>}>
           {/* 使用 location.pathname 作为 key，触发 CSS 动画实现页面切换淡入 */}
           <div className="page-transition-wrapper" key={location.pathname}>

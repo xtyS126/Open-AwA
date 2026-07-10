@@ -365,3 +365,94 @@
   color: var(--color-success-strong);
   margin-left: var(--space-1);
 }
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+@media (max-width: 768px) {
+  /* 页面头部紧凑布局 */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-4) 0;
+  }
+
+  .page-title {
+    font-size: var(--text-xl);
+  }
+
+  .page-header-right {
+    width: 100%;
+  }
+
+  .btn-secondary,
+  .btn-primary {
+    flex: 1;
+    justify-content: center;
+    min-height: var(--touch-target-min);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* 内容区贴边 */
+  .content {
+    padding: var(--space-4);
+  }
+
+  /* 错误提示贴边 */
+  .error-banner {
+    margin: 0 var(--space-4) var(--space-3);
+  }
+
+  /* 筛选栏垂直堆叠 */
+  .filter-bar {
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .filter-select {
+    width: 100%;
+    min-height: var(--touch-target-min);
+  }
+
+  .search-input {
+    min-height: var(--touch-target-min);
+  }
+
+  /* 卡片列表间距缩小到 var(--space-3) */
+  .card-list {
+    gap: var(--space-3);
+  }
+
+  /* 技能卡片垂直布局，缩小内边距 */
+  .skill-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
+
+  .skill-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* 操作区在移动端横向贴底，触摸目标放大 */
+  .skill-actions {
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .btn-outline-sm {
+    min-height: var(--touch-target-min);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* 汇总栏垂直堆叠 */
+  .summary-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    margin-top: var(--space-4);
+  }
+}

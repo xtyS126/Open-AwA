@@ -20,6 +20,7 @@ import { z } from 'zod'
 import { Modal, Input, Textarea, Button } from '@/shared/components/ui'
 import { useI18nStore } from '@/i18n'
 import { useDiscussionStore } from '../store/discussionStore'
+import { asRecord } from '@/shared/types/api'
 import styles from './CreateDiscussionModal.module.css'
 
 interface CreateDiscussionModalProps {
@@ -166,7 +167,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({
     try {
       let payload: Record<string, unknown>
       try {
-        payload = JSON.parse(values.actionPayload) as Record<string, unknown>
+        payload = asRecord(JSON.parse(values.actionPayload))
       } catch {
         setErrors({ actionPayload: '动作参数 JSON 解析失败' })
         return
@@ -178,7 +179,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({
           ? undefined
           : (() => {
               try {
-                return JSON.parse(values.context) as Record<string, unknown>
+                return asRecord(JSON.parse(values.context))
               } catch {
                 return undefined
               }

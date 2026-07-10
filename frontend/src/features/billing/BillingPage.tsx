@@ -365,23 +365,23 @@ function BillingPage() {
             ) : (
               usageRecords.map((record) => (
                 <tr key={record.call_id}>
-                  <td>{new Date(record.created_at).toLocaleString('zh-CN')}</td>
-                  <td>
+                  <td data-label="时间">{new Date(record.created_at).toLocaleString('zh-CN')}</td>
+                  <td data-label="厂商">
                     <span className={`${styles['provider-badge']} ${styles[record.provider] || record.provider}`}>
                       {record.provider}
                     </span>
                   </td>
-                  <td>{record.model}</td>
-                  <td>
+                  <td data-label="模型">{record.model}</td>
+                  <td data-label="内容类型">
                     <span className={styles['content-type-badge']}>{record.content_type}</span>
                   </td>
-                  <td>{formatTokens(record.input_tokens)}</td>
-                  <td>{formatTokens(record.output_tokens)}</td>
-                  <td>
+                  <td data-label="输入Tokens">{formatTokens(record.input_tokens)}</td>
+                  <td data-label="输出Tokens">{formatTokens(record.output_tokens)}</td>
+                  <td data-label="成本">
                     {formatCurrency(record.total_cost, record.currency)}
                     {record.cache_hit && <span className={styles['cache-badge']}>缓存</span>}
                   </td>
-                  <td>{record.duration_ms}ms</td>
+                  <td data-label="耗时">{record.duration_ms}ms</td>
                 </tr>
               ))
             )}

@@ -64,3 +64,44 @@
 .downloadBtn:hover {
   background: var(--bg-hover, #eee);
 }
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+@media (max-width: 768px) {
+  /* 播放器在小屏全宽，自动换行 */
+  .player {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+    margin-top: 10px;
+  }
+
+  /* 播放按钮触摸目标放大到 44px */
+  .playBtn {
+    width: var(--touch-target-min, 44px);
+    height: var(--touch-target-min, 44px);
+  }
+
+  /* 进度条占满剩余宽度 */
+  .progressBar {
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  /* 时间显示字号缩小 */
+  .time {
+    font-size: 10px;
+  }
+
+  /* 滑块触摸目标放大 */
+  .slider {
+    height: 24px;
+  }
+
+  /* 下载按钮触摸目标放大 */
+  .downloadBtn {
+    width: var(--touch-target-min, 44px);
+    height: var(--touch-target-min, 44px);
+    order: 3;
+  }
+}

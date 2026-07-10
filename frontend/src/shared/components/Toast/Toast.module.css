@@ -125,7 +125,7 @@
   }
 }
 
-/* 移动端适配 */
+/* 移动端适配（≤ 768px，对应 --breakpoint-md） */
 @media (max-width: 768px) {
   .toast-container {
     left: 16px;

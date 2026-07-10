@@ -1940,6 +1940,11 @@ class ExecutionLayer:
 
         if func_name.startswith("builtin_"):
             builtin_name = func_name[len("builtin_"):]
+            # ask_user 特殊处理：注入 user_id 和 session_id 到工具参数
+            # AskUserTool 需要这些信息创建与用户会话关联的 Future
+            if builtin_name == "ask_user":
+                func_args.setdefault("user_id", str(context.get("user_id", "") or ""))
+                func_args.setdefault("session_id", str(context.get("session_id", "") or ""))
             # 构造包含 ToolUseContext 的工具执行上下文副本，避免污染原 context
             tool_exec_context = {**context, "_tool_use_context": _tool_use_context}
             # 优先通过 ToolRegistry 执行（支持权限检查、截断、统计等）

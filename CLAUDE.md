@@ -759,8 +759,16 @@ git commit -m "[Type] 变更描述"
 - **ACP 子进程环境变量**: 不能继承所有环境变量，保护 SECRET_KEY 等敏感键
 - **base_url 解析优先级**: 使用 `getattr(config, 'base_url', None)` 修复运算符优先级问题
 - **新 provider 创建约束**: `provider` 字段必须非空，`config_id` 仅更新时需要
+- **前端移动端适配 CSS @media 限制**: CSS @media 中不能使用 var() 引用 tokens.css 断点令牌（--breakpoint-xs/sm/md/lg/xl），必须使用数字字面量；但在 @media 块前必须注释对应 token 名，如 `/* 移动端（≤ 768px，对应 --breakpoint-md 令牌） */`，便于令牌变更时全局定位。定位方法：检查 CSS Module 文件头注释是否标注 token 名；修复方向：保留数字字面量但在 @media 块前追加 token 标注注释
 
 ---
+
+## 19.1 2026-07-10 回归新增陷阱
+
+- **Qdrant 缺失 point**：数据库记忆行可能早于向量 point 写入；更新元数据时记录 warning 并跳过缺失 point，不能让记忆 API 失败。
+- **显式 provider 凭证错误**：模型列表接口收到请求体中的 api_key/api_endpoint 后，远端认证失败必须返回结构化错误；仅后台使用已保存配置时允许回退本地模型列表。
+- **Windows shell 内建命令**：`command_executor.py` 保持 `shell=False`，对 echo/pwd 使用平台内建适配，不得改为 shell=True。
+- **WebSocket/SSE E2E**：使用独立临时数据库、向量路径和端口，避免锁定生产数据库或 Qdrant；WebSocket 必须同时验证 Origin 与子协议 token，SSE 必须检查 text/event-stream 和 [DONE]。
 
 ## 20. API Path Prefix
 

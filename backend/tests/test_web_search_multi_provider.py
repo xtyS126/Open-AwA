@@ -170,6 +170,10 @@ class TestProviderSwitching:
         monkeypatch.setattr(
             "core.builtin_tools.web_search.httpx.AsyncClient", mock_client_class
         )
+        monkeypatch.setattr(
+            "security.search_ssrf.validate_search_url",
+            lambda url, allow_private=False: (True, None),
+        )
 
         result = await web_search_tool_fixture._search({"query": "test", "max_results": 5})
 
@@ -366,7 +370,7 @@ class TestSSRFValidation:
         )
 
         results = await web_search_tool_fixture._searxng_search(
-            "test", 5, "http://192.168.2.10:7653/"
+            "test", 5, "http://192.168.2.10:7653/", allow_private=True
         )
 
         # 应成功返回结果
@@ -474,6 +478,10 @@ class TestSearxngResponseParsing:
         monkeypatch.setattr(
             "core.builtin_tools.web_search.httpx.AsyncClient", mock_client_class
         )
+        monkeypatch.setattr(
+            "security.search_ssrf.validate_search_url",
+            lambda url, allow_private=False: (True, None),
+        )
 
         results = await web_search_tool_fixture._searxng_search(
             "test", 10, "https://example.com"
@@ -497,6 +505,10 @@ class TestSearxngResponseParsing:
         monkeypatch.setattr(
             "core.builtin_tools.web_search.httpx.AsyncClient", mock_client_class
         )
+        monkeypatch.setattr(
+            "security.search_ssrf.validate_search_url",
+            lambda url, allow_private=False: (True, None),
+        )
 
         results = await web_search_tool_fixture._searxng_search(
             "test", 10, "https://example.com"
@@ -515,6 +527,10 @@ class TestSearxngResponseParsing:
         mock_client_class = _make_mock_async_client_class(response)
         monkeypatch.setattr(
             "core.builtin_tools.web_search.httpx.AsyncClient", mock_client_class
+        )
+        monkeypatch.setattr(
+            "security.search_ssrf.validate_search_url",
+            lambda url, allow_private=False: (True, None),
         )
 
         with pytest.raises(ValueError):

@@ -34,13 +34,16 @@ def db_session():
 
 
 @pytest.fixture
-def client(db_session):
+def client(db_session, monkeypatch):
     """为系统路由提供覆盖依赖后的测试客户端。"""
     async def override_get_current_admin_user():
         return SimpleNamespace(id=1, username="admin", role="admin")
 
     app.dependency_overrides[get_current_admin_user] = override_get_current_admin_user
     app.dependency_overrides[get_current_user] = override_get_current_admin_user
+    # 连接分类测试只模拟 HTTP 层，单独的 SSRF 测试负责验证地址拦截策略。
+    from api.routes import system as system_routes
+    monkeypatch.setattr(system_routes, "_validate_connectivity_url", lambda url: None)
     try:
         with TestClient(app) as test_client:
             yield test_client

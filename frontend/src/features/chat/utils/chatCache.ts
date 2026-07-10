@@ -1,5 +1,6 @@
 import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
 import { appLogger } from '@/shared/utils/logger'
+import { isRecord } from '@/shared/types/api'
 import type {
   AssistantMessageSegment,
   ChatMessage,
@@ -60,33 +61,31 @@ function isValidIsoDate(value: unknown): value is string {
 }
 
 function isValidConversationSummary(value: unknown): value is ConversationSessionSummary {
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return false
   }
 
-  const item = value as Record<string, unknown>
   return (
-    typeof item.session_id === 'string' &&
-    typeof item.user_id === 'string' &&
-    typeof item.title === 'string' &&
-    typeof item.summary === 'string' &&
-    typeof item.last_message_preview === 'string' &&
-    typeof item.message_count === 'number' &&
-    isValidIsoDate(item.created_at) &&
-    isValidIsoDate(item.updated_at)
+    typeof value.session_id === 'string' &&
+    typeof value.user_id === 'string' &&
+    typeof value.title === 'string' &&
+    typeof value.summary === 'string' &&
+    typeof value.last_message_preview === 'string' &&
+    typeof value.message_count === 'number' &&
+    isValidIsoDate(value.created_at) &&
+    isValidIsoDate(value.updated_at)
   )
 }
 
 function isValidSerializedMessage(value: unknown): value is SerializedChatMessage {
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return false
   }
-  const item = value as Record<string, unknown>
   return (
-    typeof item.id === 'string' &&
-    (item.role === 'user' || item.role === 'assistant') &&
-    typeof item.content === 'string' &&
-    isValidIsoDate(item.timestamp)
+    typeof value.id === 'string' &&
+    (value.role === 'user' || value.role === 'assistant') &&
+    typeof value.content === 'string' &&
+    isValidIsoDate(value.timestamp)
   )
 }
 
@@ -98,22 +97,21 @@ function normalizeConversationList(conversations: unknown): ConversationSessionS
 }
 
 function normalizeMessageBuckets(rawBuckets: unknown): Record<string, SerializedConversationBucket> {
-  if (!rawBuckets || typeof rawBuckets !== 'object') {
+  if (!isRecord(rawBuckets)) {
     return {}
   }
 
   const nextBuckets: Record<string, SerializedConversationBucket> = {}
-  for (const [sessionId, value] of Object.entries(rawBuckets as Record<string, unknown>)) {
-    if (!sessionId || !value || typeof value !== 'object') {
+  for (const [sessionId, value] of Object.entries(rawBuckets)) {
+    if (!sessionId || !isRecord(value)) {
       continue
     }
-    const bucket = value as Record<string, unknown>
-    if (!Array.isArray(bucket.messages)) {
+    if (!Array.isArray(value.messages)) {
       continue
     }
     nextBuckets[sessionId] = {
-      updated_at: isValidIsoDate(bucket.updated_at) ? bucket.updated_at : new Date().toISOString(),
-      messages: bucket.messages.filter(isValidSerializedMessage).slice(-MAX_CACHED_MESSAGES),
+      updated_at: isValidIsoDate(value.updated_at) ? value.updated_at : new Date().toISOString(),
+      messages: value.messages.filter(isValidSerializedMessage).slice(-MAX_CACHED_MESSAGES),
     }
   }
   return nextBuckets

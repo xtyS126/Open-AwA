@@ -2,6 +2,7 @@
  * SettingsPage 工具函数模块
  * 从巨型 SettingsPage 中提取的纯函数工具
  */
+import { isRecord } from '@/shared/types/api'
 
 // ==================== 常量定义 ====================
 
@@ -156,18 +157,17 @@ export function buildPersistedSettings(settings: {
  * 检查是否为有效的持久化设置
  */
 export function isPersistedSettings(value: unknown): value is Partial<ReturnType<typeof buildPersistedSettings>> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return false
   }
 
-  const candidate = value as Record<string, unknown>
   return (
-    (candidate.theme === undefined || typeof candidate.theme === 'string') &&
-    (candidate.language === undefined || typeof candidate.language === 'string') &&
-    (candidate.apiProvider === undefined || typeof candidate.apiProvider === 'string') &&
-    (candidate.requireConfirm === undefined || typeof candidate.requireConfirm === 'boolean') &&
-    (candidate.enableAudit === undefined || typeof candidate.enableAudit === 'boolean') &&
-    (candidate.maxToolCallRounds === undefined || typeof candidate.maxToolCallRounds === 'number')
+    (value.theme === undefined || typeof value.theme === 'string') &&
+    (value.language === undefined || typeof value.language === 'string') &&
+    (value.apiProvider === undefined || typeof value.apiProvider === 'string') &&
+    (value.requireConfirm === undefined || typeof value.requireConfirm === 'boolean') &&
+    (value.enableAudit === undefined || typeof value.enableAudit === 'boolean') &&
+    (value.maxToolCallRounds === undefined || typeof value.maxToolCallRounds === 'number')
   )
 }
 

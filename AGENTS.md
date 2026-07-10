@@ -189,6 +189,8 @@ frontend/src/
   __tests__/       # 单元测试
 ```
 
+前端响应式断点体系统一在 tokens.css 的 --breakpoint-xs/sm/md/lg/xl 令牌，移动端适配工具类在 src/styles/responsive.css，公共 hooks 在 src/shared/hooks/useMediaQuery|useBreakpoint|useVisualViewport.ts
+
 详细架构说明见 [docs/架构/后端架构说明.md](docs/架构/后端架构说明.md) 和 [docs/架构/前端架构说明.md](docs/架构/前端架构说明.md)。
 部署指南见 [docs/指南/部署与运行说明.md](docs/指南/部署与运行说明.md)，测试策略见 [docs/指南/测试说明.md](docs/指南/测试说明.md)。
 插件开发见 [docs/插件开发手册/](docs/插件开发手册/)。

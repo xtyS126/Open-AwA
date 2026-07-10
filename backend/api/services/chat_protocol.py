@@ -452,3 +452,16 @@ def emit_team_event(team_data: Dict[str, Any]) -> Dict[str, Any]:
         "chunk_type": "team_event",
         "team": team_data,
     }
+
+
+def emit_ask_user_event(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """ask_user 事件，向前端下发交互式问题卡片。
+
+    前端收到后渲染 AskUserCard 组件，用户回答通过
+    POST /api/chat/ask-user/reply 提交，由 PendingAskUser 解除 future 阻塞。
+    """
+    return {
+        "type": "ask_user",
+        "chunk_type": "ask_user",
+        "ask_user": payload,
+    }

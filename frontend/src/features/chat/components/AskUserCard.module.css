@@ -1,0 +1,183 @@
+.panel {
+  background: var(--color-bg-secondary, #1e1e2e);
+  border: 1px solid var(--color-border-subtle, #313244);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--color-text-secondary, #a6adc8);
+}
+
+.title {
+  font-weight: 600;
+  color: var(--color-text, #cdd6f4);
+}
+
+.question {
+  color: var(--color-text, #cdd6f4);
+  line-height: 1.5;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-subtle, #313244);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  color: var(--color-text, #cdd6f4);
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.4;
+  min-height: 44px;
+  width: 100%;
+  background: transparent;
+}
+
+.option:hover {
+  background: var(--color-bg-hover, #313244);
+  border-color: var(--color-accent, #89b4fa);
+}
+
+.optionSelected {
+  background: var(--color-bg-hover, #313244);
+  border-color: var(--color-accent, #89b4fa);
+}
+
+.optionCheckbox {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-accent, #89b4fa);
+}
+
+.optionRadio {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-accent, #89b4fa);
+}
+
+.optionLabel {
+  flex: 1;
+  word-break: break-word;
+}
+
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-subtle, #313244);
+  border-radius: 6px;
+  background: var(--color-bg-primary, #181825);
+  color: var(--color-text, #cdd6f4);
+  font-size: 13px;
+  line-height: 1.4;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-accent, #89b4fa);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted, #6c7086);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn {
+  min-height: 36px;
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.btnPrimary {
+  background: var(--color-accent, #89b4fa);
+  color: var(--color-bg-primary, #181825);
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background: var(--color-accent-hover, #b4befe);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-muted, #6c7086);
+}
+
+.statusDone {
+  color: #a6e3a1;
+}
+
+.statusError {
+  color: #f38ba8;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================================
+ * 移动端适配（≤ 768px，对应 --breakpoint-md 令牌）
+ * AskUserCard 在移动端从底部滑入抽屉，覆盖 ChatInput，
+ * 保证用户在虚拟键盘弹起时仍能看到问题并提交回答。
+ * ============================================================ */
+@media (max-width: 768px) {
+  .panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 85vh;
+    overflow-y: auto;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-modal);
+    padding-bottom: var(--safe-area-bottom);
+    margin-bottom: 0;
+  }
+}

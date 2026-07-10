@@ -72,7 +72,7 @@ for (const viewport of SCREENSHOT_VIEWPORTS) {
       test(`${pageInfo.label} - ${pageInfo.path} - 全页截图对比`, async ({ page }) => {
         await loginAsAdminPage(page)
         await page.goto(pageInfo.path)
-        await page.waitForLoadState('networkidle')
+        await page.waitForLoadState('domcontentloaded')
 
         // 等待字体、图标等资源加载完成
         await page.waitForTimeout(500)
@@ -111,7 +111,7 @@ test.describe('视觉回归 - 自定义命名截图（手动基线对比）', ()
 
         await loginAsAdminPage(page)
         await page.goto(pageInfo.path)
-        await page.waitForLoadState('networkidle')
+        await page.waitForLoadState('domcontentloaded')
         await page.waitForTimeout(500)
 
         ensureBaselineDir()
@@ -148,7 +148,9 @@ test.describe('视觉回归 - 暗色模式', () => {
 
   test('聊天页 - 暗色主题截图', async ({ page }) => {
     await loginAsAdminPage(page)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
+    // 等待主内容区渲染完成（替代 networkidle，避免 SSE 长连接导致超时）
+    await expect(page.locator('.main-content').first()).toBeVisible({ timeout: 15_000 })
 
     // 通过主题切换按钮切换到暗色模式
     const themeBtn = page.locator('.theme-toggle-btn').first()
@@ -158,7 +160,7 @@ test.describe('视觉回归 - 暗色模式', () => {
     }
 
     await page.goto('/chat')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
     await page.waitForTimeout(500)
 
     await expect(page).toHaveScreenshot({
@@ -170,7 +172,9 @@ test.describe('视觉回归 - 暗色模式', () => {
 
   test('仪表盘 - 暗色主题截图', async ({ page }) => {
     await loginAsAdminPage(page)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
+    // 等待主内容区渲染完成（替代 networkidle，避免 SSE 长连接导致超时）
+    await expect(page.locator('.main-content').first()).toBeVisible({ timeout: 15_000 })
 
     // 切换到暗色模式
     const themeBtn = page.locator('.theme-toggle-btn').first()
@@ -180,7 +184,7 @@ test.describe('视觉回归 - 暗色模式', () => {
     }
 
     await page.goto('/dashboard')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
     await page.waitForTimeout(500)
 
     await expect(page).toHaveScreenshot({
@@ -200,7 +204,9 @@ test.describe('视觉回归 - 交互状态', () => {
 
   test('聊天页 - 侧边栏折叠态', async ({ page }) => {
     await loginAsAdminPage(page)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
+    // 等待主内容区渲染完成（替代 networkidle，避免 SSE 长连接导致超时）
+    await expect(page.locator('.main-content').first()).toBeVisible({ timeout: 15_000 })
 
     // 点击折叠按钮收缩侧边栏
     const collapseBtn = page.locator('.collapse-btn').first()
@@ -219,7 +225,7 @@ test.describe('视觉回归 - 交互状态', () => {
   test('设置页 - 设置标签切换', async ({ page }) => {
     await loginAsAdminPage(page)
     await page.goto('/settings')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
     await page.waitForTimeout(500)
 
     // 确保 API 配置标签页可见

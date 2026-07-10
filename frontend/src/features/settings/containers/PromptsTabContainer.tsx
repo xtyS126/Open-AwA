@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, lazy, Suspense } from 'react'
 import { promptsAPI } from '@/shared/api/api'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 
 const PromptsTab = lazy(() => import('@/features/settings/components/PromptsTab').then(m => ({ default: m.PromptsTab })))
 
@@ -64,7 +65,12 @@ export function PromptsTabContainer() {
   }, [loadPrompts])
 
   return (
-    <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center', color: '#9ca3af' }}>加载中...</div>}>
+    <Suspense fallback={(
+      <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <Skeleton variant="rectangular" height="var(--space-10)" width="40%" />
+        <Skeleton.Paragraph lines={6} />
+      </div>
+    )}>
       <PromptsTab
         promptContent={promptContent}
         saving={saving}

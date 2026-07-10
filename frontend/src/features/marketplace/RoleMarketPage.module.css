@@ -266,8 +266,8 @@
   cursor: not-allowed;
 }
 
-/* 响应式适配 */
-@media (max-width: 640px) {
+/* 响应式适配（移动端断点 ≤ 768px，对应 --breakpoint-md 令牌） */
+@media (max-width: 768px) {
   .container {
     padding: 16px;
   }
@@ -275,22 +275,90 @@
   .header {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
+  }
+
+  .header h1 {
+    font-size: 20px;
   }
 
   .searchBox {
     max-width: none;
+    min-width: 0;
+  }
+
+  .searchInput {
+    min-height: var(--touch-target-min);
+    padding: 10px 12px 10px 36px;
+    font-size: 13px;
   }
 
   .toolbar {
     flex-direction: column;
     align-items: stretch;
+    gap: 10px;
+  }
+
+  .categories {
+    gap: 6px;
+  }
+
+  .categoryBtn {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 12px;
   }
 
   .sortBtns {
     justify-content: flex-end;
+    gap: 6px;
   }
 
+  .sortBtn {
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  /* 网格改为单列，间距缩小到 var(--space-3) */
   .grid {
     grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .cardTitle {
+    font-size: 14px;
+  }
+
+  .cardDesc {
+    font-size: 12px;
+    min-height: 0;
+    -webkit-line-clamp: 3;
+  }
+
+  .cardMeta {
+    font-size: 11px;
+  }
+
+  /* 卡片底部操作区按钮触摸目标放大 */
+  .starBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .installBtn {
+    min-height: var(--touch-target-min);
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+
+  .loading,
+  .empty {
+    padding: 40px 16px;
+    font-size: 13px;
   }
 }

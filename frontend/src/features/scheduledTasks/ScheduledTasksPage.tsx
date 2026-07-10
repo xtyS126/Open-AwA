@@ -25,6 +25,7 @@ import {
   scheduledTasksAPI,
 } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
+import { asRecord } from '@/shared/types/api'
 import { useToast } from '@/shared/components/Toast/Toast'
 import {
   connectInboxStream,
@@ -408,7 +409,7 @@ export default function ScheduledTasksPage() {
           parameters: {},
         })
       }
-      if (config.command_params) setCommandParams(config.command_params as Record<string, unknown>)
+      if (config.command_params) setCommandParams(asRecord(config.command_params))
       if (config.is_daily) setPluginIsDaily(true)
     } else {
       setActiveTab('ai')

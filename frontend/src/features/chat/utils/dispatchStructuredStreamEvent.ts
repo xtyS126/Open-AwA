@@ -1,5 +1,5 @@
 import type { TodoItem } from '@/features/chat/components/TodoPanel'
-import type { AssistantExecutionMeta, AssistantMessageSegment, ToolEventMeta } from '@/features/chat/types'
+import type { AskUserRequest, AssistantExecutionMeta, AssistantMessageSegment, ToolEventMeta } from '@/features/chat/types'
 import {
   applySubagentMessage,
   applySubagentStart,
@@ -19,11 +19,12 @@ import {
   applyToolPatchToSegments,
   applyUsageToSegments,
 } from '@/features/chat/utils/assistantSegments'
+import { isRecord } from '@/shared/types/api'
 
-/** 工具函数：安全地将未知值转为 Record 类型 */
+/** 工具函数：安全地将未知值转为 Record 类型（基于类型守卫，无 as 断言） */
 function toRecord(value: unknown): Record<string, unknown> | undefined {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>
+  if (isRecord(value)) {
+    return value
   }
   return undefined
 }
@@ -35,13 +36,13 @@ function isEventType(event: StructuredStreamEvent, type: string): boolean {
 
 /** 安全获取事件字符串字段 */
 function getEventString(event: StructuredStreamEvent, key: string): string | undefined {
-  const value = (event as Record<string, unknown>)[key]
+  const value = event[key]
   return typeof value === 'string' ? value : undefined
 }
 
 /** 安全获取事件未知字段 */
 function getEventValue(event: StructuredStreamEvent, key: string): unknown {
-  return (event as Record<string, unknown>)[key]
+  return event[key]
 }
 
 type StructuredStreamEvent = Record<string, unknown> & { type?: string }
@@ -66,6 +67,8 @@ interface DispatchStructuredStreamEventOptions {
   scheduleSubagentAggregation: (assistantMessageId: string) => void
   setTodoItems: (items: TodoItem[]) => void
   setTodoSummary: (summary: string) => void
+  /** 收到 ask_user 事件时设置挂起的问题请求（null 表示清空） */
+  setAskUserRequest: (request: AskUserRequest | null) => void
   dispatchUsageUpdated: (payload: { callId?: string; provider?: string; model?: string }) => void
   getNow?: () => number
 }
@@ -100,12 +103,13 @@ export function dispatchStructuredStreamEvent(
     scheduleSubagentAggregation,
     setTodoItems,
     setTodoSummary,
+    setAskUserRequest,
     dispatchUsageUpdated,
     getNow = Date.now,
   } = options
 
   if (isEventType(event, 'plan') || isEventType(event, 'result')) {
-    const nextMeta = buildExecutionMetaFromPayload(event as Record<string, unknown>)
+    const nextMeta = buildExecutionMetaFromPayload(event)
     updateAssistantMeta(assistantMessageId, (current) => {
       const merged = mergeExecutionMeta(current, nextMeta)
       if (isEventType(event, 'result')) {
@@ -394,5 +398,35 @@ export function dispatchStructuredStreamEvent(
     const summary = getEventString(event, 'summary') || ''
     setTodoItems(todos)
     setTodoSummary(summary)
+  }
+
+  if (isEventType(event, 'ask_user')) {
+    // ask_user 事件：AI 主动向用户提问，渲染问题卡片等待回答
+    const payload = toRecord(getEventValue(event, 'ask_user'))
+    if (payload === undefined) {
+      return
+    }
+    const requestId = typeof payload.request_id === 'string' ? payload.request_id : ''
+    const sessionId = typeof payload.session_id === 'string' ? payload.session_id : ''
+    const question = typeof payload.question === 'string' ? payload.question : ''
+    if (!requestId || !question) {
+      return
+    }
+    const optionsRaw = payload.options
+    const optionsList = Array.isArray(optionsRaw)
+      ? optionsRaw.filter((o): o is string => typeof o === 'string')
+      : []
+    const askUserRequest: AskUserRequest = {
+      request_id: requestId,
+      session_id: sessionId,
+      question,
+      options: optionsList,
+      allow_multiple: payload.allow_multiple === true,
+      allow_free_text: payload.allow_free_text !== false,
+      placeholder: typeof payload.placeholder === 'string' ? payload.placeholder : '',
+      timeout: typeof payload.timeout === 'number' ? payload.timeout : 300,
+      created_at: typeof payload.created_at === 'number' ? payload.created_at : undefined,
+    }
+    setAskUserRequest(askUserRequest)
   }
 }

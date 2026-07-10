@@ -273,6 +273,20 @@ export interface UndoOperationPayload {
   operation_id: string
 }
 
+/** ask_user 提问回答提交请求 */
+export interface AskUserReplyPayload {
+  request_id: string
+  session_id: string
+  answer: string
+  selected_options: string[]
+}
+
+/** ask_user 提问回答提交响应 */
+export interface AskUserReplyResponse {
+  ok: boolean
+  message?: string
+}
+
 export interface ChatExecutionOptions {
   thinking_enabled?: boolean
   thinking_depth?: number
@@ -546,6 +560,10 @@ export const chatAPI = {
   /** 撤销 AI 执行的文件操作 */
   undoOperation: (payload: UndoOperationPayload) =>
     api.post<ChatUndoOperationResponse>('/chat/undo-operation', payload),
+
+  /** 提交用户对 ask_user 提问的回答 */
+  replyAskUser: (payload: AskUserReplyPayload) =>
+    api.post<AskUserReplyResponse>('/chat/ask-user/reply', payload),
 }
 
 export const skillsAPI = {

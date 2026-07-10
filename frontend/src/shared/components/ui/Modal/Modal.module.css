@@ -61,3 +61,46 @@
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ============================================================
+ * 移动端适配（≤ 768px，对应 --breakpoint-md 令牌）：模态框全屏显示
+ * 与 SettingsPage.module.css 中的 .provider-modal 全屏规则保持一致，
+ * 确保所有使用共享 Modal 组件的弹窗在移动端统一全屏。
+ * ============================================================ */
+
+@media (max-width: 768px) {
+  /* 遮罩层：取消内边距，使模态框占满整个视口 */
+  .overlay {
+    padding: 0;
+  }
+
+  /* 模态框主体：全屏显示，取消圆角和最大尺寸限制 */
+  .modal {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    border: none;
+  }
+
+  /* 头部和底部：缩小内边距，适配小屏 */
+  .header,
+  .footer {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .body {
+    padding: var(--space-4);
+  }
+
+  /* 底部按钮：垂直堆叠并占满宽度，主操作在下方便拇指触达 */
+  .footer {
+    flex-direction: column-reverse;
+    gap: var(--space-2);
+  }
+
+  .footer > * {
+    width: 100%;
+  }
+}

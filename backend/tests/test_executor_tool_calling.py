@@ -22,6 +22,12 @@ class FakePluginManager:
     def discover_plugins(self):
         return [{"name": "twitter-monitor"}]
 
+    def has_plugin(self, plugin_name: str):
+        return plugin_name in {"twitter-monitor", "twitter_monitor"}
+
+    def is_plugin_loaded(self, plugin_name: str):
+        return plugin_name in self.loaded_plugins
+
     def load_plugin(self, plugin_name: str):
         self.loaded_plugins[plugin_name] = object()
         return True
@@ -420,6 +426,9 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
 
     execution_layer = ExecutionLayer()
     fake_manager = FakePluginManager()
+
+    from plugins import plugin_instance
+    monkeypatch.setattr(plugin_instance, "get", lambda: fake_manager)
 
     from plugins.plugin_manager import PluginManager
     original_execute = PluginManager.execute_plugin_async

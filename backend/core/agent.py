@@ -40,6 +40,7 @@ from api.services.chat_protocol import (
     emit_task_created_event,
     emit_task_updated_event,
     emit_team_event,
+    emit_ask_user_event,
 )
 
 
@@ -2033,6 +2034,72 @@ class AIAgent:
                                     yield subagent_event
 
                                 result = await exec_task
+                            elif tool_name == "builtin_ask_user":
+                                # ask_user 特殊处理：直接在 process_stream 中处理
+                                # 因为需要在工具阻塞期间下发问题卡片事件给前端
+                                func_args_str = tc.get("function", {}).get("arguments", "{}")
+                                try:
+                                    ask_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
+                                except json.JSONDecodeError:
+                                    ask_args = {}
+                                # 注入 user_id 和 session_id（executor 层也会注入，这里冗余确保可用）
+                                ask_args.setdefault("user_id", str(context.get("user_id", "") or ""))
+                                ask_args.setdefault("session_id", str(context.get("session_id", "") or ""))
+
+                                # 延迟导入避免循环依赖
+                                from api.routes.ask_user import enqueue_ask_user_request
+                                try:
+                                    request_id, ask_future = enqueue_ask_user_request(
+                                        user_id=ask_args.get("user_id", ""),
+                                        session_id=ask_args.get("session_id", ""),
+                                        question=ask_args.get("question", ""),
+                                        options=ask_args.get("options"),
+                                        allow_multiple=ask_args.get("allow_multiple", False),
+                                        allow_free_text=ask_args.get("allow_free_text", True),
+                                        placeholder=ask_args.get("placeholder", ""),
+                                        timeout=ask_args.get("timeout", 300),
+                                    )
+                                except ValueError as ve:
+                                    # 参数校验失败
+                                    result = {
+                                        "ok": False,
+                                        "error": f"ask_user 参数校验失败: {ve}",
+                                        "tool_name": tool_name,
+                                    }
+                                else:
+                                    # 下发问题卡片事件（前端渲染 AskUserCard）
+                                    yield emit_ask_user_event({
+                                        "request_id": request_id,
+                                        "user_id": ask_args.get("user_id", ""),
+                                        "session_id": ask_args.get("session_id", ""),
+                                        "question": ask_args.get("question", ""),
+                                        "options": ask_args.get("options") or [],
+                                        "allow_multiple": ask_args.get("allow_multiple", False),
+                                        "allow_free_text": ask_args.get("allow_free_text", True),
+                                        "placeholder": ask_args.get("placeholder", ""),
+                                        "timeout": ask_args.get("timeout", 300),
+                                    })
+                                    # 阻塞等待用户回答或超时
+                                    try:
+                                        answer_payload = await ask_future
+                                    except asyncio.TimeoutError:
+                                        result = {
+                                            "ok": False,
+                                            "error": "ask_user 等待用户回答超时",
+                                            "tool_name": tool_name,
+                                            "request_id": request_id,
+                                        }
+                                    except asyncio.CancelledError:
+                                        logger.info(f"ask_user cancelled for session {session_id}")
+                                        yield {"type": "cancelled", "content": "任务已被用户取消", "reasoning_content": ""}
+                                        return
+                                    else:
+                                        result = {
+                                            "ok": True,
+                                            "result": answer_payload,
+                                            "tool_name": tool_name,
+                                            "request_id": request_id,
+                                        }
                             else:
                                 try:
                                     result = await self.executor._execute_tool_call(tc, context)

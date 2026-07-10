@@ -363,7 +363,7 @@ export function AppearanceTabContainer() {
           </div>
           {config.logoIcon && (
              <div className={styles['logo-preview']}>
-               <img src={config.logoIcon} alt="Logo 预览" />
+               <img src={config.logoIcon} alt="Logo 预览" loading="lazy" decoding="async" />
                <button
                   className={styles['clear-btn']}
                   onClick={() => setConfig({ logoIcon: '' })}

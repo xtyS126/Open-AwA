@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, Suspense, lazy } from 'react'
 import { Send, Settings, Power, PowerOff } from 'lucide-react'
 import { getChannels, updateChannelConfig, sendMessage, getIMStatus } from '@/shared/api/imApi'
 import type { IMChannel, IMStatus } from '@/shared/api/imApi'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 import styles from './ImChannelsPage.module.css'
 
 // 懒加载微信配置模块，避免阻塞首屏渲染
@@ -259,7 +260,12 @@ export default function ImChannelsPage() {
       {/* 微信 Tab：嵌入微信配置模块 */}
       {activeTab === 'wechat' && (
         <section className={styles.section}>
-          <Suspense fallback={<div className={styles.loading}>加载微信模块中...</div>}>
+          <Suspense fallback={(
+            <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <Skeleton variant="rectangular" height="var(--space-10)" width="40%" />
+              <Skeleton.Paragraph lines={6} />
+            </div>
+          )}>
             <WechatConfigModule />
           </Suspense>
         </section>

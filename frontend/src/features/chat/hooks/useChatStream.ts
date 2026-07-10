@@ -11,7 +11,8 @@ import {
 } from '@/features/chat/utils/assistantSegments'
 import { appLogger } from '@/shared/utils/logger'
 import { dispatchBillingUsageUpdated } from '@/shared/events/billingEvents'
-import type { AssistantExecutionMeta, AssistantMessageSegment } from '@/features/chat/types'
+import { asRecord } from '@/shared/types/api'
+import type { AssistantExecutionMeta, AssistantMessageSegment, AskUserRequest } from '@/features/chat/types'
 import type { FileAttachment } from '@/features/chat/components/ChatInput'
 import type { TodoItem } from '@/features/chat/components/TodoPanel'
 
@@ -207,6 +208,8 @@ export interface UseChatStreamParams {
   setTodoItems: React.Dispatch<React.SetStateAction<TodoItem[]>>
   /** 设置 Todo 摘要 */
   setTodoSummary: React.Dispatch<React.SetStateAction<string>>
+  /** 设置挂起的 ask_user 问题请求（null 清空） */
+  setAskUserRequest: React.Dispatch<React.SetStateAction<AskUserRequest | null>>
   /** 设置流式助手消息 ID */
   setStreamingAssistantId: React.Dispatch<React.SetStateAction<string | null>>
   /** 设置加载状态 */
@@ -258,6 +261,7 @@ export function useChatStream({
   subagentSync,
   setTodoItems,
   setTodoSummary,
+  setAskUserRequest,
   setStreamingAssistantId,
   setLoading,
   messageMeta,
@@ -442,7 +446,7 @@ export function useChatStream({
                   if (event?.type === 'chunk') {
                     assistantMessageCreated = handleStreamChunkEvent({
                       assistantMessageId,
-                      event: event as Record<string, unknown>,
+                      event,
                       assistantMessageCreated,
                       ensureAssistantMessage,
                       updateAssistantSegments,
@@ -456,10 +460,8 @@ export function useChatStream({
 
                   ensureAssistantMessage()
                   // 追踪进行中的工具调用，用于停止按钮的智能判断
-                  if ((event as Record<string, unknown>)?.type === 'tool') {
-                    const toolData = (event as Record<string, unknown>).tool as
-                      | Record<string, unknown>
-                      | undefined
+                  if (event?.type === 'tool') {
+                    const toolData = event.tool
                     const toolId = String(toolData?.id || '')
                     const toolStatus = String(toolData?.status || '')
                     if (toolStatus === 'running') {
@@ -468,7 +470,7 @@ export function useChatStream({
                       removeActiveToolCall(toolId)
                     }
                   }
-                  dispatchStructuredStreamEvent(event as Record<string, unknown>, {
+                  dispatchStructuredStreamEvent(event, {
                     assistantMessageId,
                     messageMeta,
                     addToast,
@@ -482,6 +484,7 @@ export function useChatStream({
                     scheduleSubagentAggregation: subagentSync.scheduleSubagentAggregation,
                     setTodoItems,
                     setTodoSummary,
+                    setAskUserRequest,
                     dispatchUsageUpdated: ({ callId, provider, model }) => {
                       dispatchBillingUsageUpdated({ callId, provider, model })
                     },
@@ -606,7 +609,7 @@ export function useChatStream({
           } else {
             applyDirectAssistantResponse({
               assistantMessageId,
-              responseData: response.data as unknown as Record<string, unknown>,
+              responseData: asRecord(response.data),
               addMessage: (role, content, reasoningContent, messageId) => {
                 addMessage(role, content, reasoningContent, messageId)
               },
@@ -693,6 +696,7 @@ export function useChatStream({
       subagentSync,
       setTodoItems,
       setTodoSummary,
+      setAskUserRequest,
       setStreamingAssistantId,
       setLoading,
       messageMeta,

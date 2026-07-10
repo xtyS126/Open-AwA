@@ -178,7 +178,7 @@ export function ModelsTab({
                   {/* 供应商品牌图标盒子（44x44 圆角）*/}
                   <div className={styles['provider-card-icon']}>
                     {icon ? (
-                      <img src={icon} alt={displayName} />
+                      <img src={icon} alt={displayName} loading="lazy" decoding="async" />
                     ) : (
                       <span style={{ color: '#fff', fontSize: '18px', fontWeight: 600 }}>
                         {displayName.charAt(0).toUpperCase()}

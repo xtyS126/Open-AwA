@@ -7,6 +7,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { ArrowDown } from 'lucide-react'
 import type { ChatMessage as ChatMessageType, AssistantExecutionMeta } from '@/features/chat/types'
 import { useI18nStore } from '@/i18n'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 import { ChatMessage } from './ChatMessage'
 import styles from '../ChatPage.module.css'
 
@@ -41,8 +42,6 @@ export const MessageList = memo(function MessageList({
   messageMeta,
   streamingAssistantId,
   isLoading,
-  outputMode,
-  streamStatusText,
   messagesEndRef,
   scrollContainerRef,
   showJumpToLatest = false,
@@ -108,13 +107,11 @@ export const MessageList = memo(function MessageList({
     )
   }
 
-  /* 加载指示器组件 */
+  /* 加载指示器组件：使用 Skeleton 模拟助手消息气泡，减少布局抖动 */
   const LoadingFooter = isLoading && !streamingAssistantId ? (
     <div className={`${styles['message']} ${styles['assistant']}`}>
       <div className={styles['message-content']}>
-        <p className={styles['loading-text']}>
-          {outputMode === 'stream' && streamStatusText ? `${streamStatusText}...` : 'Thinking...'}
-        </p>
+        <Skeleton.Paragraph lines={2} />
       </div>
     </div>
   ) : null

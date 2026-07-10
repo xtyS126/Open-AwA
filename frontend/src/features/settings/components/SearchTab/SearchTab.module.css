@@ -355,7 +355,7 @@
   word-break: break-word;
 }
 
-/* 响应式：小屏单列 */
+/* 响应式：小屏（≤ 640px，对应 --breakpoint-sm）单列堆叠 */
 @media (max-width: 640px) {
   .container {
     max-width: 100%;

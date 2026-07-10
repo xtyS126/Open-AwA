@@ -40,6 +40,7 @@ BUILTIN_TOOL_ACTION_MAP: Dict[str, tuple[str, str]] = {
     "browser_screenshot": ("browser_extended", "screenshot"),
     "browser_snapshot": ("browser_extended", "snapshot"),
     "browser_navigate": ("browser_extended", "navigate"),
+    "ask_user": ("ask_user", "ask"),
 }
 
 # 旧式 API（通过 tools/registry.py 和 workflow）使用的 action 到内部 tool_name 的反向映射
@@ -446,6 +447,50 @@ BUILTIN_TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_ask_user",
+            "description": "向用户提问以补充信息。当现有上下文不足以完成任务时调用，用户回答后将继续执行。支持单选/多选/自由输入。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "向用户展示的问题文本",
+                        "maxLength": 2000,
+                    },
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string", "maxLength": 200},
+                        "description": "可选的预设选项列表（为空则纯文本输入）",
+                        "maxItems": 20,
+                    },
+                    "allow_multiple": {
+                        "type": "boolean",
+                        "description": "是否允许多选，默认 false",
+                        "default": False,
+                    },
+                    "allow_free_text": {
+                        "type": "boolean",
+                        "description": "是否允许自由文本输入（与选项共存），默认 true",
+                        "default": True,
+                    },
+                    "placeholder": {
+                        "type": "string",
+                        "description": "输入框占位提示文本",
+                        "maxLength": 100,
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "超时秒数，范围 60-600，默认 300",
+                        "default": 300,
+                    },
+                },
+                "required": ["question"],
+            },
+        },
+    },
 ]
 
 
@@ -512,6 +557,10 @@ class BuiltInToolManager:
             from .browser_extended import BrowserExtendedSkill
 
             instance = BrowserExtendedSkill(config=config)
+        elif tool_name == "ask_user":
+            from .ask_user import AskUserTool
+
+            instance = AskUserTool()
         else:
             raise ValueError(f"未知内置工具: {tool_name}")
 
@@ -556,7 +605,7 @@ class BuiltInToolManager:
     async def list_tools(self) -> Dict[str, Dict[str, Any]]:
         """返回全部内置工具的定义与状态（供 /api/tools/list 使用）。"""
         tools = {}
-        for tool_name in ["file_manager", "terminal_executor", "web_search", "local_search", "memory_manager", "checkpoint", "notify", "todo_manager", "browser_extended"]:
+        for tool_name in ["file_manager", "terminal_executor", "web_search", "local_search", "memory_manager", "checkpoint", "notify", "todo_manager", "browser_extended", "ask_user"]:
             instance = await self._initialize_tool(tool_name)
             tools[tool_name] = {
                 "name": tool_name,
@@ -569,3 +618,35 @@ class BuiltInToolManager:
 
 
 builtin_tool_manager = BuiltInToolManager()
+
+
+def ensure_ask_user_permissions() -> None:
+    """向 tool_entries 模块动态注入 ask_user 的权限和并发属性。
+
+    由于 tool_entries.py 文件可能被运行中的 backend 进程锁定无法直接编辑，
+    此函数在 register_builtin_tools 之前调用，动态向 _BUILTIN_PERMISSION_MAP
+    和 _TOOL_CONCURRENCY_ATTRS 注入 ask_user 条目。
+
+    ask_user 的并发属性：
+    - is_concurrency_safe = False：串行执行，避免多个问题并发困扰用户
+    - is_read_only = True：无副作用
+    - is_destructive = False：非破坏性
+    """
+    try:
+        from core import tool_entries as _te
+
+        if "ask_user" not in _te._BUILTIN_PERMISSION_MAP:
+            _te._BUILTIN_PERMISSION_MAP["ask_user"] = ("interact", "ask_user:interact")
+            logger.info("已动态注入 ask_user 权限映射: interact / ask_user:interact")
+
+        if "ask_user" not in _te._TOOL_CONCURRENCY_ATTRS:
+            _te._TOOL_CONCURRENCY_ATTRS["ask_user"] = {
+                "is_read_only": True,
+                "is_concurrency_safe": False,
+                "is_destructive": False,
+            }
+            logger.info("已动态注入 ask_user 并发属性: 串行/只读/非破坏性")
+    except ImportError:
+        logger.warning("无法导入 tool_entries 模块，ask_user 权限和并发属性注入失败")
+    except Exception as exc:
+        logger.error(f"注入 ask_user 权限和并发属性失败: {exc}")

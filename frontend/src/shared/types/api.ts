@@ -103,10 +103,10 @@ export const camelToSnake = (str: string): string =>
 export const convertToCamelCase = <T>(obj: unknown): T => {
   if (Array.isArray(obj)) {
     return obj.map(item => convertToCamelCase<T>(item)) as T
-  } else if (obj !== null && typeof obj === 'object') {
-    return Object.keys(obj as Record<string, unknown>).reduce((acc, key) => {
+  } else if (isRecord(obj)) {
+    return Object.keys(obj).reduce((acc, key) => {
       const camelKey = snakeToCamel(key)
-      const value = (obj as Record<string, unknown>)[key]
+      const value = obj[key]
       return {
         ...acc,
         [camelKey]: convertToCamelCase<unknown>(value)
@@ -119,10 +119,10 @@ export const convertToCamelCase = <T>(obj: unknown): T => {
 export const convertToSnakeCase = <T>(obj: unknown): T => {
   if (Array.isArray(obj)) {
     return obj.map(item => convertToSnakeCase<T>(item)) as T
-  } else if (obj !== null && typeof obj === 'object') {
-    return Object.keys(obj as Record<string, unknown>).reduce((acc, key) => {
+  } else if (isRecord(obj)) {
+    return Object.keys(obj).reduce((acc, key) => {
       const snakeKey = camelToSnake(key)
-      const value = (obj as Record<string, unknown>)[key]
+      const value = obj[key]
       return {
         ...acc,
         [snakeKey]: convertToSnakeCase<unknown>(value)
@@ -189,4 +189,24 @@ export interface ExtensionRegistration {
 export interface SchemaValidationResult {
   valid: boolean
   errors: string[]
+}
+
+/**
+ * 类型守卫：判断给定值是否为可索引的对象（非数组、非 null）。
+ * 用于替代 `value as Record<string, unknown>` 这种不安全的类型断言：
+ * 通过运行时检查 + 类型谓词，让 TypeScript 在分支内自动将 unknown 收窄为 Record。
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * 安全地将任意值转换为 Record 类型。
+ * - 若 value 已是可索引对象，原样返回（类型已收窄）
+ * - 否则返回空对象，避免后续属性访问抛错
+ *
+ * 该函数内部不使用 `as` 断言，完全依赖类型守卫进行类型收窄。
+ */
+export function asRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {}
 }

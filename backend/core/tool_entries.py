@@ -53,6 +53,8 @@ _BUILTIN_PERMISSION_MAP: Dict[str, tuple[str, str]] = {
     "browser_screenshot": ("read", "browser:screenshot"),
     "browser_snapshot": ("read", "browser:snapshot"),
     "browser_navigate": ("read", "browser:navigate"),
+    # ask_user 提问工具：交互式问答，需用户授权（默认放行，由 ask_user:interact 资源控制）
+    "ask_user": ("interact", "ask_user:interact"),
 }
 
 
@@ -88,6 +90,8 @@ _TOOL_CONCURRENCY_ATTRS: Dict[str, Dict[str, Any]] = {
     "browser_screenshot": {"is_read_only": True, "is_concurrency_safe": True},
     "browser_snapshot": {"is_read_only": True, "is_concurrency_safe": True},
     "browser_navigate": {"is_read_only": True, "is_concurrency_safe": True},
+    # ask_user 提问工具：阻塞等待用户输入，必须串行执行避免多个问题并发困扰用户
+    "ask_user": {"is_read_only": True, "is_concurrency_safe": False, "is_destructive": False},
 }
 
 

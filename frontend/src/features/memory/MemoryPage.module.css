@@ -610,7 +610,7 @@
 
 /* ========== 响应式适配 ========== */
 
-/* 平板及以下 —— 统计卡片降为 2 列，三栏布局变为单列堆叠 */
+/* 平板及以下（≤ 1024px，对应 --breakpoint-lg）—— 统计卡片降为 2 列，三栏布局变为单列堆叠 */
 @media (max-width: 1024px) {
   .statGrid {
     grid-template-columns: repeat(2, 1fr);
@@ -625,13 +625,157 @@
   }
 }
 
-/* 移动端 —— 统计卡片单列堆叠 */
-@media (max-width: 640px) {
+/* 移动端（≤ 768px，对应 --breakpoint-md）—— 统计卡片单列堆叠、列表紧凑、字号缩放 */
+@media (max-width: 768px) {
   .memoryPage {
     padding: var(--space-4);
   }
 
+  /* 页面头部紧凑 */
+  .pageHeader {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .pageTitle {
+    font-size: var(--text-xl);
+  }
+
+  .pageSubtitle {
+    font-size: var(--text-xs);
+  }
+
+  .pageActions {
+    width: 100%;
+  }
+
+  .btnSecondary {
+    justify-content: center;
+    min-height: var(--touch-target-min);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* 统计卡片单列堆叠 */
   .statGrid {
     grid-template-columns: 1fr;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .statCard {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .statIconBox {
+    width: 32px;
+    height: 32px;
+  }
+
+  .statValue {
+    font-size: var(--text-xl);
+  }
+
+  .statLabel {
+    font-size: var(--text-xs);
+  }
+
+  /* 主布局垂直堆叠 */
+  .mainLayout {
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .sidebar {
+    width: 100%;
+  }
+
+  /* 列表卡片头部紧凑 */
+  .listHeader {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .listHeaderTop {
+    margin-bottom: var(--space-2);
+  }
+
+  .listTitle {
+    font-size: var(--text-sm);
+  }
+
+  /* 搜索输入框触摸目标放大 */
+  .searchInput {
+    padding: var(--space-2) var(--space-3) var(--space-2) 32px;
+    min-height: var(--touch-target-min);
+    font-size: var(--text-xs);
+  }
+
+  /* 列表项紧凑布局，字号从 var(--text-sm) 缩小到 var(--text-xs) */
+  .memoryItem {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .memoryItemTop {
+    margin-bottom: var(--space-1);
+  }
+
+  .memoryItemTitle {
+    font-size: var(--text-xs);
+    padding-right: var(--space-2);
+  }
+
+  .typeBadgeLongTerm,
+  .typeBadgeExperience {
+    font-size: 10px;
+    padding: 2px var(--space-1-5);
+  }
+
+  .memoryItemBottom {
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .memoryTime {
+    font-size: 10px;
+  }
+
+  /* 置信度区域在小屏换行友好 */
+  .confidenceWrap {
+    max-width: 100%;
+    flex-basis: 100%;
+  }
+
+  .confidenceLabel,
+  .confidenceValue {
+    font-size: 10px;
+  }
+
+  /* 删除按钮触摸目标放大 */
+  .deleteBtn {
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+    padding: var(--space-2);
+  }
+
+  /* 侧栏卡片紧凑 */
+  .sidebarCard {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .sidebarIconBox {
+    width: 28px;
+    height: 28px;
+  }
+
+  .sidebarTitle {
+    font-size: var(--text-xs);
+  }
+
+  /* 错误提示紧凑 */
+  .errorMessage {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
   }
 }

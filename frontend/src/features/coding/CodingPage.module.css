@@ -31,3 +31,66 @@
 .searchFile { color: #89b4fa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .searchLine { color: #a6e3a1; }
 .searchName { color: #f9e2af; margin-left: auto; }
+
+/* ===== 移动端布局（≤ 768px） ===== */
+
+/* Tab 切换条 —— 固定高度，三等分 */
+.mobileTabBar {
+  display: flex;
+  flex-shrink: 0;
+  height: 40px;
+  border-bottom: 1px solid #313244;
+  background: #181825;
+}
+
+/* 单个 Tab 按钮：等分宽度，居中文字 */
+.mobileTab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: #6c7086;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  min-width: 44px;
+  min-height: 40px;
+}
+
+.mobileTab:hover:not(.active) {
+  color: #cdd6f4;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* 激活态 Tab：底部蓝色描边 + 主色文字 */
+.mobileTab.active {
+  color: #89b4fa;
+  box-shadow: inset 0 -2px 0 0 #89b4fa;
+}
+
+/* 移动端主面板：撑满剩余高度，内部承载当前 Tab 的内容 */
+.mobileMainPanel {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: #1e1e2e;
+}
+
+/* 移动端（≤ 768px，对应 --breakpoint-md）：搜索框占满宽度 */
+@media (max-width: 768px) {
+  .searchInput {
+    width: 100%;
+    max-width: 100%;
+  }
+  .toolbarCenter {
+    flex: 1;
+  }
+  .toolbarLeft {
+    gap: 6px;
+  }
+  /* 桌面端独有元素在移动端隐藏（标题、ModeSwitcher 容器无对应类，故仅隐藏项目路径） */
+  .toolbarRight {
+    display: none;
+  }
+}

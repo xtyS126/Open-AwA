@@ -111,6 +111,7 @@ def _proxy_client():
     """构造 preview_proxy 路由的 TestClient。"""
     app = FastAPI()
     app.include_router(preview_proxy_router)
+    app.dependency_overrides[get_current_user] = _override_user(_USER_A)
     with TestClient(app) as client:
         yield client
 
@@ -396,7 +397,7 @@ class TestPreviewProxy:
 
         assert response.status_code == 400
 
-    def test_accepts_port_at_boundary_1024(self) -> None:
+    def test_accepts_allowed_preview_port(self) -> None:
         """边界值 1024 应被接受（>= 1024）。"""
         fake_response = _FakeStreamResponse(
             status_code=200, content=b"ok", headers={"content-type": "text/plain"}
@@ -407,7 +408,7 @@ class TestPreviewProxy:
 
         with patch("api.routes.preview_proxy.httpx.AsyncClient", return_value=fake_client):
             with _proxy_client() as client:
-                response = client.get("/api/preview/1024/")
+                response = client.get("/api/preview/3000/")
 
         assert response.status_code == 200
 

@@ -61,6 +61,7 @@ class _DummyUser:
 
 
 _USER_A = _DummyUser("user-a", "alice")
+_USER_A.role = "admin"
 
 
 def _override_user(user: _DummyUser):
@@ -217,8 +218,12 @@ class TestGetConfig:
 class TestPutConfig:
     """PUT /api/search/config 端点测试。"""
 
-    def test_put_config_saves_searxng_provider(self, client_fixture) -> None:
+    def test_put_config_saves_searxng_provider(self, client_fixture, monkeypatch) -> None:
         """PUT searxng 配置应返回 200，再 GET 验证已持久化。"""
+        monkeypatch.setattr(
+            "api.routes.search_config.validate_search_url",
+            lambda url, allow_private=False: (True, None),
+        )
         put_response = client_fixture.put(
             "/api/search/config",
             json={
@@ -382,6 +387,10 @@ class TestPostTestSearch:
         monkeypatch.setattr(
             "api.routes.search_config.httpx.AsyncClient", MockAsyncClient
         )
+        monkeypatch.setattr(
+            "api.routes.search_config.validate_search_url",
+            lambda url, allow_private=False: (True, None),
+        )
 
         response = client_fixture.post(
             "/api/search/test",
@@ -424,6 +433,10 @@ class TestPostTestSearch:
         monkeypatch.setattr(
             "api.routes.search_config.httpx.AsyncClient", MockAsyncClient
         )
+        monkeypatch.setattr(
+            "api.routes.search_config.validate_search_url",
+            lambda url, allow_private=False: (True, None),
+        )
 
         response = client_fixture.post(
             "/api/search/test",
@@ -460,6 +473,10 @@ class TestPostTestSearch:
 
         monkeypatch.setattr(
             "api.routes.search_config.httpx.AsyncClient", MockAsyncClient
+        )
+        monkeypatch.setattr(
+            "api.routes.search_config.validate_search_url",
+            lambda url, allow_private=False: (True, None),
         )
 
         response = client_fixture.post(

@@ -241,7 +241,7 @@
   border-right: none;
 }
 
-/* ===== 移动端适配 ===== */
+/* ===== 移动端适配（≤ 640px，对应 --breakpoint-sm） ===== */
 @media (max-width: 640px) {
   .subTree {
     padding-left: 12px;

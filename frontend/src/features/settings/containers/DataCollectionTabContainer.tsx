@@ -6,13 +6,19 @@ import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '@/shared/api/api'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 
 // 懒加载展示组件，通过 .then() 将命名导出映射为 default 导出
 const DataCollectionTab = lazy(() => import('@/features/settings/components/DataCollectionTab').then(m => ({ default: m.DataCollectionTab })))
 
-/** 懒加载组件的加载占位符 */
+/** 懒加载组件的加载占位符：使用 Skeleton 模拟表单结构 */
 function TabLoadingFallback() {
-  return <div style={{ padding: '2rem', textAlign: 'center', color: '#9ca3af' }}>加载中...</div>
+  return (
+    <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      <Skeleton variant="rectangular" height="var(--space-10)" width="40%" />
+      <Skeleton.Paragraph lines={6} />
+    </div>
+  )
 }
 
 export function DataCollectionTabContainer() {

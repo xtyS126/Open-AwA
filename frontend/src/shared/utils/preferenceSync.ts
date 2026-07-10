@@ -5,6 +5,7 @@
  */
 import { userAPI } from '@/shared/api/api'
 import { safeSetItem } from '@/shared/utils/safeStorage'
+import { asRecord } from '@/shared/types/api'
 
 const PREFERENCE_WRITERS: Record<string, (value: unknown) => void> = {
   theme: (value) => {
@@ -26,11 +27,9 @@ function updateAppSettingsField(field: string, value: unknown): void {
   try {
     const raw = localStorage.getItem('app_settings')
     if (raw) {
-      const settings = JSON.parse(raw) as Record<string, unknown>
-      if (typeof settings === 'object' && settings !== null) {
-        settings[field] = value
-        localStorage.setItem('app_settings', JSON.stringify(settings))
-      }
+      const settings = asRecord(JSON.parse(raw))
+      settings[field] = value
+      localStorage.setItem('app_settings', JSON.stringify(settings))
     }
   } catch {
     // localStorage 不可用或数据损坏时静默忽略

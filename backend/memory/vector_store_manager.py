@@ -31,6 +31,9 @@ def _get_models_dir() -> str:
 _MODELS_DIR = _get_models_dir()
 os.environ.setdefault("MODELSCOPE_CACHE", os.path.join(_MODELS_DIR, "modelscope"))
 os.environ.setdefault("HF_HOME", os.path.join(_MODELS_DIR, "huggingface"))
+# 离线模式：跳过 huggingface.co 远程检查，避免网络不可达时启动卡顿 30s+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 
 DEFAULT_COLLECTION_NAME = "long_term_memory"
@@ -475,11 +478,20 @@ class VectorStoreManager:
             return
 
         # Qdrant 不允许设置 None 值，若需删除字段应使用 delete_payload；此处仅做覆盖更新
-        self.client.set_payload(
-            collection_name=self.collection_name,
-            payload=sanitized,
-            points=[int(memory_id)],
-        )
+        try:
+            self.client.set_payload(
+                collection_name=self.collection_name,
+                payload=sanitized,
+                points=[int(memory_id)],
+            )
+        except KeyError:
+            # 数据库中可能存在尚未写入向量库的历史记忆，不能因此阻断记忆列表接口。
+            logger.warning(
+                "向量记录不存在，跳过元数据同步: memory_id={}, collection={}",
+                memory_id,
+                self.collection_name,
+                exc_info=True,
+            )
 
     async def search(
         self,

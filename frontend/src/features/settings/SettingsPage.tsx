@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 import { lazy, Suspense } from 'react'
 import styles from './SettingsPage.module.css'
 
@@ -60,9 +61,14 @@ const ADVANCED_SUB_ITEMS = [
   { id: 'env-vars', label: '环境变量', icon: <Sliders size={16} /> },
 ] as const
 
-/** Tab 加载占位符 */
+/** Tab 加载占位符：使用 Skeleton 模拟表单结构，减少布局抖动 */
 function TabLoadingFallback() {
-  return <div style={{ padding: '2rem', textAlign: 'center', color: '#9ca3af' }}>加载中...</div>
+  return (
+    <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      <Skeleton variant="rectangular" height="var(--space-10)" width="40%" />
+      <Skeleton.Paragraph lines={6} />
+    </div>
+  )
 }
 
 function SettingsPage() {

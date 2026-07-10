@@ -2,6 +2,7 @@ import { memo, useState, useRef, useCallback, useEffect } from 'react'
 import { X, Paperclip, Send, Square } from 'lucide-react'
 import { appLogger } from '@/shared/utils/logger'
 import { useI18nStore, t as i18nT } from '@/i18n'
+import { useVisualViewport } from '@/shared/hooks/useVisualViewport'
 import styles from './ChatInput.module.css'
 
 export interface FileAttachment {
@@ -62,6 +63,23 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // 监听 visualViewport 变化，用于移动端键盘弹起时自适应可见区域。
+  // 当键盘弹起时，visualViewport.height 会缩小到键盘上方的可见区域，
+  // 通过 inline style 动态设置 bottom 偏移，将 fixed 定位的输入栏抬起至键盘上方。
+  const { height: viewportHeight, isKeyboardOpen, offsetTop } = useVisualViewport()
+
+  // 计算键盘弹起时的 bottom 偏移：100vh - (viewportHeight + offsetTop)
+  // 即视口总高度减去键盘上方的可见区域高度，差值即为键盘占用高度
+  const keyboardBottomOffset = (isKeyboardOpen && viewportHeight !== null)
+    ? `calc(100vh - ${viewportHeight + offsetTop}px)`
+    : undefined
+
+  // 容器样式：仅键盘弹起时通过 inline style 覆盖默认 bottom: 0
+  // 桌面端 position 非 fixed，inline bottom 不生效，不影响桌面端布局
+  const containerStyle: React.CSSProperties = keyboardBottomOffset
+    ? { bottom: keyboardBottomOffset }
+    : {}
 
   useEffect(() => {
     return () => {
@@ -204,17 +222,19 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
 
   return (
     <div
-      className={`${styles['chat-input-container']} ${isDragOver ? styles['drag-over'] : ''}`}
+      className={`${styles['chat-input-container']} ${isDragOver ? styles['drag-over'] : ''} ${isKeyboardOpen ? styles['is-keyboard-open'] : ''}`}
+      style={containerStyle}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      data-testid="chat-input-container"
     >
       {attachments.length > 0 && (
         <div className={styles['attachments-preview']}>
           {attachments.map(att => (
             <div key={att.id} className={styles['attachment-item']}>
               {att.preview ? (
-                <img src={att.preview} alt={att.file.name} className={styles['attachment-thumb']} />
+                <img src={att.preview} alt={att.file.name} className={styles['attachment-thumb']} loading="lazy" decoding="async" />
               ) : (
                 <div className={styles['attachment-file-icon']}>
                   <span>{getFileExtension(att.file.name).slice(1).toUpperCase()}</span>
@@ -263,6 +283,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
           onPaste={handlePaste}
           rows={1}
           maxLength={32000}
+          data-testid="chat-input-textarea"
         />
         {streamingAssistantId ? (
           <button

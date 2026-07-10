@@ -78,3 +78,25 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ============================================================
+ * 移动端适配（≤ 768px，对应 --breakpoint-md 令牌）
+ * TodoPanel 改为从底部滑入的抽屉，覆盖 ChatInput（z-index 高于 ChatInput）。
+ * TodoPanel 仅在有 todo 项时渲染，todo 完成后自动消失，恢复输入。
+ * ============================================================ */
+@media (max-width: 768px) {
+  .panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 80vh;
+    overflow-y: auto;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-modal);
+    /* 底部安全区域 padding，适配 Home Indicator */
+    padding-bottom: var(--safe-area-bottom);
+    margin-bottom: 0;
+  }
+}

@@ -2,14 +2,12 @@
  * 设计令牌（Design Tokens）—— 平台级设计决策的单一事实来源。
  * 所有 CSS 变量集中定义于此文件，组件样式通过 var() 引用，禁止硬编码值。
  * 导入顺序：tokens.css → global.css → 各组件 CSS 模块
- */
-
-/*
- * SEC-15: Google Fonts 通过 CSS @import 引入，配合 CSP 限制（style-src 'self' 'unsafe-inline' https://fonts.googleapis.com；
- * font-src 'self' https://fonts.gstatic.com）减少 CDN 投毒面。
+ *
+ * 字体加载：Google Fonts 已迁移至 index.html 中通过 <link rel=preload> + 异步加载方式引入，
+ * 避免在 CSS 顶部使用阻塞式 @import。CSP 限制（style-src 'self' 'unsafe-inline' https://fonts.googleapis.com；
+ * font-src 'self' https://fonts.gstatic.com）仍然生效，减少 CDN 投毒面。
  * 长期方案应改为自托管 woff2 字体文件并加 SRI 校验，避免任何外部 CDN 依赖。
  */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
   /* ============================================================
@@ -17,9 +15,10 @@
    * ============================================================ */
 
   /* 主色调 */
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-primary-dark: #1d4ed8;
+  /* a11y: --color-primary 由 #3b82f6 调深为 #2563eb，与白色文本对比度 3.67 -> 5.22，满足 WCAG AA 4.5:1 */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-dark: #1e40af;
   --color-primary-ring: rgba(59, 130, 246, 0.2);
   --color-primary-soft-bg: rgba(59, 130, 246, 0.1);
   --color-primary-softer-bg: rgba(59, 130, 246, 0.08);
@@ -34,7 +33,8 @@
   /* 文字色 */
   --color-text: #0f172a;
   --color-text-secondary: #475569;
-  --color-text-tertiary: #94a3b8;
+  /* a11y: --color-text-tertiary 由 #94a3b8 调深为 #64748b，与 #ffffff 对比度 2.60 -> 4.75，满足 WCAG AA 4.5:1 */
+  --color-text-tertiary: #64748b;
 
   /* 边框色 */
   --color-border: #e2e8f0;
@@ -189,6 +189,14 @@
   /* ============================================================
    * 响应式断点
    * ============================================================ */
+  /* 细化断点令牌（与 mobile/tablet/desktop 等价关系见各同行注释） */
+  --breakpoint-xs: 480px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;   /* 与现有 --breakpoint-mobile 等价 */
+  --breakpoint-lg: 1024px;  /* 与现有 --breakpoint-tablet 等价 */
+  --breakpoint-xl: 1440px;  /* 与现有 --breakpoint-desktop 等价 */
+
+  /* 旧版断点令牌（作为别名保留，向后兼容现有引用） */
   --breakpoint-mobile: 768px;
   --breakpoint-tablet: 1024px;
   --breakpoint-desktop: 1440px;
@@ -199,6 +207,23 @@
   --sidebar-width: 260px;
   --sidebar-collapsed-width: 68px;
   --secondary-sidebar-width: 240px;
+
+  /* ============================================================
+   * 安全区域（notch / Home Indicator）
+   * 用于全面屏设备避开听筒、圆角、底部 Home 指示条等不可交互区
+   * ============================================================ */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+
+  /* ============================================================
+   * 触摸与移动端间距
+   * --touch-target-min: iOS HIG / Material 推荐最小可点击区域 44px
+   * --space-mobile-scale: 移动端整体间距缩放系数（0.875 = 14/16）
+   * ============================================================ */
+  --touch-target-min: 44px;
+  --space-mobile-scale: 0.875;
 }
 
 /* ============================================================
@@ -206,7 +231,8 @@
  * ============================================================ */
 .dark {
   /* 主色调 — 暗色下亮度提升 */
-  --color-primary: #3b82f6;
+  /* a11y: --color-primary 由 #3b82f6 调深为 #2563eb，与白色文本对比度 3.67 -> 5.22，满足 WCAG AA 4.5:1 */
+  --color-primary: #2563eb;
   --color-primary-hover: #60a5fa;
   --color-primary-dark: #2563eb;
   --color-primary-ring: rgba(59, 130, 246, 0.3);

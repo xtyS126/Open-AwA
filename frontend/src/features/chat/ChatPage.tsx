@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PanelLeft } from 'lucide-react'
-import { chatAPI, conversationAPI, diaryAPI } from '@/shared/api/api'
+import { chatAPI, diaryAPI } from '@/shared/api/api'
 import { useConversationHistory } from '@/features/chat/hooks/useConversationHistory'
 import { useStreamExecutionState } from '@/features/chat/hooks/useStreamExecutionState'
 import { useTaskPanelState } from '@/features/chat/hooks/useTaskPanelState'
+import { useChatBroadcastEffects } from '@/features/chat/hooks/useChatBroadcastEffects'
+import { useChatConversationActions } from '@/features/chat/hooks/useChatConversationActions'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { useModelStore } from '@/features/chat/store/modelStore'
 import { useToolCallStore } from '@/features/chat/store/toolCallStore'
@@ -20,13 +22,13 @@ import { appLogger } from '@/shared/utils/logger'
 import { useToast } from '@/shared/components/Toast'
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 import { useChatStream } from './hooks/useChatStream'
 import { useSubagentSync } from './hooks/useSubagentSync'
 import { useMessageCache } from './hooks/useMessageCache'
 import { usePermissionRequest } from './hooks/usePermissionRequest'
 import { useChatAutoScroll } from './hooks/useChatAutoScroll'
 import { useChatBroadcast } from './hooks/useChatBroadcast'
-import type { ChatBroadcastEvent } from './hooks/useChatBroadcast'
 import ConversationSidebar from './components/ConversationSidebar'
 import { MessageList } from './components/MessageList'
 import { ChatInput } from './components/ChatInput'
@@ -35,7 +37,9 @@ import type { FileAttachment } from './components/ChatInput'
 // P1: TaskPanel/TodoPanel 按需懒加载，减少聊天页首屏 JS
 const TaskPanel = React.lazy(() => import('./components/TaskPanel').then(m => ({ default: m.TaskPanel })))
 const TodoPanel = React.lazy(() => import('./components/TodoPanel').then(m => ({ default: m.TodoPanel })))
+const AskUserCard = React.lazy(() => import('./components/AskUserCard').then(m => ({ default: m.AskUserCard })))
 import type { TodoItem } from './components/TodoPanel'
+import type { AskUserRequest } from './types'
 import styles from './ChatPage.module.css'
 
 function ChatPage() {
@@ -77,7 +81,6 @@ function ChatPage() {
     scrollToLatest,
   } = useChatAutoScroll({ threshold: 150, behavior: 'smooth' })
   const isMountedRef = useRef(true)
-  const pendingConversationCreationRef = useRef<Promise<string> | null>(null)
   const [messageMeta, setMessageMeta] = useState<Record<string, import('@/features/chat/types').AssistantExecutionMeta>>({})
   const [streamingAssistantId, setStreamingAssistantId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState<string>('')
@@ -116,14 +119,12 @@ function ChatPage() {
   } = useStreamExecutionState()
   const [todoItems, setTodoItems] = useState<TodoItem[]>([])
   const [todoSummary, setTodoSummary] = useState<string>('')
+  // ask_user 挂起的问题请求：同一时刻最多一个（后端 is_concurrency_safe=False）
+  const [askUserRequest, setAskUserRequest] = useState<AskUserRequest | null>(null)
   const [aborting, setAborting] = useState<boolean>(false)
   const [showAbortConfirm, setShowAbortConfirm] = useState<boolean>(false)
   // 密钥失效提示对话框：收到 llm_api_key_stale 错误码时弹出，引导用户跳转设置页
   const [showApiKeyStaleDialog, setShowApiKeyStaleDialog] = useState<boolean>(false)
-  /* 删除会话确认状态 */
-  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null)
-  /* 批量删除会话确认状态（预留） */
-  // const [pendingBatchDeleteIds, setPendingBatchDeleteIds] = useState<string[] | null>(null)
   const {
     isCompactViewport,
     historySidebarOpen,
@@ -247,293 +248,71 @@ function ChatPage() {
     })
   }, [])
 
-  // 跨标签页广播订阅：接收其他标签页的流式与会话变更事件，应用到当前 store。
-  // 防重复关键：若当前标签页正在主动流式该消息（streamingAssistantIdRef 与事件 messageId 一致），
-  // 说明当前标签页是发起方，跳过应用远程事件，避免重复追加。
-  useEffect(() => {
-    const unsubscribe = subscribe((event: ChatBroadcastEvent) => {
-      // 防重复：当前标签页正在主动流式该消息时，跳过远程事件
-      if (
-        streamingAssistantIdRef.current !== null &&
-        event.type !== 'conversation_changed' &&
-        event.messageId === streamingAssistantIdRef.current
-      ) {
-        return
-      }
-      switch (event.type) {
-        case 'stream_start':
-          useSessionStore.getState().applyRemoteStreamStart(
-            event.sessionId,
-            event.messageId,
-            event.userMessage
-          )
-          break
-        case 'stream_chunk':
-          useSessionStore.getState().applyRemoteStreamChunk(
-            event.sessionId,
-            event.messageId,
-            event.content,
-            event.reasoning
-          )
-          break
-        case 'stream_end':
-          useSessionStore.getState().applyRemoteStreamEnd(
-            event.sessionId,
-            event.messageId,
-            event.finalContent,
-            event.finalReasoning
-          )
-          break
-        case 'conversation_changed':
-          useSessionStore.getState().applyRemoteConversationChange()
-          break
-      }
-    })
-    return unsubscribe
-  }, [subscribe])
-
-  // 节流广播流式 chunk：监听当前流式助手消息的 content/reasoning_content 变化，
-  // 按 200ms 间隔或 50 字符增量的阈值节流广播，避免高频 chunk 淹没其他标签页。
-  const lastChunkBroadcastRef = useRef<{ content: string; time: number }>({
-    content: '',
-    time: 0,
+  // 跨标签页广播副作用：订阅远程事件 + 节流广播 chunk + 流式开始/结束过渡广播。
+  // 详细逻辑见 useChatBroadcastEffects，主组件仅需传入流式状态与广播方法。
+  useChatBroadcastEffects({
+    streamingAssistantId,
+    streamingAssistantIdRef,
+    messages,
+    subscribe,
+    broadcastStreamStart,
+    broadcastStreamChunk,
+    broadcastStreamEnd,
+    shouldBroadcastCurrentStreamRef,
   })
-  useEffect(() => {
-    if (!streamingAssistantId) return
-    const currentMessage = messages.find((m) => m.id === streamingAssistantId)
-    if (!currentMessage || currentMessage.role !== 'assistant') return
 
-    const now = Date.now()
-    const contentDelta = currentMessage.content.length - lastChunkBroadcastRef.current.content.length
-    // 节流：距上次广播不足 200ms 且内容增量不足 50 字符时跳过
-    if (now - lastChunkBroadcastRef.current.time < 200 && contentDelta < 50) {
-      return
-    }
+  // handleSend 的 ref 镜像：供 useChatConversationActions 中的 handleRegenerate 调用。
+  // 必须在 useChatConversationActions 之前声明，避免变量在声明前被访问。
+  // 真正的 handleSend 在 chatStream 初始化后定义，并通过 useEffect 同步到 ref。
+  const handleSendRef = useRef<((message?: string, attachments?: FileAttachment[], options?: import('./hooks/useChatStream').SendMessageOptions) => Promise<void>) | undefined>(undefined)
 
-    // 使用 getState().sessionId 读取最新会话 ID，避免闭包捕获过期值
-    const currentSessionId = useSessionStore.getState().sessionId
-    if (currentSessionId === 'default') return
-
-    broadcastStreamChunk(
-      currentSessionId,
-      streamingAssistantId,
-      currentMessage.content,
-      currentMessage.reasoning_content
-    )
-    lastChunkBroadcastRef.current = { content: currentMessage.content, time: now }
-  }, [streamingAssistantId, messages, broadcastStreamChunk])
-
-  // 流式开始/结束广播：检测 streamingAssistantId 的状态过渡。
-  // - null → 非空：流式开始，广播 stream_start（携带最后一条用户消息）
-  // - 非空 → null：流式结束，广播 stream_end（携带最终内容）
-  // 同时在流式开始时重置节流状态。
-  const prevStreamingIdRef = useRef<string | null>(null)
-  useEffect(() => {
-    const prevId = prevStreamingIdRef.current
-    prevStreamingIdRef.current = streamingAssistantId
-
-    if (prevId && !streamingAssistantId) {
-      // 从非空变为 null：流式结束，广播最终内容
-      const finalMessage = useSessionStore.getState().messages.find((m) => m.id === prevId)
-      const currentSessionId = useSessionStore.getState().sessionId
-      if (finalMessage && currentSessionId !== 'default') {
-        broadcastStreamEnd(
-          currentSessionId,
-          prevId,
-          finalMessage.content,
-          finalMessage.reasoning_content
-        )
-      }
-      // 重置节流状态，为下次流式做准备
-      lastChunkBroadcastRef.current = { content: '', time: 0 }
-      // 重置广播标记
-      shouldBroadcastCurrentStreamRef.current = false
-    } else if (!prevId && streamingAssistantId) {
-      // 从 null 变为非空：流式开始
-      // 重置节流状态，确保第一个 chunk 能立即广播
-      lastChunkBroadcastRef.current = { content: '', time: 0 }
-      // 仅在需要广播时（用户主动发送消息）发送 stream_start
-      if (shouldBroadcastCurrentStreamRef.current) {
-        const currentSessionId = useSessionStore.getState().sessionId
-        if (currentSessionId !== 'default') {
-          // 从 store 中读取最后一条用户消息作为广播内容
-          const currentMessages = useSessionStore.getState().messages
-          const lastUserMessage = [...currentMessages].reverse().find((m) => m.role === 'user')
-          if (lastUserMessage) {
-            broadcastStreamStart(currentSessionId, streamingAssistantId, lastUserMessage.content)
-          }
-        }
-      }
-    }
-  }, [streamingAssistantId, broadcastStreamStart, broadcastStreamEnd])
-
-  const createConversationAndNavigate = useCallback(async (replace: boolean = false) => {
-    if (pendingConversationCreationRef.current) {
-      return pendingConversationCreationRef.current
-    }
-
-    const pendingRequest = (async () => {
-      clearHistoryError()
-      const response = await conversationAPI.createSession()
-      const nextConversation = response.data as import('@/features/chat/types').ConversationSessionSummary
-      upsertConversation(nextConversation)
-      setSessionId(nextConversation.session_id)
-      setMessages([])
-      setMessageMeta({})
-      setStreamingAssistantId(null)
-      resetStreamExecutionState()
-      navigate(`/chat/${nextConversation.session_id}`, { replace })
-      // 广播会话列表变更到其他标签页
-      broadcastConversationChange()
-      return nextConversation.session_id
-    })()
-
-    pendingConversationCreationRef.current = pendingRequest
-
-    try {
-      return await pendingRequest
-    } finally {
-      pendingConversationCreationRef.current = null
-    }
-  }, [broadcastConversationChange, clearHistoryError, navigate, resetStreamExecutionState, setMessages, setSessionId, upsertConversation])
-
-  const ensureConversationSession = useCallback(async () => {
-    if (sessionId && sessionId !== 'default') {
-      return sessionId
-    }
-    return createConversationAndNavigate(!conversationId)
-  }, [conversationId, createConversationAndNavigate, sessionId])
-
-  const recoverUnavailableConversation = useCallback(async (missingSessionId: string) => {
-    removeConversation(missingSessionId)
-    setMessages([])
-    setMessageMeta({})
-    setStreamingAssistantId(null)
-    resetStreamExecutionState()
-    // 会话被移除后广播变更到其他标签页
-    broadcastConversationChange()
-
-    const fallbackConversation = useSessionStore.getState().conversations.find(
-      (item) => item.session_id !== missingSessionId && !item.deleted_at
-    )
-
-    if (fallbackConversation) {
-      navigate(`/chat/${fallbackConversation.session_id}`, { replace: true })
-      return
-    }
-
-    await createConversationAndNavigate(true)
-  }, [broadcastConversationChange, createConversationAndNavigate, navigate, removeConversation, resetStreamExecutionState, setMessages])
-
-  useEffect(() => {
-    void loadConversationList(1, false)
-  }, [loadConversationList])
-
-  useEffect(() => {
-    if (conversationId && conversationId !== sessionId) {
-      // 仅调用 setSessionId，其内部已包含 loadMessages 逻辑
-      // 移除 loadCachedMessages 调用，避免与 setSessionId 内部的 loadMessages 产生竞态
-      setSessionId(conversationId)
-      setMessageMeta({})
-      setStreamingAssistantId(null)
-      setFeedbackState({})
-      resetStreamExecutionState()
-    }
-  }, [conversationId, resetStreamExecutionState, sessionId, setSessionId])
-
-  useEffect(() => {
-    if (!historyInitialized || conversationId || (sessionId && sessionId !== 'default')) {
-      return
-    }
-
-    const persistedSessionId = getActiveConversationId()
-    const availableConversations = conversations.filter((item) => includeDeleted || !item.deleted_at)
-    const nextConversation = availableConversations.find((item) => item.session_id === persistedSessionId) || availableConversations[0]
-    if (nextConversation) {
-      navigate(`/chat/${nextConversation.session_id}`, { replace: true })
-      return
-    }
-
-    void createConversationAndNavigate(true)
-  }, [conversationId, conversations, createConversationAndNavigate, historyInitialized, includeDeleted, navigate, sessionId])
-
-  useEffect(() => {
-    if (!historyInitialized) {
-      return
-    }
-
-    if (!sessionId || sessionId === 'default') {
-      setMessages([])
-      setMessageMeta({})
-      resetStreamExecutionState()
-      return
-    }
-    let cancelled = false
-    const loadHistory = async () => {
-      try {
-        const response = await chatAPI.getHistory(sessionId)
-        if (cancelled) return
-        const history = response.data
-        if (Array.isArray(history)) {
-          const restored = history.filter(Boolean).map((msg: {
-            id?: string | number
-            role: string
-            content: string
-            timestamp?: string
-            reasoning_content?: string | null
-            toolEvents?: unknown
-            segments?: import('@/features/chat/types').AssistantMessageSegment[]
-          }) => ({
-            id: msg.id?.toString() || crypto.randomUUID(),
-            role: msg.role as 'user' | 'assistant',
-            content: msg.content,
-            reasoning_content: typeof msg.reasoning_content === 'string' ? msg.reasoning_content : undefined,
-            timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
-            toolEvents: Array.isArray(msg.toolEvents) ? msg.toolEvents : undefined,
-            segments: Array.isArray(msg.segments) ? msg.segments : undefined,
-          }))
-          const cachedMessages = getLocalMessagesForRestore(sessionId)
-          const mergedMessages = mergeServerHistoryWithCached(restored, cachedMessages)
-          setMessages(mergedMessages)
-          setMessageMeta(buildMessageMetaFromMessages(mergedMessages))
-          flushConversationCache()
-          appLogger.info({
-            event: 'chat_history_loaded',
-            module: 'chat_page',
-            action: 'load_history',
-            status: 'success',
-            message: `loaded ${mergedMessages.length} history messages`,
-          })
-        }
-      } catch (error) {
-        if (cancelled) return
-
-        const statusCode = (error as { response?: { status?: number } })?.response?.status
-        if (statusCode === 404 && useSessionStore.getState().sessionId === sessionId) {
-          appLogger.warning({
-            event: 'chat_history_missing',
-            module: 'chat_page',
-            action: 'load_history',
-            status: 'warning',
-            message: 'conversation history not found, recovering route',
-            extra: { session_id: sessionId },
-          })
-          void recoverUnavailableConversation(sessionId)
-          return
-        }
-
-        appLogger.warning({
-          event: 'chat_history_load_failed',
-          module: 'chat_page',
-          action: 'load_history',
-          status: 'failure',
-          message: 'failed to load chat history',
-        })
-      }
-    }
-    loadHistory()
-    return () => { cancelled = true }
-  }, [flushConversationCache, historyInitialized, recoverUnavailableConversation, resetStreamExecutionState, sessionId, setMessages])
+  // 会话生命周期与 CRUD 动作：创建/恢复/重命名/删除/批量删除/重新生成等。
+  // 详细逻辑见 useChatConversationActions，主组件仅需传入 store 动作与缓存方法。
+  const {
+    ensureConversationSession,
+    handleRegenerate,
+    handleCreateConversation,
+    handleSidebarCreateConversation,
+    handleSelectConversation,
+    handleRenameConversation,
+    handleDeleteConversation,
+    cancelDeleteConversation,
+    confirmDeleteConversation,
+    handleRestoreConversation,
+    handleLoadMoreConversations,
+    handleBatchDeleteConversations,
+    pendingDeleteSessionId,
+  } = useChatConversationActions({
+    conversationId,
+    sessionId,
+    conversations,
+    includeDeleted,
+    historyInitialized,
+    historyLoading,
+    historyPage,
+    conversationsHasMore,
+    isCompactViewport,
+    loadConversationList,
+    closeHistorySidebar,
+    clearHistoryError,
+    setSessionId,
+    setMessages,
+    upsertConversation,
+    removeConversation,
+    resetStreamExecutionState,
+    resetTaskPanelState,
+    setMessageMeta,
+    setStreamingAssistantId,
+    setFeedbackState,
+    broadcastConversationChange,
+    getLocalMessagesForRestore,
+    mergeServerHistoryWithCached,
+    flushConversationCache,
+    getActiveConversationId,
+    buildMessageMetaFromMessages,
+    t,
+    handleSendRef: handleSendRef as React.MutableRefObject<((message?: string | undefined, attachments?: unknown[] | undefined) => Promise<void>) | undefined>,
+  })
 
   const updateAssistantMeta = useCallback((messageId: string, updater: (current: import('@/features/chat/types').AssistantExecutionMeta) => import('@/features/chat/types').AssistantExecutionMeta) => {
     setMessageMeta((prev) => ({
@@ -572,8 +351,6 @@ function ChatPage() {
     })
   }, [updateAssistantSegments])
 
-  const handleSendRef = useRef<((message?: string, attachments?: FileAttachment[], options?: import('./hooks/useChatStream').SendMessageOptions) => Promise<void>) | undefined>(undefined)
-
   const subagentSync = useSubagentSync({
     updateAssistantMeta,
     updateAssistantSegments,
@@ -608,6 +385,7 @@ function ChatPage() {
     subagentSync,
     setTodoItems,
     setTodoSummary,
+    setAskUserRequest,
     setStreamingAssistantId,
     setLoading,
     messageMeta,
@@ -745,175 +523,6 @@ function ChatPage() {
     }
   }, [])
 
-  const handleRegenerate = useCallback(async (messageId: string) => {
-    const currentMessages = useSessionStore.getState().messages
-    const msgIndex = currentMessages.findIndex((m) => m.id === messageId)
-    if (msgIndex === -1) return
-
-    const messagesBefore = currentMessages.slice(0, msgIndex)
-    const lastUserMsg = [...messagesBefore].reverse().find((m) => m.role === 'user')
-    if (!lastUserMsg) return
-
-    const lastUserMsgIndex = messagesBefore.findIndex((m) => m.id === lastUserMsg.id)
-    const preservedMessages = messagesBefore.slice(0, lastUserMsgIndex)
-
-    // 先创建新会话（无论是否有旧会话都需要新会话）
-    const response = await conversationAPI.createSession()
-    const newConv = response.data as import('@/features/chat/types').ConversationSessionSummary
-    upsertConversation(newConv)
-    setSessionId(newConv.session_id)
-
-    // 新会话创建成功后再删除旧会话，避免创建失败导致数据丢失
-    if (sessionId && sessionId !== 'default') {
-      try {
-        await conversationAPI.deleteSession(sessionId, 1)
-        removeConversation(sessionId)
-      } catch {
-        /* 旧会话删除失败不影响后续流程 */
-      }
-    }
-
-    setMessages(preservedMessages)
-    setMessageMeta({})
-    setStreamingAssistantId(null)
-    resetStreamExecutionState()
-    resetTaskPanelState()
-    navigate(`/chat/${newConv.session_id}`, { replace: true })
-    // 重新生成会话涉及会话增删，广播变更到其他标签页
-    broadcastConversationChange()
-
-    void handleSendRef.current?.(lastUserMsg.content, [])
-  }, [broadcastConversationChange, sessionId, removeConversation, upsertConversation, setSessionId, setMessages, setStreamingAssistantId, resetStreamExecutionState, resetTaskPanelState, navigate])
-
-  const handleCreateConversation = useCallback(async () => {
-    setMessageMeta({})
-    setStreamingAssistantId(null)
-    resetStreamExecutionState()
-    resetTaskPanelState()
-    await createConversationAndNavigate(false)
-  }, [createConversationAndNavigate, resetStreamExecutionState, resetTaskPanelState])
-
-  const handleSidebarCreateConversation = useCallback(() => {
-    void handleCreateConversation()
-  }, [handleCreateConversation])
-
-  const handleSelectConversation = useCallback((nextSessionId: string) => {
-    if (!nextSessionId || nextSessionId === sessionId) {
-      if (isCompactViewport) {
-        closeHistorySidebar()
-      }
-      return
-    }
-    setMessageMeta({})
-    setStreamingAssistantId(null)
-    resetStreamExecutionState()
-    resetTaskPanelState()
-    navigate(`/chat/${nextSessionId}`)
-    if (isCompactViewport) {
-      closeHistorySidebar()
-    }
-  }, [closeHistorySidebar, isCompactViewport, navigate, resetStreamExecutionState, resetTaskPanelState, sessionId])
-
-  const handleRenameConversation = useCallback(async (targetSessionId: string, title: string) => {
-    const response = await conversationAPI.renameSession(targetSessionId, title)
-    upsertConversation(response.data as import('@/features/chat/types').ConversationSessionSummary)
-    // 重命名后广播变更到其他标签页
-    broadcastConversationChange()
-  }, [broadcastConversationChange, upsertConversation])
-
-  /* 请求删除会话 - 显示确认对话框 */
-  const handleDeleteConversation = useCallback((targetSessionId: string) => {
-    setPendingDeleteSessionId(targetSessionId)
-  }, [])
-
-  /* 执行删除会话 */
-  const executeDeleteConversation = useCallback(async () => {
-    if (!pendingDeleteSessionId) return
-    const targetSessionId = pendingDeleteSessionId
-    setPendingDeleteSessionId(null)
-
-    const nextCandidate = conversations.find((item) => item.session_id !== targetSessionId && !item.deleted_at)
-    const response = await conversationAPI.deleteSession(targetSessionId)
-    if (includeDeleted) {
-      upsertConversation(response.data as import('@/features/chat/types').ConversationSessionSummary)
-    } else {
-      removeConversation(targetSessionId)
-    }
-    if (sessionId === targetSessionId) {
-      if (nextCandidate) {
-        navigate(`/chat/${nextCandidate.session_id}`, { replace: true })
-      } else {
-        await createConversationAndNavigate(true)
-      }
-    }
-    void loadConversationList(1, false)
-    // 删除会话后广播变更到其他标签页
-    broadcastConversationChange()
-  }, [broadcastConversationChange, conversations, createConversationAndNavigate, includeDeleted, navigate, removeConversation, sessionId, upsertConversation, loadConversationList, pendingDeleteSessionId])
-
-  /* 取消删除会话 */
-  const cancelDeleteConversation = useCallback(() => {
-    setPendingDeleteSessionId(null)
-  }, [])
-
-  /* 确认删除会话 */
-  const confirmDeleteConversation = useCallback(() => {
-    void executeDeleteConversation()
-  }, [executeDeleteConversation])
-
-  const handleRestoreConversation = useCallback(async (targetSessionId: string) => {
-    const response = await conversationAPI.restoreSession(targetSessionId)
-    upsertConversation(response.data as import('@/features/chat/types').ConversationSessionSummary)
-    if (!sessionId || sessionId === 'default') {
-      navigate(`/chat/${targetSessionId}`, { replace: true })
-    }
-    void loadConversationList(1, false)
-    // 恢复会话后广播变更到其他标签页
-    broadcastConversationChange()
-  }, [broadcastConversationChange, navigate, sessionId, upsertConversation, loadConversationList])
-
-  const handleLoadMoreConversations = useCallback(() => {
-    if (historyLoading || !conversationsHasMore) {
-      return
-    }
-    void loadConversationList(historyPage + 1, true)
-  }, [conversationsHasMore, historyLoading, historyPage, loadConversationList])
-
-  const handleBatchDeleteConversations = useCallback(async (sessionIds: string[]) => {
-    if (sessionIds.length === 0) {
-      return
-    }
-    if (!window.confirm(t('chat.confirmDeleteSelected', { count: String(sessionIds.length) }))) {
-      return
-    }
-
-    const currentSessionDeleted = Boolean(sessionId && sessionIds.includes(sessionId))
-    const nextCandidate = conversations.find((item) => !sessionIds.includes(item.session_id) && !item.deleted_at)
-    const response = await conversationAPI.batchDeleteSessions(sessionIds)
-
-    if (includeDeleted) {
-      for (const item of response.data.items || []) {
-        upsertConversation(item as import('@/features/chat/types').ConversationSessionSummary)
-      }
-    } else {
-      for (const targetSessionId of sessionIds) {
-        removeConversation(targetSessionId)
-      }
-    }
-
-    if (currentSessionDeleted) {
-      if (nextCandidate) {
-        navigate(`/chat/${nextCandidate.session_id}`, { replace: true })
-      } else {
-        await createConversationAndNavigate(true)
-      }
-    }
-
-    void loadConversationList(1, false)
-    // 批量删除会话后广播变更到其他标签页
-    broadcastConversationChange()
-  }, [broadcastConversationChange, conversations, createConversationAndNavigate, includeDeleted, loadConversationList, navigate, removeConversation, sessionId, upsertConversation, t])
-
   const handleStopAgent = useCallback(async (agentId: string) => {
     try {
       const result = await stopAgent(agentId)
@@ -945,7 +554,7 @@ function ChatPage() {
         }
         subagentSync.clearSubagentTimeout(agentId)
       }
-    } catch (error) {
+    } catch {
       appLogger.warning({
         event: 'stop_agent_failed',
         module: 'chat_page',
@@ -1078,14 +687,33 @@ function ChatPage() {
               onUndo={handleUndoOperation}
             />
 
-            <React.Suspense fallback={null}>
+            <React.Suspense fallback={(
+              <div style={{ padding: 'var(--space-2) var(--space-3)' }}>
+                <Skeleton variant="rectangular" height="var(--space-6)" width="40%" />
+              </div>
+            )}>
               <TodoPanel
                 items={todoItems}
                 summary={todoSummary}
               />
             </React.Suspense>
 
-            <React.Suspense fallback={null}>
+            <React.Suspense fallback={(
+              <div style={{ padding: 'var(--space-2) var(--space-3)' }}>
+                <Skeleton variant="rectangular" height="var(--space-6)" width="40%" />
+              </div>
+            )}>
+              <AskUserCard
+                request={askUserRequest}
+                onResolved={() => setAskUserRequest(null)}
+              />
+            </React.Suspense>
+
+            <React.Suspense fallback={(
+              <div style={{ padding: 'var(--space-2) var(--space-3)' }}>
+                <Skeleton variant="rectangular" height="var(--space-6)" width="40%" />
+              </div>
+            )}>
               <TaskPanel
                 steps={activeExecution?.meta.steps || []}
                 toolEvents={activeExecution?.meta.toolEvents || []}

@@ -442,7 +442,7 @@ export default function WechatConfigModule() {
                 </div>
                 {qrCodeUrl && (
                   <div className={styles['qr-preview']}>
-                    <img src={qrCodeUrl} alt="微信登录二维码" className={styles['qr-image']} />
+                    <img src={qrCodeUrl} alt="微信登录二维码" className={styles['qr-image']} loading="lazy" decoding="async" />
                   </div>
                 )}
                 {qrImageLoadError && (

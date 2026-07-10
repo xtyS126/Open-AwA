@@ -310,6 +310,15 @@ async def test_vector_store_manager_helper_paths(tmp_path):
     assert manager.count(user_id="user-1", include_archived=False) == 1
     manager.close()
 
+    # 数据库中存在但向量库尚未写入的历史记忆，元数据同步应安全跳过
+    missing_point_manager = VectorStoreManager(
+        persist_directory=str(tmp_path / "missing_point_store"),
+        collection_name="missing_point_helpers",
+        embedding_provider=HashEmbeddingProvider(dimension=4),
+    )
+    missing_point_manager.update_memory_metadata(99, foo="bar")
+    missing_point_manager.close()
+
 
 def test_memory_manager_shared_vector_store_is_initialized_once(monkeypatch):
     """

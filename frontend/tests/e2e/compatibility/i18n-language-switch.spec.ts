@@ -19,7 +19,7 @@ test.describe('i18n 语言切换', () => {
   test('外观 Tab 显示语言选择器', async ({ page }) => {
     await loginAsAdminPage(page)
     await page.goto('/settings')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // 进入外观 Tab（点击外观标签）
     const appearanceTab = page.getByRole('tab', { name: /外观|Appearance/ }).first()
@@ -35,7 +35,7 @@ test.describe('i18n 语言切换', () => {
   test('切换到 English 后界面文本更新', async ({ page }) => {
     await loginAsAdminPage(page)
     await page.goto('/settings')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // 进入外观 Tab
     const appearanceTab = page.getByRole('tab', { name: /外观|Appearance/ }).first()
@@ -59,12 +59,12 @@ test.describe('i18n 语言切换', () => {
   test('切换回简体中文后界面文本恢复', async ({ page }) => {
     await loginAsAdminPage(page)
     await page.goto('/settings')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // 先设置为 English
     await page.evaluate(() => localStorage.setItem('openawa_locale', 'en-US'))
     await page.reload()
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // 进入外观 Tab
     const appearanceTab = page.getByRole('tab', { name: /外观|Appearance/ }).first()
@@ -87,7 +87,7 @@ test.describe('i18n 语言切换', () => {
   test('语言偏好跨页面持久化', async ({ page }) => {
     await loginAsAdminPage(page)
     await page.goto('/settings')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // 进入外观 Tab 并切换到 English
     const appearanceTab = page.getByRole('tab', { name: /外观|Appearance/ }).first()
@@ -102,7 +102,7 @@ test.describe('i18n 语言切换', () => {
 
     // 导航到其他页面
     await page.goto('/dashboard')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // localStorage 仍应保持 en-US
     const storedLocale = await page.evaluate(() => localStorage.getItem('openawa_locale'))

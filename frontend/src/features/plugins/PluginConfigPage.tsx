@@ -5,6 +5,7 @@ import ConfirmDialog from '@/shared/components/ConfirmDialog/ConfirmDialog'
 import { useToast } from '@/shared/components/Toast'
 import { usePluginConfigActions, usePluginConfigSchema, usePluginList } from '@/features/plugins/hooks'
 import { modelsAPI } from '@/features/settings/modelsApi'
+import { isRecord } from '@/shared/types/api'
 import styles from './PluginConfigPage.module.css'
 
 type FormValue = Record<string, unknown>
@@ -536,8 +537,8 @@ function resolveFieldComponent(fieldSchema: JsonSchemaField): 'input' | 'select'
 function normalizeSchema(schema: Record<string, unknown>): JsonSchemaRoot {
   const rawProperties = schema.properties
   const properties: Record<string, JsonSchemaField> = {}
-  if (rawProperties && typeof rawProperties === 'object' && !Array.isArray(rawProperties)) {
-    Object.entries(rawProperties as Record<string, unknown>).forEach(([fieldKey, rawField]) => {
+  if (isRecord(rawProperties)) {
+    Object.entries(rawProperties).forEach(([fieldKey, rawField]) => {
       if (rawField && typeof rawField === 'object' && !Array.isArray(rawField)) {
         properties[fieldKey] = rawField as JsonSchemaField
       }

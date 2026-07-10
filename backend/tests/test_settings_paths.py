@@ -93,6 +93,7 @@ def test_settings_generates_secret_keys_in_production_when_missing(tmp_path: Pat
             "SECRET_KEY",  # 旧密钥环境变量也清除，避免历史残留影响
         ):
             monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("ALLOW_AUTO_GENERATED_SECRETS", "true")
 
         env_file = tmp_path / ".env"
         env_file.write_text("ENVIRONMENT=production\n", encoding="utf-8")

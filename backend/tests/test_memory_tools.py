@@ -118,7 +118,7 @@ class TestMemoryTools:
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
         mock_manager = MagicMock()
-        mock_manager.delete_long_term_memory = AsyncMock(return_value=True)
+        mock_manager.archive_long_term_memory = AsyncMock(return_value=True)
         mock_memory_manager_cls.return_value = mock_manager
 
         result = await tools._forget(memory_id=42)
@@ -131,7 +131,7 @@ class TestMemoryTools:
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
         mock_manager = MagicMock()
-        mock_manager.delete_long_term_memory = AsyncMock(return_value=False)
+        mock_manager.archive_long_term_memory = AsyncMock(return_value=False)
         mock_memory_manager_cls.return_value = mock_manager
 
         result = await tools._forget(memory_id=999)

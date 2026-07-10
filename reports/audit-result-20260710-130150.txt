@@ -1,0 +1,19 @@
+﻿Open-AwA Code Audit Report
+=========================
+Time: 2026-07-10 13:01:50
+Changed files: 143 (Added: 18, Modified: 125, Deleted: 0)
+
+===== Passed (3) =====
+Git status: 143 changed files
+TypeScript: passed
+ESLint: passed
+
+===== Warnings (1) =====
+console.log: frontend/src/shared/utils/logger.ts line 256
+
+===== Failed (3) =====
+Debugger: frontend/eslint.config.js line 31
+Debugger: frontend/eslint.config.js line 32
+Emoji: frontend/src/features/chat/components/InlineToolCallCard.tsx contains emoji '✓'
+
+Result: FAILED - fix issues before commit

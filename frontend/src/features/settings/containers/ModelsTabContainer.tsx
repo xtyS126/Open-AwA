@@ -9,14 +9,20 @@ import { useSharedSettingsData } from '@/features/settings/hooks/useSharedSettin
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
 import { useGlobalModelSelection } from '@/features/settings/hooks/useGlobalModelSelection'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 
 // 懒加载 ModelsTab 组件，减少首屏 bundle 体积
 // 通过 .then() 将 barrel 的命名导出映射为 React.lazy 需要的 default 导出
 const ModelsTab = lazy(() => import('@/features/settings/components/ModelsTab').then(m => ({ default: m.ModelsTab })))
 
-/** 懒加载组件的加载占位符 */
+/** 懒加载组件的加载占位符：使用 Skeleton 模拟表单结构 */
 function TabLoadingFallback() {
-  return <div style={{ padding: '2rem', textAlign: 'center', color: '#9ca3af' }}>加载中...</div>
+  return (
+    <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      <Skeleton variant="rectangular" height="var(--space-10)" width="40%" />
+      <Skeleton.Paragraph lines={6} />
+    </div>
+  )
 }
 
 /** 配置模型选项类型，用于标识一个配置下的某个模型 */

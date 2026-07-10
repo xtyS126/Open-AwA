@@ -52,3 +52,52 @@
   flex-shrink: 0;
   background: var(--bg-secondary, #fafbfc);
 }
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+@media (max-width: 768px) {
+  .container {
+    overflow-y: auto;
+  }
+
+  /* 顶部工具栏垂直堆叠 */
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .pageTitle {
+    font-size: 14px;
+  }
+
+  .subtitle {
+    font-size: 11px;
+  }
+
+  /* 主面板三栏布局改为单栏堆叠 */
+  .mainPanel {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  /* 左侧面板在小屏全宽，不再固定宽度 */
+  .leftPanel {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    max-height: 40vh;
+  }
+
+  /* 中间面板在小屏全宽 */
+  .centerPanel {
+    overflow-y: visible;
+  }
+
+  /* 右侧面板在小屏全宽，不再固定宽度 */
+  .rightPanel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border-color, #e5e7eb);
+    background: var(--bg-secondary, #fafbfc);
+  }
+}

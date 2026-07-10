@@ -1,6 +1,7 @@
 import type { AssistantExecutionMeta, ChatMessage } from '@/features/chat/types'
 import { buildExecutionMetaFromPayload, hasExecutionMeta } from '@/features/chat/utils/executionMeta'
 import { buildSegmentsFromLegacyMessage } from '@/features/chat/utils/assistantSegments'
+import { asRecord } from '@/shared/types/api'
 
 interface ApplyDirectAssistantResponseOptions {
   assistantMessageId: string
@@ -83,7 +84,7 @@ export function applyDirectAssistantResponse(options: ApplyDirectAssistantRespon
   }
 
   if (backendError && typeof backendError === 'object') {
-    const errObj = backendError as Record<string, unknown>
+    const errObj = asRecord(backendError)
     if (typeof errObj.message === 'string') {
       const backendErrorMessage = sanitizeDisplayedError(errObj.message)
       addMessage('assistant', `请求失败：${backendErrorMessage}`, undefined, assistantMessageId)

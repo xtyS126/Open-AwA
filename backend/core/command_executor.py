@@ -32,6 +32,19 @@ class CommandDefinition:
     template: str = ""                # Markdown 模板内容
     source_file: Optional[str] = None
 
+    @staticmethod
+    def _run_platform_builtin(args: List[str]) -> Optional[str]:
+        """执行不依赖 shell 的平台内建命令，保持 shell=False 的安全边界。"""
+        if not args or os.name != "nt":
+            return None
+
+        command = args[0].lower()
+        if command == "echo":
+            return " ".join(args[1:])
+        if command == "pwd":
+            return os.getcwd()
+        return None
+
     def render_template(self, context: Optional[Dict[str, Any]] = None) -> str:
         """
         渲染命令模板。
@@ -76,6 +89,10 @@ class CommandDefinition:
                     f"(命令被阻止: {cmd_name} 不在安全白名单中。"
                     f"允许的命令: {', '.join(sorted(_ALLOWED_COMMANDS))})"
                 )
+
+            builtin_output = CommandDefinition._run_platform_builtin(args)
+            if builtin_output is not None:
+                return builtin_output if builtin_output else "(no output)"
 
             try:
                 result = subprocess.run(

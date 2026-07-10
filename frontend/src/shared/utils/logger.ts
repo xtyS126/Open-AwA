@@ -1,3 +1,5 @@
+import { asRecord, isRecord } from '@/shared/types/api'
+
 type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'
 
 interface LoggerPayload {
@@ -100,8 +102,8 @@ function sanitizeExtra(data: Record<string, unknown>): Record<string, unknown> {
   for (const [key, value] of Object.entries(data)) {
     if (SENSITIVE_FIELDS.has(key.toLowerCase())) {
       sanitized[key] = '***'
-    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      sanitized[key] = sanitizeExtra(value as Record<string, unknown>)
+    } else if (isRecord(value)) {
+      sanitized[key] = sanitizeExtra(value)
     } else {
       sanitized[key] = value
     }
@@ -215,7 +217,7 @@ function _enqueueReport(record: LogRecord): void {
     url: typeof window !== 'undefined' ? window.location.href : '',
     user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
     timestamp: String(record.timestamp || new Date().toISOString()),
-    extra: (record.extra || {}) as Record<string, unknown>,
+    extra: asRecord(record.extra),
   })
   _scheduleFlush()
 }

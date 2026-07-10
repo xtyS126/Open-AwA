@@ -10,7 +10,7 @@ test.describe('完整聊天旅程 E2E', () => {
     await page.goto('/chat')
 
     // 验证聊天页面核心元素存在
-    await expect(page.getByRole('heading', { name: '聊天' })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: /AI|聊天/ })).toBeVisible({ timeout: 20_000 })
 
     // 验证侧边栏会话列表存在
     const sidebar = page.getByLabel('聊天历史侧边栏')

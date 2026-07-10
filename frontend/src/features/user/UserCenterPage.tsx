@@ -273,7 +273,7 @@ function PersonalInfoTab() {
         <div className={styles['avatar-section']}>
           <div className={styles['avatar-preview']}>
             {avatarPreview ? (
-              <img src={avatarPreview} alt="头像" className={styles['avatar-img']} />
+              <img src={avatarPreview} alt="头像" className={styles['avatar-img']} loading="lazy" decoding="async" />
             ) : (
               <span className={styles['avatar-placeholder']}>
                 {(user?.username || 'U')[0].toUpperCase()}

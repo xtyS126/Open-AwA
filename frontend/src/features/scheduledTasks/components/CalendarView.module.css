@@ -15,3 +15,11 @@
 .dotActive { background: #22c55e; }
 .dotInactive { background: #d1d5db; }
 .moreCount { font-size: 9px; color: #9ca3af; }
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+/* 日历视图在小屏隐藏，主页面改为列表展示任务 */
+@media (max-width: 768px) {
+  .calendar {
+    display: none;
+  }
+}

@@ -586,6 +586,7 @@
 }
 
 /* ---- 响应式 ---- */
+/* 移动端（≤ 768px，对应 --breakpoint-md）：单列堆叠、触摸目标 44px */
 @media (max-width: 768px) {
   .mainLayout {
     flex-direction: column;

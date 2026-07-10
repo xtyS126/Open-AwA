@@ -208,6 +208,7 @@
   cursor: not-allowed;
 }
 
+/* 平板（≤ 1024px，对应 --breakpoint-lg）：双栏布局单列堆叠 */
 @media (max-width: 1024px) {
   .file-experience-layout {
     grid-template-columns: 1fr;
@@ -215,5 +216,120 @@
 
   .file-list-panel {
     max-height: 320px;
+  }
+}
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+@media (max-width: 768px) {
+  .experience-page {
+    padding: 16px;
+  }
+
+  /* 页面头部紧凑 */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .page-header h1 {
+    font-size: 18px;
+  }
+
+  /* 工具栏按钮触摸目标放大 */
+  .experience-toolbar {
+    margin-bottom: 12px;
+  }
+
+  .experience-toolbar > * {
+    min-height: var(--touch-target-min);
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+
+  /* 文件体验布局垂直堆叠，间距缩小 */
+  .file-experience-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    min-height: 0;
+  }
+
+  /* 文件列表面板紧凑 */
+  .file-list-panel {
+    padding: 12px;
+    max-height: 280px;
+  }
+
+  .file-item {
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+
+  /* 文件项字号从 14px 缩小到 13px */
+  .file-item-title {
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+
+  .file-item-meta {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .file-item-summary {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  /* 编辑器面板紧凑 */
+  .file-editor-panel {
+    padding: 16px;
+    min-height: 0;
+  }
+
+  .editor-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .editor-header h3 {
+    font-size: 16px;
+  }
+
+  .editor-meta {
+    font-size: 11px;
+  }
+
+  .file-editor {
+    padding: 12px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* 按钮（主/次）触摸目标放大 */
+  .btn-primary,
+  .btn-secondary {
+    min-height: var(--touch-target-min);
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  /* 错误/成功提示紧凑 */
+  .error-message,
+  .success-message {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .empty-state {
+    padding: 24px 16px;
+    font-size: 13px;
+  }
+
+  .loading {
+    padding: 24px;
+    font-size: 13px;
   }
 }

@@ -270,3 +270,99 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+
+  /* 头部垂直堆叠，按钮触摸目标放大 */
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .header h1 {
+    font-size: 20px;
+  }
+
+  .createBtn {
+    justify-content: center;
+    min-height: var(--touch-target-min);
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  .section {
+    margin-bottom: 20px;
+  }
+
+  .sectionTitle {
+    font-size: 15px;
+  }
+
+  /* 卡片网格改为单列，间距缩小到 var(--space-3) */
+  .grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .cardHeader h3 {
+    font-size: 14px;
+  }
+
+  .cardDesc {
+    font-size: 12px;
+  }
+
+  /* 模态框在小屏全屏 */
+  .modalOverlay {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    height: 100%;
+    border-radius: 0;
+    padding: 16px;
+  }
+
+  .modal h2 {
+    font-size: 16px;
+    margin: 0 0 16px;
+  }
+
+  /* 表单行垂直堆叠 */
+  .formRow {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* 模态框按钮触摸目标放大 */
+  .cancelBtn,
+  .saveBtn {
+    min-height: var(--touch-target-min);
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  .modalActions {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .cancelBtn,
+  .saveBtn {
+    width: 100%;
+  }
+}

@@ -18,6 +18,7 @@
  */
 import { API_BASE_URL, getCachedApiKey } from '@/shared/api/client'
 import { appLogger } from '@/shared/utils/logger'
+import { asRecord } from '@/shared/types/api'
 import { useInboxStore, type InboxMessage } from './store/inboxStore'
 
 /** 消息回调类型 */
@@ -77,7 +78,7 @@ function clearReconnectTimer(): void {
 /** 校验并解析消息对象，无效返回 null */
 function parseMessage(raw: string): InboxMessage | null {
   try {
-    const obj = JSON.parse(raw) as Record<string, unknown>
+    const obj = asRecord(JSON.parse(raw))
     if (
       typeof obj.id !== 'string' ||
       typeof obj.title !== 'string' ||

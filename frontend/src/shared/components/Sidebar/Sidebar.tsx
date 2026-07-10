@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   MessageSquare, LayoutDashboard, CreditCard, Zap,
@@ -103,6 +103,13 @@ const renderIcon = (type: string, size = 18) => {
     settings: true,
   })
 
+  /* 汉堡菜单按钮引用：用于抽屉关闭后将焦点返回到触发按钮，符合无障碍焦点流转规范 */
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
+
+  /* 滑动手势状态：touchStartRef 记录起始 x 坐标，dragOffset 记录当前拖动偏移量（仅向左为负）*/
+  const touchStartRef = useRef<number | null>(null)
+  const [dragOffset, setDragOffset] = useState(0)
+
   /* 监听窗口大小变化，在非移动端时自动关闭移动端菜单 */
   useEffect(() => {
     const handleResize = () => {
@@ -129,9 +136,47 @@ const renderIcon = (type: string, size = 18) => {
     return () => { document.body.style.overflow = '' }
   }, [mobileOpen])
 
+  /* 焦点管理：抽屉从打开变为关闭时，焦点返回汉堡菜单按钮，便于键盘用户继续操作 */
+  useEffect(() => {
+    if (!mobileOpen && menuBtnRef.current) {
+      // 延迟一帧避免与点击事件冲突
+      requestAnimationFrame(() => menuBtnRef.current?.focus())
+    }
+  }, [mobileOpen])
+
   const toggleMobile = useCallback(() => {
     setMobileOpen((prev) => !prev)
   }, [])
+
+  /* 滑动手势：touchstart 记录起始坐标 */
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!mobileOpen) return
+    touchStartRef.current = e.touches[0].clientX
+  }, [mobileOpen])
+
+  /* 滑动手势：touchmove 计算偏移量，仅向左滑动（offset < 0）时跟手 */
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (touchStartRef.current === null) return
+    const offset = e.touches[0].clientX - touchStartRef.current
+    if (offset < 0) {
+      setDragOffset(offset)
+    }
+  }, [])
+
+  /* 滑动手势：touchend 判断是否达到关闭阈值（向左 > 60px），重置状态 */
+  const handleTouchEnd = useCallback(() => {
+    if (touchStartRef.current === null) return
+    if (dragOffset < -60) {
+      setMobileOpen(false)
+    }
+    setDragOffset(0)
+    touchStartRef.current = null
+  }, [dragOffset])
+
+  /* 抽屉跟手偏移：拖动过程中临时覆盖 transform 与 transition，避免渐变延迟 */
+  const asideStyle: React.CSSProperties = dragOffset !== 0
+    ? { transform: `translateX(${dragOffset}px)`, transition: 'none' }
+    : {}
 
   const toggleGroup = (groupId: string) => {
     setExpandedGroups(prev => ({
@@ -164,28 +209,44 @@ const renderIcon = (type: string, size = 18) => {
     <>
       {/* 移动端汉堡菜单按钮 */}
       <button
+        ref={menuBtnRef}
         className={styles['mobile-menu-btn']}
+        data-testid="mobile-menu-btn"
         onClick={toggleMobile}
         title={t('sidebar.menu')}
         aria-label={t('sidebar.menu')}
+        aria-expanded={mobileOpen}
       >
         <Menu size={22} />
       </button>
 
-      {/* 移动端遮罩层 */}
-      {mobileOpen && (
-        <div className={styles['mobile-overlay']} onClick={toggleMobile} />
-      )}
+      {/* 移动端遮罩层：始终渲染，通过 visible 类切换可见性实现 opacity 渐变 */}
+      <div
+        className={`${styles['mobile-overlay']} ${mobileOpen ? styles['visible'] : ''}`}
+        data-testid="mobile-overlay"
+        data-visible={mobileOpen}
+        onClick={toggleMobile}
+        aria-hidden={!mobileOpen}
+      />
 
-      <aside className={`${styles['sidebar']} ${collapsed ? styles['collapsed'] : ''} ${mobileOpen ? styles['mobile-open'] : ''}`}>
+      <aside
+        className={`${styles['sidebar']} ${collapsed ? styles['collapsed'] : ''} ${mobileOpen ? styles['mobile-open'] : ''}`}
+        data-testid="sidebar"
+        data-collapsed={collapsed}
+        data-mobile-open={mobileOpen}
+        style={asideStyle}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
       <div className={styles['sidebar-header']}>
         {!collapsed && (
           <>
             <div className={styles['logo-container']}>
               {config.logoIcon ? (
-                <img src={config.logoIcon} alt="Logo" className={styles['custom-logo-icon']} />
+                <img src={config.logoIcon} alt="Logo" className={styles['custom-logo-icon']} fetchpriority="high" decoding="async" />
               ) : (
-                <img src="/logo.svg" alt="Logo" className={styles['custom-logo-icon']} />
+                <img src="/logo.svg" alt="Logo" className={styles['custom-logo-icon']} fetchpriority="high" decoding="async" />
               )}
               <span className={styles['logo-text']}>Open-AwA</span>
             </div>
@@ -241,6 +302,7 @@ const renderIcon = (type: string, size = 18) => {
                       key={item.path}
                       to={item.path}
                       className={`${styles['sidebar-item']} ${active ? styles['active'] : ''}`}
+                      data-testid="sidebar-item"
                       aria-current={active ? 'page' : undefined}
                     >
                       <span className={styles['sidebar-icon']}>{renderIcon(item.iconType, 18)}</span>

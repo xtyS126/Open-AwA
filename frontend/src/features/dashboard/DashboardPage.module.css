@@ -386,7 +386,7 @@
 
 /* ========== 响应式适配 ========== */
 
-/* 平板及以下 —— 统计/系统网格降为 2 列，图表降为 1 列 */
+/* 平板及以下（≤ 1024px，对应 --breakpoint-lg）—— 统计/系统网格降为 2 列，图表降为 1 列 */
 @media (max-width: 1024px) {
   .statGrid,
   .systemGrid,
@@ -399,18 +399,37 @@
   }
 }
 
-/* 移动端 —— 全部单列堆叠 */
-@media (max-width: 640px) {
+/* 移动端（≤ 768px，对应 --breakpoint-md）—— 全部单列堆叠、间距缩小、图表高度自适应 */
+@media (max-width: 768px) {
   .dashboardPage {
     padding: var(--space-4);
   }
 
+  /* 统计卡片 / 系统资源 / 业务统计网格单列排列，间距缩小到 --space-3 */
   .statGrid,
   .systemGrid,
   .bizStatsGrid {
     grid-template-columns: 1fr;
+    gap: var(--space-3);
   }
 
+  /* 图表网格单列 + 间距缩小 */
+  .chartGrid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  /* 图表 SVG 高度自适应 —— 取 60vw 与 320px 中较小值，避免小屏过高 */
+  .chartSvg {
+    height: min(60vw, 320px);
+  }
+
+  /* 空数据占位与图表保持一致高度 */
+  .chartEmpty {
+    height: min(60vw, 320px);
+  }
+
+  /* 角色名称缩窄，避免挤压条形图 */
   .roleName {
     min-width: 70px;
   }

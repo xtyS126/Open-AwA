@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom/vitest'
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
 import { MemoryRouter } from 'react-router-dom'
 import { useI18nStore } from '@/i18n'
+import styles from '@/shared/components/Sidebar/Sidebar.module.css'
 
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
@@ -54,5 +55,193 @@ describe('Sidebar', () => {
 
     const pluginLink = screen.getByRole('link', { name: '插件管理' })
     expect(pluginLink.className).toMatch(/active/)
+  })
+})
+
+/**
+ * Sidebar 移动端滑动手势与焦点恢复测试（SubTask 22.3）
+ *
+ * 验证点：
+ * 1. 汉堡按钮点击后抽屉打开（mobile-open 类）
+ * 2. 向左滑动超过 60px 阈值时抽屉关闭
+ * 3. 向左滑动未达阈值时抽屉保持打开
+ * 4. 抽屉关闭后焦点返回汉堡菜单按钮（无障碍焦点流转）
+ * 5. 抽屉打开时锁定 body 滚动（overflow: hidden）
+ * 6. 未打开抽屉时 touchStart 不记录起点，touchEnd 不触发关闭
+ */
+describe('Sidebar 移动端滑动手势与焦点恢复', () => {
+  beforeEach(() => {
+    useI18nStore.getState().setLocale('zh-CN')
+  })
+
+  afterEach(() => {
+    document.body.style.overflow = ''
+  })
+
+  /** 渲染 Sidebar 并返回 aside 元素与汉堡按钮 */
+  function renderSidebar() {
+    const utils = render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <Sidebar />
+      </MemoryRouter>
+    )
+    const menuBtn = screen.getByRole('button', { name: '菜单' })
+    const aside = utils.container.querySelector('aside')
+    if (!aside) throw new Error('aside 元素未渲染')
+    return { ...utils, menuBtn, aside }
+  }
+
+  /** 模拟一次完整的 touchStart -> touchMove -> touchEnd 序列 */
+  function simulateSwipe(
+    aside: HTMLElement,
+    startX: number,
+    endX: number,
+  ) {
+    act(() => {
+      aside.dispatchEvent(
+        new TouchEvent('touchstart', {
+          bubbles: true,
+          touches: [{ clientX: startX } as Touch],
+        }),
+      )
+    })
+    act(() => {
+      aside.dispatchEvent(
+        new TouchEvent('touchmove', {
+          bubbles: true,
+          touches: [{ clientX: endX } as Touch],
+        }),
+      )
+    })
+    act(() => {
+      aside.dispatchEvent(new TouchEvent('touchend', { bubbles: true }))
+    })
+  }
+
+  it('点击汉堡按钮后抽屉打开并锁定 body 滚动', () => {
+    const { menuBtn, aside } = renderSidebar()
+
+    act(() => {
+      menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(aside.className).toContain(styles['mobile-open'])
+    expect(aside.className).toContain('mobile-open')
+    expect(document.body.style.overflow).toBe('hidden')
+  })
+
+  it('向左滑动超过 60px 阈值时抽屉关闭', () => {
+    const { menuBtn, aside } = renderSidebar()
+
+    // 先打开抽屉
+    act(() => {
+      menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(aside.className).toContain('mobile-open')
+
+    // 向左滑动 100px（超过 60px 阈值）
+    simulateSwipe(aside, 200, 100)
+
+    expect(aside.className).not.toContain('mobile-open')
+  })
+
+  it('向左滑动未达 60px 阈值时抽屉保持打开', () => {
+    const { menuBtn, aside } = renderSidebar()
+
+    // 先打开抽屉
+    act(() => {
+      menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(aside.className).toContain('mobile-open')
+
+    // 向左滑动 40px（未达 60px 阈值）
+    simulateSwipe(aside, 200, 160)
+
+    expect(aside.className).toContain('mobile-open')
+  })
+
+  it('向右滑动（offset > 0）不应触发关闭，且不更新 dragOffset', () => {
+    const { menuBtn, aside } = renderSidebar()
+
+    act(() => {
+      menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(aside.className).toContain('mobile-open')
+
+    // 向右滑动 50px（offset > 0，handleTouchMove 中 if (offset < 0) 不满足）
+    simulateSwipe(aside, 100, 150)
+
+    expect(aside.className).toContain('mobile-open')
+  })
+
+  it('抽屉未打开时 touchStart 不响应，touchEnd 不触发关闭', () => {
+    const { aside } = renderSidebar()
+
+    // 抽屉初始未打开
+    expect(aside.className).not.toContain('mobile-open')
+
+    // 直接模拟 touch 序列（无起点记录）
+    simulateSwipe(aside, 200, 50)
+
+    // 仍应保持关闭状态（不应误打开）
+    expect(aside.className).not.toContain('mobile-open')
+  })
+
+  it('滑动关闭后焦点返回汉堡菜单按钮', async () => {
+    const { menuBtn, aside } = renderSidebar()
+
+    // 先打开抽屉
+    act(() => {
+      menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(aside.className).toContain('mobile-open')
+
+    // 滑动关闭
+    simulateSwipe(aside, 200, 100)
+
+    // 等待 requestAnimationFrame 触发的 focus 回调
+    await waitFor(() => {
+      expect(document.activeElement).toBe(menuBtn)
+    })
+  })
+
+  it('点击遮罩层关闭抽屉后焦点返回汉堡菜单按钮', async () => {
+    const { menuBtn, container } = renderSidebar()
+
+    // 先打开抽屉
+    act(() => {
+      menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // 点击遮罩层关闭
+    const overlay = container.querySelector(`.${styles['mobile-overlay']}`) as HTMLElement
+    expect(overlay).toBeTruthy()
+
+    act(() => {
+      overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // 等待 requestAnimationFrame 触发的 focus 回调
+    await waitFor(() => {
+      expect(document.activeElement).toBe(menuBtn)
+    })
+  })
+
+  it('抽屉关闭后 body 滚动锁定恢复', async () => {
+    const { menuBtn, aside } = renderSidebar()
+
+    // 打开抽屉锁定滚动
+    act(() => {
+      menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(document.body.style.overflow).toBe('hidden')
+
+    // 滑动关闭
+    simulateSwipe(aside, 200, 100)
+
+    // body 滚动应恢复正常
+    await waitFor(() => {
+      expect(document.body.style.overflow).not.toBe('hidden')
+    })
   })
 })

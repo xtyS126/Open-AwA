@@ -18,6 +18,7 @@ from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks, soul, discussions, search_config  # [NEW] Task 3+9: 讨论任务 + 搜索配置路由
@@ -170,21 +171,32 @@ def _check_model_provider_availability() -> None:
     configured = []
 
     # 1. 查询数据库 provider_credentials 表中有效凭据（is_active 且 api_key 非空且非 enc: 旧密文）
+    # 注意：本函数在 _startup_infrastructure 阶段执行，早于 _startup_data_init 的 init_db 调用，
+    # 因此 provider_credentials 表可能尚未创建。先通过 inspector 检查表是否存在，
+    # 避免触发 OperationalError 噪声日志（虽然 try/except 兜底，但 SQLAlchemy handle_error
+    # 事件监听器仍会以 ERROR 级别记录完整 traceback，干扰 E2E 启动日志）。
     try:
-        from db.models import SessionLocal
-        from sqlalchemy import text as _sql_text
+        from db.models import SessionLocal, engine as _engine
+        from sqlalchemy import text as _sql_text, inspect as _sql_inspect
         db = SessionLocal()
         try:
-            # 统计有效 provider：api_key 非空且不以 enc: 开头（enc: 旧密文已失效）
-            result = db.execute(
-                _sql_text(
-                    "SELECT provider FROM provider_credentials "
-                    "WHERE is_active = 1 AND api_key IS NOT NULL AND api_key != '' "
-                    "AND api_key NOT LIKE 'enc:%'"
+            # 表存在性检查：init_db 未执行时跳过 DB 查询，避免 OperationalError
+            _inspector = _sql_inspect(_engine)
+            if "provider_credentials" not in _inspector.get_table_names():
+                logger.bind(event="provider_check_table_missing", module="main").debug(
+                    "provider_credentials 表尚未创建（init_db 未执行），跳过数据库凭据查询"
                 )
-            )
-            for row in result:
-                configured.append(str(row[0]))
+            else:
+                # 统计有效 provider：api_key 非空且不以 enc: 开头（enc: 旧密文已失效）
+                result = db.execute(
+                    _sql_text(
+                        "SELECT provider FROM provider_credentials "
+                        "WHERE is_active = 1 AND api_key IS NOT NULL AND api_key != '' "
+                        "AND api_key NOT LIKE 'enc:%'"
+                    )
+                )
+                for row in result:
+                    configured.append(str(row[0]))
         finally:
             db.close()
     except Exception as exc:
@@ -1283,7 +1295,15 @@ def _get_client_ip(request: Request) -> str:
 
 limiter = Limiter(key_func=_get_client_ip, default_limits=["60/minute"])
 app.state.limiter = limiter
-app.add_exception_handler(429, _rate_limit_exceeded_handler)
+# 仅将 slowapi 的 _rate_limit_exceeded_handler 绑定到 RateLimitExceeded 异常，
+# 而非绑定到 429 状态码。否则业务代码中手动 raise HTTPException(status_code=429)
+# （如 logs.py:240、auth.py:72、notifications.py:307 等限流分支）也会进入此 handler，
+# 而 handler 内部访问 request.state.view_rate_limit（仅 slowapi 装饰器路径会设置）
+# 会抛出 AttributeError: 'State' object has no attribute 'view_rate_limit'，
+# 导致原本正常的 429 响应变成 500 内部错误。
+# 绑定到 RateLimitExceeded 异常后，手动 raise 的 HTTPException(429) 由
+# 上方 http_exception_handler 统一处理，slowapi 装饰器触发的限流才走专用 handler。
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR)
@@ -1316,6 +1336,14 @@ app.include_router(user_router, prefix=settings.API_V1_STR)
 app.include_router(user_profile_router, prefix=settings.API_V1_STR)
 app.include_router(system_router)
 app.include_router(test_runner_router)
+
+# ask_user 提问工具路由
+from api.routes.ask_user import router as ask_user_router
+app.include_router(ask_user_router)
+
+# 注册内置工具前注入 ask_user 权限和并发属性（动态注入，避免 tool_entries.py 重复编辑）
+from core.builtin_tools.manager import ensure_ask_user_permissions
+ensure_ask_user_permissions()
 app.include_router(workspace_router)
 app.include_router(heartbeat_router)
 app.include_router(coding_router)

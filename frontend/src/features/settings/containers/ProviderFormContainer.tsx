@@ -21,6 +21,7 @@ import type {
 import { getApiErrorDetail } from '@/shared/api/client'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
+import { asRecord } from '@/shared/types/api'
 import {
   normalizeProviderId,
   normalizeProviderBaseUrl,
@@ -336,7 +337,7 @@ export function useProviderForm({
         : (providerData.selected_models || [])
 
       const api_endpoint = config
-        ? (config.base_url || config.api_endpoint || (config as unknown as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as unknown as Record<string, unknown>).api_url || '') as string
+        ? (config.base_url || config.api_endpoint || asRecord(config).api_url || providerData.base_url || providerData.api_endpoint || asRecord(providerData).api_url || '') as string
         : (providerData.base_url || providerData.api_endpoint || '') as string
 
       // 优先使用 config.api_key_status，其次回退到 providerData.api_key_status

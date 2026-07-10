@@ -184,3 +184,50 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ===== 移动端全屏适配（≤ 768px，对应 --breakpoint-md 令牌） =====
+ * 通过 :has() 选择器定位包含 .permission-root 的 Modal（即 PermissionDialog 渲染的实例），
+ * 避免影响其他业务模块的 Modal。
+ * 注：CSS Module 中 .permission-root 是局部类名，:global(.modal) 引用 Modal 组件全局类名。
+ */
+@media (max-width: 768px) {
+  /* wrapper 自身撑满 Modal body 高度 */
+  .permission-root {
+    height: 100%;
+  }
+
+  /* 覆盖 Modal 内部 .modal 容器尺寸 —— 全屏化 */
+  :global(.modal):has(.permission-root) {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    border: none !important;
+  }
+
+  /* 覆盖 Modal 内部 .body 容器 padding —— 移动端紧凑间距 */
+  :global(.modal):has(.permission-root) :global(.body) {
+    padding: var(--space-3);
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* 覆盖 Modal 内部 .header / .footer padding —— 移动端紧凑间距 */
+  :global(.modal):has(.permission-root) :global(.header),
+  :global(.modal):has(.permission-root) :global(.footer) {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  /* 选项按钮触摸目标放大 —— 满足 44x44 最小触摸目标 */
+  .option {
+    min-height: var(--touch-target-min);
+    padding: var(--space-3);
+  }
+
+  /* 取消按钮触摸目标放大 */
+  .cancelBtn {
+    min-height: var(--touch-target-min);
+    padding: var(--space-2) var(--space-4);
+  }
+}

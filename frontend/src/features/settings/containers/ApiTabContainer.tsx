@@ -12,6 +12,7 @@ import { useProviderForm, type ApiProviderFormState } from '@/features/settings/
 import { useModelConfig } from '@/features/settings/containers/ModelConfigContainer'
 import { modelsAPI } from '@/features/settings/modelsApi'
 import type { ConnectivityTestResult } from '@/features/settings/modelsApi'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 
 // 懒加载组件，减少首屏 bundle 体积
 const ApiSettings = lazy(() => import('@/features/settings/components/ApiSettings').then(m => ({ default: m.ApiSettings })))
@@ -20,9 +21,14 @@ const DeleteConfirmModal = lazy(() => import('@/features/settings/modals/DeleteC
 const ImportModelsModal = lazy(() => import('@/features/settings/modals/ImportModelsModal').then(m => ({ default: m.ImportModelsModal })))
 const DeleteModelsModal = lazy(() => import('@/features/settings/modals/DeleteModelsModal').then(m => ({ default: m.DeleteModelsModal })))
 
-/** 懒加载组件的加载占位符 */
+/** 懒加载组件的加载占位符：使用 Skeleton 模拟表单结构 */
 function TabLoadingFallback() {
-  return <div style={{ padding: '2rem', textAlign: 'center', color: '#9ca3af' }}>加载中...</div>
+  return (
+    <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      <Skeleton variant="rectangular" height="var(--space-10)" width="40%" />
+      <Skeleton.Paragraph lines={6} />
+    </div>
+  )
 }
 
 export function ApiTabContainer() {

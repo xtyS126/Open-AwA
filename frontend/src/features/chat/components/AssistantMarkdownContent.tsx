@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
@@ -37,12 +37,13 @@ function ImageWithLightbox({ src, alt }: { src?: string; alt?: string }) {
         className={styles['markdown-image']}
         onClick={handleClick}
         loading="lazy"
+        decoding="async"
         style={{ cursor: 'pointer', maxWidth: '100%', borderRadius: '8px', margin: '8px 0' }}
       />
       {showLightbox && (
         <div className={styles['image-lightbox-overlay']} onClick={handleClose}>
           <div className={styles['image-lightbox-content']}>
-            <img src={src} alt={alt || '图片'} style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain' }} />
+            <img src={src} alt={alt || '图片'} loading="lazy" decoding="async" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain' }} />
             <button className={styles['image-lightbox-close']} onClick={handleClose}>×</button>
             {alt && <p className={styles['image-lightbox-alt']}>{alt}</p>}
           </div>
@@ -220,7 +221,7 @@ function preprocessStreamingContent(content: string): string {
   return result
 }
 
-function AssistantMarkdownContent({ content, streaming = false }: AssistantMarkdownContentProps) {
+function AssistantMarkdownContentInner({ content, streaming = false }: AssistantMarkdownContentProps) {
   const remarkPlugins = useMemo(() => [remarkMath, remarkGfm], [])
   const rehypePlugins = useMemo(() => [rehypeKatex, rehypeHighlight], [])
 
@@ -282,4 +283,5 @@ function AssistantMarkdownContent({ content, streaming = false }: AssistantMarkd
   )
 }
 
-export default AssistantMarkdownContent
+// 使用 React.memo 浅比较 props（content 字符串 + streaming 布尔），避免父组件重渲染时本组件被无谓重渲染
+export default memo(AssistantMarkdownContentInner)

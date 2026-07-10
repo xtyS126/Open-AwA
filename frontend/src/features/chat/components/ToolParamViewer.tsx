@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { isRecord } from '@/shared/types/api'
 import styles from './ToolParamViewer.module.css'
 
 interface ToolParamViewerProps {
@@ -81,8 +82,8 @@ function JsonNode({
     )
   }
 
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
+  if (isRecord(value)) {
+    const entries = Object.entries(value)
     const toggle = () => setExpanded((prev) => !prev)
     return (
       <span className={styles['json-object']}>
