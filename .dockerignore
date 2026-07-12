@@ -1,9 +1,16 @@
-# Git
+# ====== Git 版本控制 ======
 .git
 .gitignore
 .gitattributes
+.gitmodules
 
-# Python
+# ====== Docker 元文件（避免循环引用）======
+Dockerfile
+.dockerignore
+docker-compose*.yml
+docker/
+
+# ====== Python 缓存与构建 ======
 __pycache__
 *.py[cod]
 *.so
@@ -12,30 +19,100 @@ __pycache__
 dist
 build
 *.egg
-.env
-.env.local
-.venv
-venv
 .mypy_cache
 .pytest_cache
+.ruff_cache
+.coverage
+htmlcov
 *.db
 *.db-shm
 *.db-wal
 
-# Frontend
+# ====== 虚拟环境 ======
+.env
+.env.local
+.venv
+venv
+env
+
+# ====== Frontend 构建产物与依赖（在镜像内重新构建）======
 frontend/node_modules
 frontend/dist
 frontend/.vite-cache
+frontend/.vite
+frontend/coverage
 
-# IDE
+# ====== IDE 与编辑器 ======
 .idea
 .vscode
 *.swp
 *.swo
+*~
+.cursor
 
-# OS
+# ====== 操作系统 ======
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Project
+# ====== 项目运行态数据（不入镜像）======
+backend/data/qdrant
+backend/data/issue_reports
+backend/data/task_runtime
+backend/logs
+backend/openawa.db
+backend/openawa.db-shm
+backend/openawa.db-wal
+backend/workspace
 openawa/config/pricing
+openawa/uploads
+
+# ====== 测试与文档（生产镜像不含）======
+backend/tests
+backend/conftest.py
+backend/.coveragerc
+backend/pytest.ini
+backend/setup.cfg
+# 注意：backend/alembic 必须保留，entrypoint.sh 启动时需要运行迁移
+openawa/tests
+frontend/__tests__
+frontend/tests
+docs/
+reports/
+scripts/
+
+# ====== Trae IDE 与 Claude 配置（开发工具，不入镜像）======
+.trae
+.claude
+
+# ====== Android 原生项目（独立构建）======
+Android/
+
+# ====== Electron 桌面应用（独立构建）======
+desktop/
+
+# ====== 设计稿与参考素材 ======
+open-awa-canvas/
+参考用文件夹/
+参考项目/
+
+# ====== 插件示例源码（生产镜像不含开发示例）======
+plugins/
+
+# ====== 日志与临时文件 ======
+*.log
+*.log.*
+*.pid
+*.tmp
+*.bak
+*.orig
+
+# ====== 敏感凭据文件 ======
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials.json
+service-account.json

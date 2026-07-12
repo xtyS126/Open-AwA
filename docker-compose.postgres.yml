@@ -1,0 +1,98 @@
+# Open-AwA PostgreSQL 可选 Compose 配置
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml --env-file .env up -d
+#
+# 此文件：
+#   - 新增 postgres 服务（持久化卷 + 健康检查）
+#   - 覆盖 backend 的 DATABASE_URL 为 postgresql 连接串
+#   - 覆盖 backend 的依赖（等待 postgres 健康检查通过）
+#   - 新增 pgbackup 可选 profile（定期备份）
+
+services:
+  # ---- PostgreSQL 数据库 ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: openawa-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-openawa}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 必须在 .env 中设置}
+      - POSTGRES_DB=${POSTGRES_DB:-openawa}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - openawa-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openawa} -d ${POSTGRES_DB:-openawa}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+        labels: "service=openawa-postgres"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 256m
+
+  # ---- Backend：覆盖 DATABASE_URL 与 depends_on ----
+  backend:
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-openawa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openawa}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---- PostgreSQL 备份（可选，通过 profile 启用）----
+  pgbackup:
+    image: prodrigestivill/postgres-backup-local:16-alpine
+    container_name: openawa-pgbackup
+    profiles:
+      - pgbackup
+    restart: unless-stopped
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=${POSTGRES_DB:-openawa}
+      - POSTGRES_USER=${POSTGRES_USER:-openawa}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - SCHEDULE=@daily
+      - BACKUP_KEEP_DAYS=7
+      - BACKUP_KEEP_WEEKS=4
+      - BACKUP_KEEP_MONTHS=6
+      - BACKUP_SUFFIX=.sql.gz
+    volumes:
+      - pgbackup-data:/backups
+    networks:
+      - openawa-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=openawa-pgbackup"
+
+networks:
+  openawa-net:
+    driver: bridge
+    name: openawa-net
+
+volumes:
+  postgres-data:
+    driver: local
+    name: openawa-postgres-data
+  pgbackup-data:
+    driver: local
+    name: openawa-pgbackup-data

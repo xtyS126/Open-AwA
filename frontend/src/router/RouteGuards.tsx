@@ -34,12 +34,14 @@ export function DevTestRoute() {
   return <TestPage />
 }
 
-// 根路由守卫：根据 isInitialized / isAuthenticated 决定渲染内容
-// - 未初始化：渲染 InitializationShell（侧边栏 + Loading 占位），避免在 isAuthenticated 默认 false 期间把所有非 /login 路径误重定向到 /login
-// - 未认证：仅允许 /login，其他路径重定向到 /login
+// 根路由守卫：根据 isInitialized / isSystemInitialized / isAuthenticated 决定渲染内容
+// - 未初始化（应用启动中）：渲染 InitializationShell，避免白屏
+// - 系统未初始化（首次部署）：跳转到 /setup 引导页；已在 /setup 则直接渲染
+// - 未认证：仅 /login 可访问，其他路径重定向到 /login
 // - 已认证：访问 / 或 /login 重定向到 /chat，其他路径渲染 AppShell（含 Outlet）
 export function RootGuard() {
   const isInitialized = useAuthStore((s) => s.isInitialized)
+  const isSystemInitialized = useAuthStore((s) => s.isSystemInitialized)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const location = useLocation()
 
@@ -49,9 +51,25 @@ export function RootGuard() {
     // 初始化未完成时显示 App Shell + 主内容区 loading 占位
     // 修复了"直接 URL 访问被重定向到 /chat"和"侧边栏点击无响应"两类问题
     content = <InitializationShell />
+  } else if (isSystemInitialized === false) {
+    // 系统未初始化（首次部署）：仅允许 /setup 可访问，其他路径重定向到 /setup
+    if (location.pathname !== '/setup') {
+      content = <Navigate to="/setup" replace />
+    } else {
+      content = (
+        <main id="main-content" tabIndex={-1}>
+          <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={3} /></div>}>
+            <Outlet />
+          </Suspense>
+        </main>
+      )
+    }
   } else if (!isAuthenticated) {
     // 未登录：仅 /login 可访问，其他路径重定向到 /login
-    if (location.pathname !== '/login') {
+    // 防止已重定向到 /setup 后又被重定向到 /login（初始化完成后 isSystemInitialized=true）
+    if (location.pathname === '/setup') {
+      content = <Navigate to="/login" replace />
+    } else if (location.pathname !== '/login') {
       content = <Navigate to="/login" replace />
     } else {
       // a11y: 包裹 <main id="main-content" tabIndex={-1}> 提供 landmark 与 skip-link 聚焦目标

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { authAPI } from '@/shared/api/api'
+import { authAPI, systemAPI } from '@/shared/api/api'
 import { getCachedApiKey } from '@/shared/api/client'
 import { appLogger } from '@/shared/utils/logger'
 import { loadServerPreferences } from '@/shared/utils/preferenceSync'
@@ -182,6 +182,7 @@ export function useAppInitialization() {
   const setInitialized = useAuthStore((state) => state.setInitialized)
   const setAuth = useAuthStore((state) => state.setAuth)
   const logout = useAuthStore((state) => state.logout)
+  const setSystemInitialized = useAuthStore((state) => state.setSystemInitialized)
   const rehydratedRef = useRef<boolean | null>(null)
 
   // P0: 同步回填本地状态（仅首次渲染执行，确保主题等首屏状态在 React 首次渲染前已就位）
@@ -195,6 +196,39 @@ export function useAppInitialization() {
     let isActive = true
 
     const initializeApp = async () => {
+      // 步骤 1：检查系统是否已完成首次部署初始化
+      // 未初始化时跳过 API Key 校验，由 RootGuard 跳转到 /setup 引导页
+      try {
+        const statusResp = await systemAPI.getInitStatus()
+        if (!isActive) return
+        const sysInitialized = !!statusResp.data?.data?.initialized
+        setSystemInitialized(sysInitialized)
+        if (!sysInitialized) {
+          appLogger.info({
+            event: 'app_initialize',
+            module: 'app',
+            action: 'system_init_check',
+            status: 'success',
+            message: 'system not initialized, redirect to /setup',
+          })
+          setInitialized(true)
+          return
+        }
+      } catch (err) {
+        if (!isActive) return
+        // init-status 接口失败时假定已初始化，走原流程避免阻塞用户
+        appLogger.warning({
+          event: 'app_initialize',
+          module: 'app',
+          action: 'system_init_check',
+          status: 'failure',
+          message: 'init-status check failed, assuming initialized',
+          extra: { error: err instanceof Error ? err.message : String(err) },
+        })
+        setSystemInitialized(true)
+      }
+
+      // 步骤 2：系统已初始化，继续原 API Key 校验流程
       const result = await initializeApplicationState()
 
       if (!isActive) {
@@ -215,5 +249,5 @@ export function useAppInitialization() {
     return () => {
       isActive = false
     }
-  }, [logout, setAuth, setInitialized])
+  }, [logout, setAuth, setInitialized, setSystemInitialized])
 }

@@ -6,6 +6,7 @@ import { DevTestRoute, RootGuard } from './RouteGuards'
 
 // P2: 页面组件懒加载，减少主包体积
 const LoginPage = React.lazy(() => import('@/features/auth/LoginPage'))
+const SetupPage = React.lazy(() => import('@/features/setup/SetupPage'))
 const ChatPage = React.lazy(() => import('@/features/chat/ChatPage'))
 const DashboardPage = React.lazy(() => import('@/features/dashboard/DashboardPage'))
 const SettingsPage = React.lazy(() => import('@/features/settings/SettingsPage'))
@@ -79,6 +80,8 @@ export const router = createBrowserRouter(
         // 已认证访问 / 时跳转到 /chat（在 RootGuard 中处理）
         { index: true, element: <Navigate to="/chat" replace /> },
         { path: 'login', element: <ErrorBoundary name="Login">{withSuspense(<LoginPage />)}</ErrorBoundary> },
+        // 首次部署初始化引导页（系统未初始化时 RootGuard 自动重定向到此）
+        { path: 'setup', element: <ErrorBoundary name="Setup">{withSuspense(<SetupPage />)}</ErrorBoundary> },
         { path: 'chat', element: <ErrorBoundary name="Chat">{withSuspense(<ChatPage />)}</ErrorBoundary> },
         { path: 'chat/:conversationId', element: <ErrorBoundary name="Chat">{withSuspense(<ChatPage />)}</ErrorBoundary> },
         { path: 'dashboard', element: <ErrorBoundary name="Dashboard">{withSuspense(<DashboardPage />)}</ErrorBoundary> },

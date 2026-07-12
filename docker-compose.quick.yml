@@ -1,0 +1,84 @@
+# Open-AwA 零配置一键部署 Compose 文件
+#
+# 用法：
+#   docker compose -f docker-compose.quick.yml up -d
+#
+# 特点：
+#   - 无需 .env 文件，所有默认值内置
+#   - 首次启动自动生成密钥
+#   - 重启不丢失数据（持久化卷）
+#   - 网页端引导式初始化（无需查日志）
+#
+# 自定义选项（通过环境变量覆盖，可选）：
+#   BACKEND_PORT=8000                  宿主机映射端口
+#   ALLOWED_ORIGINS=http://localhost   CORS 白名单（多端用逗号分隔）
+#
+# 首次部署流程：
+#   1. 启动容器
+#   2. 浏览器访问 http://localhost:8000
+#   3. 前端自动检测未初始化状态，跳转到 /setup 引导页
+#   4. 用户填写用户名/密码后调 POST /api/system/init 完成
+#   5. 跳转到登录页用刚设置的凭据登录
+
+services:
+  backend:
+    image: openawa-backend:latest
+    # 如本地无镜像，自动从源码构建
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openawa-backend
+    restart: unless-stopped
+    environment:
+      # 模式：development 跳过密钥长度校验，零配置友好
+      - ENVIRONMENT=development
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=8000
+      - DATABASE_URL=sqlite:////app/data/openawa.db
+      - VECTOR_DB_PATH=/app/data/qdrant
+      - LOG_DIR=/app/logs
+      - DATA_DIR=/app/data
+      # CORS 白名单：默认允许本机访问；多端访问请通过环境变量覆盖
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost,http://127.0.0.1}
+      # 局域网访问开关：开启后允许 192.168.x.x 等私有网段访问
+      - ALLOW_LAN_ACCESS=${ALLOW_LAN_ACCESS:-true}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # 数据持久化：SQLite + Qdrant + .env.local + 初始化标记
+      - openawa-data:/app/data
+      - openawa-logs:/app/logs
+      - openawa-uploads:/app/openawa/uploads
+      - openawa-workspace:/app/backend/workspace
+    networks:
+      - openawa-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/system/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  openawa-net:
+    driver: bridge
+    name: openawa-net
+
+volumes:
+  openawa-data:
+    driver: local
+    name: openawa-data
+  openawa-logs:
+    driver: local
+    name: openawa-logs
+  openawa-uploads:
+    driver: local
+    name: openawa-uploads
+  openawa-workspace:
+    driver: local
+    name: openawa-workspace

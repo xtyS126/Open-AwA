@@ -391,7 +391,7 @@ cd D:\代码\Open-AwA\Android\Open-AwA-Android
 - **Plugin Manager is a singleton**: 通过 `plugins.plugin_instance.get()` 获取，不要直接 `PluginManager()` 创建新实例
 - **Conversation history auto-injected**: Agent 自动从 ShortTermMemory 加载对话历史，无需手动传递
 - **resolve_max_tool_call_rounds**: 定义在 `executor.py`，`agent.py` 通过 import 引用同一函数，不可重复定义
-- **Backend root directory file scatter**: backend 根目录散落了 14+ 个独立脚本（`replace_file.py`、`elevate_script.ps1`、`grant_perm.ps1` 等），这些是一次性迁移辅助脚本，不属于应用代码。后续路线图将统一迁移到 `scripts/` 目录。新增脚本不应放在根目录
+- **OUTDATED: Backend root directory file scatter**: 早期 backend 根目录曾散落 14+ 个独立脚本（`replace_file.py`、`elevate_script.ps1`、`grant_perm.ps1` 等），已于 2026-07-11 整理时确认全部清理完毕（实际仅余 `main.py` 与 `generate_api_key.py` 两个 .py 文件，无任何 .ps1 脚本）。新增脚本仍应放在 `scripts/` 目录，不放在 backend 根目录
 
 ### 7.2 安全与认证
 

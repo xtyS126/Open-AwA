@@ -143,7 +143,7 @@ backend/data/task_runtime/transcripts/
 
 # 审计工具二进制 & 报告
 scripts/opencodereview.exe
-reports/audit-result.txt
+reports/audit-result*.txt
 reports/ocr-review.txt
 
 # =========================
@@ -165,6 +165,11 @@ backend/TEST_REPORT_*.md
 *.orig
 *.bak
 *.tmp
+# 临时翻译/数据处理脚本（与项目无关，仅本地使用）
+split_jsonl.py
+test_libre.py
+test_translate.py
+translate_chunk.py
 # ACL 锁定无法删除的残留目录（运行时缓存）
 参考用文件夹/
 插件/

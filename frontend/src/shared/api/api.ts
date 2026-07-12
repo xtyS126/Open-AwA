@@ -758,6 +758,38 @@ export interface SystemPingResponse {
   timestamp: number
 }
 
+// 系统初始化状态响应（对应后端 GET /api/system/init-status）
+export interface SystemInitStatusResponse {
+  success: boolean
+  data: {
+    initialized: boolean
+    has_users: boolean | null
+    initialized_at?: string | null
+    db_error?: string | null
+  }
+}
+
+// 系统初始化请求体（对应后端 POST /api/system/init）
+export interface SystemInitRequest {
+  username: string
+  password: string
+  email?: string
+  nickname?: string
+  force?: boolean
+  regenerate_secrets?: boolean
+}
+
+// 系统初始化响应体
+export interface SystemInitResponse {
+  success: boolean
+  data: {
+    user_id: string
+    username: string
+    secrets_generated: boolean
+    api_key_generated: boolean
+  }
+}
+
 export interface ScenarioDef {
   name: string
   label: string
@@ -791,6 +823,11 @@ export interface ScenarioRunResponse {
 export const systemAPI = {
   ping: () => api.get<SystemPingResponse>('/system/ping'),
   diagnostics: () => api.get<SysDiagnosticsResponse>('/system/diagnostics'),
+  // 系统初始化状态检测（首次部署引导页用）
+  getInitStatus: () => api.get<SystemInitStatusResponse>('/system/init-status'),
+  // 执行系统初始化（创建 owner 用户并生成密钥）
+  init: (payload: SystemInitRequest) =>
+    api.post<SystemInitResponse>('/system/init', payload),
 }
 
 export const testRunnerAPI = {
