@@ -8,7 +8,7 @@ OnionProfile 持久化层。
 - save_profile 使用 upsert 语义：存在则更新（version 递增），不存在则插入
 - load_profile 未命中返回 None，由上层决定是否创建空画像
 - delete_profile 静默删除（不存在时不报错）
-- 所有写入操作均调用 db.commit()，确保事务提交
+- save_profile 支持事务收敛：commit=False 时仅 flush 不 commit，由调用方统一提交
 """
 import json
 from datetime import datetime, timezone
@@ -21,7 +21,12 @@ from db.models import UserProfile
 from soul.profile import OnionProfile
 
 
-def save_profile(db: Session, user_id: str, profile: OnionProfile) -> None:
+def save_profile(
+    db: Session,
+    user_id: str,
+    profile: OnionProfile,
+    commit: bool = True,
+) -> None:
     """
     保存或更新用户画像（upsert 语义）。
 
@@ -29,11 +34,14 @@ def save_profile(db: Session, user_id: str, profile: OnionProfile) -> None:
         db: SQLAlchemy 会话
         user_id: 用户 ID
         profile: OnionProfile 画像对象
+        commit: 是否在内部提交事务；True 时执行 db.commit()（默认，向后兼容），
+                False 时仅执行 db.flush() 让对象在当前事务中可见，由调用方统一提交/回滚
 
     Notes:
         - 存在记录时：更新 profile_json 与 updated_at，version 递增
         - 不存在记录时：插入新记录，version 初始为 1
-        - 调用方负责传入有效的 db 会话，本函数会执行 commit
+        - commit=False 用于与 ProfileFact 写入收敛到同一事务的场景（避免数据不一致时间窗口）
+        - flush 后对象在当前事务可见，但未持久化；调用方必须负责最终 commit/rollback
     """
     profile_dict = profile.to_dict()
     profile_json = json.dumps(profile_dict, ensure_ascii=False, default=str)
@@ -51,7 +59,12 @@ def save_profile(db: Session, user_id: str, profile: OnionProfile) -> None:
         )
         db.add(new_record)
 
-    db.commit()
+    # flush 让变更在当前事务中可见（供增量模式 load_profile 等读取到最新状态）
+    # 但不持久化，等待调用方决定 commit/rollback
+    db.flush()
+
+    if commit:
+        db.commit()
 
 
 def load_profile(db: Session, user_id: str) -> Optional[OnionProfile]:

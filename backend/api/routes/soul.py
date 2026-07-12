@@ -4,10 +4,11 @@ Soul Engine 相关 REST API。
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from loguru import logger
 
@@ -34,6 +35,22 @@ def _get_soul_engine(request: Request) -> SoulEngine:
     if _soul_engine is None:
         _soul_engine = SoulEngine()
     return _soul_engine
+
+
+def clear_soul_engine_cache(user_id: str) -> None:
+    """
+    清除 SoulEngine 内存缓存中指定用户的画像（公共接口）。
+
+    供 user_profile.py 的 CRUD 端点在桥接成功后调用，确保下次 GET /api/soul/profile
+    从数据库重新加载最新画像，而非返回旧的内存缓存。
+
+    Args:
+        user_id: 用户 ID（字符串形式）
+    """
+    global _soul_engine
+    # 优先清除模块级单例缓存（当前 main.py 未在 app.state 注册 soul_engine）
+    if _soul_engine is not None:
+        _soul_engine.clear_profile(user_id, db=None)
 
 
 # -------- Pydantic Schemas --------
@@ -178,6 +195,14 @@ async def save_overrides(
         field=override.field,
     ).info("画像覆盖层已更新")
 
+    # 桥接触发点：覆盖层变更后清除 SoulEngine 内存缓存
+    # overrides 不修改 ProfileFact，无需重建 OnionProfile；
+    # 但需清除内存缓存 _profiles，让下次 get_profile 重新从数据库
+    # 加载原始 AI 画像并应用新覆盖层（Task 3 的 _apply_overrides 已实现）
+    # 注意：传入 db=None 仅清除内存缓存，不删除数据库中的 OnionProfile 记录
+    engine = _get_soul_engine(request)
+    engine.clear_profile(user_id, db=None)
+
     return ApiResponse(
         success=True,
         data=db_override.overrides,
@@ -239,25 +264,81 @@ async def respond_to_probe(
     # InterestProbe 无 fact_id 字段，从 reasoning JSON 提取
     reasoning = probe.reasoning or {}
     fact_id = reasoning.get("fact_id")
-    if fact_id:
-        from db.models import ProfileFact
-        fact = db.query(ProfileFact).filter(
-            ProfileFact.id == fact_id,
-            ProfileFact.user_id == str(current_user.id),
-        ).first()
-        if fact:
-            if req.response == "confirmed":
-                # 用户确认后提升置信度至 0.9（接近明确声明）
-                fact.confidence = 0.9
-            elif req.response == "rejected":
-                # 用户拒绝后标记事实为非活跃，不再参与画像推断
-                fact.is_active = False
+    user_id = str(current_user.id)
 
-    db.commit()
-    db.refresh(probe)
+    # 延迟导入协调器与 ProfileFact，避免模块级循环依赖
+    from db.models import ProfileFact
+    from plugins.user_profile_builtin.coordinator import get_coordinator
+
+    coordinator = get_coordinator()
+
+    # 事务统一：探针响应（ProfileFact 修改）+ OnionProfile 桥接重建
+    # 收敛到同一事务，commit=False 让 _persist_onion_profile 仅 flush 不 commit，
+    # 由本端点统一 db.commit()；任一步骤失败则 db.rollback() 保证一致性
+    try:
+        # 增量重建所需的 changed_facts（仅在 ProfileFact 命中时构建）
+        changed_facts: Optional[List[Dict[str, Any]]] = None
+
+        if fact_id:
+            fact = db.query(ProfileFact).filter(
+                ProfileFact.id == fact_id,
+                ProfileFact.user_id == user_id,
+            ).first()
+            if fact:
+                if req.response == "confirmed":
+                    # 用户确认后提升置信度至 0.9（接近明确声明）
+                    fact.confidence = 0.9
+                    # 增量重建：fact 被更新，action=update
+                    changed_facts = [{
+                        "category": fact.category,
+                        "fact_key": fact.fact_key,
+                        "fact_value": fact.fact_value,
+                        "action": "update",
+                    }]
+                elif req.response == "rejected":
+                    # 用户拒绝后标记事实为非活跃，不再参与画像推断
+                    fact.is_active = False
+                    # 增量重建：fact 被软删（is_active=False），action=delete
+                    changed_facts = [{
+                        "category": fact.category,
+                        "fact_key": fact.fact_key,
+                        "fact_value": fact.fact_value,
+                        "action": "delete",
+                    }]
+
+        # 桥接 ProfileFact → OnionProfile 增量重建
+        # commit=False：与探针响应收敛到同一事务，由本端点统一 commit/rollback
+        # changed_facts 为 None 时（未命中 fact_id）跳过桥接，不影响探针响应主流程
+        if changed_facts is not None:
+            coordinator._persist_onion_profile(
+                db, user_id, changed_facts=changed_facts, commit=False
+            )
+
+        db.commit()
+        db.refresh(probe)
+        # 清除 SoulEngine 内存缓存，确保下次 GET /api/soul/profile 读取最新画像
+        clear_soul_engine_cache(user_id)
+    except SQLAlchemyError as exc:
+        # 数据库异常：回滚事务，保证 ProfileFact 与 OnionProfile 一致性
+        logger.bind(
+            user_id=user_id,
+            probe_id=req.probe_id,
+            response=req.response,
+        ).opt(exception=True).error(f"探针响应事务失败(数据库错误)，已回滚: {exc}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="探针响应处理失败")
+    except Exception as exc:
+        # 兜底捕获：不静默吞异常，记录完整堆栈后回滚
+        logger.bind(
+            user_id=user_id,
+            probe_id=req.probe_id,
+            response=req.response,
+        ).opt(exception=True).error(f"探针响应处理失败，已回滚: {exc}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="探针响应处理失败")
 
     logger.bind(
-        user_id=str(current_user.id),
+        user_id=user_id,
         probe_id=req.probe_id,
         response=req.response,
     ).info("探针已处理")

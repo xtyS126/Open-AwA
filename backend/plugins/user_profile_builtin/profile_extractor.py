@@ -54,6 +54,7 @@ class ProfileExtractor:
         session_ids: Optional[List[str]] = None,
         trigger_type: str = "auto",
         model_name: str = "gpt-4o-mini",
+        commit: bool = True,
     ) -> Dict[str, Any]:
         """
         执行画像提取（异步）。
@@ -62,6 +63,10 @@ class ProfileExtractor:
             session_ids: 要分析的会话 ID 列表，None 表示自动选择最近的会话
             trigger_type: 触发类型（auto/manual/scheduled）
             model_name: 使用的 LLM 模型
+            commit: 是否在内部提交事务；True 时各写库步骤自行 commit（默认，向后兼容），
+                    False 时 _apply_merge_result 与 _log_extraction 均 flush 不 commit，
+                    由调用方（如 maybe_extract）统一 commit/rollback，实现与
+                    OnionProfile 桥接的事务一致性收敛
 
         Returns:
             提取结果摘要
@@ -109,12 +114,20 @@ class ProfileExtractor:
             merge_result = self._merge_with_existing(existing_facts, new_facts_data)
 
             # Step 5: 写入数据库
-            stats = self._apply_merge_result(merge_result, extraction_log_id)
+            # _apply_merge_result 返回 (stats, applied_decisions),
+            # applied_decisions 包含 add/update/delete 决策(不含 unchanged),
+            # 供上层 maybe_extract 桥接到 OnionProfile 增量持久化
+            # commit=False 时仅 flush,与后续 _log_extraction 及上层桥接收敛到同一事务
+            stats, applied_decisions = self._apply_merge_result(
+                merge_result, extraction_log_id, commit=commit
+            )
 
             # Step 6: 记录提取日志
+            # 同样透传 commit，保证事务边界由调用方控制
             self._log_extraction(
                 extraction_log_id, trigger_type, session_ids,
-                turns_count, behavior_count, model_name, stats, start_time
+                turns_count, behavior_count, model_name, stats, start_time,
+                commit=commit,
             )
 
             logger.bind(
@@ -124,19 +137,27 @@ class ProfileExtractor:
             ).info(f"用户画像提取完成: +{stats['added']}/~{stats['updated']}/"
                    f"-{stats['deleted']}/={stats['unchanged']}")
 
-            return self._build_result(
+            result = self._build_result(
                 extraction_log_id, "success",
                 f"提取完成: 新增 {stats['added']}, 更新 {stats['updated']}, "
                 f"删除 {stats['deleted']}, 不变 {stats['unchanged']}",
                 turns_count, behavior_count, model_name=model_name,
                 start_time=start_time, **stats,
             )
+            # 暴露 decisions 供上层桥接到 OnionProfile 增量持久化
+            result["decisions"] = applied_decisions
+            return result
 
         except Exception as exc:
             logger.bind(
                 user_id=self.user_id,
                 extraction_log_id=extraction_log_id,
             ).opt(exception=True).error(f"画像提取失败: {exc}")
+
+            # commit=False 模式下，清理未提交的部分变更，避免污染调用方事务
+            # commit=True 模式下保持原行为（_log_extraction_error 内部 commit）
+            if not commit:
+                self.db.rollback()
 
             self._log_extraction_error(extraction_log_id, trigger_type, str(exc), start_time)
             return self._build_result(
@@ -598,10 +619,25 @@ class ProfileExtractor:
         self,
         decisions: List[Dict[str, Any]],
         extraction_log_id: str,
-    ) -> Dict[str, int]:
-        """应用合并决策到数据库"""
+        commit: bool = True,
+    ) -> Tuple[Dict[str, int], List[Dict[str, Any]]]:
+        """应用合并决策到数据库
+
+        Args:
+            decisions: 合并决策列表(来自 _merge_with_existing)
+            extraction_log_id: 提取日志 ID(用于 fact_metadata 关联)
+            commit: 是否在内部提交事务；True 时执行 db.commit()（默认，向后兼容），
+                    False 时仅 flush 让变更在当前事务可见，由调用方统一提交/回滚
+
+        Returns:
+            (stats, applied_decisions):
+              - stats: 统计信息 {added, updated, deleted, unchanged}
+              - applied_decisions: 实际应用的决策列表(包含 add/update/delete/unchanged),
+                供上层桥接到 OnionProfile 增量持久化
+        """
         stats = {"added": 0, "updated": 0, "deleted": 0, "unchanged": 0}
         now = datetime.now(timezone.utc)
+        applied_decisions: List[Dict[str, Any]] = []
 
         for d in decisions:
             compound_key = f"{d['category']}:{d['fact_key']}"
@@ -625,6 +661,8 @@ class ProfileExtractor:
                     existing.last_updated_at = now
                     existing.source_type = "inferred"
                     stats["updated"] += 1
+                    # 实际动作转换为 update,记录转换后的动作便于上层增量重建
+                    applied_decisions.append({**d, "action": "update"})
                 else:
                     new_fact = ProfileFact(
                         id=generate_fact_id(),
@@ -640,6 +678,7 @@ class ProfileExtractor:
                     )
                     self.db.add(new_fact)
                     stats["added"] += 1
+                    applied_decisions.append(d)
 
             elif d["action"] == "update":
                 if existing:
@@ -647,21 +686,29 @@ class ProfileExtractor:
                     existing.confidence = d["confidence"]
                     existing.last_updated_at = now
                     stats["updated"] += 1
+                    applied_decisions.append(d)
 
             elif d["action"] == "delete":
                 if existing:
                     existing.is_active = False
                     existing.last_updated_at = now
                     stats["deleted"] += 1
+                    applied_decisions.append(d)
 
             elif d["action"] == "unchanged":
                 if existing:
                     existing.access_count += 1
                     existing.last_accessed_at = now
                 stats["unchanged"] += 1
+                # unchanged 不属于变更,不追加到 applied_decisions
+                # (上层 changed_facts 只需 add/update/delete)
 
-        self.db.commit()
-        return stats
+        # flush 让变更在当前事务可见，便于后续步骤读取到最新状态
+        self.db.flush()
+
+        if commit:
+            self.db.commit()
+        return stats, applied_decisions
 
     def _log_extraction(
         self,
@@ -673,8 +720,14 @@ class ProfileExtractor:
         model_name: str,
         stats: Dict[str, int],
         start_time: float,
+        commit: bool = True,
     ):
-        """记录提取日志"""
+        """记录提取日志
+
+        Args:
+            commit: 是否在内部提交事务；True 时执行 db.commit()（默认，向后兼容），
+                    False 时仅 add 不 commit，由调用方统一提交/回滚
+        """
         duration_ms = int((time.time() - start_time) * 1000)
         log_entry = ProfileExtractionLog(
             id=extraction_log_id,
@@ -692,7 +745,10 @@ class ProfileExtractor:
             status="success",
         )
         self.db.add(log_entry)
-        self.db.commit()
+        self.db.flush()
+
+        if commit:
+            self.db.commit()
 
     def _log_extraction_error(
         self,

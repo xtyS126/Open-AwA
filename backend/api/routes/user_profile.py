@@ -6,16 +6,20 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loguru import logger
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from db.models import ProfileFact, ProfileExtractionLog, get_db
 from api.dependencies import get_current_user
-from plugins.user_profile_builtin.profile_extractor import ProfileExtractor
-from plugins.user_profile_builtin.profile_lifecycle import ProfileLifecycle
-from plugins.user_profile_builtin.profile_injector import ProfileInjector
+from api.routes.soul import clear_soul_engine_cache
+from db.models import ProfileFact, ProfileExtractionLog, get_db
+from plugins.user_profile_builtin.coordinator import get_coordinator
 from plugins.user_profile_builtin.profile_dimensions import PROFILE_CATEGORIES
-from loguru import logger
+from plugins.user_profile_builtin.profile_extractor import ProfileExtractor
+from plugins.user_profile_builtin.profile_injector import ProfileInjector
+from plugins.user_profile_builtin.profile_lifecycle import ProfileLifecycle
+from soul.persistence import delete_profile
 
 router = APIRouter(prefix="/user/profile", tags=["用户画像"])
 
@@ -311,7 +315,32 @@ async def update_profile_fact(
     if payload.fact_key:
         fact.fact_key = payload.fact_key
 
-    db.commit()
+    db.flush()  # flush 让变更在同一事务可见,供桥接查询使用
+
+    # 桥接: 触发 OnionProfile 增量重建,仅重建受影响层
+    # commit=False 与 ProfileFact 更新收敛到同一事务,统一 commit/rollback
+    try:
+        coordinator = get_coordinator()
+        coordinator._persist_onion_profile(
+            db,
+            current_user.id,
+            changed_facts=[{
+                "category": fact.category,
+                "fact_key": fact.fact_key,
+                "fact_value": fact.fact_value,
+                "action": "update",
+            }],
+            commit=False,
+        )
+        db.commit()
+        clear_soul_engine_cache(str(current_user.id))
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.bind(
+            user_id=current_user.id, fact_id=fact_id, category=fact.category
+        ).opt(exception=True).error(f"画像事实更新后桥接 OnionProfile 失败,已回滚: {exc}")
+        raise HTTPException(status_code=500, detail="画像事实更新后桥接失败")
+
     logger.bind(
         user_id=current_user.id, fact_id=fact_id, category=fact.category
     ).info("用户手动编辑画像事实")
@@ -342,7 +371,21 @@ async def create_profile_fact(
         last_updated_at=datetime.now(timezone.utc),
     )
     db.add(fact)
-    db.commit()
+    db.flush()  # flush 让新事实在同一事务可见,供桥接查询使用
+
+    # 桥接: 触发 OnionProfile 全量重建(不传 changed_facts,简单实现)
+    # commit=False 与 ProfileFact 写入收敛到同一事务,统一 commit/rollback
+    try:
+        coordinator = get_coordinator()
+        coordinator._persist_onion_profile(db, current_user.id, commit=False)
+        db.commit()
+        clear_soul_engine_cache(str(current_user.id))
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.bind(
+            user_id=current_user.id, fact_id=fact.id, category=fact.category
+        ).opt(exception=True).error(f"画像事实创建后桥接 OnionProfile 失败,已回滚: {exc}")
+        raise HTTPException(status_code=500, detail="画像事实创建后桥接失败")
 
     logger.bind(
         user_id=current_user.id, fact_id=fact.id, category=fact.category
@@ -370,7 +413,31 @@ async def delete_profile_fact(
 
     fact.is_active = False
     fact.last_updated_at = datetime.now(timezone.utc)
-    db.commit()
+    db.flush()  # flush 让变更在同一事务可见,供桥接查询使用
+
+    # 桥接: 触发 OnionProfile 增量重建,仅重建受影响层
+    # commit=False 与 ProfileFact 软删除收敛到同一事务,统一 commit/rollback
+    try:
+        coordinator = get_coordinator()
+        coordinator._persist_onion_profile(
+            db,
+            current_user.id,
+            changed_facts=[{
+                "category": fact.category,
+                "fact_key": fact.fact_key,
+                "fact_value": fact.fact_value,
+                "action": "delete",
+            }],
+            commit=False,
+        )
+        db.commit()
+        clear_soul_engine_cache(str(current_user.id))
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.bind(
+            user_id=current_user.id, fact_id=fact_id, category=fact.category
+        ).opt(exception=True).error(f"画像事实删除后桥接 OnionProfile 失败,已回滚: {exc}")
+        raise HTTPException(status_code=500, detail="画像事实删除后桥接失败")
 
     logger.bind(
         user_id=current_user.id, fact_id=fact_id, category=fact.category
@@ -390,6 +457,36 @@ async def verify_profile_fact(
     """
     lifecycle = ProfileLifecycle(db, current_user.id)
     result = lifecycle.enhance_fact(fact_id)
+
+    # 桥接: 触发 OnionProfile 增量重建(验证提高置信度,action="update")
+    # enhance_fact 已 commit,此处仅桥接 OnionProfile,commit=False + 统一 commit
+    try:
+        fact = db.query(ProfileFact).filter(
+            ProfileFact.id == fact_id,
+            ProfileFact.user_id == current_user.id,
+        ).first()
+        if fact is not None:
+            coordinator = get_coordinator()
+            coordinator._persist_onion_profile(
+                db,
+                current_user.id,
+                changed_facts=[{
+                    "category": fact.category,
+                    "fact_key": fact.fact_key,
+                    "fact_value": fact.fact_value,
+                    "action": "update",
+                }],
+                commit=False,
+            )
+            db.commit()
+            clear_soul_engine_cache(str(current_user.id))
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.bind(
+            user_id=current_user.id, fact_id=fact_id
+        ).opt(exception=True).error(f"画像事实验证后桥接 OnionProfile 失败,已回滚: {exc}")
+        raise HTTPException(status_code=500, detail="画像事实验证后桥接失败")
+
     return result
 
 
@@ -404,6 +501,38 @@ async def dispute_profile_fact(
     """
     lifecycle = ProfileLifecycle(db, current_user.id)
     result = lifecycle.weaken_fact(fact_id)
+
+    # 桥接: 触发 OnionProfile 增量重建
+    # 若 weaken_fact 因置信度过低归档事实(is_active=False),使用 action="delete";
+    # 否则使用 action="update"(仅降低置信度,事实仍活跃)
+    action = "delete" if not result.get("is_active", True) else "update"
+    try:
+        fact = db.query(ProfileFact).filter(
+            ProfileFact.id == fact_id,
+            ProfileFact.user_id == current_user.id,
+        ).first()
+        if fact is not None:
+            coordinator = get_coordinator()
+            coordinator._persist_onion_profile(
+                db,
+                current_user.id,
+                changed_facts=[{
+                    "category": fact.category,
+                    "fact_key": fact.fact_key,
+                    "fact_value": fact.fact_value,
+                    "action": action,
+                }],
+                commit=False,
+            )
+            db.commit()
+            clear_soul_engine_cache(str(current_user.id))
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.bind(
+            user_id=current_user.id, fact_id=fact_id
+        ).opt(exception=True).error(f"画像事实争议后桥接 OnionProfile 失败,已回滚: {exc}")
+        raise HTTPException(status_code=500, detail="画像事实争议后桥接失败")
+
     return result
 
 
@@ -509,7 +638,21 @@ async def purge_profile(
     for log in logs:
         db.delete(log)
 
-    db.commit()
+    db.flush()  # flush 让删除在同一事务可见,供后续 OnionProfile 清除使用
+
+    # 桥接: 清空 OnionProfile(user_profiles 表)
+    # delete_profile 内部可能 commit(存在 OnionProfile 时)也可能未 commit(不存在时)
+    # 统一再 commit 一次确保 fact 与日志删除被提交,事务收敛
+    try:
+        delete_profile(db, current_user.id)
+        db.commit()
+        clear_soul_engine_cache(str(current_user.id))
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.bind(
+            user_id=current_user.id, deleted_facts=count
+        ).opt(exception=True).error(f"清空画像数据后桥接删除 OnionProfile 失败,已回滚: {exc}")
+        raise HTTPException(status_code=500, detail="清空画像数据后桥接失败")
 
     logger.bind(
         user_id=current_user.id, deleted_facts=count

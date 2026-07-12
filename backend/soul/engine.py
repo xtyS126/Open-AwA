@@ -8,12 +8,15 @@ Soul Engine 主入口。
 - db 为 None 时降级为纯内存模式（仅打印 warning，不阻塞调用方）
 - db 提供时：get_profile 未命中查库 → process_event 后写回库 → clear_profile 删库
 """
+import copy
 from typing import Dict, Optional
 
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from db.models import UserProfileOverride
 from soul.event import BehaviorEvent
+from soul.overrides import ProfileOverrides
 from soul.persistence import delete_profile, load_profile, save_profile
 from soul.pipeline import ProfileUpdatePipeline
 from soul.profile import OnionProfile
@@ -97,16 +100,20 @@ class SoulEngine:
         db: Optional[Session] = None,
     ) -> Optional[OnionProfile]:
         """
-        获取用户画像。
+        获取用户画像（已合并用户手动编辑的覆盖层）。
+
+        读取流程：内存缓存 / 数据库加载原始 AI 画像 → 应用 UserProfileOverride 覆盖层。
+        覆盖层合并失败时降级返回原始 AI 画像，不阻塞读取。
 
         Args:
             user_id: 用户ID
-            db: 可选的数据库会话，传入时内存未命中会回查数据库
+            db: 可选的数据库会话，传入时内存未命中会回查数据库并应用覆盖层
 
         Returns:
-            Optional[OnionProfile]: 用户画像，不存在时返回 None
+            Optional[OnionProfile]: 合并覆盖层后的画像，不存在时返回 None
         """
-        return self._load_profile_internal(user_id, db)
+        profile = self._load_profile_internal(user_id, db)
+        return self._apply_overrides(user_id, profile, db)
 
     def get_or_create_profile(
         self,
@@ -114,24 +121,29 @@ class SoulEngine:
         db: Optional[Session] = None,
     ) -> OnionProfile:
         """
-        获取或创建用户画像。
+        获取或创建用户画像（已合并用户手动编辑的覆盖层）。
+
+        不存在时创建空画像并持久化，随后统一应用 UserProfileOverride 覆盖层。
+        覆盖层合并失败时降级返回原始 AI 画像，不阻塞读取。
 
         Args:
             user_id: 用户ID
             db: 可选的数据库会话，传入时创建的空画像会持久化到 user_profiles 表
 
         Returns:
-            OnionProfile: 用户画像
+            OnionProfile: 合并覆盖层后的画像
         """
         profile = self._load_profile_internal(user_id, db)
-        if profile is not None:
-            return profile
+        if profile is None:
+            # 创建空画像并持久化
+            profile = OnionProfile(user_id=user_id)
+            self._profiles[user_id] = profile
+            self._save_profile_internal(user_id, profile, db)
 
-        # 创建空画像并持久化
-        profile = OnionProfile(user_id=user_id)
-        self._profiles[user_id] = profile
-        self._save_profile_internal(user_id, profile, db)
-        return profile
+        # 应用覆盖层；profile 非 None 时 _apply_overrides 必返回非 None，
+        # 此处的 None 兜底仅为满足类型检查
+        merged = self._apply_overrides(user_id, profile, db)
+        return merged if merged is not None else profile
 
     def get_profile_summary(
         self,
@@ -271,3 +283,66 @@ class SoulEngine:
             logger.bind(user_id=user_id).opt(exception=True).warning(
                 f"持久化画像到数据库失败: {exc}"
             )
+
+    def _apply_overrides(
+        self,
+        user_id: str,
+        profile: Optional[OnionProfile],
+        db: Optional[Session],
+    ) -> Optional[OnionProfile]:
+        """
+        应用用户手动编辑的画像覆盖层。
+
+        覆盖层优先级高于 AI 推断，实现"用户编辑 ⊕ AI 画像"的合并逻辑。
+        合并失败时降级返回原画像，不阻塞读取流程。
+
+        Args:
+            user_id: 用户ID
+            profile: AI 推断的原始画像（None 时直接返回 None）
+            db: 数据库会话，None 时跳过覆盖层查询
+
+        Returns:
+            Optional[OnionProfile]: 合并后的画像；无覆盖层或合并失败时返回原画像
+        """
+        # 无画像或无 db 会话时直接返回，不应用覆盖层
+        if profile is None or db is None:
+            return profile
+
+        try:
+            db_override = db.query(UserProfileOverride).filter(
+                UserProfileOverride.user_id == user_id
+            ).first()
+        except Exception as exc:
+            # 查询异常降级为原画像，不阻塞读取
+            logger.bind(user_id=user_id).opt(exception=True).warning(
+                f"查询画像覆盖层失败，降级返回原画像: {exc}"
+            )
+            return profile
+
+        # 无覆盖层记录或空覆盖层时直接返回原画像
+        if db_override is None:
+            return profile
+        overrides_data = db_override.overrides or {}
+        if not overrides_data:
+            return profile
+
+        # 深拷贝原画像，避免 merge() 共享 LayerData 引用导致
+        # 内存缓存 _profiles 中的 AI 原始画像被污染
+        profile_copy = copy.deepcopy(profile)
+
+        try:
+            overrides = ProfileOverrides(
+                user_id=db_override.user_id,
+                overrides=dict(overrides_data),
+                created_at=db_override.created_at,
+                updated_at=db_override.updated_at,
+            )
+            merged_profile = overrides.merge(profile_copy)
+            logger.bind(user_id=user_id).debug("画像覆盖层已合并")
+            return merged_profile
+        except Exception as exc:
+            # 合并失败降级返回原画像，不阻塞读取
+            logger.bind(user_id=user_id).opt(exception=True).warning(
+                f"合并画像覆盖层失败，降级返回原画像: {exc}"
+            )
+            return profile

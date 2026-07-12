@@ -33,6 +33,7 @@ from billing.token_counter import (
 )
 from memory.experience_manager import ExperienceManager
 from mcp.manager import MCPManager
+from soul.profile import OnionProfile
 
 # tool_result 在序列化后允许的最大字符数，超出部分将被截断。
 # 防止 plugin_/mcp_/task_ 等无内置截断的工具返回超大结果，导致 messages 列表无限膨胀。
@@ -119,6 +120,40 @@ def _handle_audit_task_result(task: asyncio.Task) -> None:
         logger.warning(f"[审计日志] 任务执行失败: {e}")
 
 
+def _load_onion_profile(user_id: str, db: Session) -> Optional[OnionProfile]:
+    """
+    加载用户 OnionProfile 画像对象，供画像摘要与事实去重共用。
+
+    从 user_profiles 表反序列化 OnionProfile。未建立画像或加载失败时返回 None，
+    不阻塞主流程。抽出此方法是避免 _build_profile_context 与 _build_profile_facts_context
+    重复执行 load_profile 数据库查询。
+
+    Args:
+        user_id: 用户 ID
+        db: 数据库 session
+
+    Returns:
+        Optional[OnionProfile]: 反序列化后的画像对象；未命中或失败时返回 None
+    """
+    if not user_id or db is None:
+        return None
+
+    try:
+        from soul.persistence import load_profile
+
+        return load_profile(db, user_id)
+    except SQLAlchemyError as exc:
+        logger.bind(user_id=user_id).opt(exception=True).warning(
+            f"读取用户画像数据库查询失败: {exc}"
+        )
+        return None
+    except (ImportError, AttributeError, ValueError, TypeError) as exc:
+        logger.bind(user_id=user_id).opt(exception=True).warning(
+            f"加载用户画像失败: {exc}"
+        )
+        return None
+
+
 def _build_profile_context(user_id: str, db: Session) -> str:
     """
     构建 OnionProfile 五层摘要，用于注入 system prompt。
@@ -133,24 +168,7 @@ def _build_profile_context(user_id: str, db: Session) -> str:
     Returns:
         格式化的画像摘要文本，未建立画像时返回空字符串
     """
-    if not user_id or db is None:
-        return ""
-
-    try:
-        from soul.persistence import load_profile
-
-        profile = load_profile(db, user_id)
-    except SQLAlchemyError as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"读取用户画像数据库查询失败: {exc}"
-        )
-        return ""
-    except (ImportError, AttributeError, ValueError, TypeError) as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"加载用户画像失败: {exc}"
-        )
-        return ""
-
+    profile = _load_onion_profile(user_id, db)
     if profile is None:
         return ""
 
@@ -179,16 +197,63 @@ def _build_profile_context(user_id: str, db: Session) -> str:
     return "\n".join(parts)
 
 
-def _build_profile_facts_context(user_id: str, db: Session) -> str:
+def _build_onion_fact_set(onion_profile: Optional[OnionProfile]) -> set:
+    """
+    遍历 OnionProfile 五层 structured_data，构建 (fact_key, str(fact_value)) 集合。
+
+    用于 ProfileFact 去重：OnionProfile 的 description 本就来自 ProfileFact 拼接，
+    若不去重会导致 LLM 上下文中同一事实被注入两次（一次在画像摘要，一次在事实列表）。
+
+    Args:
+        onion_profile: 用户 OnionProfile 画像对象，可为 None
+
+    Returns:
+        set: 包含 (fact_key, str(fact_value)) 元组的集合；构建失败时返回空集合，
+             降级为不去重以保证注入不中断
+    """
+    if onion_profile is None:
+        return set()
+
+    try:
+        fact_set: set = set()
+        # 五层洋葱模型：surface / interest / role / values / core
+        for layer_name in ("surface", "interest", "role", "values", "core"):
+            layer = getattr(onion_profile, layer_name, None)
+            if layer is None:
+                continue
+            structured_data = getattr(layer, "structured_data", None)
+            if not isinstance(structured_data, dict):
+                continue
+            for key, value in structured_data.items():
+                if key is None:
+                    continue
+                fact_set.add((str(key), str(value)))
+        return fact_set
+    except (AttributeError, TypeError) as exc:
+        logger.opt(exception=True).warning(
+            f"构建 OnionProfile 事实集合失败，降级为不去重: {exc}"
+        )
+        return set()
+
+
+def _build_profile_facts_context(
+    user_id: str,
+    db: Session,
+    onion_profile: Optional[OnionProfile] = None,
+) -> str:
     """
     构建高置信度 ProfileFact 摘要，用于注入 system prompt。
 
     从 profile_facts 表读取 confidence >= 0.7 且 is_active 的事实，按置信度
-    降序取前 20 条。无事实或读取失败时返回空字符串，不阻塞主流程。
+    降序取前 20 条。若同时传入 OnionProfile，会过滤掉已在五层 structured_data
+    中表达的事实，避免与画像摘要重复注入。无事实或读取失败时返回空字符串，
+    不阻塞主流程。
 
     Args:
         user_id: 用户 ID
         db: 数据库 session
+        onion_profile: 可选的 OnionProfile 对象，用于事实去重；
+                       为 None 时保持原行为（不去重）
 
     Returns:
         格式化的事实摘要文本，无事实时返回空字符串
@@ -224,12 +289,19 @@ def _build_profile_facts_context(user_id: str, db: Session) -> str:
     if not facts:
         return ""
 
+    # 构建 OnionProfile 五层 structured_data 的事实集合，用于去重；
+    # 构建失败时返回空集合，降级为不去重，保证注入不阻塞
+    onion_fact_set = _build_onion_fact_set(onion_profile)
+
     parts = ["[用户画像事实]"]
     for fact in facts:
         fact_key = getattr(fact, "fact_key", "")
         fact_value = getattr(fact, "fact_value", "")
         confidence = getattr(fact, "confidence", 0.0)
         if not fact_key or not fact_value:
+            continue
+        # 去重：跳过已在 OnionProfile 五层 structured_data 中表达的事实
+        if (fact_key, str(fact_value)) in onion_fact_set:
             continue
         parts.append(f"- {fact_key}: {fact_value} (置信度: {float(confidence):.0%})")
 
@@ -1269,10 +1341,15 @@ class ExecutionLayer:
 
         # 注入用户画像（五层 OnionProfile 摘要 + 高置信度 ProfileFact）
         # 放在能力描述之后、长期记忆之前：用户身份是较稳定的上下文，优先级高于请求级记忆
+        # 先加载 OnionProfile 对象，再传给 _build_profile_facts_context 用于事实去重，
+        # 避免画像摘要（来自 ProfileFact 拼接）与事实列表重复注入同一信息
         user_id = context.get("user_id")
         db = context.get("db")
+        onion_profile = _load_onion_profile(user_id, db)
         profile_context = _build_profile_context(user_id, db)
-        profile_facts_context = _build_profile_facts_context(user_id, db)
+        profile_facts_context = _build_profile_facts_context(
+            user_id, db, onion_profile=onion_profile
+        )
         if profile_context or profile_facts_context:
             profile_block = "\n\n".join(
                 part for part in (profile_context, profile_facts_context) if part
