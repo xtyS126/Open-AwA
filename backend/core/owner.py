@@ -1,6 +1,12 @@
 """
 Owner 用户管理辅助模块，为单用户模式提供统一的所有者查询和创建逻辑。
 所有需要 user_id 的业务层统一通过此模块获取 owner 用户信息。
+
+防重复创建策略（与 core.initialization.has_any_user 协同）：
+- lifespan 启动调用 `ensure_owner_user` 时，先检查数据库是否已有任意用户
+- 已有用户则缓存第一个用户作为 owner，跳过环境变量读取与用户创建分支
+- 无用户时保留 fallback 逻辑（从 OPENAWA_OWNER_* 环境变量读取），并记录 WARNING 日志
+  引导用户通过 POST /api/system/init 端点完成首次部署初始化
 """
 
 import asyncio
@@ -14,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from config.security import get_password_hash
 from config.settings import settings
+from core.initialization import has_any_user
 from db.models import User
 
 
@@ -29,17 +36,56 @@ def _get_owner_username() -> str:
 def ensure_owner_user(db: Session) -> User:
     """
     确保唯一的 owner 用户在数据库中存在，不存在则创建。
-    此函数在应用启动时调用，同步执行。
 
-    返回: owner User 对象
+    防重复创建逻辑：
+    1. 缓存命中时直接返回缓存对象（不查询数据库）
+    2. 缓存未命中时检查 `has_any_user(db)`：
+       - True：缓存第一个用户（按 created_at 排序），不修改任何字段，记录 INFO 日志
+       - False：走 fallback 分支（从环境变量读取凭据创建）
+
+    Args:
+        db: 数据库会话实例。
+
+    Returns:
+        owner User 对象。
     """
     global _owner_cache
 
+    # 缓存命中时直接返回，避免查询数据库
+    if _owner_cache is not None:
+        return _owner_cache
+
+    # 已有用户则跳过创建分支，缓存第一个用户作为 owner
+    if has_any_user(db):
+        first_user = db.query(User).order_by(User.created_at).first()
+        if first_user is not None:
+            env_username = _get_owner_username()
+            _owner_cache = first_user
+            logger.bind(
+                event="owner_skipped_existing",
+                module="core.owner",
+                username=first_user.username,
+            ).info(f"检测到已有用户 {first_user.username}，跳过 owner 创建")
+
+            # 环境变量用户名与 DB 用户名不一致时记录 WARNING
+            if env_username != first_user.username:
+                logger.bind(
+                    event="owner_username_mismatch",
+                    module="core.owner",
+                    env_username=env_username,
+                    db_username=first_user.username,
+                ).warning(
+                    f"环境变量 OPENAWA_OWNER_USERNAME={env_username} 与数据库已有用户 {first_user.username} 不一致，使用数据库用户作为 owner"
+                )
+            return first_user
+
+    # fallback 分支：数据库无用户，从环境变量读取凭据创建
     username = _get_owner_username()
     password = (
         os.getenv("OPENAWA_OWNER_PASSWORD", "").strip()
         or secrets.token_urlsafe(16)
     )
+    password_from_env = bool(os.getenv("OPENAWA_OWNER_PASSWORD", "").strip())
     nickname = os.getenv("OPENAWA_OWNER_NICKNAME", "").strip()
     email = os.getenv("OPENAWA_OWNER_EMAIL", "").strip()
 
@@ -61,6 +107,17 @@ def ensure_owner_user(db: Session) -> User:
             module="core.owner",
             username=username,
         ).info(f"已创建 owner 用户: {username}")
+
+        # 密码为随机生成时记录 WARNING，引导用户通过初始化端点重新设置
+        if not password_from_env:
+            logger.bind(
+                event="owner_fallback_random_password",
+                module="core.owner",
+                username=username,
+            ).warning(
+                f"owner 用户 {username} 使用随机密码创建（仅本次启动有效），"
+                "建议通过 POST /api/system/init 端点完成首次部署初始化以设置自定义密码"
+            )
     else:
         # 更新画像信息（如果环境变量有值且与现有不同）
         updated = False

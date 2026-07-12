@@ -435,6 +435,9 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
 
     from core.owner import ensure_owner_user
     with profiler.step("owner_user_init"):
+        # 启动引导检测：未初始化时记录 WARNING 引导用户通过 POST /api/system/init 完成
+        _detect_and_log_initialization_status()
+
         db = SessionLocal()
         try:
             # 同步 DB 调用包装为 to_thread，避免阻塞事件循环
@@ -450,6 +453,38 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
             ).info("owner user initialized with admin role")
         finally:
             db.close()
+
+
+def _detect_and_log_initialization_status() -> None:
+    """检测系统初始化状态并记录日志。
+
+    - 已初始化：记录 INFO 日志 `system_initialized`
+    - 未初始化：记录 WARNING 日志 `system_not_initialized`，引导用户通过 POST /api/system/init 完成
+    - 检测异常：记录 ERROR 日志 `init_detection_failed`，不阻塞启动
+
+    提取为独立函数便于单元测试（test_owner_no_override.py 场景 8）。
+    """
+    try:
+        from core.initialization import is_initialized, get_initialization_status
+        if is_initialized():
+            _init_status = get_initialization_status()
+            logger.bind(
+                event="system_initialized",
+                module="core.main",
+                initialized_at=_init_status.get("initialized_at"),
+            ).info(f"系统已初始化于 {_init_status.get('initialized_at')}")
+        else:
+            logger.bind(
+                event="system_not_initialized",
+                module="core.main",
+            ).warning("系统未初始化，请通过 POST /api/system/init 端点完成首次部署初始化")
+    except Exception as e:
+        logger.bind(
+            event="init_detection_failed",
+            module="core.main",
+            error_type=type(e).__name__,
+            error_message=str(e),
+        ).error(f"初始化检测失败（不阻塞启动）: {e}")
 
 
 async def _startup_plugin_system(profiler: StartupProfiler) -> None:

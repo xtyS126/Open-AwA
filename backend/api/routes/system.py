@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from loguru import logger
 from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import text
@@ -20,6 +21,26 @@ from sqlalchemy import text
 from api.dependencies import get_current_user, get_current_admin_user
 from db.models import User, SessionLocal
 from config.settings import settings
+
+
+def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
+    """构造结构化错误响应，绕过全局 http_exception_handler 的 str(detail) 转换。
+
+    全局 http_exception_handler 会将 exc.detail 转为字符串塞进 message，
+    导致 dict 形态的 detail 结构化信息（code/message）丢失。初始化端点需要
+    向前端传达具体错误码（weak_password/prerequisite_failed/init_lock_contention 等），
+    故直接返回 JSONResponse 保留结构。
+    """
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "success": False,
+            "error": {
+                "code": code,
+                "message": message,
+            },
+        },
+    )
 
 router = APIRouter(prefix="/api/system", tags=["System Diagnostics"])
 
@@ -645,3 +666,156 @@ async def test_env_variable(
     # 复用连通性测试逻辑
     request = ConnectivityTestRequest(env_var_name=name)
     return await test_connectivity(request, current_user)
+
+
+# ============================================================================
+# 首次部署初始化端点
+# ============================================================================
+
+class InitRequest(BaseModel):
+    """初始化请求体。
+
+    Attributes:
+        username: owner 用户名，1-32 字符，仅含字母、数字、下划线、短横线。
+        password: owner 密码，8-128 字符，需含大小写字母和数字。
+        email: owner 邮箱（可选），最长 128 字符。
+        nickname: owner 昵称（可选），最长 32 字符。
+        force: 跳过前置检查（默认 False）。
+        regenerate_secrets: 强制重新生成三密钥与 API Key（需配合 force=True）。
+    """
+    username: str = Field(..., min_length=1, max_length=32, pattern=r"^[a-zA-Z0-9_-]+$")
+    password: str = Field(..., min_length=8, max_length=128)
+    email: Optional[str] = Field(default=None, max_length=128)
+    nickname: Optional[str] = Field(default=None, max_length=32)
+    force: bool = Field(default=False)
+    regenerate_secrets: bool = Field(default=False)
+
+
+@router.post(
+    "/init",
+    summary="执行首次部署初始化",
+    description=(
+        "无需认证。创建 owner 用户、生成密钥、写入 .env.local、创建标记文件。"
+        "首次部署前可调用；已初始化后调用需带 force=true。"
+    ),
+)
+async def init_system(payload: InitRequest) -> Dict[str, Any]:
+    """触发首次部署初始化流程。
+
+    流程：
+    1. 密码强度校验（大小写 + 数字）
+    2. 调用 `core.bootstrap.initialize_system()` 执行 6 步流程
+    3. 按异常类型映射 HTTP 状态码（PrerequisiteError → 409，其他 BootstrapError → 500）
+
+    Args:
+        payload: 初始化请求体。
+
+    Returns:
+        {"success": True, "data": {"user_id", "username", "secrets_generated", "api_key_generated"}}
+    """
+    # 密码强度校验：大小写 + 数字（与 auth.py 规则一致）
+    if not (
+        any(c.isupper() for c in payload.password)
+        and any(c.islower() for c in payload.password)
+        and any(c.isdigit() for c in payload.password)
+    ):
+        return _error_response(
+            status_code=422,
+            code="weak_password",
+            message="密码至少 8 位，需含大小写字母和数字",
+        )
+
+    # 延迟导入避免循环依赖
+    from core.bootstrap import (
+        initialize_system,
+        PrerequisiteError,
+        LockAcquireError,
+        BootstrapError,
+    )
+
+    try:
+        result = await asyncio.to_thread(
+            initialize_system,
+            username=payload.username,
+            password=payload.password,
+            email=payload.email,
+            nickname=payload.nickname,
+            force=payload.force,
+            regenerate_secrets=payload.regenerate_secrets,
+        )
+    except PrerequisiteError as e:
+        return _error_response(
+            status_code=409,
+            code="prerequisite_failed",
+            message=str(e),
+        )
+    except LockAcquireError as e:
+        return _error_response(
+            status_code=409,
+            code="init_lock_contention",
+            message=str(e),
+        )
+    except BootstrapError as e:
+        logger.bind(
+            event="init_failed",
+            module="api.routes.system",
+            error_type=type(e).__name__,
+            error_message=str(e),
+        ).error(f"初始化失败: {e}")
+        return _error_response(
+            status_code=500,
+            code=type(e).__name__,
+            message=str(e),
+        )
+
+    return {"success": True, "data": result}
+
+
+@router.get(
+    "/init-status",
+    summary="查询系统初始化状态",
+    description="无需认证，返回系统首次部署初始化状态。",
+)
+async def get_init_status() -> Dict[str, Any]:
+    """返回初始化状态与数据库用户存在性。
+
+    Returns:
+        {
+            "success": True,
+            "data": {
+                "initialized": bool,
+                "initialized_at": str | None,
+                "version": int | None,
+                "steps_completed": list[str],
+                "has_users": bool | None,  # DB 不可用时为 null
+                "db_error": str  # 仅在 DB 不可用时存在
+            }
+        }
+    """
+    # 延迟导入避免循环依赖
+    from core.initialization import get_initialization_status, has_any_user
+
+    status = get_initialization_status()
+
+    try:
+        with SessionLocal() as db:
+            has_users = has_any_user(db)
+        db_error = None
+    except Exception as e:
+        has_users = None
+        db_error = "database_unavailable"
+        logger.bind(
+            event="init_status_db_unavailable",
+            module="api.routes.system",
+            error_type=type(e).__name__,
+            error_message=str(e),
+        ).warning(f"init-status 数据库不可用: {e}")
+
+    data: Dict[str, Any] = {
+        **status,
+        "has_users": has_users,
+    }
+    if db_error:
+        data["db_error"] = db_error
+
+    return {"success": True, "data": data}
