@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -34,6 +35,7 @@ from api.routes.weixin import _parse_multimedia_metadata, _sanitize_upload_filen
 from api.services.weixin_auto_reply import (
     WeixinEventBus,
     extract_weixin_multimedia,
+    extract_weixin_media_credentials,
     build_multimedia_description,
     normalize_inbound_message,
     get_event_bus,
@@ -43,7 +45,7 @@ from api.services.weixin_auto_reply import (
     MULTIMEDIA_TYPE_VIDEO,
 )
 from config.security import encrypt_secret_value
-from db.models import Base, ShortTermMemory, WeixinBinding
+from db.models import Base, ShortTermMemory, WeixinBinding, WeixinMediaAsset
 from main import app
 from skills.weixin_skill_adapter import (
     WeixinAdapterError,
@@ -99,6 +101,7 @@ def reset_state():
     db = TestingSessionLocal()
     try:
         db.query(WeixinBinding).delete()
+        db.query(WeixinMediaAsset).delete()
         db.query(ShortTermMemory).delete()
         db.commit()
     finally:
@@ -107,6 +110,7 @@ def reset_state():
     db = TestingSessionLocal()
     try:
         db.query(WeixinBinding).delete()
+        db.query(WeixinMediaAsset).delete()
         db.query(ShortTermMemory).delete()
         db.commit()
     finally:
@@ -595,8 +599,85 @@ def _build_test_runtime_config() -> WeixinRuntimeConfig:
 
 
 @pytest.mark.asyncio
+async def test_download_media_decrypts_ilink_cdn_payload(monkeypatch):
+    """验证 iLink CDN 多媒体下载会使用 AES-128-ECB 解密并移除 PKCS7 填充。"""
+    plaintext = b"weixin voice payload"
+    key = bytes.fromhex("00112233445566778899aabbccddeeff")
+    padding_size = 16 - len(plaintext) % 16
+    encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+    ciphertext = encryptor.update(plaintext + bytes([padding_size]) * padding_size) + encryptor.finalize()
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_value, traceback):
+            return False
+
+        async def get(self, url):
+            assert "encrypted_query_param=cdn%2Btoken" in url
+            return type("Response", (), {"status_code": 200, "content": ciphertext})()
+
+    monkeypatch.setattr("skills.weixin_skill_adapter.httpx.AsyncClient", lambda timeout: FakeClient())
+    adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
+
+    result = await adapter.download_media("cdn+token", key.hex())
+
+    assert result == plaintext
+
+
+def test_parse_cdn_aes_key_accepts_base64_raw_key():
+    """验证 iLink Base64 原始 AES 密钥可以解析。"""
+    encoded_key = "ABEiM0RVZneImaq7zN3u/w=="
+    assert WeixinSkillAdapter._parse_cdn_aes_key(encoded_key) == bytes.fromhex("00112233445566778899aabbccddeeff")
+
+
+def test_extract_weixin_media_credentials_supports_nested_message():
+    """验证 iLink 嵌套 msg 结构中的媒体凭据可以被安全提取。"""
+    credentials = extract_weixin_media_credentials({
+        "msg": {
+            "item_list": [{
+                "type": 3,
+                "voice_item": {"media": {"encrypt_query_param": "download-param", "aes_key": "base64-key"}},
+            }],
+        },
+    })
+    assert credentials == {"encrypted_query_param": "download-param", "aes_key": "base64-key"}
+
+
+def test_download_multimedia_asset_returns_content_without_secrets(monkeypatch):
+    """验证资产下载只返回媒体内容，不泄露 CDN 凭据。"""
+    db = TestingSessionLocal()
+    try:
+        db.add(WeixinMediaAsset(
+            user_id="user-1",
+            message_id="asset-message-1",
+            media_type="voice",
+            media_format="amr",
+            encrypted_query_param=encrypt_secret_value("download-param"),
+            encrypted_aes_key=encrypt_secret_value("aes-key"),
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    async def fake_download(self, encrypted_query_param, aes_key, **kwargs):
+        assert encrypted_query_param == "download-param"
+        assert aes_key == "aes-key"
+        return b"voice-content"
+
+    monkeypatch.setattr(WeixinSkillAdapter, "download_media", fake_download)
+    with _test_client() as client:
+        response = client.get("/api/weixin/multimedia/assets/asset-message-1/download")
+    assert response.status_code == 200
+    assert response.content == b"voice-content"
+    assert "download-param" not in response.text
+    assert "aes-key" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_upload_media_success(monkeypatch):
-    """验证 upload_media 成功返回 media_id。"""
+    """验证 upload_media 通过 iLink 参数和 CDN 加密上传返回媒体描述。"""
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
 
     # 创建临时文件模拟上传
@@ -605,15 +686,38 @@ async def test_upload_media_success(monkeypatch):
         tmp_path = tmp.name
 
     try:
-        async def fake_api_upload(self, config, endpoint, file_path, file_field, extra_params=None, timeout_seconds=30):
-            return {"type": "image", "media_id": "uploaded-media-001", "created_at": 1234567890}
+        captured = {}
 
-        monkeypatch.setattr(WeixinSkillAdapter, "_api_upload", fake_api_upload)
+        async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
+            captured["endpoint"] = endpoint
+            captured["body"] = body
+            return {"upload_param": "upload-param-001"}
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_value, traceback):
+                return False
+
+            async def post(self, url, content, headers):
+                captured["url"] = url
+                captured["content"] = content
+                return type("Response", (), {"status_code": 200, "headers": {"x-encrypted-param": "download-param-001"}})()
+
+        monkeypatch.setattr(WeixinSkillAdapter, "_api_post", fake_api_post)
+        monkeypatch.setattr("skills.weixin_skill_adapter.httpx.AsyncClient", lambda timeout: FakeClient())
 
         config = _build_test_runtime_config()
-        result = await adapter.upload_media(config, "image", tmp_path)
-        assert result["media_id"] == "uploaded-media-001"
+        result = await adapter.upload_media(config, "image", tmp_path, "target-user")
+        assert result["media_id"] == "download-param-001"
         assert result["media_type"] == "image"
+        assert result["media"]["encrypt_query_param"] == "download-param-001"
+        assert result["media"]["encrypt_type"] == 1
+        assert captured["endpoint"] == "ilink/bot/getuploadurl"
+        assert captured["body"]["to_user_id"] == "target-user"
+        assert "encrypted_query_param=upload-param-001" in captured["url"]
+        assert len(captured["content"]) % 16 == 0
     finally:
         os.remove(tmp_path)
 
@@ -624,7 +728,7 @@ async def test_upload_media_invalid_media_type():
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
     config = _build_test_runtime_config()
     with pytest.raises(WeixinAdapterError) as exc_info:
-        await adapter.upload_media(config, "invalid_type", "/tmp/fake.jpg")
+        await adapter.upload_media(config, "invalid_type", "/tmp/fake.jpg", "target-user")
     assert exc_info.value.code == "WEIXIN_INVALID_MEDIA_TYPE"
 
 
@@ -634,13 +738,13 @@ async def test_upload_media_file_not_found():
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
     config = _build_test_runtime_config()
     with pytest.raises(WeixinAdapterError) as exc_info:
-        await adapter.upload_media(config, "image", "/nonexistent/path/file.jpg")
+        await adapter.upload_media(config, "image", "/nonexistent/path/file.jpg", "target-user")
     assert exc_info.value.code == "WEIXIN_MEDIA_FILE_NOT_FOUND"
 
 
 @pytest.mark.asyncio
-async def test_upload_media_no_media_id_in_response(monkeypatch):
-    """验证响应无 media_id 时抛出异常。"""
+async def test_upload_media_missing_upload_parameter(monkeypatch):
+    """验证 iLink 未返回 CDN 上传参数时抛出异常。"""
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
@@ -648,21 +752,21 @@ async def test_upload_media_no_media_id_in_response(monkeypatch):
         tmp_path = tmp.name
 
     try:
-        async def fake_api_upload(self, config, endpoint, file_path, file_field, extra_params=None, timeout_seconds=30):
-            return {"type": "image", "created_at": 123}
+        async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
+            return {}
 
-        monkeypatch.setattr(WeixinSkillAdapter, "_api_upload", fake_api_upload)
+        monkeypatch.setattr(WeixinSkillAdapter, "_api_post", fake_api_post)
         config = _build_test_runtime_config()
         with pytest.raises(WeixinAdapterError) as exc_info:
-            await adapter.upload_media(config, "image", tmp_path)
-        assert exc_info.value.code == "WEIXIN_UPLOAD_NO_MEDIA_ID"
+            await adapter.upload_media(config, "image", tmp_path, "target-user")
+        assert exc_info.value.code == "WEIXIN_UPLOAD_URL_MISSING"
     finally:
         os.remove(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_upload_media_errcode_in_response(monkeypatch):
-    """验证响应包含 errcode 时抛出异常。"""
+async def test_upload_media_cdn_response_missing_download_parameter(monkeypatch):
+    """验证 CDN 响应缺少下载参数时抛出异常。"""
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
@@ -670,14 +774,25 @@ async def test_upload_media_errcode_in_response(monkeypatch):
         tmp_path = tmp.name
 
     try:
-        async def fake_api_upload(self, config, endpoint, file_path, file_field, extra_params=None, timeout_seconds=30):
-            return {"errcode": 40001, "errmsg": "invalid credential"}
+        async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
+            return {"upload_param": "upload-param"}
 
-        monkeypatch.setattr(WeixinSkillAdapter, "_api_upload", fake_api_upload)
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_value, traceback):
+                return False
+
+            async def post(self, url, content, headers):
+                return type("Response", (), {"status_code": 200, "headers": {}})()
+
+        monkeypatch.setattr(WeixinSkillAdapter, "_api_post", fake_api_post)
+        monkeypatch.setattr("skills.weixin_skill_adapter.httpx.AsyncClient", lambda timeout: FakeClient())
         config = _build_test_runtime_config()
         with pytest.raises(WeixinAdapterError) as exc_info:
-            await adapter.upload_media(config, "image", tmp_path)
-        assert exc_info.value.code == "WEIXIN_UPLOAD_FAILED"
+            await adapter.upload_media(config, "image", tmp_path, "target-user")
+        assert exc_info.value.code == "WEIXIN_CDN_UPLOAD_RESPONSE_INVALID"
     finally:
         os.remove(tmp_path)
 
@@ -830,11 +945,11 @@ def test_send_multimedia_success(monkeypatch):
     """验证多媒体消息发送 API 成功路径。"""
     _seed_binding("user-1")
 
-    async def fake_upload_media(self, config, media_type, file_path):
-        return {"media_type": media_type, "media_id": "media-001", "created_at": 123}
+    async def fake_upload_media(self, config, media_type, file_path, to_user_id):
+        return {"media_type": media_type, "media_id": "media-001", "media": {"encrypt_query_param": "media-001", "aes_key": "key"}}
 
-    async def fake_send_image(self, config, user_id, media_id):
-        return {"request": {"to_user_id": user_id, "media_id": media_id}, "response": {"errcode": 0}}
+    async def fake_send_image(self, config, user_id, media):
+        return {"request": {"to_user_id": user_id, "media_id": media["media_id"]}, "response": {"errcode": 0}}
 
     monkeypatch.setattr(WeixinSkillAdapter, "upload_media", fake_upload_media)
     monkeypatch.setattr(WeixinSkillAdapter, "send_image_message", fake_send_image)
@@ -924,7 +1039,7 @@ def test_send_multimedia_upload_failure(monkeypatch):
     """验证上传素材失败时返回 502。"""
     _seed_binding("user-1")
 
-    async def fake_upload_media(self, config, media_type, file_path):
+    async def fake_upload_media(self, config, media_type, file_path, to_user_id):
         raise WeixinAdapterError(code="WEIXIN_UPLOAD_FAILED", message="上传失败")
 
     monkeypatch.setattr(WeixinSkillAdapter, "upload_media", fake_upload_media)

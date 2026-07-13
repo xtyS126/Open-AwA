@@ -20,6 +20,8 @@ pyyaml==6.0.1
 # Qdrant 嵌入式向量库，替代 ChromaDB，原生支持 dense + sparse 混合检索（RRF 融合）
 qdrant-client>=1.18.0,<2.0.0
 httpx>=0.26.0,<0.28.0
+# iLink CDN 多媒体下载使用 AES-128-ECB 解密。
+cryptography>=46.0.0,<47.0.0
 litellm>=1.80.0,<2.0.0
 aiofiles==23.2.1
 # python-dotenv 升级至 1.2.2+ 修复 CVE-2026-28684

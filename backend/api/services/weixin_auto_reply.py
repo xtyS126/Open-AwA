@@ -21,7 +21,8 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from core.agent import AIAgent
-from db.models import SessionLocal, ShortTermMemory, WeixinBinding, WeixinAutoReplyRule
+from config.security import encrypt_secret_value
+from db.models import SessionLocal, ShortTermMemory, WeixinBinding, WeixinAutoReplyRule, WeixinMediaAsset
 from skills.weixin_skill_adapter import (
     WeixinAdapterError,
     WeixinRuntimeConfig,
@@ -344,6 +345,28 @@ def extract_weixin_multimedia(message: Dict[str, Any]) -> Dict[str, Any]:
         result["file_name"] = _safe_text(message.get("file_name") or nested_msg.get("file_name"))
 
     return result
+
+
+def extract_weixin_media_credentials(message: Dict[str, Any]) -> Dict[str, str]:
+    """提取 iLink 媒体下载凭据，仅供服务端持久化和下载使用。"""
+    if not isinstance(message, dict):
+        return {"encrypted_query_param": "", "aes_key": ""}
+    nested_msg = message.get("msg") if isinstance(message.get("msg"), dict) else message
+    item_list = message.get("item_list")
+    if not isinstance(item_list, list):
+        item_list = nested_msg.get("item_list") if isinstance(nested_msg, dict) else []
+    for item in item_list if isinstance(item_list, list) else []:
+        if not isinstance(item, dict):
+            continue
+        for key in ("image_item", "voice_item", "file_item", "video_item"):
+            payload = item.get(key)
+            media = payload.get("media") if isinstance(payload, dict) else None
+            if isinstance(media, dict):
+                query_param = _safe_text(media.get("encrypt_query_param"))
+                aes_key = _safe_text(media.get("aes_key"))
+                if query_param and aes_key:
+                    return {"encrypted_query_param": query_param, "aes_key": aes_key}
+    return {"encrypted_query_param": "", "aes_key": ""}
 
 
 def build_multimedia_description(multimedia: Dict[str, Any]) -> str:
@@ -787,6 +810,27 @@ class WeixinAutoReplyService:
                     continue
 
                 inbound = normalize_inbound_message(raw_message)
+                media_credentials = extract_weixin_media_credentials(raw_message)
+                if media_credentials["encrypted_query_param"] and media_credentials["aes_key"]:
+                    try:
+                        asset = db.query(WeixinMediaAsset).filter(
+                            WeixinMediaAsset.message_id == inbound["message_id"],
+                            WeixinMediaAsset.user_id == user_id,
+                        ).first()
+                        if asset is None:
+                            asset = WeixinMediaAsset(
+                                user_id=user_id,
+                                message_id=inbound["message_id"],
+                                media_type=_safe_text(inbound["multimedia"].get("media_type")),
+                                media_format=_safe_text(inbound["multimedia"].get("format")),
+                                encrypted_query_param=encrypt_secret_value(media_credentials["encrypted_query_param"]),
+                                encrypted_aes_key=encrypt_secret_value(media_credentials["aes_key"]),
+                            )
+                            db.add(asset)
+                            db.commit()
+                    except Exception as exc:
+                        db.rollback()
+                        logger.warning(f"[weixin] 持久化多媒体资产失败，继续处理消息: {exc}")
                 existing = processed_messages.get(inbound["message_id"])
                 if existing and existing.get("status") == "sent":
                     duplicate_count += 1

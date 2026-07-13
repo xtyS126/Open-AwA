@@ -4,6 +4,7 @@
 """
 
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List
 
@@ -164,7 +165,15 @@ def _run_conversation_lifecycle(db: Session, current_user: User) -> tuple:
     )
 
     # 创建
-    conv = ensure_conversation(db, str(current_user.id), title="[测试] 自动化场景验证")
+    session_id = f"test-scenario:{uuid.uuid4().hex}"
+    conv = ensure_conversation(
+        db,
+        session_id,
+        str(current_user.id),
+        title="[测试] 自动化场景验证",
+    )
+    if conv is None:
+        raise RuntimeError("测试会话创建失败")
     session_id = conv.session_id
 
     # 重命名
@@ -172,11 +181,11 @@ def _run_conversation_lifecycle(db: Session, current_user: User) -> tuple:
     db.commit()
 
     # 软删除
-    soft_delete_conversation(db, session_id)
+    soft_delete_conversation(db, session_id, str(current_user.id))
     db.commit()
 
     # 恢复
-    restored = restore_conversation(db, session_id)
+    restored = restore_conversation(db, session_id, str(current_user.id))
 
     return {
         "session_id": session_id,

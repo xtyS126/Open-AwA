@@ -21,7 +21,8 @@ config.set_main_option("sqlalchemy.url", database_url)
 
 # 配置日志
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Windows 默认区域编码可能无法读取包含中文注释的 UTF-8 配置。
+    fileConfig(config.config_file_name, encoding="utf-8")
 
 # 导入所有模型，确保 Base.metadata 包含所有表
 from db.models import Base  # noqa: E402

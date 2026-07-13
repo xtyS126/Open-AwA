@@ -3,6 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import WechatConfigModule from '../WechatConfigModule'
 import { useWechatConfig } from '../useWechatConfig'
 
+vi.mock('@/shared/api/weixinMultimediaApi', () => ({
+  listMultimedia: vi.fn().mockResolvedValue([]),
+  sendMultimedia: vi.fn(),
+}))
+
+vi.mock('@/shared/hooks/useWeixinWebSocket', () => ({
+  useWeixinWebSocket: vi.fn().mockReturnValue({ connected: false, error: null, close: vi.fn(), reconnect: vi.fn() }),
+}))
+
+vi.mock('../WechatMultimediaPanel', () => ({
+  default: () => null,
+}))
+
 // Mock the hook
 vi.mock('../useWechatConfig', () => ({
   useWechatConfig: vi.fn()

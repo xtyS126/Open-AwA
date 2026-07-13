@@ -376,7 +376,9 @@ WebSocket 协议增强在保留最终完整消息的同时，新增了分段消�
 
 ### 2.9 微信集成
 
-微信集成已通过 weixin_skill_adapter.py 接入 Skill 引擎，支持二维码登录（weixin-ilink）、通讯页面独立入口。系统支持二维码开始与状态轮询（wait/scaned/expired/confirmed/timeout）、登录成功自动回填 account_id/token/base_url，并提供取消扫码与退出登录接口联动。微信绑定令牌已改为 Fernet 对称加密存储，数据库中仅保存 `enc:` 前缀的密文。
+微信集成已通过 weixin_skill_adapter.py 接入 Skill 引擎，支持二维码登录（weixin-ilink）、通讯页面独立入口。系统支持二维码开始与状态轮询（wait/scaned/expired/confirmed/timeout）、登录成功自动回填 account_id/token/base_url，并提供取消扫码与退出登录接口联动。微信绑定令牌已改为 Fernet 对称加密存储，数据库中仅保存 `enc2:` 前缀的密文。
+
+多媒体链路使用 iLink 原生协议：服务端先获取 CDN 上传参数，再以 AES-128-ECB 加密文件并上传；发送消息携带加密媒体描述。入站媒体的 CDN 参数和 AES 密钥仅以加密形式存入 `weixin_media_assets`，下载接口按当前用户所有权校验且不会向浏览器返回这些凭据。语音资产可调用用户已配置、输入模态声明为 `audio` 的 OpenAI 兼容转写模型；未配置时返回明确的配置提示，而不会转发给普通聊天模型。相关接口包括资产列表 `GET /api/weixin/multimedia/assets/recent`、下载 `GET /api/weixin/multimedia/assets/{message_id}/download` 与转写 `POST /api/weixin/multimedia/assets/{message_id}/transcribe`。
 
 ### 2.10 MCP 协议支持
 

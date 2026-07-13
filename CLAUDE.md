@@ -760,6 +760,7 @@ git commit -m "[Type] 变更描述"
 - **base_url 解析优先级**: 使用 `getattr(config, 'base_url', None)` 修复运算符优先级问题
 - **新 provider 创建约束**: `provider` 字段必须非空，`config_id` 仅更新时需要
 - **前端移动端适配 CSS @media 限制**: CSS @media 中不能使用 var() 引用 tokens.css 断点令牌（--breakpoint-xs/sm/md/lg/xl），必须使用数字字面量；但在 @media 块前必须注释对应 token 名，如 `/* 移动端（≤ 768px，对应 --breakpoint-md 令牌） */`，便于令牌变更时全局定位。定位方法：检查 CSS Module 文件头注释是否标注 token 名；修复方向：保留数字字面量但在 @media 块前追加 token 标注注释
+- **Windows Alembic UTF-8 配置**: `alembic.ini` 含 UTF-8 内容时，`alembic/env.py` 的 `fileConfig` 必须显式传入 `encoding="utf-8"`；当前迁移图存在多个 head，验证或部署全部分支应使用 `alembic upgrade heads`，单分支迁移则指定具体 revision。
 
 ---
 

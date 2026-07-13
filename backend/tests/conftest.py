@@ -12,6 +12,7 @@ import pytest
 # 测试专用环境变量名，避免与通用 TESTING 变量冲突
 _CSRF_TEST_ENV = "SKIP_CSRF_FOR_TEST"
 _TEST_DATABASE_PATH = Path(tempfile.gettempdir()) / f"openawa-pytest-{os.getpid()}.db"
+_TEST_VECTOR_DB_PATH = Path(tempfile.gettempdir()) / f"openawa-pytest-qdrant-{os.getpid()}"
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -21,6 +22,8 @@ def pytest_configure(config):
     os.environ.setdefault("TESTING", "true")
     # 全局 app 的 lifespan 会直接使用模块级数据库引擎，必须在收集测试模块前隔离默认数据库
     os.environ.setdefault("DATABASE_URL", f"sqlite:///{_TEST_DATABASE_PATH.as_posix()}")
+    # MemoryManager 会在 Agent 构造时创建嵌入式 Qdrant，必须隔离默认向量目录，避免访问用户数据或受保护锁文件
+    os.environ.setdefault("VECTOR_DB_PATH", str(_TEST_VECTOR_DB_PATH))
     # ACP 路由测试只允许后端测试工作区，不放宽生产环境的默认白名单
     os.environ.setdefault("ACP_ALLOWED_WORKDIRS", str(_BACKEND_ROOT))
 

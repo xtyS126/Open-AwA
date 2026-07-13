@@ -125,6 +125,7 @@ from db.models.billing import (
 from db.models.wechat import (
     WeixinAutoReplyRule,
     WeixinBinding,
+    WeixinMediaAsset,
 )
 
 # ---- 工作区与系统配置域 ----
@@ -223,6 +224,7 @@ __all__ = [
     # 微信域
     "WeixinBinding",
     "WeixinAutoReplyRule",
+    "WeixinMediaAsset",
     # 工作区与系统配置域
     "Workspace",
     "SearchProviderConfig",

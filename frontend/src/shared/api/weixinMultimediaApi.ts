@@ -47,6 +47,16 @@ export interface WeixinMultimediaSendResult {
   send_result: Record<string, unknown>
 }
 
+/** 可下载的微信媒体资产 */
+export interface WeixinMediaAsset {
+  message_id: string
+  media_type: WeixinMediaType
+  media_format: string
+  transcript: string
+  transcript_status: 'pending' | 'processing' | 'completed' | 'failed' | string
+  created_at: string
+}
+
 /** 多媒体列表查询参数 */
 export interface WeixinMultimediaListParams {
   limit?: number
@@ -66,6 +76,28 @@ export async function getMultimediaDetail(
   messageId: string
 ): Promise<WeixinMultimediaDetail> {
   const { data } = await api.get<WeixinMultimediaDetail>(`${BASE}/${messageId}`)
+  return data
+}
+
+/** 查询服务端安全保存的微信媒体资产 */
+export async function listMultimediaAssets(
+  params?: WeixinMultimediaListParams
+): Promise<WeixinMediaAsset[]> {
+  const { data } = await api.get<WeixinMediaAsset[]>(`${BASE}/assets/recent`, { params })
+  return data
+}
+
+/** 下载指定媒体资产，敏感 CDN 参数不会暴露到浏览器 */
+export async function downloadMultimediaAsset(messageId: string): Promise<Blob> {
+  const { data } = await api.get<Blob>(`${BASE}/assets/${encodeURIComponent(messageId)}/download`, {
+    responseType: 'blob',
+  })
+  return data
+}
+
+/** 转写指定微信语音资产 */
+export async function transcribeMultimediaAsset(messageId: string): Promise<WeixinMediaAsset> {
+  const { data } = await api.post<WeixinMediaAsset>(`${BASE}/assets/${encodeURIComponent(messageId)}/transcribe`)
   return data
 }
 

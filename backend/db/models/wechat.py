@@ -54,3 +54,20 @@ class WeixinAutoReplyRule(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
     )
+
+
+class WeixinMediaAsset(Base):
+    """微信入站多媒体资产，敏感 CDN 参数仅以密文保存在服务端。"""
+    __tablename__ = "weixin_media_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    message_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    media_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    media_format: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    encrypted_query_param: Mapped[str] = mapped_column(Text, nullable=False)
+    encrypted_aes_key: Mapped[str] = mapped_column(Text, nullable=False)
+    transcript: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    transcript_status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

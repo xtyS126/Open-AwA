@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Image as ImageIcon, Mic, FileText, Video, RefreshCw, Send, Filter } from 'lucide-react'
+import { Download, FileText, Filter, Image as ImageIcon, Mic, RefreshCw, Send, Video } from 'lucide-react'
 import { useToast } from '@/shared/components/Toast'
 import {
   listMultimedia,
+  listMultimediaAssets,
   sendMultimedia,
+  transcribeMultimediaAsset,
   type WeixinMultimediaMessage,
+  type WeixinMediaAsset,
   type WeixinMediaType,
 } from '@/shared/api/weixinMultimediaApi'
+import { useWeixinWebSocket } from '@/shared/hooks/useWeixinWebSocket'
 import styles from './WechatConfigModule.module.css'
 
 /** 多媒体类型过滤器选项 */
@@ -70,6 +74,7 @@ export default function WechatMultimediaPanel() {
 
   // 多媒体消息列表状态
   const [messages, setMessages] = useState<WeixinMultimediaMessage[]>([])
+  const [assets, setAssets] = useState<WeixinMediaAsset[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [filterType, setFilterType] = useState<FilterType>('all')
@@ -88,6 +93,8 @@ export default function WechatMultimediaPanel() {
       const params = filterType === 'all' ? { limit: 50 } : { limit: 50, media_type: filterType }
       const result = await listMultimedia(params)
       setMessages(result)
+      const assetResult = await listMultimediaAssets(params)
+      setAssets(assetResult)
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : '加载多媒体消息失败'
       setLoadError(errorMsg)
@@ -95,6 +102,29 @@ export default function WechatMultimediaPanel() {
       setLoading(false)
     }
   }, [filterType])
+
+  /** 下载服务端保存的媒体资产，不向浏览器暴露 CDN 密钥。 */
+  const handleDownloadAsset = useCallback((messageId: string) => {
+    const downloadUrl = `/api/weixin/multimedia/assets/${encodeURIComponent(messageId)}/download`
+    window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+  }, [])
+
+  /** 请求服务端通过用户配置的音频模型完成语音转写。 */
+  const handleTranscribeAsset = useCallback(async (messageId: string) => {
+    try {
+      const updated = await transcribeMultimediaAsset(messageId)
+      setAssets((current) => current.map((asset) => asset.message_id === updated.message_id ? updated : asset))
+      addToast('语音转写完成', 'success')
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : '语音转写失败', 'error')
+    }
+  }, [addToast])
+
+  useWeixinWebSocket({
+    onMessage: () => {
+      void loadMessages()
+    },
+  })
 
   // 初始加载和过滤器变化时重新加载
   useEffect(() => {
@@ -252,6 +282,30 @@ export default function WechatMultimediaPanel() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {assets.length > 0 && (
+          <div style={{ marginTop: '16px' }}>
+            <h5 style={{ margin: '0 0 8px', fontSize: '14px' }}>可下载资产</h5>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {assets.map((asset) => (
+                <div key={asset.message_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--color-bg)', borderRadius: 'var(--radius-md)' }}>
+                  <span style={{ flex: 1, fontSize: '13px' }}>
+                    {MEDIA_TYPE_LABELS[asset.media_type]} · {formatTimestamp(asset.created_at)}
+                    {asset.transcript ? ` · ${asset.transcript}` : ''}
+                  </span>
+                  <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => handleDownloadAsset(asset.message_id)}>
+                    <Download size={14} /> 下载
+                  </button>
+                  {asset.media_type === 'voice' && (
+                    <button className="btn btn-primary" disabled={asset.transcript_status === 'processing'} onClick={() => void handleTranscribeAsset(asset.message_id)}>
+                      {asset.transcript_status === 'processing' ? '转写中...' : '转写'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

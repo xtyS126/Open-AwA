@@ -11,11 +11,12 @@ import json
 import os
 import re
 import tempfile
+import httpx
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, WebSocket, WebSocketDisconnect
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
@@ -31,7 +32,7 @@ from api.services.weixin_auto_reply import (
 )
 from config.security import decode_access_token, decrypt_secret_value, encrypt_secret_value
 from config.settings import settings
-from db.models import SessionLocal, ShortTermMemory, Skill, User, WeixinBinding, WeixinAutoReplyRule, get_db
+from db.models import ModelConfiguration, ProviderCredential, SessionLocal, ShortTermMemory, Skill, User, WeixinBinding, WeixinAutoReplyRule, WeixinMediaAsset, get_db
 from core.weixin_utils import (
     normalize_binding_status as _normalize_binding_status,
     deserialize_skill_config as _deserialize_skill_config,
@@ -954,6 +955,171 @@ class WeixinMultimediaSendResponse(BaseModel):
     send_result: Dict[str, Any] = {}
 
 
+class WeixinMediaAssetResponse(BaseModel):
+    """微信媒体资产响应，绝不包含 CDN 参数和 AES 密钥。"""
+    message_id: str
+    media_type: str
+    media_format: str = ""
+    transcript: str = ""
+    transcript_status: str
+    created_at: str
+
+
+def _is_audio_transcription_model(config: ModelConfiguration) -> bool:
+    """根据模型模态标记或模型名识别兼容 OpenAI 转写协议的音频模型。"""
+    try:
+        modalities = json.loads(config.input_modality or "[]")
+    except json.JSONDecodeError:
+        modalities = []
+    normalized_modalities = {str(item).strip().lower() for item in modalities} if isinstance(modalities, list) else set()
+    return "audio" in normalized_modalities or "whisper" in str(config.model or "").lower()
+
+
+def _find_transcription_configuration(db: Session) -> tuple[ModelConfiguration, ProviderCredential]:
+    """查找当前用户配置中可用的音频转写模型及其凭据。"""
+    configurations = db.query(ModelConfiguration).filter(ModelConfiguration.is_active.is_(True)).all()
+    for config in configurations:
+        if not _is_audio_transcription_model(config):
+            continue
+        credential = None
+        if config.credential_id:
+            credential = db.query(ProviderCredential).filter(
+                ProviderCredential.id == config.credential_id,
+                ProviderCredential.is_active.is_(True),
+            ).first()
+        if credential is None:
+            credential = db.query(ProviderCredential).filter(
+                ProviderCredential.provider == config.provider,
+                ProviderCredential.is_active.is_(True),
+            ).first()
+        if credential and credential.api_key and (credential.api_endpoint or config.api_endpoint):
+            return config, credential
+    raise HTTPException(status_code=409, detail="未配置可用的音频转写模型，请在模型设置中启用输入模态包含 audio 的模型")
+
+
+@router.get("/multimedia/assets/recent", response_model=List[WeixinMediaAssetResponse])
+async def list_recent_multimedia_assets(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    media_type: Optional[str] = Query(default=None, pattern=r"^(image|voice|file|video)$"),
+) -> List[WeixinMediaAssetResponse]:
+    """列出可安全下载或转写的当前用户微信媒体资产。"""
+    query = db.query(WeixinMediaAsset).filter(WeixinMediaAsset.user_id == str(current_user.id))
+    if media_type:
+        query = query.filter(WeixinMediaAsset.media_type == media_type)
+    assets = query.order_by(WeixinMediaAsset.created_at.desc()).limit(limit).all()
+    return [
+        WeixinMediaAssetResponse(
+            message_id=asset.message_id,
+            media_type=asset.media_type,
+            media_format=asset.media_format or "",
+            transcript=asset.transcript or "",
+            transcript_status=asset.transcript_status or "pending",
+            created_at=asset.created_at.isoformat() if asset.created_at else "",
+        )
+        for asset in assets
+    ]
+
+
+@router.get("/multimedia/assets/{message_id}/download")
+async def download_multimedia_asset(
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> Response:
+    """下载当前用户的微信媒体资产，CDN 参数和 AES 密钥不会返回给客户端。"""
+    asset = db.query(WeixinMediaAsset).filter(
+        WeixinMediaAsset.message_id == message_id,
+        WeixinMediaAsset.user_id == str(current_user.id),
+    ).first()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="多媒体资产不存在")
+    try:
+        content = await WeixinSkillAdapter().download_media(
+            decrypt_secret_value(asset.encrypted_query_param),
+            decrypt_secret_value(asset.encrypted_aes_key),
+        )
+    except WeixinAdapterError as exc:
+        logger.warning(f"[weixin] 下载多媒体资产失败: asset={asset.id}, code={exc.code}")
+        raise HTTPException(status_code=502, detail=f"下载多媒体资产失败: {exc.message}")
+
+    media_type = asset.media_type or "file"
+    media_format = asset.media_format or "bin"
+    content_type = {
+        "image": f"image/{media_format}",
+        "voice": "application/octet-stream",
+        "video": f"video/{media_format}",
+    }.get(media_type, "application/octet-stream")
+    return Response(content=content, media_type=content_type)
+
+
+@router.post("/multimedia/assets/{message_id}/transcribe", response_model=WeixinMediaAssetResponse)
+async def transcribe_multimedia_asset(
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> WeixinMediaAssetResponse:
+    """使用用户已配置的音频模型转写其微信语音资产。"""
+    asset = db.query(WeixinMediaAsset).filter(
+        WeixinMediaAsset.message_id == message_id,
+        WeixinMediaAsset.user_id == str(current_user.id),
+    ).first()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="多媒体资产不存在")
+    if asset.media_type != "voice":
+        raise HTTPException(status_code=400, detail="仅语音媒体支持转写")
+
+    config, credential = _find_transcription_configuration(db)
+    asset.transcript_status = "processing"
+    db.commit()
+    try:
+        audio_content = await WeixinSkillAdapter().download_media(
+            decrypt_secret_value(asset.encrypted_query_param),
+            decrypt_secret_value(asset.encrypted_aes_key),
+        )
+        endpoint = str(credential.api_endpoint or config.api_endpoint).rstrip("/")
+        if endpoint.endswith("/v1"):
+            endpoint = f"{endpoint}/audio/transcriptions"
+        else:
+            endpoint = f"{endpoint}/v1/audio/transcriptions"
+        extension = (asset.media_format or "amr").strip().lstrip(".") or "amr"
+        headers = {"Authorization": f"Bearer {decrypt_secret_value(credential.api_key)}"}
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(
+                endpoint,
+                headers=headers,
+                data={"model": config.model},
+                files={"file": (f"weixin_voice.{extension}", audio_content, "application/octet-stream")},
+            )
+        if response.status_code >= 400:
+            raise ValueError(f"转写服务返回 HTTP {response.status_code}")
+        response_data = response.json()
+        transcript = str(response_data.get("text") or "").strip()
+        if not transcript:
+            raise ValueError("转写服务未返回 text 字段")
+        asset.transcript = transcript
+        asset.transcript_status = "completed"
+        db.commit()
+    except (WeixinAdapterError, httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
+        db.rollback()
+        asset = db.query(WeixinMediaAsset).filter(WeixinMediaAsset.id == asset.id).first()
+        if asset is not None:
+            asset.transcript_status = "failed"
+            db.commit()
+        logger.warning(f"[weixin] 语音转写失败: asset={message_id}, error={type(exc).__name__}")
+        raise HTTPException(status_code=502, detail="语音转写失败，请检查音频模型配置和服务可用性") from exc
+
+    return WeixinMediaAssetResponse(
+        message_id=asset.message_id,
+        media_type=asset.media_type,
+        media_format=asset.media_format or "",
+        transcript=asset.transcript or "",
+        transcript_status=asset.transcript_status,
+        created_at=asset.created_at.isoformat() if asset.created_at else "",
+    )
+
+
 @router.post("/multimedia/send", response_model=WeixinMultimediaSendResponse)
 async def send_multimedia(
     to_user: str = Form(..., min_length=1, max_length=128),
@@ -1029,6 +1195,7 @@ async def send_multimedia(
                 config=runtime,
                 media_type=media_type,
                 file_path=temp_file_path,
+                to_user_id=to_user,
             )
         except WeixinAdapterError as exc:
             logger.warning(f"[weixin] 上传多媒体素材失败: user={user_id}, code={exc.code}, msg={exc.message}")
@@ -1039,13 +1206,13 @@ async def send_multimedia(
         # 根据类型调用对应的发送方法
         try:
             if media_type == "image":
-                send_result = await adapter.send_image_message(runtime, to_user, media_id)
+                send_result = await adapter.send_image_message(runtime, to_user, upload_result)
             elif media_type == "voice":
-                send_result = await adapter.send_voice_message(runtime, to_user, media_id)
+                send_result = await adapter.send_voice_message(runtime, to_user, upload_result)
             elif media_type == "video":
-                send_result = await adapter.send_video_message(runtime, to_user, media_id)
+                send_result = await adapter.send_video_message(runtime, to_user, upload_result)
             else:
-                send_result = await adapter.send_file_message(runtime, to_user, media_id)
+                send_result = await adapter.send_file_message(runtime, to_user, upload_result)
         except WeixinAdapterError as exc:
             logger.warning(f"[weixin] 发送多媒体消息失败: user={user_id}, code={exc.code}, msg={exc.message}")
             raise HTTPException(status_code=502, detail=f"发送多媒体消息失败: {exc.message}")

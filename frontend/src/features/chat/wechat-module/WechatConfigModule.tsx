@@ -1,5 +1,6 @@
 import { useWechatConfig } from './useWechatConfig'
 import type { WeixinAutoReplyRule, WeixinAutoReplyRuleCreate } from '@/shared/api/api'
+import { useWeixinWebSocket } from '@/shared/hooks/useWeixinWebSocket'
 import WechatMultimediaPanel from './WechatMultimediaPanel'
 import styles from './WechatConfigModule.module.css'
 
@@ -23,6 +24,14 @@ export default function WechatConfigModule() {
     handleSaveRule, handleDeleteRule, handleToggleRuleActive, handleRestoreDefaultRules
   } = useWechatConfig()
 
+  const { connected: weixinWsConnected } = useWeixinWebSocket({
+    enabled: Boolean(autoReplyStatus?.auto_reply_running),
+    onMessage: () => {
+      void loadAutoReplyStatus()
+      void loadBindingInfo()
+    },
+  })
+
   return (
     <div className={styles['wechat-module']}>
       {message && (
@@ -31,6 +40,11 @@ export default function WechatConfigModule() {
         </div>
       )}
       <div className={styles['settings-section']}>
+        {autoReplyStatus?.auto_reply_running && (
+          <p className={styles['section-desc']}>
+            实时消息推送：{weixinWsConnected ? '已连接' : '正在连接'}
+          </p>
+        )}
         <p className={styles['section-desc']}>配置外部通讯渠道，如微信 iLink 集成。</p>
         <div className={styles['config-card']}>
           <h3 className={styles['card-title']}>微信通讯配置</h3>

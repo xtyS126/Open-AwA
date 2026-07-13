@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import functools
+import hashlib
 import json
 import os
 import threading
@@ -15,14 +16,17 @@ import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import httpx
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from loguru import logger
 
 from config.security import decrypt_secret_value, encrypt_secret_value
 
 
 DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com"
+DEFAULT_CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c"
 DEFAULT_QR_BASE_URL = DEFAULT_BASE_URL
 DEFAULT_BOT_TYPE = "3"
 DEFAULT_CHANNEL_VERSION = "1.0.2"
@@ -329,17 +333,87 @@ class WeixinSkillAdapter:
         """
         return await self._send_message(config, payload)
 
+    async def download_media(
+        self,
+        encrypted_query_param: str,
+        aes_key: str,
+        *,
+        cdn_base_url: str = DEFAULT_CDN_BASE_URL,
+    ) -> bytes:
+        """从 iLink CDN 下载并解密 AES-128-ECB 多媒体内容。"""
+        if not encrypted_query_param or not aes_key:
+            raise WeixinAdapterError(
+                code="WEIXIN_MEDIA_DOWNLOAD_METADATA_MISSING",
+                message="下载微信多媒体缺少加密参数或 AES 密钥",
+                details={},
+                suggestions=["确认入站消息携带 media.encrypt_query_param 和 media.aes_key"],
+            )
+        try:
+            key = self._parse_cdn_aes_key(aes_key)
+        except ValueError as exc:
+            raise WeixinAdapterError(
+                code="WEIXIN_MEDIA_AES_KEY_INVALID",
+                message="微信多媒体 AES 密钥格式无效",
+                details={"error": str(exc)},
+                suggestions=["使用上游返回的原始 aes_key，不要自行转换或截断"],
+            ) from exc
+
+        base_url = str(cdn_base_url).rstrip("/")
+        url = f"{base_url}/download?encrypted_query_param={quote(encrypted_query_param, safe='')}"
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.get(url)
+            if response.status_code >= 400:
+                raise WeixinAdapterError(
+                    code="WEIXIN_MEDIA_DOWNLOAD_FAILED",
+                    message=f"微信 CDN 下载失败: HTTP {response.status_code}",
+                    details={"status_code": response.status_code},
+                    suggestions=["检查素材是否过期并重新获取入站消息"],
+                )
+            ciphertext = response.content
+            if not ciphertext or len(ciphertext) % 16:
+                raise ValueError("CDN 密文长度不是 AES 块大小的整数倍")
+            decryptor = Cipher(algorithms.AES(key), modes.ECB()).decryptor()
+            padded = decryptor.update(ciphertext) + decryptor.finalize()
+            padding_size = padded[-1] if padded else 0
+            if padding_size < 1 or padding_size > 16 or padded[-padding_size:] != bytes([padding_size]) * padding_size:
+                raise ValueError("CDN 内容的 PKCS7 填充无效")
+            return padded[:-padding_size]
+        except WeixinAdapterError:
+            raise
+        except (httpx.HTTPError, ValueError) as exc:
+            raise WeixinAdapterError(
+                code="WEIXIN_MEDIA_DOWNLOAD_FAILED",
+                message="微信多媒体下载或解密失败",
+                details={"error": str(exc)},
+                suggestions=["检查 CDN 参数、网络连通性和 AES 密钥"],
+            ) from exc
+
+    @staticmethod
+    def _parse_cdn_aes_key(value: str) -> bytes:
+        """兼容 iLink 返回的十六进制和 Base64 AES 密钥格式。"""
+        normalized = str(value).strip()
+        if len(normalized) == 32:
+            try:
+                return bytes.fromhex(normalized)
+            except ValueError:
+                pass
+        decoded = base64.b64decode(normalized, validate=True)
+        if len(decoded) == 16:
+            return decoded
+        if len(decoded) == 32:
+            return bytes.fromhex(decoded.decode("ascii"))
+        raise ValueError("AES 密钥必须是 16 字节、32 位十六进制或其 Base64 编码")
+
     async def upload_media(
         self,
         config: WeixinRuntimeConfig,
         media_type: str,
         file_path: str,
+        to_user_id: str,
     ) -> Dict[str, Any]:
         """
-        上传临时素材到微信 /cgi-bin/media/upload 接口，返回包含 media_id 的响应。
-
-        media_type 取值：image/voice/video/file。
-        使用 multipart/form-data 异步上传，超时时间固定 30 秒。
+        通过 iLink 获取 CDN 上传参数、AES 加密上传素材并返回可发送的媒体描述。
         """
         normalized_type = str(media_type or "").strip().lower()
         if normalized_type not in {"image", "voice", "video", "file"}:
@@ -356,51 +430,111 @@ class WeixinSkillAdapter:
                 details={"file_path": file_path},
                 suggestions=["确认文件路径正确且文件可读"],
             )
+        target_user_id = str(to_user_id or "").strip()
+        if not target_user_id:
+            raise WeixinAdapterError(
+                code="WEIXIN_INPUT_MISSING_FIELDS",
+                message="上传微信多媒体缺少 to_user_id",
+                details={"missing_fields": ["to_user_id"]},
+                suggestions=["提供接收素材的微信用户 ID"],
+            )
 
-        params: Dict[str, Any] = {
-            "access_token": config.token,
-            "type": normalized_type,
+        try:
+            with open(file_path, "rb") as file_handle:
+                plaintext = file_handle.read()
+        except OSError as exc:
+            raise WeixinAdapterError(
+                code="WEIXIN_FILE_READ_ERROR",
+                message="读取待上传素材文件失败",
+                details={"file_path": file_path, "error": str(exc)},
+                suggestions=["确认文件存在且有读权限"],
+            ) from exc
+
+        aes_key = os.urandom(16)
+        file_key = os.urandom(16).hex()
+        padded_size = ((len(plaintext) // 16) + 1) * 16
+        upload_request = {
+            "filekey": file_key,
+            "media_type": {"image": 1, "video": 2, "file": 3, "voice": 4}[normalized_type],
+            "to_user_id": target_user_id,
+            "rawsize": len(plaintext),
+            "rawfilemd5": hashlib.md5(plaintext).hexdigest(),
+            "filesize": padded_size,
+            "no_need_thumb": True,
+            "aeskey": aes_key.hex(),
         }
-        response = await self._api_upload(
+        upload_url_response = await self._api_post(
             config=config,
-            endpoint="cgi-bin/media/upload",
-            file_path=file_path,
-            file_field="media",
-            extra_params=params,
+            endpoint="ilink/bot/getuploadurl",
+            body=upload_request,
             timeout_seconds=30,
         )
-
-        errcode = response.get("errcode")
-        if errcode:
-            raise WeixinAdapterError(
-                code="WEIXIN_UPLOAD_FAILED",
-                message=f"上传素材失败: errcode={errcode}, errmsg={response.get('errmsg', '')}",
-                details={"response": response},
-                suggestions=["检查 access_token 是否有效、文件格式是否符合微信要求"],
+        upload_url = str(upload_url_response.get("upload_full_url") or "").strip()
+        if not upload_url:
+            upload_param = str(upload_url_response.get("upload_param") or "").strip()
+            if not upload_param:
+                raise WeixinAdapterError(
+                    code="WEIXIN_UPLOAD_URL_MISSING",
+                    message="微信未返回多媒体 CDN 上传参数",
+                    details={"response": upload_url_response},
+                    suggestions=["检查微信绑定状态后重试"],
+                )
+            upload_url = (
+                f"{DEFAULT_CDN_BASE_URL}/upload?encrypted_query_param="
+                f"{quote(upload_param, safe='')}&filekey={quote(file_key, safe='')}"
             )
 
-        media_id = str(response.get("media_id") or "").strip()
-        if not media_id:
+        pad_size = 16 - len(plaintext) % 16
+        ciphertext = Cipher(algorithms.AES(aes_key), modes.ECB()).encryptor().update(
+            plaintext + bytes([pad_size]) * pad_size
+        )
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                cdn_response = await client.post(
+                    upload_url,
+                    content=ciphertext,
+                    headers={"Content-Type": "application/octet-stream"},
+                )
+        except httpx.HTTPError as exc:
             raise WeixinAdapterError(
-                code="WEIXIN_UPLOAD_NO_MEDIA_ID",
-                message="上传素材成功但未返回 media_id",
-                details={"response": response},
-                suggestions=["联系上游服务排查响应结构"],
+                code="WEIXIN_CDN_UPLOAD_FAILED",
+                message="微信 CDN 上传请求失败",
+                details={"error": str(exc)},
+                suggestions=["检查网络连通性后重试"],
+            ) from exc
+        if cdn_response.status_code >= 400:
+            raise WeixinAdapterError(
+                code="WEIXIN_CDN_UPLOAD_FAILED",
+                message=f"微信 CDN 上传失败: HTTP {cdn_response.status_code}",
+                details={"status_code": cdn_response.status_code},
+                suggestions=["检查素材格式、大小和微信绑定状态"],
             )
-
+        encrypted_query_param = str(cdn_response.headers.get("x-encrypted-param") or "").strip()
+        if not encrypted_query_param:
+            raise WeixinAdapterError(
+                code="WEIXIN_CDN_UPLOAD_RESPONSE_INVALID",
+                message="微信 CDN 上传成功但未返回下载参数",
+                details={},
+                suggestions=["稍后重试或检查微信上游服务状态"],
+            )
         return {
             "media_type": normalized_type,
-            "media_id": media_id,
-            "created_at": response.get("created_at"),
-            "type": response.get("type", normalized_type),
-            "raw_response": response,
+            "media_id": encrypted_query_param,
+            "media": {
+                "encrypt_query_param": encrypted_query_param,
+                "aes_key": base64.b64encode(aes_key).decode("ascii"),
+                "encrypt_type": 1,
+            },
+            "file_key": file_key,
+            "file_size": len(plaintext),
+            "ciphertext_size": len(ciphertext),
         }
 
     async def send_image_message(
         self,
         config: WeixinRuntimeConfig,
         user_id: str,
-        media_id: str,
+        media: Dict[str, Any] | str,
     ) -> Dict[str, Any]:
         """发送图片消息，item type=2，使用 image_item 携带 media_id。"""
         return await self._send_media_message(
@@ -408,14 +542,14 @@ class WeixinSkillAdapter:
             user_id=user_id,
             item_type=2,
             item_key="image_item",
-            item_payload={"media_id": media_id},
+            item_payload=self._build_media_item_payload(media),
         )
 
     async def send_voice_message(
         self,
         config: WeixinRuntimeConfig,
         user_id: str,
-        media_id: str,
+        media: Dict[str, Any] | str,
     ) -> Dict[str, Any]:
         """发送语音消息，item type=3，使用 voice_item 携带 media_id。"""
         return await self._send_media_message(
@@ -423,14 +557,14 @@ class WeixinSkillAdapter:
             user_id=user_id,
             item_type=3,
             item_key="voice_item",
-            item_payload={"media_id": media_id},
+            item_payload=self._build_media_item_payload(media),
         )
 
     async def send_video_message(
         self,
         config: WeixinRuntimeConfig,
         user_id: str,
-        media_id: str,
+        media: Dict[str, Any] | str,
     ) -> Dict[str, Any]:
         """发送视频消息，item type=4，使用 video_item 携带 media_id。"""
         return await self._send_media_message(
@@ -438,14 +572,14 @@ class WeixinSkillAdapter:
             user_id=user_id,
             item_type=4,
             item_key="video_item",
-            item_payload={"media_id": media_id},
+            item_payload=self._build_media_item_payload(media),
         )
 
     async def send_file_message(
         self,
         config: WeixinRuntimeConfig,
         user_id: str,
-        media_id: str,
+        media: Dict[str, Any] | str,
     ) -> Dict[str, Any]:
         """发送文件消息，item type=5，使用 file_item 携带 media_id。"""
         return await self._send_media_message(
@@ -453,7 +587,7 @@ class WeixinSkillAdapter:
             user_id=user_id,
             item_type=5,
             item_key="file_item",
-            item_payload={"media_id": media_id},
+            item_payload=self._build_media_item_payload(media),
         )
 
     async def _send_media_message(
@@ -469,6 +603,7 @@ class WeixinSkillAdapter:
         通过 item_list 携带对应类型的多媒体条目，context_token 优先从缓存读取。
         """
         to_user_id = str(user_id or "").strip()
+        media_descriptor = item_payload.get("media")
         media_id = str(item_payload.get("media_id") or "").strip()
         if not to_user_id:
             raise WeixinAdapterError(
@@ -477,12 +612,12 @@ class WeixinSkillAdapter:
                 details={"missing_fields": ["to_user_id"]},
                 suggestions=["提供有效的目标用户 ID"],
             )
-        if not media_id:
+        if not media_id and not isinstance(media_descriptor, dict):
             raise WeixinAdapterError(
                 code="WEIXIN_INPUT_MISSING_FIELDS",
                 message="发送多媒体消息缺少 media_id",
                 details={"missing_fields": ["media_id"]},
-                suggestions=["先调用 upload_media 获取 media_id"],
+                suggestions=["先调用 upload_media 获取媒体描述"],
             )
 
         context_token = self._get_context_token(config.account_id, to_user_id)
@@ -523,6 +658,19 @@ class WeixinSkillAdapter:
             },
             "response": response,
         }
+
+    @staticmethod
+    def _build_media_item_payload(media: Dict[str, Any] | str) -> Dict[str, Any]:
+        """兼容旧 media_id 调用，并优先构造 iLink 加密媒体字段。"""
+        if isinstance(media, dict):
+            descriptor = media.get("media") if isinstance(media.get("media"), dict) else media
+            encrypted_query_param = str(descriptor.get("encrypt_query_param") or "").strip()
+            aes_key = str(descriptor.get("aes_key") or "").strip()
+            if encrypted_query_param and aes_key:
+                return {"media": {"encrypt_query_param": encrypted_query_param, "aes_key": aes_key, "encrypt_type": 1}}
+            media_id = str(media.get("media_id") or "").strip()
+            return {"media_id": media_id}
+        return {"media_id": str(media or "").strip()}
 
     async def _api_upload(
         self,
