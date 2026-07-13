@@ -8,12 +8,13 @@ ACP agents 模块单元测试。
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from acp_host.agents import discover_agents, is_agent_available
+from acp_host.agents import discover_agents, is_agent_available, resolve_agent_command
 from acp_host.core import ACPAgentConfig
 
 
@@ -77,6 +78,10 @@ class TestDiscoverAgents:
 
         assert agents[agent_id].tool_parse_mode == "update_detail"
 
+    def test_opencode_uses_official_acp_subcommand(self) -> None:
+        """验证 OpenCode 通过 ACP 标准输入输出模式启动。"""
+        assert discover_agents()["opencode"].args == ["acp"]
+
 
 class TestIsAgentAvailable:
     """is_agent_available() 函数行为测试。"""
@@ -106,3 +111,17 @@ class TestIsAgentAvailable:
         result = is_agent_available("unknown")
 
         assert result is False
+
+
+class TestResolveAgentCommand:
+    """OpenCode 本地可执行文件解析测试。"""
+
+    def test_prefers_project_local_opencode_on_windows(self, tmp_path: Path) -> None:
+        """验证项目安装的 OpenCode 优先于全局命令。"""
+        config = discover_agents()["opencode"]
+        local_command = tmp_path / "node_modules" / ".bin" / "opencode.cmd"
+        local_command.parent.mkdir(parents=True)
+        local_command.write_text("", encoding="utf-8")
+
+        with patch("acp_host.agents.sys.platform", "win32"):
+            assert resolve_agent_command(config, str(tmp_path)) == str(local_command)

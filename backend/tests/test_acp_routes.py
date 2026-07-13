@@ -22,7 +22,12 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api.dependencies import get_current_user
-from api.routes.acp import _acp_user_sessions, router as acp_router
+from api.routes.acp import (
+    OpenCodeStatusResponse,
+    _resolve_allowed_workdirs,
+    _acp_user_sessions,
+    router as acp_router,
+)
 
 
 # ==================== 测试用户与依赖覆盖 ====================
@@ -187,6 +192,19 @@ class TestListAgents:
         assert agent_ids == {"claude_code", "codex", "openclaw", "opencode"}
 
 
+class TestAllowedWorkdirs:
+    """ACP 默认工作目录白名单测试。"""
+
+    def test_default_roots_include_project_for_local_node_install(self) -> None:
+        """验证未配置时可以在当前 Open-AwA 项目内安装本地 Node.js Agent。"""
+        with patch("api.routes.acp.settings.ACP_ALLOWED_WORKDIRS", ""):
+            roots = _resolve_allowed_workdirs()
+
+        backend_dir = Path(__file__).resolve().parents[1]
+        assert str((backend_dir / "workspace").resolve()) in roots
+        assert str(backend_dir.parent.resolve()) in roots
+
+
 class TestCreateSession:
     """POST /api/acp/sessions 测试。"""
 
@@ -202,6 +220,15 @@ class TestCreateSession:
         assert isinstance(data["session_id"], str)
         assert len(data["session_id"]) > 0
         assert data["config_options"] == []
+
+    def test_create_returns_validated_cwd(self) -> None:
+        """验证创建会话会返回后端校验后的工作目录。"""
+        body = {"agent": "claude_code", "cwd": os.getcwd()}
+        with _test_client(user=_USER_A) as client:
+            response = client.post("/api/acp/sessions", json=body)
+
+        assert response.status_code == 200, response.text
+        assert response.json()["cwd"] == str(Path(os.getcwd()).resolve())
 
     def test_unknown_agent_returns_404(self) -> None:
         """验证未知 agent 返回 404。"""
@@ -396,6 +423,68 @@ class TestCloseSession:
         call = fake_service.close_chat_session_calls[0]
         assert call["chat_id"] == "user-a:sess-a-1"
         assert call["agent"] == "claude_code"
+
+
+class TestOpenCodeInstall:
+    """OpenCode 项目内安装接口测试。"""
+
+    def test_rejects_install_without_explicit_confirmation(self, tmp_path: Path) -> None:
+        """验证安装接口必须携带显式确认标记。"""
+        with patch("api.routes.acp._ALLOWED_WORKSPACE_ROOTS", [str(tmp_path)]):
+            with _test_client(user=_USER_A) as client:
+                response = client.post(
+                    "/api/acp/opencode/install",
+                    json={"cwd": str(tmp_path), "confirm_install": False},
+                )
+
+        assert response.status_code == 400
+        assert "明确确认" in response.json()["detail"]
+
+    def test_rejects_directory_without_package_json(self, tmp_path: Path) -> None:
+        """验证安装目标必须是白名单内的 Node.js 项目。"""
+        with patch("api.routes.acp._ALLOWED_WORKSPACE_ROOTS", [str(tmp_path)]):
+            with _test_client(user=_USER_A) as client:
+                response = client.post(
+                    "/api/acp/opencode/install",
+                    json={"cwd": str(tmp_path), "confirm_install": True},
+                )
+
+        assert response.status_code == 400
+        assert "package.json" in response.json()["detail"]
+
+    def test_installs_fixed_package_and_runs_audit(self, tmp_path: Path) -> None:
+        """验证接口不接收任意命令，只安装固定包并执行审计。"""
+        (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+        status_result = OpenCodeStatusResponse(
+            cwd=str(tmp_path),
+            package_json_exists=True,
+            project_installed=True,
+            available=True,
+            command=str(tmp_path / "node_modules" / ".bin" / "opencode.cmd"),
+        )
+        with patch("api.routes.acp._ALLOWED_WORKSPACE_ROOTS", [str(tmp_path)]), \
+             patch(
+                 "api.routes.acp._run_npm_command",
+                 new=AsyncMock(side_effect=[(0, "installed"), (0, "audit ok")]),
+             ) as run_npm, \
+             patch(
+                 "api.routes.acp._get_opencode_status",
+                 new=AsyncMock(return_value=status_result),
+             ):
+            with _test_client(user=_USER_A) as client:
+                response = client.post(
+                    "/api/acp/opencode/install",
+                    json={"cwd": str(tmp_path), "confirm_install": True},
+                )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["installed"] is True
+        assert run_npm.await_args_list[0].args[1] == [
+            "install", "--save-dev", "opencode-ai@latest", "--no-audit", "--no-fund",
+        ]
+        assert run_npm.await_args_list[1].args[1] == [
+            "audit", "--audit-level=high", "--json",
+        ]
 
 
 class TestAuthentication:

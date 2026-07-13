@@ -75,6 +75,37 @@ def mock_session_local(monkeypatch):
 # POST /api/system/init 测试
 # ============================================================================
 
+class TestInitCsrfTokenEndpoint:
+    """测试首次部署 CSRF token 端点。"""
+
+    def test_issues_double_submit_token_before_initialization(self, client, monkeypatch):
+        """未初始化系统可获得原始 token 和配对的签名 Cookie。"""
+        monkeypatch.setattr(
+            initialization_module,
+            "get_initialization_status",
+            lambda: {"initialized": False},
+        )
+
+        response = client.get("/api/system/init-csrf-token")
+
+        assert response.status_code == 200
+        assert response.json()["csrf_token"]
+        assert "csrf_access_token=" in response.headers["set-cookie"]
+
+    def test_rejects_token_request_after_initialization(self, client, monkeypatch):
+        """初始化完成后不能再申请首次部署 token。"""
+        monkeypatch.setattr(
+            initialization_module,
+            "get_initialization_status",
+            lambda: {"initialized": True},
+        )
+
+        response = client.get("/api/system/init-csrf-token")
+
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "system_already_initialized"
+
+
 class TestInitEndpoint:
     """测试 POST /api/system/init 端点。"""
 

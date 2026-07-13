@@ -96,6 +96,19 @@ return result.returncode == 0
 
 `available=False` 不会阻止会话创建，但 `run_turn` 拉起子进程时可能失败。
 
+## OpenCode 项目内安装与 ACP 启动
+
+OpenCode 使用 ACP 时必须以 `opencode acp` 启动。Open-AwA 的内置 OpenCode 配置已包含 `args=["acp"]`，并会优先使用会话工作目录下的 `node_modules/.bin/opencode`，因此无需把 OpenCode 全局安装到系统 PATH。
+
+在 Vibe Coding 页面选择 OpenCode，填写已配置到 `ACP_ALLOWED_WORKDIRS` 白名单内、且含有 `package.json` 的 Node.js 项目目录，然后点击“安装 OpenCode”并确认。后端固定执行：
+
+```text
+npm install --save-dev opencode-ai@latest --no-audit --no-fund
+npm audit --audit-level=high --json
+```
+
+该接口不接收自定义包名或任意 shell 命令；npm 子进程只保留运行所需环境变量，避免将服务密钥交给依赖安装脚本。安装后可直接创建 ACP 会话并在会话面板下发任务。
+
 ## 步骤 5: 测试 ACP 会话
 
 创建会话并发送 prompt 验证 SSE 流：

@@ -15,8 +15,10 @@ export interface paths {
          * Get Csrf Token
          * @description 返回当前用户会话的 CSRF token（需认证）。
          *
-         *     前端在登录后调用此接口获取 per-session CSRF token，
+         *     前端在登录后调用此接口获取 CSRF token，
          *     存储在 JS 内存中，在状态变更请求时通过 X-CSRF-Token header 发送。
+         *     同时后端将签名 token 写入 Cookie（双提交 Cookie 模式），
+         *     中间件校验 header 中的原始 token 与 Cookie 中的签名 token 是否匹配。
          */
         get: operations["get_csrf_token_api_auth_csrf_token_get"];
         put?: never;
@@ -571,6 +573,33 @@ export interface paths {
          *     返回结果通常用于阻止非法输入继续流入后续链路。
          */
         post: operations["validate_skill_api_skills_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/parse-upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Skill Upload
+         * @description 解析上传的技能文件，返回 name/description/instructions 用于前端表单预填。
+         *
+         *     支持三种格式：
+         *     - SKILL.md（agentskills.io 标准，YAML frontmatter + Markdown 正文）
+         *     - skill.yaml / skill.yml（旧格式）
+         *     - .zip 包（包含上述任一配置文件）
+         *
+         *     不落库，仅解析。前端 SkillModal 上传文件后调用此端点预填表单字段。
+         */
+        post: operations["parse_skill_upload_api_skills_parse_upload_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1522,6 +1551,30 @@ export interface paths {
         get: operations["get_profile_api_soul_profile_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soul/profile/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Profile
+         * @description 内部接口：强制刷新用户画像。
+         *     仅 AI 调用，用户不可主动触发。
+         *
+         *     通过请求头 X-Internal-Token 或 API Key 鉴权（简化实现：仅校验当前登录用户，
+         *     但前端不暴露此接口按钮）。
+         */
+        post: operations["refresh_profile_api_soul_profile_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3511,6 +3564,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/sync-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Model Catalog
+         * @description 管理员手动触发模型目录同步。
+         *
+         *     从 models.dev / openrouter.ai 拉取上游模型目录与定价，
+         *     合并后写入 config/pricing/pricing_data.json。
+         *     仅 admin 角色可调用，避免普通用户触发远程拉取。
+         *     同步结果通过 add_task_result_notification 推送到收件箱。
+         */
+        post: operations["sync_model_catalog_api_billing_sync_catalog_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/marketplace/plugins": {
         parameters: {
             query?: never;
@@ -4254,126 +4332,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/security/enhanced/csrf/token": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Generate Csrf Token
-         * @description 生成新的 CSRF token。
-         */
-        post: operations["generate_csrf_token_api_security_enhanced_csrf_token_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/security/enhanced/csrf/token/validate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Validate Csrf Token
-         * @description 校验 CSRF token 有效性。
-         */
-        post: operations["validate_csrf_token_api_security_enhanced_csrf_token_validate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/security/enhanced/csrf/token/rotate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Rotate Csrf Token
-         * @description 轮换 CSRF token：撤销旧 token 并生成新 token。
-         */
-        post: operations["rotate_csrf_token_api_security_enhanced_csrf_token_rotate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/security/enhanced/csrf/token/{token}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Revoke Csrf Token
-         * @description 撤销指定 CSRF token。
-         */
-        delete: operations["revoke_csrf_token_api_security_enhanced_csrf_token__token__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/security/enhanced/rate-limit/stats/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get User Rate Limit Stats
-         * @description 获取指定用户的速率限制统计。
-         */
-        get: operations["get_user_rate_limit_stats_api_security_enhanced_rate_limit_stats__user_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/security/enhanced/rate-limit/reset/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reset User Rate Limit
-         * @description 重置指定用户的速率限制状态（仅管理员）。
-         */
-        post: operations["reset_user_rate_limit_api_security_enhanced_rate_limit_reset__user_id__post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/cot/complexity/assess": {
         parameters: {
             query?: never;
@@ -4809,6 +4767,66 @@ export interface paths {
         get: operations["get_multimedia_detail_api_weixin_multimedia__message_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/weixin/multimedia/assets/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Recent Multimedia Assets
+         * @description 列出可安全下载或转写的当前用户微信媒体资产。
+         */
+        get: operations["list_recent_multimedia_assets_api_weixin_multimedia_assets_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/weixin/multimedia/assets/{message_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Multimedia Asset
+         * @description 下载当前用户的微信媒体资产，CDN 参数和 AES 密钥不会返回给客户端。
+         */
+        get: operations["download_multimedia_asset_api_weixin_multimedia_assets__message_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/weixin/multimedia/assets/{message_id}/transcribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcribe Multimedia Asset
+         * @description 使用用户已配置的音频模型转写其微信语音资产。
+         */
+        post: operations["transcribe_multimedia_asset_api_weixin_multimedia_assets__message_id__transcribe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6331,6 +6349,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/init": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 执行首次部署初始化
+         * @description 无需认证。创建 owner 用户、生成密钥、写入 .env.local、创建标记文件。首次部署前可调用；已初始化后调用需带 force=true。
+         */
+        post: operations["init_system_api_system_init_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/init-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 查询系统初始化状态
+         * @description 无需认证，返回系统首次部署初始化状态。
+         */
+        get: operations["get_init_status_api_system_init_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/test-scenarios": {
         parameters: {
             query?: never;
@@ -6390,6 +6448,29 @@ export interface paths {
          *     按顺序执行所有已注册场景，返回汇总报告。
          */
         post: operations["run_all_scenarios_api_test_scenarios_run_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/ask-user/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply Ask User
+         * @description 提交用户对 ask_user 工具的回答。
+         *
+         *     校验 request_id 存在性、session_id 匹配性、是否已被回答，
+         *     通过后设置 Future 结果恢复工具执行。
+         */
+        post: operations["reply_ask_user_api_chat_ask_user_reply_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8006,6 +8087,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acp/opencode/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Opencode Status
+         * @description 返回白名单项目中 OpenCode 的安装状态。
+         */
+        get: operations["get_opencode_status_api_acp_opencode_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/opencode/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install Opencode
+         * @description 在白名单 Node.js 项目中安装固定的 OpenCode 包。
+         */
+        post: operations["install_opencode_api_acp_opencode_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/acp/sessions": {
         parameters: {
             query?: never;
@@ -8380,6 +8501,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/feedback/issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 提交问题反馈
+         * @description 接收用户提交的问题反馈，写入 data/issue_reports/ 目录。
+         *
+         *     仅执行写入操作，不返回文件内容，不提供读取端点。
+         *     用户标识以 sha256 哈希形式存储，不记录原始 user_id。
+         */
+        post: operations["submit_issue_api_feedback_issue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profile/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Profile Settings
+         * @description 获取当前用户的画像设置
+         */
+        get: operations["get_profile_settings_api_profile_settings_get"];
+        /**
+         * Update Profile Settings
+         * @description 更新当前用户的画像设置
+         */
+        put: operations["update_profile_settings_api_profile_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/user/avatar/{filename}": {
         parameters: {
             query?: never;
@@ -8641,6 +8809,48 @@ export interface components {
             message: string;
         };
         /**
+         * AskUserReplyRequest
+         * @description ask_user 回答提交请求体。
+         */
+        AskUserReplyRequest: {
+            /**
+             * Request Id
+             * @description ask_user 事件中的 request_id
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description 会话 ID，用于鉴权校验
+             */
+            session_id: string;
+            /**
+             * Answer
+             * @description 用户回答文本
+             */
+            answer: string;
+            /**
+             * Selected Options
+             * @description 选中的选项文本列表
+             */
+            selected_options?: string[];
+        };
+        /**
+         * AskUserReplyResponse
+         * @description ask_user 回答提交响应体。
+         */
+        AskUserReplyResponse: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+            /**
+             * Message
+             * @default 回答已提交
+             */
+            message: string;
+        };
+        /**
          * AttachmentItem
          * @description 多模态附件项，包含文件类型、base64 数据和 MIME 类型。
          */
@@ -8814,6 +9024,11 @@ export interface components {
              * Format: password
              */
             client_secret?: string | null;
+        };
+        /** Body_parse_skill_upload_api_skills_parse_upload_post */
+        Body_parse_skill_upload_api_skills_parse_upload_post: {
+            /** File */
+            file: string;
         };
         /** Body_send_multimedia_api_weixin_multimedia_send_post */
         Body_send_multimedia_api_weixin_multimedia_send_post: {
@@ -9289,95 +9504,6 @@ export interface components {
             conversation_metadata?: {
                 [key: string]: unknown;
             };
-        };
-        /**
-         * CsrfTokenGenerateRequest
-         * @description CSRF token 生成请求
-         */
-        CsrfTokenGenerateRequest: {
-            /**
-             * Session Id
-             * @description 会话 ID
-             */
-            session_id?: string | null;
-            /**
-             * Ttl Hours
-             * @description 有效期（小时）
-             * @default 24
-             */
-            ttl_hours: number;
-        };
-        /**
-         * CsrfTokenResponse
-         * @description CSRF token 响应模型
-         */
-        CsrfTokenResponse: {
-            /**
-             * Token
-             * @description token 字符串
-             */
-            token: string;
-            /**
-             * Expires At
-             * @description 过期时间 ISO 格式
-             */
-            expires_at: string;
-        };
-        /**
-         * CsrfTokenRotateRequest
-         * @description CSRF token 轮换请求
-         */
-        CsrfTokenRotateRequest: {
-            /**
-             * Old Token
-             * @description 待轮换的旧 token
-             */
-            old_token: string;
-            /**
-             * Session Id
-             * @description 会话 ID
-             */
-            session_id?: string | null;
-            /**
-             * Ttl Hours
-             * @description 新 token 有效期（小时）
-             * @default 24
-             */
-            ttl_hours: number;
-        };
-        /**
-         * CsrfTokenValidateRequest
-         * @description CSRF token 校验请求
-         */
-        CsrfTokenValidateRequest: {
-            /**
-             * Token
-             * @description 待校验的 token
-             */
-            token: string;
-            /**
-             * Consume
-             * @description 是否一次性消费
-             * @default true
-             */
-            consume: boolean;
-        };
-        /**
-         * CsrfTokenValidateResponse
-         * @description CSRF token 校验响应
-         */
-        CsrfTokenValidateResponse: {
-            /**
-             * Valid
-             * @description 是否有效
-             */
-            valid: boolean;
-            /**
-             * Reason
-             * @description 校验原因
-             * @default
-             */
-            reason: string;
         };
         /**
          * CustomRoleCreate
@@ -10469,6 +10595,38 @@ export interface components {
             content: string;
         };
         /**
+         * InitRequest
+         * @description 初始化请求体。
+         *
+         *     Attributes:
+         *         username: owner 用户名，1-32 字符，仅含字母、数字、下划线、短横线。
+         *         password: owner 密码，8-128 字符，需含大小写字母和数字。
+         *         email: owner 邮箱（可选），最长 128 字符。
+         *         nickname: owner 昵称（可选），最长 32 字符。
+         *         force: 跳过前置检查（默认 False）。
+         *         regenerate_secrets: 强制重新生成三密钥与 API Key（需配合 force=True）。
+         */
+        InitRequest: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
+            /** Email */
+            email?: string | null;
+            /** Nickname */
+            nickname?: string | null;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /**
+             * Regenerate Secrets
+             * @default false
+             */
+            regenerate_secrets: boolean;
+        };
+        /**
          * IpAccessCheckRequest
          * @description IP 访问检查请求
          */
@@ -10576,6 +10734,34 @@ export interface components {
              * @description 创建时间 ISO 格式
              */
             created_at?: string | null;
+        };
+        /**
+         * IssueFeedbackPayload
+         * @description 前端提交的问题反馈载荷。
+         */
+        IssueFeedbackPayload: {
+            /**
+             * Issue Type
+             * @description 问题类型
+             * @enum {string}
+             */
+            issue_type: "bug" | "suggestion" | "question" | "other";
+            /**
+             * Title
+             * @description 问题标题
+             */
+            title: string;
+            /**
+             * Content
+             * @description 问题内容
+             */
+            content: string;
+            /**
+             * Page Url
+             * @description 反馈时所在页面 URL
+             * @default
+             */
+            page_url: string;
         };
         /**
          * LLMRoutingRuleRequest
@@ -11291,6 +11477,63 @@ export interface components {
              * @description 用户当前缓冲区内的通知总数
              */
             total: number;
+        };
+        /**
+         * OpenCodeInstallRequest
+         * @description 项目内 OpenCode 安装请求。
+         */
+        OpenCodeInstallRequest: {
+            /**
+             * Cwd
+             * @description 工作目录
+             */
+            cwd?: string | null;
+            /**
+             * Confirm Install
+             * @description 是否已由用户明确确认安装
+             */
+            confirm_install: boolean;
+        };
+        /**
+         * OpenCodeInstallResponse
+         * @description 项目内 OpenCode 安装结果。
+         */
+        OpenCodeInstallResponse: {
+            /** Cwd */
+            cwd: string;
+            /** Package Json Exists */
+            package_json_exists: boolean;
+            /** Project Installed */
+            project_installed: boolean;
+            /** Available */
+            available: boolean;
+            /** Command */
+            command: string;
+            /** Installed */
+            installed: boolean;
+            /** Audit Passed */
+            audit_passed?: boolean | null;
+            /**
+             * Output
+             * @default
+             */
+            output: string;
+        };
+        /**
+         * OpenCodeStatusResponse
+         * @description OpenCode 在指定项目中的安装与可用状态。
+         */
+        OpenCodeStatusResponse: {
+            /** Cwd */
+            cwd: string;
+            /** Package Json Exists */
+            package_json_exists: boolean;
+            /** Project Installed */
+            project_installed: boolean;
+            /** Available */
+            available: boolean;
+            /** Command */
+            command: string;
         };
         /**
          * PTYCreateRequest
@@ -12036,6 +12279,26 @@ export interface components {
             token_per_second_audio?: number | null;
             /** Token Per Second Video */
             token_per_second_video?: number | null;
+            /** Cache Read Price */
+            cache_read_price?: number | null;
+            /** Cache Write Price */
+            cache_write_price?: number | null;
+            /** Per Image Price */
+            per_image_price?: number | null;
+            /** Per Minute Price */
+            per_minute_price?: number | null;
+            /** Owned By */
+            owned_by?: string | null;
+            /** Family */
+            family?: string | null;
+            /** Capabilities */
+            capabilities?: string[] | null;
+            /** Input Modalities */
+            input_modalities?: string[] | null;
+            /** Output Modalities */
+            output_modalities?: string[] | null;
+            /** Max Output Tokens */
+            max_output_tokens?: number | null;
         };
         /**
          * ProbeRespondRequest
@@ -12073,6 +12336,46 @@ export interface components {
              * @description 覆盖值
              */
             value: unknown;
+        };
+        /**
+         * ProfileSettingsResponse
+         * @description 画像设置响应
+         */
+        ProfileSettingsResponse: {
+            /**
+             * N Threshold
+             * @default 5
+             */
+            n_threshold: number;
+            /** Probe Flags */
+            probe_flags?: {
+                [key: string]: boolean;
+            };
+            /**
+             * Turns Since Last Extract
+             * @default 0
+             */
+            turns_since_last_extract: number;
+            /** Last Extracted At */
+            last_extracted_at?: string | null;
+        };
+        /**
+         * ProfileSettingsUpdateRequest
+         * @description 画像设置更新请求
+         */
+        ProfileSettingsUpdateRequest: {
+            /**
+             * N Threshold
+             * @description N 轮阈值（3-20）
+             */
+            n_threshold?: number | null;
+            /**
+             * Probe Flags
+             * @description 探针触发条件 flags
+             */
+            probe_flags?: {
+                [key: string]: boolean;
+            } | null;
         };
         /**
          * ProfileStatsResponse
@@ -13224,7 +13527,7 @@ export interface components {
              * Cwd
              * @description 工作目录
              */
-            cwd: string;
+            cwd?: string | null;
         };
         /**
          * SessionCreateResponse
@@ -13236,6 +13539,11 @@ export interface components {
              * @description 会话 ID
              */
             session_id: string;
+            /**
+             * Cwd
+             * @description 校验后的工作目录
+             */
+            cwd: string;
             /**
              * Config Options
              * @description 可选的会话配置项，暂返回空列表
@@ -13830,32 +14138,6 @@ export interface components {
             phone?: string | null;
         };
         /**
-         * UserRateLimitStatsResponse
-         * @description 用户速率限制统计响应
-         */
-        UserRateLimitStatsResponse: {
-            /**
-             * User Id
-             * @description 用户 ID
-             */
-            user_id: string;
-            /**
-             * Current Count
-             * @description 当前窗口请求数
-             */
-            current_count: number;
-            /**
-             * Max Requests
-             * @description 窗口内最大请求数
-             */
-            max_requests: number;
-            /**
-             * Window Seconds
-             * @description 窗口大小（秒）
-             */
-            window_seconds: number;
-        };
-        /**
          * UserResponse
          * @description 用户响应模型，包含完整的用户信息和画像数据。
          */
@@ -14201,6 +14483,30 @@ export interface components {
              * @default 0
              */
             unread_count: number;
+        };
+        /**
+         * WeixinMediaAssetResponse
+         * @description 微信媒体资产响应，绝不包含 CDN 参数和 AES 密钥。
+         */
+        WeixinMediaAssetResponse: {
+            /** Message Id */
+            message_id: string;
+            /** Media Type */
+            media_type: string;
+            /**
+             * Media Format
+             * @default
+             */
+            media_format: string;
+            /**
+             * Transcript
+             * @default
+             */
+            transcript: string;
+            /** Transcript Status */
+            transcript_status: string;
+            /** Created At */
+            created_at: string;
         };
         /**
          * WeixinMultimediaMessageResponse
@@ -15578,6 +15884,41 @@ export interface operations {
             };
         };
     };
+    parse_skill_upload_api_skills_parse_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_parse_skill_upload_api_skills_parse_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     install_skill_from_package_api_skills_install_from_package_post: {
         parameters: {
             query?: never;
@@ -16759,9 +17100,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["LongTermMemoryResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -17400,6 +17739,26 @@ export interface operations {
         };
     };
     get_profile_api_soul_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse"];
+                };
+            };
+        };
+    };
+    refresh_profile_api_soul_profile_refresh_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -20897,6 +21256,28 @@ export interface operations {
             };
         };
     };
+    sync_model_catalog_api_billing_sync_catalog_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_plugins_api_marketplace_plugins_get: {
         parameters: {
             query?: {
@@ -22217,202 +22598,6 @@ export interface operations {
             };
         };
     };
-    generate_csrf_token_api_security_enhanced_csrf_token_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CsrfTokenGenerateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CsrfTokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    validate_csrf_token_api_security_enhanced_csrf_token_validate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CsrfTokenValidateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CsrfTokenValidateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    rotate_csrf_token_api_security_enhanced_csrf_token_rotate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CsrfTokenRotateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CsrfTokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    revoke_csrf_token_api_security_enhanced_csrf_token__token__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                token: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_user_rate_limit_stats_api_security_enhanced_rate_limit_stats__user_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserRateLimitStatsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reset_user_rate_limit_api_security_enhanced_rate_limit_reset__user_id__post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     assess_complexity_api_cot_complexity_assess_post: {
         parameters: {
             query?: never;
@@ -23123,6 +23308,100 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recent_multimedia_assets_api_weixin_multimedia_assets_recent_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                media_type?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeixinMediaAssetResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_multimedia_asset_api_weixin_multimedia_assets__message_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transcribe_multimedia_asset_api_weixin_multimedia_assets__message_id__transcribe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeixinMediaAssetResponse"];
                 };
             };
             /** @description Validation Error */
@@ -25656,6 +25935,63 @@ export interface operations {
             };
         };
     };
+    init_system_api_system_init_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_init_status_api_system_init_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_scenarios_api_test_scenarios_get: {
         parameters: {
             query?: never;
@@ -25731,6 +26067,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    reply_ask_user_api_chat_ask_user_reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskUserReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskUserReplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -28525,6 +28894,70 @@ export interface operations {
             };
         };
     };
+    get_opencode_status_api_acp_opencode_status_get: {
+        parameters: {
+            query?: {
+                cwd?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenCodeStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    install_opencode_api_acp_opencode_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenCodeInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenCodeInstallResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_sessions_api_acp_sessions_get: {
         parameters: {
             query?: never;
@@ -29107,6 +29540,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_issue_api_feedback_issue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueFeedbackPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_profile_settings_api_profile_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileSettingsResponse"];
+                };
+            };
+        };
+    };
+    update_profile_settings_api_profile_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileSettingsResponse"];
                 };
             };
             /** @description Validation Error */

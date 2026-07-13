@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +25,7 @@ from acp_host.core import ACPAgentConfig
 __all__ = [
     "discover_agents",
     "is_agent_available",
+    "resolve_agent_command",
 ]
 
 
@@ -67,6 +69,7 @@ def discover_agents() -> dict[str, ACPAgentConfig]:
 def is_agent_available(
     agent_id: str,
     agents: Optional[dict[str, ACPAgentConfig]] = None,
+    cwd: Optional[str] = None,
 ) -> bool:
     """探测本地是否安装了指定 Agent 的 CLI 命令。
 
@@ -86,9 +89,10 @@ def is_agent_available(
     agent_config = agents.get(agent_id)
     if agent_config is None:
         return False
+    command = resolve_agent_command(agent_config, cwd)
     try:
         result = subprocess.run(
-            [agent_config.command, "--version"],
+            [command, "--version"],
             capture_output=True,
             timeout=5,
         )
@@ -97,3 +101,22 @@ def is_agent_available(
         # FileNotFoundError / PermissionError / TimeoutExpired 等均属于
         # OSError 或 subprocess.SubprocessError 的子类
         return False
+
+
+def resolve_agent_command(
+    agent_config: ACPAgentConfig,
+    cwd: Optional[str] = None,
+) -> str:
+    """解析 Agent 可执行文件，OpenCode 优先使用项目本地安装。"""
+    if agent_config.agent_id != "opencode" or not cwd:
+        return agent_config.command
+
+    bin_dir = Path(cwd) / "node_modules" / ".bin"
+    candidates = ["opencode.cmd", "opencode.exe", "opencode"]
+    if sys.platform != "win32":
+        candidates = ["opencode", "opencode.cmd", "opencode.exe"]
+    for filename in candidates:
+        candidate = bin_dir / filename
+        if candidate.is_file():
+            return str(candidate)
+    return agent_config.command

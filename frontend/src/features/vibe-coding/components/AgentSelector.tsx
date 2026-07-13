@@ -42,15 +42,24 @@ export default function AgentSelector({ agents, value, onChange }: AgentSelector
         }}
       >
         <option value="">{t('vibeCoding.selectAgent')}</option>
-        {agents.map((agent) => (
-          <option
-            key={agent.id}
-            value={agent.id}
-            disabled={!agent.available}
-          >
-            {agent.name}{agent.available ? '' : ` (${t('vibeCoding.unavailable')})`}
-          </option>
-        ))}
+        {agents.map((agent) => {
+          const canInstallLocally = agent.id === 'opencode'
+          const selectable = agent.available || canInstallLocally
+          const status = agent.available
+            ? ''
+            : canInstallLocally
+              ? '（可在项目中安装）'
+              : ` (${t('vibeCoding.unavailable')})`
+          return (
+            <option
+              key={agent.id}
+              value={agent.id}
+              disabled={!selectable}
+            >
+              {agent.name}{status}
+            </option>
+          )
+        })}
       </select>
     </div>
   )

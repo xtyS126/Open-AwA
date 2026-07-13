@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { systemAPI } from '@/shared/api/api'
 import type { SystemInitRequest } from '@/shared/api/api'
+import { refreshInitCsrfToken } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './SetupPage.module.css'
@@ -99,6 +100,7 @@ function SetupPage() {
         payload.email = email.trim()
       }
 
+      await refreshInitCsrfToken()
       const response = await systemAPI.init(payload)
       const data = response.data?.data
       if (!response.data?.success || !data) {

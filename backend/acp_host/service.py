@@ -50,6 +50,7 @@ except ImportError:
 
 
 from .client import ACPHostedClient
+from .agents import resolve_agent_command
 from .core import (
     ACPAgentConfig,
     ACPConfigurationError,
@@ -601,6 +602,7 @@ class ACPService:
         if not _ACP_AVAILABLE or spawn_agent_process is None:
             raise ACPConfigurationError("acp SDK not installed")
 
+        command = resolve_agent_command(agent_config, cwd)
         client = ACPHostedClient(
             agent_name=agent,
             agent_config=agent_config,
@@ -611,7 +613,7 @@ class ACPService:
             conn, process = await exit_stack.enter_async_context(
                 spawn_agent_process(
                     client,
-                    agent_config.command,
+                    command,
                     *agent_config.args,
                     cwd=cwd,
                     env=_build_safe_env(agent_config.env),

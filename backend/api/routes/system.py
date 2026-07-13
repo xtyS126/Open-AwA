@@ -691,6 +691,30 @@ class InitRequest(BaseModel):
     regenerate_secrets: bool = Field(default=False)
 
 
+@router.get(
+    "/init-csrf-token",
+    summary="获取首次初始化 CSRF token",
+    description="仅在系统尚未初始化时签发双提交 CSRF token，用于保护首次部署请求。",
+)
+async def get_init_csrf_token() -> JSONResponse:
+    """为未初始化系统签发首次部署所需的双提交 CSRF token。"""
+    from core.initialization import get_initialization_status
+    from security.csrf_manager import generate_csrf_token_pair
+
+    if get_initialization_status().get("initialized"):
+        return _error_response(
+            status_code=409,
+            code="system_already_initialized",
+            message="系统已初始化，不能再申请首次部署 token",
+        )
+
+    raw_token, signed_token = generate_csrf_token_pair()
+    response = JSONResponse(content={"csrf_token": raw_token})
+    from security.csrf_manager import get_csrf_protect
+    get_csrf_protect().set_csrf_cookie(signed_token, response)
+    return response
+
+
 @router.post(
     "/init",
     summary="执行首次部署初始化",

@@ -175,6 +175,19 @@ export async function refreshCsrfToken(): Promise<void> {
   }
 }
 
+/**
+ * 为未登录的首次部署页面申请双提交 CSRF token。
+ * 该端点仅在系统未初始化时可用，避免将首次部署请求从 CSRF 防护中豁免。
+ */
+export async function refreshInitCsrfToken(): Promise<void> {
+  const response = await api.get('/system/init-csrf-token', { withCredentials: true })
+  const token = response.data?.csrf_token
+  if (typeof token !== 'string' || !token) {
+    throw new Error('首次部署 CSRF token 返回格式异常')
+  }
+  _csrfToken = token
+}
+
 /** 返回当前缓存的 CSRF token（供调试或测试使用） */
 export const getCachedCsrfToken = (): string | null => _csrfToken
 

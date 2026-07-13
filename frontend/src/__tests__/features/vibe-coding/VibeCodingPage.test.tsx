@@ -27,6 +27,8 @@ const acpApiMocks = vi.hoisted(() => ({
   listSessions: vi.fn(),
   createSession: vi.fn(),
   closeSession: vi.fn(),
+  getOpenCodeStatus: vi.fn(),
+  installOpenCode: vi.fn(),
 }))
 
 const notificationsApiMocks = vi.hoisted(() => ({
@@ -46,6 +48,8 @@ vi.mock('@/shared/api/acpApi', () => ({
   listSessions: acpApiMocks.listSessions,
   createSession: acpApiMocks.createSession,
   closeSession: acpApiMocks.closeSession,
+  getOpenCodeStatus: acpApiMocks.getOpenCodeStatus,
+  installOpenCode: acpApiMocks.installOpenCode,
 }))
 
 vi.mock('@/shared/api/notificationsApi', () => ({
@@ -119,9 +123,27 @@ describe('VibeCodingPage', () => {
     })
     acpApiMocks.createSession.mockResolvedValue({
       session_id: 'sess-new',
+      cwd: '/tmp/work',
       config_options: [],
     })
     acpApiMocks.closeSession.mockResolvedValue({ closed: true })
+    acpApiMocks.getOpenCodeStatus.mockResolvedValue({
+      cwd: '/tmp/work',
+      package_json_exists: true,
+      project_installed: false,
+      available: false,
+      command: 'opencode',
+    })
+    acpApiMocks.installOpenCode.mockResolvedValue({
+      cwd: '/tmp/work',
+      package_json_exists: true,
+      project_installed: true,
+      available: true,
+      command: '/tmp/work/node_modules/.bin/opencode',
+      installed: true,
+      audit_passed: true,
+      output: 'installed',
+    })
 
     notificationsApiMocks.listNotifications.mockResolvedValue({
       notifications: [
@@ -230,7 +252,7 @@ describe('VibeCodingPage', () => {
 
     // 验证 createSession 被以选中的 agent 调用
     await waitFor(() => {
-      expect(acpApiMocks.createSession).toHaveBeenCalledWith('claude_code', '.')
+      expect(acpApiMocks.createSession).toHaveBeenCalledWith('claude_code', undefined)
     })
   })
 
@@ -266,5 +288,74 @@ describe('VibeCodingPage', () => {
     expect(acpTab.getAttribute('aria-selected')).toBe('true')
     expect(terminalTab.getAttribute('aria-selected')).toBe('false')
     expect(screen.queryByTestId('terminal-pane-mock')).not.toBeInTheDocument()
+  })
+
+  it('installs OpenCode in the selected project after confirmation', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    acpApiMocks.listAgents.mockResolvedValueOnce({
+      agents: [{
+        id: 'opencode',
+        name: 'OpenCode',
+        command: 'opencode',
+        enabled: true,
+        available: false,
+      }],
+      count: 1,
+    })
+    render(<BrowserRouter><VibeCodingPage /></BrowserRouter>)
+
+    const select = await screen.findByLabelText('选择 Agent') as HTMLSelectElement
+    const openCodeOption = Array.from(select.options).find((option) => option.value === 'opencode')
+    expect(openCodeOption?.disabled).toBe(false)
+    fireEvent.change(select, { target: { value: 'opencode' } })
+
+    const cwdInput = await screen.findByLabelText('ACP 工作目录')
+    fireEvent.change(cwdInput, { target: { value: 'D:/代码/Open-AwA/frontend' } })
+    await waitFor(() => {
+      expect(acpApiMocks.getOpenCodeStatus).toHaveBeenCalledWith('D:/代码/Open-AwA/frontend')
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('安装 OpenCode'))
+    })
+    await waitFor(() => {
+      expect(acpApiMocks.installOpenCode).toHaveBeenCalledWith('D:/代码/Open-AwA/frontend')
+    })
+  })
+
+  it('allows a project installation even when OpenCode is globally available', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    acpApiMocks.listAgents.mockResolvedValueOnce({
+      agents: [{
+        id: 'opencode',
+        name: 'OpenCode',
+        command: 'opencode',
+        enabled: true,
+        available: true,
+      }],
+      count: 1,
+    })
+    acpApiMocks.getOpenCodeStatus.mockResolvedValue({
+      cwd: '/tmp/work',
+      package_json_exists: true,
+      project_installed: false,
+      available: true,
+      command: 'opencode',
+    })
+    render(<BrowserRouter><VibeCodingPage /></BrowserRouter>)
+
+    await screen.findByLabelText('选择 Agent')
+    await waitFor(() => {
+      expect(acpApiMocks.getOpenCodeStatus).toHaveBeenCalledWith(undefined)
+    })
+
+    const installButton = await screen.findByText('安装 OpenCode')
+    expect(installButton).toBeEnabled()
+    await act(async () => {
+      fireEvent.click(installButton)
+    })
+    await waitFor(() => {
+      expect(acpApiMocks.installOpenCode).toHaveBeenCalledWith(undefined)
+    })
   })
 })

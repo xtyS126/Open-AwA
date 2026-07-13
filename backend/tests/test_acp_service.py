@@ -227,7 +227,7 @@ class TestSessionLookupsWithoutSessions:
 class TestKillProcessTree:
     """_kill_process_tree 边界条件测试。"""
 
-    def test_kill_process_tree_with_nonexistent_pid_does_not_raise(self) -> None:
+    async def test_kill_process_tree_with_nonexistent_pid_does_not_raise(self) -> None:
         """验证对不存在的 pid 调用 _kill_process_tree 静默返回。
 
         使用一个几乎不可能存活的极大 pid（2**31-1 在大多数系统都不存在）
@@ -235,9 +235,9 @@ class TestKillProcessTree:
         """
         # 取一个几乎不可能存活的 pid
         bogus_pid = 2**31 - 1
-        _kill_process_tree(bogus_pid)  # 不应抛任何异常
+        await _kill_process_tree(bogus_pid)  # 不应抛任何异常
 
-    def test_kill_process_tree_fallback_path_when_psutil_unavailable(self) -> None:
+    async def test_kill_process_tree_fallback_path_when_psutil_unavailable(self) -> None:
         """验证 _PSUTIL_AVAILABLE=False 时回退路径不抛异常。
 
         通过 patch 强制走 fallback 分支，确保 psutil 缺失时也能安全调用。
@@ -245,7 +245,7 @@ class TestKillProcessTree:
         with patch.object(acp_service_module, "_PSUTIL_AVAILABLE", False), \
                 patch.object(acp_service_module, "psutil", None):
             # 不应抛任何异常
-            _kill_process_tree(2**31 - 2)
+            await _kill_process_tree(2**31 - 2)
 
 
 class TestAtexitRegistration:

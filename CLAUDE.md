@@ -562,6 +562,8 @@ ACP（Agent Client Protocol）用于调用本地 vibe coding 应用（Claude Cod
 | POST | `/api/acp/sessions/{id}/permission` | 恢复 permission，body `{option_id}` |
 | POST | `/api/acp/sessions/{id}/cancel` | 取消当前轮 |
 | DELETE | `/api/acp/sessions/{id}` | 关闭并移除会话 |
+| GET | `/api/acp/opencode/status` | 查询白名单项目中的 OpenCode 安装与可用状态 |
+| POST | `/api/acp/opencode/install` | 经用户明确确认后，在白名单 Node.js 项目中安装固定的 `opencode-ai@latest` 并执行依赖审计 |
 
 SSE 事件类型：`text` | `tool` | `status` | `permission` | `usage` | `result` | `error`。客户端断开时后端自动调用 `ACPService.cancel_turn` 取消未完成的 prompt。
 
@@ -757,6 +759,7 @@ git commit -m "[Type] 变更描述"
 - **CSRF 必须开启**: 防止跨站请求伪造
 - **Terminal/PTY 会话鉴权**: 必须校验用户所有权，防止 IDOR
 - **ACP 子进程环境变量**: 不能继承所有环境变量，保护 SECRET_KEY 等敏感键
+- **OpenCode ACP 启动与安装**: OpenCode 必须以 `opencode acp` 启动；网页安装仅接受白名单工作目录、固定包名 `opencode-ai@latest` 和显式确认，启动时优先使用项目 `node_modules/.bin/opencode`
 - **base_url 解析优先级**: 使用 `getattr(config, 'base_url', None)` 修复运算符优先级问题
 - **新 provider 创建约束**: `provider` 字段必须非空，`config_id` 仅更新时需要
 - **前端移动端适配 CSS @media 限制**: CSS @media 中不能使用 var() 引用 tokens.css 断点令牌（--breakpoint-xs/sm/md/lg/xl），必须使用数字字面量；但在 @media 块前必须注释对应 token 名，如 `/* 移动端（≤ 768px，对应 --breakpoint-md 令牌） */`，便于令牌变更时全局定位。定位方法：检查 CSS Module 文件头注释是否标注 token 名；修复方向：保留数字字面量但在 @media 块前追加 token 标注注释

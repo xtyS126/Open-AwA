@@ -21,8 +21,11 @@ import {
   listSessions,
   createSession,
   closeSession,
+  getOpenCodeStatus,
+  installOpenCode,
   type AcpAgent,
   type AcpSession,
+  type OpenCodeStatus,
 } from '@/shared/api/acpApi'
 import {
   listNotifications,
@@ -59,6 +62,9 @@ function VibeCodingPage() {
   const [selectedAgent, setSelectedAgent] = useState<string>('')
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [creating, setCreating] = useState<boolean>(false)
+  const [installingOpenCode, setInstallingOpenCode] = useState<boolean>(false)
+  const [projectCwd, setProjectCwd] = useState<string>('')
+  const [openCodeStatus, setOpenCodeStatus] = useState<OpenCodeStatus | null>(null)
   const [error, setError] = useState<string>('')
 
   /** mount 时拉取 agents / sessions / notifications，并建立通知 SSE 订阅 */
@@ -147,6 +153,16 @@ function VibeCodingPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (selectedAgent !== 'opencode') {
+      setOpenCodeStatus(null)
+      return
+    }
+    void getOpenCodeStatus(projectCwd || undefined)
+      .then(setOpenCodeStatus)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+  }, [projectCwd, selectedAgent])
+
   /** 创建新会话 —— 调用 createSession 后追加到列表并选中 */
   const handleCreateSession = useCallback(async () => {
     if (!selectedAgent) {
@@ -156,11 +172,11 @@ function VibeCodingPage() {
     setCreating(true)
     setError('')
     try {
-      const result = await createSession(selectedAgent, '.')
+      const result = await createSession(selectedAgent, projectCwd || undefined)
       const newSession: AcpSession = {
         session_id: result.session_id,
         agent: selectedAgent,
-        cwd: '.',
+        cwd: result.cwd,
         created_at: new Date().toISOString(),
       }
       setSessions((prev) => [...prev, newSession])
@@ -179,7 +195,23 @@ function VibeCodingPage() {
     } finally {
       setCreating(false)
     }
-  }, [selectedAgent, t])
+  }, [projectCwd, selectedAgent, t])
+
+  const handleInstallOpenCode = useCallback(async () => {
+    if (!window.confirm('将在当前工作目录安装 opencode-ai@latest，是否继续？')) return
+    setInstallingOpenCode(true)
+    setError('')
+    try {
+      const result = await installOpenCode(projectCwd || undefined)
+      setOpenCodeStatus(result)
+      if (!result.installed) setError(result.output || 'OpenCode 安装后不可用')
+      if (result.audit_passed === false) setError('OpenCode 已安装，但 npm audit 检测到高危依赖问题')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setInstallingOpenCode(false)
+    }
+  }, [projectCwd])
 
   /** 关闭会话 —— 调用 closeSession 后从列表中移除 */
   const handleCloseSession = useCallback(async (sessionId: string) => {
@@ -205,6 +237,28 @@ function VibeCodingPage() {
   const handleSelectSession = useCallback((sessionId: string) => {
     setSelectedSessionId(sessionId)
   }, [])
+
+  const projectControls = (
+    <>
+      <input
+        value={projectCwd}
+        onChange={(event) => setProjectCwd(event.target.value)}
+        placeholder="ACP 工作目录（需在白名单内）"
+        aria-label="ACP 工作目录"
+        style={{ width: '100%', padding: '6px 8px', borderRadius: 'var(--radius-sm)' }}
+      />
+      {selectedAgent === 'opencode' && (
+        <button
+          type="button"
+          className={styles['create-btn']}
+          onClick={() => { void handleInstallOpenCode() }}
+          disabled={installingOpenCode || openCodeStatus?.project_installed === true}
+        >
+          {installingOpenCode ? '正在安装 OpenCode' : openCodeStatus?.project_installed ? '项目已安装 OpenCode' : '安装 OpenCode'}
+        </button>
+      )}
+    </>
+  )
 
   // ===== 移动端布局：单栏 + 顶部 Tab 切换（会话 / 终端 / 预览） =====
   if (isMobile) {
@@ -251,6 +305,7 @@ function VibeCodingPage() {
                   value={selectedAgent}
                   onChange={setSelectedAgent}
                 />
+                {projectControls}
                 <button
                   type="button"
                   className={styles['create-btn']}
@@ -306,6 +361,7 @@ function VibeCodingPage() {
               value={selectedAgent}
               onChange={setSelectedAgent}
             />
+            {projectControls}
             <button
               type="button"
               className={styles['create-btn']}

@@ -39,7 +39,24 @@ export interface AcpSession {
 /** 创建会话响应 */
 export interface AcpCreateSessionResponse {
   session_id: string
+  cwd: string
   config_options: unknown[]
+}
+
+/** OpenCode 在项目中的状态 */
+export interface OpenCodeStatus {
+  cwd: string
+  package_json_exists: boolean
+  project_installed: boolean
+  available: boolean
+  command: string
+}
+
+/** OpenCode 项目安装结果 */
+export interface OpenCodeInstallResult extends OpenCodeStatus {
+  installed: boolean
+  audit_passed: boolean | null
+  output: string
 }
 
 /** 列出 Agent 响应 */
@@ -97,8 +114,23 @@ export async function listAgents(): Promise<AcpListAgentsResponse> {
 }
 
 /** 创建新的 ACP 会话 */
-export async function createSession(agent: string, cwd: string): Promise<AcpCreateSessionResponse> {
+export async function createSession(agent: string, cwd?: string): Promise<AcpCreateSessionResponse> {
   const { data } = await api.post<AcpCreateSessionResponse>(`${BASE}/sessions`, { agent, cwd })
+  return data
+}
+
+/** 查询指定工作目录的 OpenCode 状态 */
+export async function getOpenCodeStatus(cwd?: string): Promise<OpenCodeStatus> {
+  const { data } = await api.get<OpenCodeStatus>(`${BASE}/opencode/status`, { params: { cwd } })
+  return data
+}
+
+/** 经用户确认后，在指定 Node.js 项目中安装 OpenCode */
+export async function installOpenCode(cwd?: string): Promise<OpenCodeInstallResult> {
+  const { data } = await api.post<OpenCodeInstallResult>(`${BASE}/opencode/install`, {
+    cwd,
+    confirm_install: true,
+  })
   return data
 }
 

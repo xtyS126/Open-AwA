@@ -171,7 +171,7 @@ class Settings(BaseSettings):
 
     # ACP/Terminal 子进程允许的工作目录白名单（逗号分隔的绝对路径）。
     # 安全策略：避免任意用户指定任意路径作为子进程 cwd，从而访问受保护文件。
-    # 默认锚定到 backend/workspace 目录；可在 .env 通过 ACP_ALLOWED_WORKDIRS=path1,path2 覆盖。
+    # 默认允许 backend/workspace 与 Open-AwA 项目根目录；可在 .env 通过 ACP_ALLOWED_WORKDIRS=path1,path2 覆盖。
     ACP_ALLOWED_WORKDIRS: str = ""
     
     LOG_LEVEL: str = "INFO"

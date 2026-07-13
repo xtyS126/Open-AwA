@@ -30,6 +30,96 @@ git add .
 
 ---
 
+## [ERR-20260714-017] code-audit-timeout
+
+**Logged**: 2026-07-14T01:25:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tooling
+
+### Summary
+运行 `scripts/code-audit.ps1 -SkipTests` 超过 120 秒仍未返回，无法作为本次迭代的静态审计结论。
+
+### Error
+```text
+command timed out after 124011 milliseconds
+```
+
+### Context
+- Command: `.\scripts\code-audit.ps1 -SkipTests`
+- 工作区存在大量历史未提交文件，最近的 `reports/audit-result.txt` 停留在 2026-07-04，未生成本次报告。
+
+### Suggested Fix
+为审计脚本增加每个阶段的超时与进度日志，并在 OCR 扫描阶段支持可控跳过或范围限制，避免静态检查无限等待。
+
+### Metadata
+- Reproducible: unknown
+- Related Files: scripts/code-audit.ps1, reports/audit-result.txt
+
+---
+
+## [ERR-20260713-014] vibe-coding-api-path-assumption
+
+**Logged**: 2026-07-13T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+审计 Vibe Coding 前端时假定 api/acpApi.ts 存在，实际项目采用其他路径，导致批量读取提前失败。
+
+### Error
+```text
+Get-Content : Cannot find path 'frontend/src/features/vibe-coding/api/acpApi.ts'
+```
+
+### Context
+- Operation: 读取 ACP 前端调用层与会话组件。
+- Cause: 未先基于实际文件清单确认模块路径。
+
+### Suggested Fix
+先运行 rg --files frontend/src/features/vibe-coding，再按列出的实际路径读取；批量命令中不要包含未经确认的文件。
+
+### Metadata
+- Reproducible: yes
+- Related Files: frontend/src/features/vibe-coding
+
+### Resolution
+- **Resolved**: 2026-07-13T00:00:00+08:00
+- **Notes**: 已改为先列出目录文件，再定位调用层。
+---
+
+## [ERR-20260713-015] elevated-backend-restart-denied
+
+**Logged**: 2026-07-13T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: infra
+
+### Summary
+当前会话无法终止监听 8000 端口的既有 Python 后端进程，即使用户已明确授权重启。
+
+### Error
+```text
+Stop-Process : Cannot stop process "python (187856)" because of the following error: Access is denied
+```
+
+### Context
+- Operation: 停止旧后端后启动已加载 ACP/OpenCode 新路由的进程。
+- Cause: 旧进程由更高权限上下文启动。
+
+### Suggested Fix
+使用拥有该进程权限的管理员终端终止监听 8000 的 Python 进程，再启动 backend/main.py。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/main.py
+
+### Resolution
+- **Resolved**: 2026-07-13T00:00:00+08:00
+- **Notes**: 通过用户确认的 UAC 提升终止旧进程并成功启动新后端。
+---
+
 ## [ERR-20260713-014] frontend-api-module-path
 
 **Logged**: 2026-07-13T00:00:00+08:00
@@ -805,6 +895,34 @@ Emoji: frontend/src/features/chat/components/InlineToolCallCard.tsx contains emo
 ---
 
 ## [ERR-20260713-013] icacls-powershell-grant-syntax
+
+## [ERR-20260713-016] elevated-restart-script-variable-and-uac
+
+**Logged**: 2026-07-13T18:00:00+08:00
+**Priority**: medium
+**Status**: in_progress
+**Area**: infra
+
+### Summary
+Administrator PowerShell restart scripts must not use the read-only `$PID` variable; a pending UAC confirmation can leave the active backend unchanged.
+
+### Error
+```text
+Cannot overwrite variable PID because it is read-only or constant.
+```
+
+### Context
+- Operation: restart the Python backend listening on port 8000.
+- Related Files: backend/main.py
+
+### Suggested Fix
+Use a non-reserved variable such as `$serverPid`; after UAC confirmation, verify the listener start time and health endpoint before treating the restart as complete.
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/main.py
+
+---
 
 **Logged**: 2026-07-13T00:00:00+08:00
 **Priority**: medium

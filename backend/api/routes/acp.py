@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -32,7 +34,11 @@ from pydantic import BaseModel, Field
 
 from acp_host import get_acp_service
 from acp_host.core import ACPConfigurationError, ACPSessionError
-from acp_host.agents import discover_agents, is_agent_available
+from acp_host.agents import (
+    discover_agents,
+    is_agent_available,
+    resolve_agent_command,
+)
 from api.dependencies import get_current_user
 from config.settings import settings
 from db.models import User
@@ -46,7 +52,7 @@ def _resolve_allowed_workdirs() -> List[str]:
 
     安全策略：
     1. 不再使用动态的 os.getcwd() 作为白名单，避免任意用户指定任意路径作为子进程 cwd
-    2. 默认锚定到 backend/workspace 目录（项目相对路径解析为绝对路径）
+    2. 默认允许 backend/workspace 与 Open-AwA 项目根目录，满足受控项目内的 Node.js Agent 安装
     3. 自动创建不存在的白名单根目录，避免首次启动时校验失败
     4. 配置项支持逗号分隔的多个绝对路径
 
@@ -58,8 +64,8 @@ def _resolve_allowed_workdirs() -> List[str]:
 
     raw_value = (settings.ACP_ALLOWED_WORKDIRS or "").strip()
     if not raw_value:
-        # 默认白名单：backend/workspace 目录
-        default_dirs = [str(backend_dir / "workspace")]
+        # 默认白名单：隔离工作区与当前 Open-AwA 项目根目录
+        default_dirs = [str(backend_dir / "workspace"), str(backend_dir.parent)]
     else:
         # 配置项按逗号分隔，过滤空字符串
         default_dirs = [p.strip() for p in raw_value.split(",") if p.strip()]
@@ -79,8 +85,8 @@ def _resolve_allowed_workdirs() -> List[str]:
         resolved.append(abs_path)
 
     if not resolved:
-        # 兜底：所有配置项均无效时使用 backend/workspace
-        resolved.append(str(backend_dir / "workspace"))
+        # 兜底：所有配置项均无效时使用隔离工作区与项目根目录
+        resolved.extend([str(backend_dir / "workspace"), str(backend_dir.parent)])
 
     # 自动创建不存在的白名单根目录，避免首次启动校验失败
     for workdir in resolved:
@@ -92,7 +98,7 @@ def _resolve_allowed_workdirs() -> List[str]:
     return resolved
 
 
-# 允许作为 cwd 的根目录白名单（基于 settings.ACP_ALLOWED_WORKDIRS 配置，默认 backend/workspace）
+# 允许作为 cwd 的根目录白名单（基于 settings.ACP_ALLOWED_WORKDIRS 配置，默认隔离工作区与项目根目录）
 # 不再使用动态的 os.getcwd()，避免任意用户指定任意路径作为子进程工作目录
 _ALLOWED_WORKSPACE_ROOTS: List[str] = _resolve_allowed_workdirs()
 
@@ -106,6 +112,9 @@ _acp_user_sessions: Dict[Tuple[str, str], Dict[str, Any]] = {}
 _MAX_ACP_SESSIONS_PER_USER = 10
 # 全局最大会话总数
 _MAX_TOTAL_ACP_SESSIONS = 1000
+_OPENCODE_PACKAGE = "opencode-ai@latest"
+_OPENCODE_INSTALL_TIMEOUT_SECONDS = 600
+_OPENCODE_INSTALL_LOCKS: Dict[str, asyncio.Lock] = {}
 
 
 def _evict_oldest_acp_session() -> None:
@@ -225,13 +234,14 @@ class SessionCreateRequest(BaseModel):
     """POST /sessions 请求体：创建 ACP 会话。"""
 
     agent: str = Field(..., description="Agent 标识")
-    cwd: str = Field(..., description="工作目录")
+    cwd: Optional[str] = Field(default=None, description="工作目录")
 
 
 class SessionCreateResponse(BaseModel):
     """POST /sessions 响应。"""
 
     session_id: str = Field(..., description="会话 ID")
+    cwd: str = Field(..., description="校验后的工作目录")
     config_options: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="可选的会话配置项，暂返回空列表",
@@ -285,6 +295,105 @@ class SessionCloseResponse(BaseModel):
     closed: bool = Field(..., description="是否已关闭并移除会话")
 
 
+class OpenCodeStatusResponse(BaseModel):
+    """OpenCode 在指定项目中的安装与可用状态。"""
+
+    cwd: str
+    package_json_exists: bool
+    project_installed: bool
+    available: bool
+    command: str
+
+
+class OpenCodeInstallRequest(BaseModel):
+    """项目内 OpenCode 安装请求。"""
+
+    cwd: Optional[str] = Field(default=None, description="工作目录")
+    confirm_install: bool = Field(..., description="是否已由用户明确确认安装")
+
+
+class OpenCodeInstallResponse(OpenCodeStatusResponse):
+    """项目内 OpenCode 安装结果。"""
+
+    installed: bool
+    audit_passed: Optional[bool] = None
+    output: str = ""
+
+
+def _get_opencode_install_lock(cwd: str) -> asyncio.Lock:
+    """按项目目录串行化 OpenCode 安装，避免并发修改同一锁文件。"""
+    lock = _OPENCODE_INSTALL_LOCKS.get(cwd)
+    if lock is None:
+        lock = asyncio.Lock()
+        _OPENCODE_INSTALL_LOCKS[cwd] = lock
+    return lock
+
+
+def _build_npm_safe_env() -> Dict[str, str]:
+    """构建 npm 安装子进程环境，避免向依赖安装脚本传递密钥。"""
+    allowed_keys = (
+        "APPDATA", "COMSPEC", "HOME", "HOMEDRIVE", "HOMEPATH",
+        "LOCALAPPDATA", "PATH", "PATHEXT", "SYSTEMROOT", "TEMP", "TMP",
+        "USERPROFILE", "WINDIR",
+    )
+    return {key: os.environ[key] for key in allowed_keys if key in os.environ}
+
+
+def _npm_command() -> str:
+    """解析 npm 可执行文件，兼容 Windows 的 npm.cmd。"""
+    return shutil.which("npm.cmd") or shutil.which("npm") or "npm"
+
+
+async def _run_npm_command(cwd: str, args: List[str]) -> tuple[int, str]:
+    """以固定参数执行 npm 并限制输出与超时。"""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            _npm_command(),
+            *args,
+            cwd=cwd,
+            env=_build_npm_safe_env(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="未检测到可用的 npm，请先安装 Node.js",
+        ) from exc
+
+    try:
+        stdout, _ = await asyncio.wait_for(
+            process.communicate(),
+            timeout=_OPENCODE_INSTALL_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        process.kill()
+        await process.communicate()
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="OpenCode 安装超时，请检查网络或 npm 配置",
+        ) from exc
+
+    output = stdout.decode("utf-8", errors="replace")[-12000:]
+    return process.returncode or 0, output
+
+
+async def _get_opencode_status(cwd: str) -> OpenCodeStatusResponse:
+    """读取指定项目中 OpenCode 的安装状态与最终启动命令。"""
+    agents = discover_agents()
+    config = agents["opencode"]
+    command = resolve_agent_command(config, cwd)
+    project_installed = command != config.command
+    available = await asyncio.to_thread(is_agent_available, "opencode", agents, cwd)
+    return OpenCodeStatusResponse(
+        cwd=cwd,
+        package_json_exists=(Path(cwd) / "package.json").is_file(),
+        project_installed=project_installed,
+        available=available,
+        command=command,
+    )
+
+
 # ==================== 端点实现 ====================
 
 
@@ -313,6 +422,67 @@ async def list_agents(
             )
         )
     return AgentListResponse(agents=agent_infos, count=len(agent_infos))
+
+
+@router.get("/opencode/status", response_model=OpenCodeStatusResponse)
+async def get_opencode_status(
+    cwd: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+) -> OpenCodeStatusResponse:
+    """返回白名单项目中 OpenCode 的安装状态。"""
+    del current_user
+    return await _get_opencode_status(_validate_cwd(cwd))
+
+
+@router.post("/opencode/install", response_model=OpenCodeInstallResponse)
+async def install_opencode(
+    request: OpenCodeInstallRequest,
+    current_user: User = Depends(get_current_user),
+) -> OpenCodeInstallResponse:
+    """在白名单 Node.js 项目中安装固定的 OpenCode 包。"""
+    if not request.confirm_install:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="必须由用户明确确认后才能安装 OpenCode",
+        )
+
+    safe_cwd = _validate_cwd(request.cwd)
+    if not (Path(safe_cwd) / "package.json").is_file():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="工作目录不是 Node.js 项目，缺少 package.json",
+        )
+
+    async with _get_opencode_install_lock(safe_cwd):
+        return_code, output = await _run_npm_command(
+            safe_cwd,
+            ["install", "--save-dev", _OPENCODE_PACKAGE, "--no-audit", "--no-fund"],
+        )
+        if return_code != 0:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"message": "OpenCode 安装失败", "output": output},
+            )
+
+        audit_code, audit_output = await _run_npm_command(
+            safe_cwd,
+            ["audit", "--audit-level=high", "--json"],
+        )
+        status_result = await _get_opencode_status(safe_cwd)
+
+    logger.bind(
+        event="acp_opencode_installed",
+        module="acp",
+        user_id=current_user.id,
+        cwd=safe_cwd,
+        audit_passed=(audit_code == 0),
+    ).info("OpenCode 已在 ACP 工作目录安装")
+    return OpenCodeInstallResponse(
+        **status_result.model_dump(),
+        installed=status_result.project_installed and status_result.available,
+        audit_passed=(audit_code == 0),
+        output=(output + "\n" + audit_output)[-12000:],
+    )
 
 
 @router.post("/sessions", response_model=SessionCreateResponse)
@@ -366,7 +536,11 @@ async def create_session(
         agent=request.agent,
     ).info(f"ACP 会话已创建: agent={request.agent}, session_id={session_id}")
 
-    return SessionCreateResponse(session_id=session_id, config_options=[])
+    return SessionCreateResponse(
+        session_id=session_id,
+        cwd=safe_cwd,
+        config_options=[],
+    )
 
 
 @router.get("/sessions", response_model=SessionListResponse)
@@ -770,5 +944,3 @@ def _suspended_permission_to_dict(suspended: Any) -> Dict[str, Any]:
         # options 是 list[dict]，paths 是 list[str]，直接保留
         result[field_name] = value
     return result
-
-
