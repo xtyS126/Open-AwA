@@ -53,6 +53,7 @@ const jaJP: Record<string, string> = {
   "sidebar.billing": "使用状況",
   "sidebar.inbox": "受信箱",
   "sidebar.skills": "スキル",
+    "sidebar.pets": "ペット",
   "sidebar.scheduledTasks": "定期タスク",
   "sidebar.plugins": "プラグイン管理",
   "sidebar.pluginMarket": "プラグイン市場",

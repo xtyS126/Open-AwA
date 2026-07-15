@@ -56,6 +56,7 @@ const enUS: Record<string, string> = {
   "sidebar.billing": "Usage",
   "sidebar.inbox": "Inbox",
   "sidebar.skills": "Skills",
+    "sidebar.pets": "Pets",
   "sidebar.scheduledTasks": "Scheduled",
   "sidebar.plugins": "Plugin Mgmt",
   "sidebar.pluginMarket": "Plugin Market",

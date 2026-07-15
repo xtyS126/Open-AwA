@@ -19,7 +19,7 @@ import styles from './Sidebar.module.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'im' | 'roleMarket' | 'subagents' | 'vibeCoding' | 'discussions' | 'userProfile'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'im' | 'roleMarket' | 'subagents' | 'vibeCoding' | 'discussions' | 'userProfile' | 'pets'
 }
 
 interface MenuGroup {
@@ -39,6 +39,7 @@ const renderIcon = (type: string, size = 18) => {
     case 'scheduledTasks': return <Clock size={size} />
     case 'plugins': return <Blocks size={size} />
     case 'memory': return <Brain size={size} />
+    case 'pets': return <Cat size={size} />
     case 'settings': return <Settings size={size} />
     case 'experience': return <Award size={size} />
     case 'im': return <Radio size={size} />
@@ -80,6 +81,7 @@ const renderIcon = (type: string, size = 18) => {
         { path: '/tts', label: t('sidebar.tts') || 'TTS', iconType: 'skills' as const },
         { path: '/roles', label: t('sidebar.roles') || '角色管理', iconType: 'roles' as const },
         { path: '/role-market', label: t('sidebar.roleMarket') || '角色市场', iconType: 'roleMarket' as const },
+        { path: '/pets', label: t('sidebar.pets') || '宠物', iconType: 'pets' as const },
         { path: '/skills', label: t('sidebar.skills'), iconType: 'skills' as const },
         { path: '/scheduled-tasks', label: t('sidebar.scheduledTasks'), iconType: 'scheduledTasks' as const },
         { path: '/workflows', label: t('sidebar.workflows') || '工作流', iconType: 'scheduledTasks' as const },

@@ -31,6 +31,7 @@ const SubAgentPage = React.lazy(() => import('@/features/subagents/SubAgentPage'
 const VibeCodingPage = React.lazy(() => import('@/features/vibe-coding/VibeCodingPage'))
 const DiscussionsPage = React.lazy(() => import('@/features/discussions/DiscussionsPage'))
 const UserProfilePage = React.lazy(() => import('@/features/user-profile/UserProfilePage'))
+const PetsPage = React.lazy(() => import('@/features/pets/PetsPage'))
 
 // 统一的页面级 Suspense fallback：路由懒加载期间的占位骨架
 // 使用设计令牌保持与全局间距体系一致
@@ -115,6 +116,7 @@ export const router = createBrowserRouter(
         { path: 'vibe-coding', element: <ErrorBoundary name="VibeCoding">{withSuspense(<VibeCodingPage />)}</ErrorBoundary> },
         { path: 'discussions', element: <ErrorBoundary name="Discussions">{withSuspense(<DiscussionsPage />)}</ErrorBoundary> },
         { path: 'discussions/:id', element: <ErrorBoundary name="Discussions">{withSuspense(<DiscussionsPage />)}</ErrorBoundary> },
+        { path: 'pets', element: <ErrorBoundary name="Pets">{withSuspense(<PetsPage />)}</ErrorBoundary> },
         { path: 'user-profile', element: <ErrorBoundary name="UserProfile">{withSuspense(<UserProfilePage />)}</ErrorBoundary> },
         // 兜底：未匹配路径重定向到 /chat（保持用户体验友好，URL 不变）
         { path: '*', element: <Navigate to="/chat" replace /> },

@@ -1314,3 +1314,49 @@ class SavedPermissionsListResponse(BaseModel):
     total: int = Field(default=0, description="总数")
     page: int = Field(default=1, description="当前页码")
     page_size: int = Field(default=50, description="每页数量")
+
+
+# -------- 宠物功能（Codex Ambient Pet 移植）--------
+
+class PetResponse(BaseModel):
+    """宠物元数据响应，包含帧网格、动画集与可用状态。"""
+    id: str = Field(..., description="宠物记录 id（内置形如 builtin:codex，自定义形如 custom:<uid>:<pet_id>）")
+    pet_id: str = Field(..., description="宠物 slug，列表内用于展示")
+    display_name: str
+    description: str = ""
+    sprite_version: int = 1
+    frame_width: int
+    frame_height: int
+    columns: int
+    rows: int
+    frame_count: int
+    animations: Dict[str, Any] = Field(default_factory=dict)
+    is_builtin: bool = False
+    spritesheet_ready: bool = False
+    is_active: bool = False
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PetListResponse(BaseModel):
+    """宠物列表响应，合并内置与当前用户自定义宠物。"""
+    pets: List[PetResponse] = Field(default_factory=list)
+    total: int = 0
+
+
+class PetActiveRequest(BaseModel):
+    """设置当前激活宠物请求体。"""
+    pet_id: str = Field(..., description="宠物记录 id，传 disable 表示禁用宠物")
+
+
+class PetActiveResponse(BaseModel):
+    """当前激活宠物响应。"""
+    pet_id: Optional[str] = None
+    display_name: Optional[str] = None
+
+
+class PetImportResponse(BaseModel):
+    """导入自定义宠物响应。"""
+    pet: PetResponse

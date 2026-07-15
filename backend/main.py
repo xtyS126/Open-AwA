@@ -50,6 +50,7 @@ from api.routes.role_market import router as role_market_router
 from api.routes.terminal import router as terminal_router
 from api.routes.im import router as im_router
 from api.routes.acp import router as acp_router
+from api.routes.pets import router as pets_router
 from api.routes.preview_proxy import router as preview_proxy_router
 from api.routes.notifications import router as notifications_router
 
@@ -395,6 +396,21 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
         except Exception as e:
             logger.bind(event="preset_roles_init_error", module="startup").warning(f"预设角色初始化失败: {e}")
 
+    # ???????????8 ? Codex ?????
+    with profiler.step("builtin_pets_seed"):
+        try:
+            from api.routes.pets import seed_builtin_pets
+            _pets_db = SessionLocal()
+            try:
+                added = await asyncio.to_thread(seed_builtin_pets, _pets_db)
+                if added > 0:
+                    logger.bind(event="builtin_pets_seed", module="startup").info(f"??? {added} ?????")
+            finally:
+                _pets_db.close()
+        except Exception as e:
+            logger.bind(event="builtin_pets_seed_error", module="startup").warning(f"?????????: {e}")
+    
+    
     from billing.pricing_manager import PricingManager
     with profiler.step("pricing_init"):
         db = SessionLocal()
@@ -1479,6 +1495,7 @@ app.include_router(acp_router)
 app.include_router(preview_proxy_router)
 # 通知 HTTP API，前缀 /api/notifications 已内置在 router 定义中
 app.include_router(notifications_router)
+app.include_router(pets_router, prefix=settings.API_V1_STR)
 # [NEW] Task 3: 多 Agent 讨论任务路由，前缀 /api/discussions 已内置在 router 定义中
 app.include_router(discussions.router)
 app.include_router(search_config.router)  # [NEW] Task 9: 搜索配置路由

@@ -56,6 +56,7 @@ const zhCN: Record<string, string> = {
   "sidebar.billing": "使用情况",
   "sidebar.inbox": "收件箱",
   "sidebar.skills": "技能",
+    "sidebar.pets": "宠物",
   "sidebar.scheduledTasks": "定时任务",
   "sidebar.plugins": "插件管理",
   "sidebar.pluginMarket": "插件市场",

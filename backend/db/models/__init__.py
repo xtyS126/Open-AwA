@@ -138,6 +138,12 @@ from db.models.workspace import (
 # PermissionSaved 与 EventLog 定义在独立模块中，但共享本包的 Base.metadata。
 # 此处 import 触发模型注册，确保 init_db 的 create_all 能创建对应表。
 # 放在所有域模型 import 之后，与原 db/models.py 文件末尾的注册顺序保持一致。
+# ---- 宠物域 ----
+from db.models.pet import (
+    Pet,
+    UserActivePet,
+)
+
 from db.permission_models import PermissionSaved  # noqa: E402
 import core.event_log  # noqa: E402, F401
 
@@ -228,6 +234,9 @@ __all__ = [
     # 工作区与系统配置域
     "Workspace",
     "SearchProviderConfig",
+    # 宠物域
+    "Pet",
+    "UserActivePet",
     # 外部依赖模型
     "PermissionSaved",
 ]

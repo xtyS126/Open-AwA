@@ -53,6 +53,7 @@ const ruRU: Record<string, string> = {
   "sidebar.billing": "Расход",
   "sidebar.inbox": "Входящие",
   "sidebar.skills": "Навыки",
+    "sidebar.pets": "Питомцы",
   "sidebar.scheduledTasks": "Задачи",
   "sidebar.plugins": "Управление плагинами",
   "sidebar.pluginMarket": "Рынок плагинов",
