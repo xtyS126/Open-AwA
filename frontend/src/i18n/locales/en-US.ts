@@ -245,6 +245,7 @@ const enUS: Record<string, string> = {
   "chat.context.compressing": "Compressing...",
 
   // ===== Conversation Sidebar =====
+  "chat.send": "Send",
   "chat.history.title": "History",
   "chat.history.newChat": "New Chat",
   "chat.history.searchPlaceholder": "Search by title or summary",

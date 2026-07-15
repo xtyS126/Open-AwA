@@ -1,45 +1,63 @@
 import { defineConfig, devices } from '@playwright/test'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const reuseExistingServer = process.env.OPENAWA_E2E_REUSE_SERVER
   ? process.env.OPENAWA_E2E_REUSE_SERVER === 'true'
-  : process.env.CI !== 'true'
+  : false
 const frontendPort = Number(process.env.OPENAWA_E2E_FRONTEND_PORT || 15173)
 const backendPort = Number(process.env.OPENAWA_E2E_BACKEND_PORT || 18000)
+const outputDir = process.env.OPENAWA_E2E_OUTPUT_DIR || (
+  process.env.CI === 'true'
+    ? 'test-results'
+    : join(tmpdir(), `openawa-playwright-${process.pid}`)
+)
 
 export default defineConfig({
   testDir: './tests/e2e',
+  outputDir,
   timeout: 60_000,
   expect: {
     timeout: 10_000,
   },
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: 1,
   retries: 0,
   reporter: 'list',
   use: {
     baseURL: `http://127.0.0.1:${frontendPort}`,
+    locale: 'zh-CN',
     trace: 'retain-on-failure',
   },
   projects: [
     {
+      name: 'setup',
+      testMatch: /.*setup\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'chromium',
-      testIgnore: /.*electron-smoke\.spec\.ts/,
+      dependencies: ['setup'],
+      testIgnore: [/.*electron-smoke\.spec\.ts/, /.*setup\.spec\.ts/],
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'firefox',
-      testIgnore: /.*electron-smoke\.spec\.ts/,
+      dependencies: ['setup'],
+      testIgnore: [/.*electron-smoke\.spec\.ts/, /.*setup\.spec\.ts/],
       use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'electron',
+      dependencies: ['setup'],
       testMatch: /.*electron-smoke\.spec\.ts/,
     },
   ],
   webServer: [
     {
       command:
-        `python -c "import os, pathlib, uvicorn; db=pathlib.Path('openawa_e2e.db'); db.unlink(missing_ok=True); os.environ['DATABASE_URL']='sqlite:///./openawa_e2e.db'; os.environ['JWT_SECRET_KEY']='openawa-e2e-jwt-secret-key-at-least-32-chars'; os.environ['CSRF_SECRET_KEY']='openawa-e2e-csrf-secret-key-at-least-32-chars'; os.environ['ENCRYPTION_KEY']='MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA='; os.environ['OPENAWA_API_KEY']='openawa-e2e-api-key-at-least-32-characters'; os.environ['OPENAWA_OWNER_PASSWORD']='openawa-e2e-admin'; os.environ['OPENAWA_ADMIN_PASSWORD']='openawa-e2e-admin'; os.environ['TESTING']='true'; uvicorn.run('main:app', host='127.0.0.1', port=${backendPort})"`,
-      cwd: '../backend',
+        'python tests/e2e/support/start_backend.py',
+      cwd: '.',
       url: `http://127.0.0.1:${backendPort}/health`,
       reuseExistingServer,
       timeout: 120_000,

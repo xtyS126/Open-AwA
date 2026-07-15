@@ -60,8 +60,10 @@ function _normalizeLocale(raw: string): string {
 function getInitialLocale(): string {
   if (typeof window === 'undefined') return FALLBACK_LOCALE;
   const stored = localStorage.getItem('openawa_locale');
-  if (stored) return stored;
-  return _normalizeLocale(navigator.language) || FALLBACK_LOCALE;
+  const candidate = _normalizeLocale(stored || navigator.language);
+  return localeLoaders[candidate] || candidate === FALLBACK_LOCALE
+    ? candidate
+    : FALLBACK_LOCALE;
 }
 
 /**
@@ -85,9 +87,6 @@ async function loadLocaleAsync(locale: string): Promise<void> {
  * 若初始语言非 zh-CN，会在后台异步加载，期间 t() 回退到 zh-CN。
  */
 const initialLocale = getInitialLocale();
-if (initialLocale !== FALLBACK_LOCALE) {
-  loadLocaleAsync(initialLocale);
-}
 
 export const useI18nStore = create<I18nStore>((set, get) => ({
   locale: initialLocale,
@@ -125,6 +124,14 @@ export const useI18nStore = create<I18nStore>((set, get) => ({
     return text;
   },
 }));
+
+if (!useI18nStore.getState().isLocaleLoaded) {
+  void loadLocaleAsync(initialLocale).then(() => {
+    if (useI18nStore.getState().locale === initialLocale) {
+      useI18nStore.setState({ isLocaleLoaded: true });
+    }
+  });
+}
 
 /**
  * 便捷翻译函数（非组件中使用）。

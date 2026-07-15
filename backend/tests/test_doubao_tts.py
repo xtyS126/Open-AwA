@@ -90,15 +90,13 @@ class TestDoubaoTTSService:
         payload = service._build_payload(request)
         assert "emotion" not in payload
 
-    def test_synthesize_raises_when_not_configured(self):
+    @pytest.mark.asyncio
+    async def test_synthesize_raises_when_not_configured(self):
         """未配置时 synthesize 抛出 RuntimeError。"""
         service = DoubaoTTSService(app_id="", access_key="")
         request = TTSRequest(text="test")
         with pytest.raises(RuntimeError, match="未配置"):
-            import asyncio
-            asyncio.get_event_loop().run_until_complete(
-                service.synthesize(request)
-            )
+            await service.synthesize(request)
 
     @pytest.mark.asyncio
     async def test_synthesize_returns_audio_bytes(self):
@@ -271,16 +269,13 @@ class TestVoiceCloneManager:
         assert len(speakers) >= 8
         assert any(not s["is_cloned"] for s in speakers)
 
-    def test_delete_preset_speaker_raises(self):
+    @pytest.mark.asyncio
+    async def test_delete_preset_speaker_raises(self):
         """不允许删除预置音色。"""
         from skills.external.doubao_tts.core.voice_clone import VoiceCloneManager
-        import asyncio
-
         manager = VoiceCloneManager(app_id="test", access_key="test")
         with pytest.raises(ValueError, match="不允许删除预置音色"):
-            asyncio.get_event_loop().run_until_complete(
-                manager.delete_speaker("zh_female_qingxin")
-            )
+            await manager.delete_speaker("zh_female_qingxin")
 
 
 class TestTTSModels:

@@ -96,7 +96,7 @@ def generate_csrf_token_pair(response: Optional[Response] = None) -> Tuple[str, 
     return raw_token, signed_token
 
 
-def validate_csrf_request(request: Request) -> bool:
+async def validate_csrf_request(request: Request) -> bool:
     """
     校验请求中的 CSRF token 是否与 Cookie 中的签名 token 匹配。
 
@@ -108,7 +108,7 @@ def validate_csrf_request(request: Request) -> bool:
     """
     csrf = get_csrf_protect()
     try:
-        csrf.validate_csrf(request)
+        await csrf.validate_csrf(request)
         return True
     except (MissingTokenError, TokenValidationError, InvalidHeaderError) as exc:
         logger.bind(

@@ -245,6 +245,7 @@ const zhCN: Record<string, string> = {
   "chat.context.compressing": "压缩中...",
 
   // ===== 对话侧边栏 =====
+  "chat.send": "发送",
   "chat.history.title": "历史对话",
   "chat.history.newChat": "新建对话",
   "chat.history.searchPlaceholder": "搜索标题或摘要",

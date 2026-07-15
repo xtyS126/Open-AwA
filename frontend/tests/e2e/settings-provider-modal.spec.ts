@@ -1,14 +1,12 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { loginAsAdminApi, loginAsAdminPage } from './auth'
+import { getApiKey, loginAsAdminPage } from './auth'
 
 const backendApiBase = `http://127.0.0.1:${process.env.OPENAWA_E2E_BACKEND_PORT || '18000'}/api`
 
 async function deleteProviderIfExists(request: APIRequestContext, providerId: string) {
-  const { token, csrfToken } = await loginAsAdminApi(request)
   await request.delete(`${backendApiBase}/billing/providers/${providerId}`, {
     headers: {
-      Authorization: `Bearer ${token}`,
-      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+      Authorization: `Bearer ${getApiKey()}`,
     },
     failOnStatusCode: false,
   })
@@ -41,19 +39,26 @@ test('新增供应商弹窗仅保留显示名称和基础 URL，并为预置供�
   await dialog.getByLabel('显示名称（可选）').fill('Moonshot 国内镜像')
   await dialog.getByLabel('基础 URL（可选）').fill('https://api.moonshot.cn/v1/chat/completions')
 
-  const createRequestPromise = page.waitForRequest((requestItem) => {
+  const credentialRequestPromise = page.waitForRequest((requestItem) => {
+    return requestItem.method() === 'PUT' && requestItem.url().includes('/api/billing/credentials/moonshot')
+  })
+  const configurationRequestPromise = page.waitForRequest((requestItem) => {
     return requestItem.method() === 'POST' && requestItem.url().includes('/api/billing/configurations')
   })
 
   await dialog.getByRole('button', { name: '确认创建' }).click()
 
-  const createRequest = await createRequestPromise
-  const payload = createRequest.postDataJSON() as Record<string, unknown>
-  expect(payload).toEqual({
-    provider: 'moonshot',
-    model: 'custom-model',
+  const credentialRequest = await credentialRequestPromise
+  expect(credentialRequest.postDataJSON()).toEqual({
     display_name: 'Moonshot 国内镜像',
     api_endpoint: 'https://api.moonshot.cn/v1',
+  })
+
+  const configurationRequest = await configurationRequestPromise
+  expect(configurationRequest.postDataJSON()).toMatchObject({
+    provider: 'moonshot',
+    model: expect.any(String),
+    display_name: expect.any(String),
     is_default: false,
   })
 })

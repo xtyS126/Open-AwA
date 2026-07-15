@@ -30,9 +30,10 @@ test.describe('桌面端布局 (1920×1080)', () => {
       // 侧边栏不应处于折叠态
       await expect(sidebar).not.toHaveAttribute('data-collapsed', 'true')
 
-      // 导航项"聊天"应可见（激活态）
-      const chatNav = page.locator('[data-testid="sidebar-item"]').filter({ hasText: '聊天' }).first()
+      // 使用稳定路由语义，避免语言切换后将显示文案误判为布局故障
+      const chatNav = page.locator('[data-testid="sidebar-item"][href="/chat"]')
       await expect(chatNav).toBeVisible()
+      await expect(chatNav).toHaveAttribute('aria-current', 'page')
     })
 
     test('主内容区与侧边栏并排显示', async ({ page }) => {
@@ -169,6 +170,7 @@ test.describe('移动端布局 (375×812)', () => {
 
     const mobileMenu = page.locator('[data-testid="mobile-menu-btn"]').first()
     await expect(mobileMenu).toBeVisible({ timeout: 15_000 })
+    await expect(mobileMenu).toHaveAttribute('aria-expanded', 'false')
 
     // 点击汉堡菜单展开侧边栏
     await mobileMenu.click()
@@ -186,7 +188,9 @@ test.describe('移动端布局 (375×812)', () => {
     await page.waitForLoadState('domcontentloaded')
 
     // 展开侧边栏
-    await page.locator('[data-testid="mobile-menu-btn"]').first().click()
+    const mobileMenu = page.locator('[data-testid="mobile-menu-btn"]').first()
+    await expect(mobileMenu).toHaveAttribute('aria-expanded', 'false')
+    await mobileMenu.click()
     const sidebar = page.locator('[data-testid="sidebar"]').first()
     await expect(sidebar).toHaveAttribute('data-mobile-open', 'true')
 
@@ -244,8 +248,7 @@ test.describe('横竖屏切换', () => {
 
     // 横屏宽度 > 768px，汉堡菜单应隐藏
     const mobileMenu = page.locator('[data-testid="mobile-menu-btn"]').first()
-    const isVisible = await mobileMenu.isVisible().catch(() => false)
-    expect(isVisible).toBe(false)
+    await expect(mobileMenu).toBeHidden()
   })
 
   test('桌面端窗口调整后布局保持正常', async ({ page }) => {

@@ -1425,6 +1425,19 @@ class PluginManager:
         self._runtime_routes[plugin_name] = route
         return route
 
+    @staticmethod
+    def _clone_runtime_slot(slot: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        克隆运行时槽位，同时保留插件实例和沙箱等不可序列化对象的引用。
+        """
+        if slot is None:
+            return None
+
+        cloned_slot = dict(slot)
+        cloned_slot["metadata"] = deepcopy(slot.get("metadata", {}))
+        cloned_slot["tools"] = deepcopy(slot.get("tools", []))
+        return cloned_slot
+
     def _sync_runtime_route_active_slot(self, plugin_name: str) -> None:
         """
         将当前已加载实例同步回运行时路由，避免 reload 后被旧 active_slot 覆盖。
@@ -1659,7 +1672,9 @@ class PluginManager:
             source_metadata.update(scanned)
 
         release_id = self._build_release_id(plugin_name, source_metadata)
-        previous_active_slot = deepcopy(route["slots"]["active"])
+        previous_active_slot = self._clone_runtime_slot(route["slots"]["active"])
+        if previous_active_slot is None:
+            raise RuntimeError(f"Plugin '{plugin_name}' active slot is missing")
 
         try:
             binding = self._load_plugin_release(plugin_name, source_metadata)
@@ -3313,7 +3328,14 @@ class PluginManager:
                 raise RuntimeError(
                     f"Failed to instantiate plugin '{plugin_name}' during rollback"
                 )
-            instance.initialize()
+            init_result = instance.initialize()
+            if inspect.isawaitable(init_result):
+                helper = TransitionExecutor(self.state_machine)
+                init_result = helper._run_coroutine(init_result)
+            if not init_result:
+                raise RuntimeError(
+                    f"Plugin '{plugin_name}' initialization returned False during rollback"
+                )
             instance._initialized = True
             return instance
 

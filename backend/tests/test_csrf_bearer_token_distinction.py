@@ -10,7 +10,7 @@ CSRF 中间件 Bearer token 类型区分测试。
 
 import os
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
@@ -197,7 +197,7 @@ class TestCSRFBearerTokenDistinction:
         request.headers = headers
 
         # Mock validate_csrf_request 返回 True（校验通过）
-        with patch('main.validate_csrf_request', return_value=True):
+        with patch('main.validate_csrf_request', new=AsyncMock(return_value=True)):
             response = await csrf_protection_middleware(request, mock_call_next)
 
         # CSRF 校验通过应放行，返回 200
@@ -225,7 +225,7 @@ class TestCSRFBearerTokenDistinction:
         request.headers = headers
 
         # Mock validate_csrf_request 返回 False（校验失败）
-        with patch('main.validate_csrf_request', return_value=False):
+        with patch('main.validate_csrf_request', new=AsyncMock(return_value=False)):
             response = await csrf_protection_middleware(request, mock_call_next)
 
         # CSRF 校验失败应返回 403

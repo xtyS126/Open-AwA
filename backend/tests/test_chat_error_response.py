@@ -5,6 +5,7 @@
 
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,8 +24,10 @@ def _override_get_current_user():
 
 
 def _override_get_db():
-    """测试用：返回 None，chat 路由异常分支不会真正使用 db。"""
-    yield None
+    """测试用：返回未找到会话记录的数据库替身。"""
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+    yield db
 
 
 @pytest.fixture

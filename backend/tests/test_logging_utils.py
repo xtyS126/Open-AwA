@@ -59,12 +59,15 @@ def test_init_logging_falls_back_to_pid_file_when_primary_path_is_denied(monkeyp
     import config.logging as logging_module
 
     recorded_paths = []
+    recorded_console_sinks = []
     original_add = logging_module.logger.add
     primary_path = str(tmp_path / "openawa_{time:YYYY-MM-DD}.log")
     expected_fallback_path = str(tmp_path / f"openawa_{{time:YYYY-MM-DD}}.pid-{os.getpid()}.log")
 
     def fake_add(sink, *args, **kwargs):
         sink_path = str(sink)
+        if not isinstance(sink, str):
+            recorded_console_sinks.append(sink)
         if sink_path == primary_path:
             raise PermissionError(13, "Permission denied", sink_path)
         if isinstance(sink, str):
@@ -81,3 +84,4 @@ def test_init_logging_falls_back_to_pid_file_when_primary_path_is_denied(monkeyp
     )
 
     assert expected_fallback_path in recorded_paths
+    assert logging_module.sys.__stderr__ in recorded_console_sinks

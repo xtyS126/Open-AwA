@@ -8,10 +8,12 @@ SkillEngine/WorkflowEngine/MemoryManager 等重量级依赖，
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Dict, Tuple
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, AsyncIterator, Dict, Tuple
 
 from loguru import logger
 
@@ -42,6 +44,21 @@ class AIAgentRegistry:
         # user_id -> (AIAgent 实例, 最近访问时间戳)
         self._cache: "OrderedDict[int, Tuple[AIAgent, float]]" = OrderedDict()
         self._lock = threading.Lock()
+        # AIAgent 持有请求级数据库会话和可变执行状态，同一用户必须串行使用缓存实例
+        self._request_locks: Dict[int, asyncio.Lock] = {}
+
+    @asynccontextmanager
+    async def acquire(
+        self,
+        user_id: int,
+        db_session: "Session",
+    ) -> AsyncIterator["AIAgent"]:
+        """独占租用指定用户的 Agent，并原子完成数据库会话绑定。"""
+        with self._lock:
+            request_lock = self._request_locks.setdefault(user_id, asyncio.Lock())
+
+        async with request_lock:
+            yield self.get_or_create(user_id, db_session)
 
     def get_or_create(self, user_id: int, db_session: "Session") -> "AIAgent":
         """
@@ -132,6 +149,7 @@ class AIAgentRegistry:
         with self._lock:
             cleared_count = len(self._cache)
             self._cache.clear()
+            self._request_locks.clear()
             if cleared_count > 0:
                 logger.bind(
                     event="agent_registry_clear_all",

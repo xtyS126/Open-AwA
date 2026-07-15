@@ -9,8 +9,9 @@ ACP service 模块单元测试。
 from __future__ import annotations
 
 import atexit
+import asyncio
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -201,6 +202,8 @@ class TestSessionLookupsWithoutSessions:
         service = ACPService(config=_make_config())
         # 不应抛任何异常
         await service.close_chat_session(chat_id="missing", agent="test-agent")
+        assert service._session_locks == {}
+        assert service._session_lock_refs == {}
 
     async def test_cancel_turn_no_session_returns_false(self) -> None:
         """验证对不存在的会话调用 cancel_turn 返回 False。"""
@@ -279,6 +282,26 @@ class TestAtexitRegistration:
         _shutdown_acp_services()
         assert get_acp_service("temp-agent") is None
 
+    def test_shutdown_acp_services_awaits_close_without_default_loop(self) -> None:
+        """没有默认事件循环时仍必须实际等待服务关闭。"""
+
+        class FakeService:
+            """记录关闭协程是否被等待。"""
+
+            def __init__(self) -> None:
+                self.closed = False
+
+            async def close_all_sessions(self) -> None:
+                self.closed = True
+
+        service = FakeService()
+        _acp_services["temp-agent"] = service
+
+        _shutdown_acp_services()
+
+        assert service.closed is True
+        assert _acp_services == {}
+
 
 class TestCloseAllSessions:
     """close_all_sessions 边界条件测试。"""
@@ -302,3 +325,91 @@ class TestRequireExistingSession:
                 cwd=".",
                 require_existing=True,
             )
+
+
+class TestConcurrentSessionCreation:
+    """ACP 会话首次创建的并发隔离测试。"""
+
+    @pytest.mark.asyncio
+    async def test_same_chat_and_agent_only_open_once(self) -> None:
+        """同一用户会话的并发首轮 prompt 只能创建一个子进程会话。"""
+        service = ACPService(config=_make_config())
+        open_started = asyncio.Event()
+        allow_open = asyncio.Event()
+        conversation = MagicMock()
+        conversation.process.returncode = None
+
+        async def fake_open(**kwargs: Any) -> Any:
+            open_started.set()
+            await allow_open.wait()
+            return conversation
+
+        with patch.object(service, "_open_conversation", side_effect=fake_open) as open_mock:
+            first = asyncio.create_task(
+                service._get_or_create_session(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                    cwd=".",
+                    require_existing=False,
+                )
+            )
+            await open_started.wait()
+            second = asyncio.create_task(
+                service._get_or_create_session(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                    cwd=".",
+                    require_existing=False,
+                )
+            )
+            await asyncio.sleep(0)
+            allow_open.set()
+            first_result, second_result = await asyncio.gather(first, second)
+
+        assert first_result is conversation
+        assert second_result is conversation
+        assert open_mock.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_different_users_create_independent_sessions(self) -> None:
+        """不同用户即使前端 session_id 相同也应并发创建独立会话。"""
+        service = ACPService(config=_make_config())
+        both_started = asyncio.Event()
+        allow_open = asyncio.Event()
+        started_count = 0
+
+        async def fake_open(**kwargs: Any) -> Any:
+            nonlocal started_count
+            started_count += 1
+            if started_count == 2:
+                both_started.set()
+            await allow_open.wait()
+            conversation = MagicMock()
+            conversation.process.returncode = None
+            conversation.chat_id = kwargs["chat_id"]
+            return conversation
+
+        with patch.object(service, "_open_conversation", side_effect=fake_open):
+            first = asyncio.create_task(
+                service._get_or_create_session(
+                    chat_id="user-a:shared-session",
+                    agent="test-agent",
+                    cwd=".",
+                    require_existing=False,
+                )
+            )
+            second = asyncio.create_task(
+                service._get_or_create_session(
+                    chat_id="user-b:shared-session",
+                    agent="test-agent",
+                    cwd=".",
+                    require_existing=False,
+                )
+            )
+            await asyncio.wait_for(both_started.wait(), timeout=1.0)
+            allow_open.set()
+            first_result, second_result = await asyncio.gather(first, second)
+
+        assert first_result is not second_result
+        assert first_result.chat_id == "user-a:shared-session"
+        assert second_result.chat_id == "user-b:shared-session"

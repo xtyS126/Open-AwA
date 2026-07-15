@@ -101,7 +101,8 @@ def plugin_instance() -> OpenBiliClawBuiltinPlugin:
     return OpenBiliClawBuiltinPlugin(config={})
 
 
-def test_initialize_succeeds_when_all_deps_present(plugin_instance):
+@pytest.mark.asyncio
+async def test_initialize_succeeds_when_all_deps_present(plugin_instance):
     """所有关键依赖与可选依赖均存在时，initialize 不抛异常且返回 True。"""
     # 让所有 find_spec 都返回非 None
     with patch("plugins.openbiliclaw_builtin.plugin.importlib.util.find_spec") as mock_spec:
@@ -118,9 +119,7 @@ def test_initialize_succeeds_when_all_deps_present(plugin_instance):
             mock_adapter_cls.return_value = mock_adapter
 
             # 执行 initialize（pytest-asyncio 自动处理事件循环）
-            import asyncio
-
-            result = asyncio.get_event_loop().run_until_complete(plugin_instance.initialize())
+            result = await plugin_instance.initialize()
 
     assert result is True
     # 全部依赖就绪时不应收集到关键缺失告警
@@ -128,7 +127,8 @@ def test_initialize_succeeds_when_all_deps_present(plugin_instance):
     assert plugin_instance.get_dependency_warnings() == []
 
 
-def test_initialize_raises_when_critical_dep_missing(plugin_instance):
+@pytest.mark.asyncio
+async def test_initialize_raises_when_critical_dep_missing(plugin_instance):
     """bilibili-api-python 关键依赖缺失时应抛 BuiltinPluginDependencyError。"""
     # bilibili_api 是 _REQUIRED_DEPENDENCIES 中的关键依赖
     # 模拟其 find_spec 返回 None，其他依赖均存在
@@ -142,9 +142,7 @@ def test_initialize_raises_when_critical_dep_missing(plugin_instance):
         side_effect=fake_find_spec,
     ):
         with pytest.raises(BuiltinPluginDependencyError) as exc_info:
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(plugin_instance.initialize())
+            await plugin_instance.initialize()
 
     # 异常消息应包含 pip 包名 bilibili-api-python
     assert "bilibili-api-python" in str(exc_info.value)
@@ -152,7 +150,8 @@ def test_initialize_raises_when_critical_dep_missing(plugin_instance):
     assert "bilibili-api-python" in exc_info.value.missing_packages
 
 
-def test_initialize_raises_when_multiple_deps_missing(plugin_instance):
+@pytest.mark.asyncio
+async def test_initialize_raises_when_multiple_deps_missing(plugin_instance):
     """多个关键依赖缺失时，异常消息应列出全部缺失包名。"""
     # 让 httpx 与 bilibili_api 同时缺失
     missing_imports = {"httpx", "bilibili_api"}
@@ -167,9 +166,7 @@ def test_initialize_raises_when_multiple_deps_missing(plugin_instance):
         side_effect=fake_find_spec,
     ):
         with pytest.raises(BuiltinPluginDependencyError) as exc_info:
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(plugin_instance.initialize())
+            await plugin_instance.initialize()
 
     # 异常应同时列出 httpx 与 bilibili-api-python
     assert "httpx" in str(exc_info.value)
@@ -181,7 +178,8 @@ def test_initialize_raises_when_multiple_deps_missing(plugin_instance):
     assert len(exc_info.value.missing_packages) == 2
 
 
-def test_initialize_records_warning_when_optional_dep_missing(plugin_instance):
+@pytest.mark.asyncio
+async def test_initialize_records_warning_when_optional_dep_missing(plugin_instance):
     """可选依赖缺失时不应抛异常，但应记录到 _dependency_warnings。"""
     # 关键依赖全部存在
     def fake_find_spec(name: str):
@@ -202,9 +200,7 @@ def test_initialize_records_warning_when_optional_dep_missing(plugin_instance):
             mock_adapter.get_tools.return_value = []
             mock_adapter_cls.return_value = mock_adapter
 
-            import asyncio
-
-            result = asyncio.get_event_loop().run_until_complete(plugin_instance.initialize())
+            result = await plugin_instance.initialize()
 
     assert result is True
     warnings = plugin_instance.get_dependency_warnings()
@@ -225,7 +221,8 @@ def test_get_tools_returns_empty_list_before_initialize(plugin_instance):
     assert plugin_instance.get_tools() == []
 
 
-def test_get_tools_returns_ten_tools_after_initialize(plugin_instance):
+@pytest.mark.asyncio
+async def test_get_tools_returns_ten_tools_after_initialize(plugin_instance):
     """initialize 成功且 adapter 返回 10 个工具后，get_tools 应返回长度为 10 的列表。"""
     # 构造 10 个工具定义（模拟 adapter.get_tools 返回值）
     fake_tools: List[Dict[str, Any]] = [
@@ -251,9 +248,7 @@ def test_get_tools_returns_ten_tools_after_initialize(plugin_instance):
             mock_adapter.get_tools.return_value = fake_tools
             mock_adapter_cls.return_value = mock_adapter
 
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(plugin_instance.initialize())
+            await plugin_instance.initialize()
 
     tools = plugin_instance.get_tools()
     assert len(tools) == 10
@@ -271,7 +266,8 @@ def test_get_dependency_warnings_returns_copy(plugin_instance):
     assert "external modification" not in plugin_instance._dependency_warnings
 
 
-def test_cleanup_resets_plugin_state(plugin_instance):
+@pytest.mark.asyncio
+async def test_cleanup_resets_plugin_state(plugin_instance):
     """cleanup 应清空工具列表与适配层引用。"""
     # 模拟已初始化状态
     fake_adapter = MagicMock()
@@ -280,9 +276,7 @@ def test_cleanup_resets_plugin_state(plugin_instance):
     plugin_instance._tools = [{"name": "tool1"}]
     plugin_instance._initialized = True
 
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(plugin_instance.cleanup())
+    await plugin_instance.cleanup()
 
     # 验证适配层 cleanup 被调用
     fake_adapter.cleanup.assert_called_once()
@@ -292,16 +286,15 @@ def test_cleanup_resets_plugin_state(plugin_instance):
     assert plugin_instance._initialized is False
 
 
-def test_cleanup_swallows_adapter_cleanup_exception(plugin_instance):
+@pytest.mark.asyncio
+async def test_cleanup_swallows_adapter_cleanup_exception(plugin_instance):
     """adapter.cleanup 抛异常时，插件 cleanup 不应传播异常。"""
     fake_adapter = MagicMock()
     fake_adapter.cleanup = MagicMock(side_effect=RuntimeError("cleanup failed"))
     plugin_instance._adapter = fake_adapter
 
-    import asyncio
-
     # 不应抛异常
-    asyncio.get_event_loop().run_until_complete(plugin_instance.cleanup())
+    await plugin_instance.cleanup()
     # 仍应清空引用
     assert plugin_instance._adapter is None
 
@@ -312,7 +305,8 @@ def test_execute_raises_not_implemented(plugin_instance):
         plugin_instance.execute()
 
 
-def test_initialize_degrades_when_adapter_initialize_fails(plugin_instance):
+@pytest.mark.asyncio
+async def test_initialize_degrades_when_adapter_initialize_fails(plugin_instance):
     """adapter.initialize 抛异常时，插件应降级为空工具列表并返回 True。"""
     with patch(
         "plugins.openbiliclaw_builtin.plugin.importlib.util.find_spec"
@@ -327,9 +321,7 @@ def test_initialize_degrades_when_adapter_initialize_fails(plugin_instance):
             )
             mock_adapter_cls.return_value = mock_adapter
 
-            import asyncio
-
-            result = asyncio.get_event_loop().run_until_complete(plugin_instance.initialize())
+            result = await plugin_instance.initialize()
 
     # 降级模式仍返回 True
     assert result is True

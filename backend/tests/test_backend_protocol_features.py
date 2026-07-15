@@ -6,6 +6,7 @@
 import asyncio
 from types import MethodType, SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -451,9 +452,9 @@ async def test_ai_agent_get_available_skills_returns_empty_without_db_session(mo
 
 
 @pytest.mark.asyncio
-async def test_ai_agent_get_available_plugins_loads_plugins_before_collecting_tools():
+async def test_ai_agent_get_available_plugins_does_not_lazy_load_disabled_plugin():
     """
-    Agent 获取插件列表时应先尝试加载插件，确保工具定义对 AI 可见。
+    Agent 获取插件列表时不得自动加载未启用插件或暴露其工具。
     """
 
     agent = AIAgent()
@@ -461,6 +462,7 @@ async def test_ai_agent_get_available_plugins_loads_plugins_before_collecting_to
     class FakePluginManager:
         def __init__(self) -> None:
             self.loaded_plugins = {}
+            self.load_calls = []
 
         def discover_plugins(self):
             return [
@@ -472,6 +474,7 @@ async def test_ai_agent_get_available_plugins_loads_plugins_before_collecting_to
             ]
 
         def load_plugin(self, plugin_name: str) -> bool:
+            self.load_calls.append(plugin_name)
             self.loaded_plugins[plugin_name] = object()
             return True
 
@@ -494,6 +497,32 @@ async def test_ai_agent_get_available_plugins_loads_plugins_before_collecting_to
     result = await agent.get_available_plugins()
 
     assert len(result) == 1
+    assert result[0]["loaded"] is False
+    assert result[0]["tools"] == []
+    assert agent.plugin_manager.load_calls == []
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_get_available_plugins_exposes_loaded_plugin_tools():
+    """已由生命周期管理器加载的插件应向 Agent 暴露工具。"""
+    agent = AIAgent()
+    manager = MagicMock()
+    manager.loaded_plugins = {"demo-plugin": object()}
+    manager.discover_plugins.return_value = [
+        {"name": "demo-plugin", "version": "1.0.0", "description": "demo plugin"}
+    ]
+    manager.get_plugin_info.return_value = {"loaded": True}
+    manager.get_plugin_tools.return_value = [
+        {
+            "name": "fetch_demo_data",
+            "method": "execute",
+            "default_params": {"action": "fetch_demo_data"},
+        }
+    ]
+    agent.plugin_manager = manager
+
+    result = await agent.get_available_plugins()
+
     assert result[0]["loaded"] is True
     assert result[0]["tools"][0]["method"] == "execute"
     assert result[0]["tools"][0]["default_params"]["action"] == "fetch_demo_data"

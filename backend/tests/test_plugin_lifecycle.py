@@ -305,6 +305,42 @@ def test_transition_executor_rejects_invalid_transition():
     assert state_machine.get_state("demo") == PluginState.REGISTERED
 
 
+def test_plugin_lifecycle_full_state_sequence_invokes_hooks():
+    """完整插件生命周期应按顺序迁移状态并调用对应 hook。"""
+
+    class HookPlugin:
+        def __init__(self) -> None:
+            self.events = []
+
+        def on_loaded(self) -> None:
+            self.events.append("loaded")
+
+        def on_enabled(self) -> None:
+            self.events.append("enabled")
+
+        def on_disabled(self) -> None:
+            self.events.append("disabled")
+
+        def on_unloaded(self) -> None:
+            self.events.append("unloaded")
+
+    state_machine = PluginStateMachine()
+    executor = TransitionExecutor(state_machine)
+    plugin = HookPlugin()
+
+    for target_state in (
+        PluginState.LOADED,
+        PluginState.ENABLED,
+        PluginState.DISABLED,
+        PluginState.UNLOADED,
+    ):
+        result = executor.execute("demo", plugin, target_state)
+        assert result.success is True
+        assert state_machine.get_state("demo") == target_state
+
+    assert plugin.events == ["loaded", "enabled", "disabled", "unloaded"]
+
+
 def test_register_plugin_from_local_zip_and_bind_resource_limits(tmp_path: Path):
     """
     验证register、plugin、from、local、zip、and、bind、resource、limits相关场景的行为是否符合预期。

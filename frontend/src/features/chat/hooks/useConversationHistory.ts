@@ -114,6 +114,10 @@ export function useConversationHistory() {
     }
   }, [historySearch, historySort, includeDeleted, setConversations])
 
+  useEffect(() => {
+    void loadConversationList(1, false)
+  }, [historySearch, historySort, includeDeleted, loadConversationList])
+
   // 跨标签页会话变更监听：当其他标签页广播会话变更导致 conversationsVersion 自增时，
   // 重新加载会话列表。使用 ref 记录上一次版本号，避免初始挂载时触发重复加载。
   const prevConversationsVersionRef = useRef(conversationsVersion)

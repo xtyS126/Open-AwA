@@ -22,7 +22,7 @@ import signal
 import subprocess
 import sys
 import threading
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 
@@ -228,6 +228,28 @@ class ACPService:
         self.config = config
         self._lock = asyncio.Lock()
         self._sessions: dict[tuple[str, str], _Conversation] = {}
+        # 同一会话的首次创建必须单飞，避免并发 prompt 重复拉起子进程
+        self._session_locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._session_lock_refs: dict[tuple[str, str], int] = {}
+
+    @asynccontextmanager
+    async def _session_guard(self, session_key: tuple[str, str]):
+        """获取带引用计数的会话锁，并在会话关闭后安全回收。"""
+        async with self._lock:
+            session_lock = self._session_locks.setdefault(session_key, asyncio.Lock())
+            self._session_lock_refs[session_key] = self._session_lock_refs.get(session_key, 0) + 1
+        try:
+            async with session_lock:
+                yield
+        finally:
+            async with self._lock:
+                remaining = self._session_lock_refs.get(session_key, 1) - 1
+                if remaining <= 0:
+                    self._session_lock_refs.pop(session_key, None)
+                    if session_key not in self._sessions:
+                        self._session_locks.pop(session_key, None)
+                else:
+                    self._session_lock_refs[session_key] = remaining
 
     async def run_turn(
         self,
@@ -361,10 +383,12 @@ class ACPService:
             chat_id: 聊天会话 ID。
             agent: ACP Agent 标识。
         """
-        async with self._lock:
-            conversation = self._sessions.pop((chat_id, agent), None)
-        if conversation is not None:
-            await self._close_conversation(conversation)
+        session_key = (chat_id, agent)
+        async with self._session_guard(session_key):
+            async with self._lock:
+                conversation = self._sessions.pop(session_key, None)
+            if conversation is not None:
+                await self._close_conversation(conversation)
 
     async def close_all_sessions(self) -> None:
         """关闭所有会话并清空 _sessions 字典。"""
@@ -373,6 +397,9 @@ class ACPService:
             self._sessions.clear()
         for conversation in conversations:
             await self._close_conversation(conversation)
+        async with self._lock:
+            if not self._session_lock_refs:
+                self._session_locks.clear()
 
     async def get_session(
         self,
@@ -500,35 +527,39 @@ class ACPService:
             ACPSessionError: require_existing=True 但会话不存在或已失效。
         """
         agent_config = self._get_agent_config(agent)
-        async with self._lock:
-            existing = self._sessions.get((chat_id, agent))
+        session_key = (chat_id, agent)
+        async with self._session_guard(session_key):
+            async with self._lock:
+                existing = self._sessions.get(session_key)
 
-        if existing is not None:
-            if existing.process.returncode is None:
-                return existing
-            await self.close_chat_session(chat_id=chat_id, agent=agent)
-            if require_existing:
+            if existing is not None:
+                if existing.process.returncode is None:
+                    return existing
+                async with self._lock:
+                    self._sessions.pop(session_key, None)
+                await self._close_conversation(existing)
+                if require_existing:
+                    raise ACPSessionError(
+                        f"ACP session for runner '{agent}' is no longer "
+                        "active; call start first",
+                    )
+            elif require_existing:
                 raise ACPSessionError(
-                    f"ACP session for runner '{agent}' is no longer "
-                    "active; call start first",
+                    "no bound ACP session found for runner "
+                    f"'{agent}' in current chat",
                 )
-        elif require_existing:
-            raise ACPSessionError(
-                "no bound ACP session found for runner "
-                f"'{agent}' in current chat",
+
+            session_cwd = cwd or "."
+            conversation = await self._open_conversation(
+                chat_id=chat_id,
+                agent=agent,
+                cwd=session_cwd,
+                agent_config=agent_config,
             )
 
-        session_cwd = cwd or "."
-        conversation = await self._open_conversation(
-            chat_id=chat_id,
-            agent=agent,
-            cwd=session_cwd,
-            agent_config=agent_config,
-        )
-
-        async with self._lock:
-            self._sessions[(chat_id, agent)] = conversation
-        return conversation
+            async with self._lock:
+                self._sessions[session_key] = conversation
+            return conversation
 
     async def _find_session_by_acp_id(
         self,
@@ -902,14 +933,15 @@ def _shutdown_acp_services() -> None:
             return
     except RuntimeError:
         pass
-    try:
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(
-            asyncio.gather(
-                *(service.close_all_sessions() for service in services),
-            ),
+
+    async def _close_all_services() -> None:
+        """在同一事件循环内创建并等待全部关闭协程。"""
+        await asyncio.gather(
+            *(service.close_all_sessions() for service in services),
         )
-        loop.close()
+
+    try:
+        asyncio.run(_close_all_services())
     except Exception as exc:
         # atexit 期间 stderr 仍可用，记录异常避免进程退出阶段问题完全不可见
         sys.stderr.write(f"[ACP shutdown] atexit 关闭服务失败: {exc}\n")

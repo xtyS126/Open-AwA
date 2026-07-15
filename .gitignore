@@ -214,3 +214,12 @@ backend/data/qdrant/
 
 # 问题反馈只写器落盘目录（仅写入，禁止读取/删除/列举）
 backend/data/issue_reports/
+
+# =========================
+# 临时调试脚本与会话产物
+# =========================
+# E2E 调试/扫描脚本与中间输出（dumps 行号、扫 commit、路由守卫检查等临时产物）
+.e2e_*
+frontend/.e2e_*
+# 工具大输出运行时产物（如 big_output_<hash>.txt）
+uploads/tool_outputs/*.txt

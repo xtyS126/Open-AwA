@@ -60,53 +60,20 @@ async function simulateSwipeLeft(page: Page, startX: number, startY: number, del
 
     const endX = startX + deltaX
 
-    // 创建 Touch 对象的工厂函数
-    const makeTouch = (x: number, y: number): Touch => {
-      return new Touch({
-        identifier: 1,
-        target: sidebar,
-        clientX: x,
-        clientY: y,
-        pageX: x,
-        pageY: y,
-        radiusX: 0,
-        radiusY: 0,
-        rotationAngle: 0,
-        force: 1,
+    const makeTouchEvent = (type: string, x: number, active: boolean) => {
+      const touch = { clientX: x, clientY: startY }
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      Object.defineProperties(event, {
+        touches: { value: active ? [touch] : [] },
+        targetTouches: { value: active ? [touch] : [] },
+        changedTouches: { value: [touch] },
       })
+      return event
     }
 
-    // touchstart：记录起始坐标
-    const startTouch = makeTouch(startX, startY)
-    const startEvent = new TouchEvent('touchstart', {
-      touches: [startTouch],
-      targetTouches: [startTouch],
-      changedTouches: [startTouch],
-      bubbles: true,
-      cancelable: true,
-    })
-    sidebar.dispatchEvent(startEvent)
-
-    // touchmove：移动到结束坐标
-    const moveTouch = makeTouch(endX, startY)
-    const moveEvent = new TouchEvent('touchmove', {
-      touches: [moveTouch],
-      targetTouches: [moveTouch],
-      changedTouches: [moveTouch],
-      bubbles: true,
-      cancelable: true,
-    })
-    sidebar.dispatchEvent(moveEvent)
-
-    // touchend：触摸结束，touches 为空，changedTouches 包含最后一个触摸点
-    const endEvent = new TouchEvent('touchend', {
-      touches: [],
-      targetTouches: [],
-      changedTouches: [moveTouch],
-      bubbles: true,
-      cancelable: true,
-    })
-    sidebar.dispatchEvent(endEvent)
+    sidebar.dispatchEvent(makeTouchEvent('touchstart', startX, true))
+    sidebar.dispatchEvent(makeTouchEvent('touchmove', endX, true))
+    sidebar.dispatchEvent(makeTouchEvent('touchend', endX, false))
   }, { startX, startY, deltaX })
 }
 
@@ -203,6 +170,7 @@ test.describe('移动端滑动手势关闭侧边栏 (375×812)', () => {
     // 打开侧边栏抽屉
     const mobileMenu = page.locator('[data-testid="mobile-menu-btn"]').first()
     await expect(mobileMenu).toBeVisible({ timeout: 15_000 })
+    await expect(mobileMenu).toHaveAttribute('aria-expanded', 'false')
     await mobileMenu.click()
 
     const sidebar = page.locator('[data-testid="sidebar"]').first()
@@ -241,6 +209,7 @@ test.describe('移动端滑动手势关闭侧边栏 (375×812)', () => {
     await page.waitForLoadState('domcontentloaded')
 
     const mobileMenu = page.locator('[data-testid="mobile-menu-btn"]').first()
+    await expect(mobileMenu).toHaveAttribute('aria-expanded', 'false')
     await mobileMenu.click()
 
     const sidebar = page.locator('[data-testid="sidebar"]').first()

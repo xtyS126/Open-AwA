@@ -169,6 +169,28 @@ describe('Sidebar 移动端滑动手势与焦点恢复', () => {
     expect(aside.className).not.toContain('mobile-open')
   })
 
+  it('同一批触摸事件中向左滑动超过阈值时抽屉关闭', () => {
+    const { menuBtn, aside } = renderSidebar()
+
+    act(() => {
+      menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    act(() => {
+      aside.dispatchEvent(new TouchEvent('touchstart', {
+        bubbles: true,
+        touches: [{ clientX: 200 } as Touch],
+      }))
+      aside.dispatchEvent(new TouchEvent('touchmove', {
+        bubbles: true,
+        touches: [{ clientX: 100 } as Touch],
+      }))
+      aside.dispatchEvent(new TouchEvent('touchend', { bubbles: true }))
+    })
+
+    expect(aside.className).not.toContain('mobile-open')
+  })
+
   it('向左滑动未达 60px 阈值时抽屉保持打开', () => {
     const { menuBtn, aside } = renderSidebar()
 

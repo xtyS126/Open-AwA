@@ -8,7 +8,7 @@ import json
 import time
 import uuid
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 from loguru import logger
 from .comprehension import ComprehensionLayer
 from .planner import PlanningLayer
@@ -51,48 +51,61 @@ from sqlalchemy.orm import Session
 # 活跃 Agent 任务容量上限：防止异常断流或取消链路不完整时字典无限增长
 # 工具调用回环上限和任务容量均通过 settings 配置，支持不同部署环境调优。
 _MAX_ACTIVE_AGENT_TASKS = 1000  # 从 settings 读取的默认值，实际由注册逻辑使用
-# 全局活跃 Agent 任务字典：session_id -> asyncio.Task
-# 供取消端点查找并取消正在执行的 Agent 异步任务
-_active_agent_tasks: Dict[str, asyncio.Task] = {}
+# 全局活跃 Agent 任务字典：(user_id, session_id) -> asyncio.Task 集合
+# 用户维度用于阻断同名会话的跨用户取消，集合用于覆盖同会话多端并发任务
+_active_agent_tasks: Dict[Tuple[str, str], Set[asyncio.Task]] = {}
 
 
-def register_agent_task(session_id: str, task: asyncio.Task) -> None:
+def register_agent_task(user_id: str, session_id: str, task: asyncio.Task) -> None:
     """注册活跃的 Agent 异步任务，供取消端点查找。
     容量满时自动清理已完成的任务，仍满则拒绝注册并告警。
     """
     global _active_agent_tasks
-    if len(_active_agent_tasks) >= _MAX_ACTIVE_AGENT_TASKS:
+    active_count = sum(len(tasks) for tasks in _active_agent_tasks.values())
+    if active_count >= _MAX_ACTIVE_AGENT_TASKS:
         _cleanup_completed_tasks()
-        if len(_active_agent_tasks) >= _MAX_ACTIVE_AGENT_TASKS:
+        active_count = sum(len(tasks) for tasks in _active_agent_tasks.values())
+        if active_count >= _MAX_ACTIVE_AGENT_TASKS:
             logger.bind(event="agent_task_capacity_reached", module="agent",
-                        active_count=len(_active_agent_tasks),
+                        active_count=active_count,
                         max_capacity=_MAX_ACTIVE_AGENT_TASKS
                         ).warning("活跃 Agent 任务字典达到容量上限，拒绝注册新任务")
             return
-    _active_agent_tasks[session_id] = task
+    key = (str(user_id), str(session_id))
+    _active_agent_tasks.setdefault(key, set()).add(task)
 
 
-def unregister_agent_task(session_id: str) -> None:
+def unregister_agent_task(user_id: str, session_id: str, task: Optional[asyncio.Task] = None) -> None:
     """移除已完成的 Agent 任务。"""
-    _active_agent_tasks.pop(session_id, None)
+    key = (str(user_id), str(session_id))
+    tasks = _active_agent_tasks.get(key)
+    if not tasks:
+        return
+    target = task or asyncio.current_task()
+    if target is not None:
+        tasks.discard(target)
+    if not tasks:
+        _active_agent_tasks.pop(key, None)
 
 
-def get_agent_task(session_id: str) -> Optional[asyncio.Task]:
-    """获取指定会话的活跃 Agent 任务，不存在时返回 None。"""
-    return _active_agent_tasks.get(session_id)
+def get_agent_tasks(user_id: str, session_id: str) -> List[asyncio.Task]:
+    """获取指定用户会话的全部活跃 Agent 任务。"""
+    return list(_active_agent_tasks.get((str(user_id), str(session_id)), set()))
 
 
 def _cleanup_completed_tasks() -> None:
     """清理已完成或已取消的 Agent 任务条目，防止内存泄漏。"""
-    completed_sessions = [
-        sid for sid, task in _active_agent_tasks.items()
-        if task.done()
-    ]
-    for sid in completed_sessions:
-        _active_agent_tasks.pop(sid, None)
-    if completed_sessions:
+    removed_count = 0
+    for key, tasks in list(_active_agent_tasks.items()):
+        active_tasks = {task for task in tasks if not task.done()}
+        removed_count += len(tasks) - len(active_tasks)
+        if active_tasks:
+            _active_agent_tasks[key] = active_tasks
+        else:
+            _active_agent_tasks.pop(key, None)
+    if removed_count:
         logger.bind(event="agent_tasks_cleanup", module="agent",
-                    removed=len(completed_sessions),
+                    removed=removed_count,
                     remaining=len(_active_agent_tasks)
                     ).debug("清理已完成的 Agent 任务条目")
 
@@ -2107,11 +2120,12 @@ class AIAgent:
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")
+        task_user_id = str(context.get("user_id", ""))
 
         # 将当前协程注册为活跃任务，供取消端点查找
         current_task = asyncio.current_task()
         if current_task is not None and session_id:
-            register_agent_task(session_id, current_task)
+            register_agent_task(task_user_id, session_id, current_task)
 
         # 提前初始化流式处理变量，避免 try 块早期异常导致 finally 中引用未定义变量
         full_content = ""
@@ -2623,7 +2637,7 @@ class AIAgent:
                 self.root_abort_controller.abort(reason="process_stream_finished")
                 self.root_abort_controller = None
 
-            unregister_agent_task(session_id)
+            unregister_agent_task(task_user_id, session_id, current_task)
 
     async def process(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -2666,11 +2680,12 @@ class AIAgent:
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")
+        task_user_id = str(context.get("user_id", ""))
 
         # 将当前协程注册为活跃任务，供取消端点查找
         current_task = asyncio.current_task()
         if current_task is not None and session_id:
-            register_agent_task(session_id, current_task)
+            register_agent_task(task_user_id, session_id, current_task)
 
         # 提前初始化流式处理变量，避免 try 块早期异常导致 finally 中引用未定义变量
         full_content = ""
@@ -2949,7 +2964,7 @@ class AIAgent:
                 "plugin_results": [],
             }
         finally:
-            unregister_agent_task(session_id)
+            unregister_agent_task(task_user_id, session_id, current_task)
     
     async def _auto_execute_skills_and_plugins(
         self,

@@ -85,11 +85,24 @@ class LockAcquireError(BootstrapError):
 BACKEND_DIR: Path = Path(__file__).resolve().parent.parent
 """backend 目录绝对路径。"""
 
-ENV_LOCAL_PATH: Path = BACKEND_DIR / ".env.local"
-""".env.local 文件路径（与 generate_api_key.py 保持一致）。"""
 
-INIT_LOCK_PATH: Path = BACKEND_DIR / ".init.lock"
-"""初始化锁文件路径（与 .env.local 同目录）。"""
+def _resolve_bootstrap_path(env_name: str, default_path: Path) -> Path:
+    """解析可选的首次部署文件路径覆盖。"""
+    configured = os.getenv(env_name, "").strip()
+    return Path(configured).expanduser() if configured else default_path
+
+
+ENV_LOCAL_PATH: Path = _resolve_bootstrap_path(
+    "OPENAWA_ENV_LOCAL_PATH",
+    BACKEND_DIR / ".env.local",
+)
+""".env.local 文件路径；测试可通过 OPENAWA_ENV_LOCAL_PATH 隔离覆盖。"""
+
+INIT_LOCK_PATH: Path = _resolve_bootstrap_path(
+    "OPENAWA_INIT_LOCK_PATH",
+    BACKEND_DIR / ".init.lock",
+)
+"""初始化锁文件路径；测试可通过 OPENAWA_INIT_LOCK_PATH 隔离覆盖。"""
 
 # 三密钥变量名
 SECRET_KEY_NAMES: tuple[str, ...] = ("JWT_SECRET_KEY", "CSRF_SECRET_KEY", "ENCRYPTION_KEY")

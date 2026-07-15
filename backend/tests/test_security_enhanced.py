@@ -202,52 +202,47 @@ class TestFineGrainedPermissionManager:
     def test_get_nonexistent_role_returns_none(self, permission_manager):
         assert permission_manager.get_role("nonexistent") is None
 
-    def test_check_permission_admin_role(self, permission_manager, db_session):
+    @pytest.mark.asyncio
+    async def test_check_permission_admin_role(self, permission_manager, db_session):
         """admin 角色拥有所有权限。"""
         db_session.add(Role(name="admin", display_name="管理员", permissions='["*"]'))
         db_session.add(UserRole(user_id="admin_user", role_name="admin"))
         db_session.commit()
-        allowed = asyncio.get_event_loop().run_until_complete(
-            permission_manager.check_permission("admin_user", "plugin:install")
-        )
+        allowed = await permission_manager.check_permission("admin_user", "plugin:install")
         assert allowed is True
 
-    def test_check_permission_custom_role_allowed(self, permission_manager, db_session):
+    @pytest.mark.asyncio
+    async def test_check_permission_custom_role_allowed(self, permission_manager, db_session):
         """自定义角色权限校验通过。"""
         permission_manager.create_role(name="custom_a", permissions=["plugin:install", "skill:read"])
         db_session.add(UserRole(user_id="user_a", role_name="custom_a"))
         db_session.commit()
-        allowed = asyncio.get_event_loop().run_until_complete(
-            permission_manager.check_permission("user_a", "plugin:install")
-        )
+        allowed = await permission_manager.check_permission("user_a", "plugin:install")
         assert allowed is True
 
-    def test_check_permission_custom_role_denied(self, permission_manager, db_session):
+    @pytest.mark.asyncio
+    async def test_check_permission_custom_role_denied(self, permission_manager, db_session):
         """自定义角色权限校验拒绝。"""
         permission_manager.create_role(name="custom_b", permissions=["plugin:read"])
         db_session.add(UserRole(user_id="user_b", role_name="custom_b"))
         db_session.commit()
-        allowed = asyncio.get_event_loop().run_until_complete(
-            permission_manager.check_permission("user_b", "plugin:install")
-        )
+        allowed = await permission_manager.check_permission("user_b", "plugin:install")
         assert allowed is False
 
-    def test_check_permission_wildcard_match(self, permission_manager, db_session):
+    @pytest.mark.asyncio
+    async def test_check_permission_wildcard_match(self, permission_manager, db_session):
         """层级通配符匹配。"""
         permission_manager.create_role(name="wildcard_role", permissions=["skill:*"])
         db_session.add(UserRole(user_id="user_w", role_name="wildcard_role"))
         db_session.commit()
-        allowed = asyncio.get_event_loop().run_until_complete(
-            permission_manager.check_permission("user_w", "skill:execute")
-        )
+        allowed = await permission_manager.check_permission("user_w", "skill:execute")
         assert allowed is True
 
-    def test_check_permission_empty_permission_returns_false(self, permission_manager, db_session):
+    @pytest.mark.asyncio
+    async def test_check_permission_empty_permission_returns_false(self, permission_manager, db_session):
         db_session.add(UserRole(user_id="user_e", role_name="viewer"))
         db_session.commit()
-        allowed = asyncio.get_event_loop().run_until_complete(
-            permission_manager.check_permission("user_e", "")
-        )
+        allowed = await permission_manager.check_permission("user_e", "")
         assert allowed is False
 
     def test_list_known_permissions(self, permission_manager):

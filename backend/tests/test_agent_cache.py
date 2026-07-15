@@ -3,8 +3,8 @@ AIAgent 工具定义实例级缓存单元测试。
 
 覆盖 backend/core/agent.py 的 _inject_runtime_capabilities 缓存逻辑：
 - 首次调用时构建工具并写入 _tools_cache
-- 第二次相同 context 命中缓存（_tools_cache_version 一致）
-- 技能/插件集合变化时版本变化，缓存失效重建
+- 第二次相同 context 在 TTL 内命中实例级缓存
+- 技能/插件集合变化后通过显式失效触发重建
 
 通过 AIAgent() 无 db_session 实例化 + mock 外部依赖，
 避免触发真实数据库/向量库/插件目录加载。
@@ -86,15 +86,17 @@ async def test_first_call_builds_tools_cache() -> None:
 
     # 首次调用前缓存应为空
     assert agent._tools_cache is None
-    assert agent._tools_cache_version == ""
+    assert agent._capabilities_cache is None
+    assert agent._capabilities_cache_ts == 0.0
 
     context: Dict[str, Any] = {"enable_skill_plugin": True, "session_id": "sess-1"}
     await agent._inject_runtime_capabilities(context)
 
-    # 首次调用后缓存非空、版本非空
+    # 首次调用后工具与能力缓存均已建立
     assert agent._tools_cache is not None
     assert len(agent._tools_cache) > 0
-    assert agent._tools_cache_version != ""
+    assert agent._capabilities_cache is context["agent_capabilities"]
+    assert agent._capabilities_cache_ts > 0.0
     # _build_native_tools 应被调用一次
     assert mock_build.call_count == 1
     # context["_tools"] 也应被填充（同一次 process_stream 内二次访问走 context 缓存）
@@ -117,24 +119,24 @@ async def test_second_call_with_same_capabilities_hits_cache() -> None:
     await agent._inject_runtime_capabilities(context1)
 
     first_cache = agent._tools_cache
-    first_version = agent._tools_cache_version
+    first_timestamp = agent._capabilities_cache_ts
     assert mock_build.call_count == 1
 
     # 第二次调用：context 中没有 agent_capabilities，重新走缓存判定路径
-    # 由于技能/插件集合一致，_compute_tools_version 返回相同版本，应命中缓存
+    # TTL 未过期时应直接命中实例级缓存
     context2: Dict[str, Any] = {"enable_skill_plugin": True, "session_id": "sess-2"}
     await agent._inject_runtime_capabilities(context2)
 
     # 缓存对象应是同一份（未重建）
     assert agent._tools_cache is first_cache
-    assert agent._tools_cache_version == first_version
+    assert agent._capabilities_cache_ts == first_timestamp
     # _build_native_tools 不应再次被调用
     assert mock_build.call_count == 1
 
 
 @pytest.mark.asyncio
-async def test_skill_changes_invalidate_cache_and_rebuild() -> None:
-    """技能列表变化时版本变化，缓存失效重建。"""
+async def test_skill_changes_rebuild_after_explicit_invalidation() -> None:
+    """技能列表变化后显式失效缓存会触发重建。"""
     agent = _make_partial_agent()
     mock_build = _stub_capabilities(
         agent,
@@ -146,7 +148,6 @@ async def test_skill_changes_invalidate_cache_and_rebuild() -> None:
 
     context1: Dict[str, Any] = {"enable_skill_plugin": True, "session_id": "sess-1"}
     await agent._inject_runtime_capabilities(context1)
-    first_version = agent._tools_cache_version
     first_cache = agent._tools_cache
     assert mock_build.call_count == 1
 
@@ -155,11 +156,10 @@ async def test_skill_changes_invalidate_cache_and_rebuild() -> None:
         return_value=[{"name": "skill1"}, {"name": "skill2"}]
     )
 
+    agent.invalidate_capabilities_cache()
     context2: Dict[str, Any] = {"enable_skill_plugin": True, "session_id": "sess-2"}
     await agent._inject_runtime_capabilities(context2)
 
-    # 版本应变化
-    assert agent._tools_cache_version != first_version
     # 缓存应被重建（不是同一对象）
     assert agent._tools_cache is not first_cache
     # _build_native_tools 应被再次调用
@@ -167,8 +167,8 @@ async def test_skill_changes_invalidate_cache_and_rebuild() -> None:
 
 
 @pytest.mark.asyncio
-async def test_plugin_changes_invalidate_cache_and_rebuild() -> None:
-    """插件工具集合变化时版本变化，缓存失效重建。"""
+async def test_plugin_changes_rebuild_after_explicit_invalidation() -> None:
+    """插件工具集合变化后显式失效缓存会触发重建。"""
     agent = _make_partial_agent()
     mock_build = _stub_capabilities(
         agent,
@@ -180,7 +180,6 @@ async def test_plugin_changes_invalidate_cache_and_rebuild() -> None:
 
     context1: Dict[str, Any] = {"enable_skill_plugin": True}
     await agent._inject_runtime_capabilities(context1)
-    first_version = agent._tools_cache_version
     assert mock_build.call_count == 1
 
     # 改变插件工具集合（新增 tool2）
@@ -194,10 +193,10 @@ async def test_plugin_changes_invalidate_cache_and_rebuild() -> None:
         ]
     )
 
+    agent.invalidate_capabilities_cache()
     context2: Dict[str, Any] = {"enable_skill_plugin": True}
     await agent._inject_runtime_capabilities(context2)
 
-    assert agent._tools_cache_version != first_version
     assert mock_build.call_count == 2
 
 

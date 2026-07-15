@@ -131,3 +131,19 @@ describe('AppearanceTabContainer 语言选择器', () => {
     expect(localStorage.getItem('openawa_locale')).toBe('en-US')
   })
 })
+
+describe('i18n 初始异步加载', () => {
+  it('初始为 en-US 时加载后解除语言选择器禁用状态', async () => {
+    localStorage.setItem('openawa_locale', 'en-US')
+    vi.resetModules()
+
+    const { useI18nStore: initialStore } = await import('@/i18n')
+
+    expect(initialStore.getState().locale).toBe('en-US')
+    await vi.waitFor(() => {
+      expect(initialStore.getState().isLocaleLoaded).toBe(true)
+    })
+
+    localStorage.clear()
+  })
+})

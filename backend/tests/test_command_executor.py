@@ -5,6 +5,8 @@ CommandExecutor 和 EventLog 单元测试。
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 from core.command_executor import (
@@ -76,6 +78,23 @@ subtask: true
         )
         rendered = cmd.render_template()
         assert "hello world" in rendered
+
+    def test_shell_expansion_decodes_output_as_utf8(self, monkeypatch):
+        """子进程输出必须按 UTF-8 容错解码，避免 Windows 默认 GBK 线程异常。"""
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(stdout="中文输出", stderr="", returncode=0)
+
+        monkeypatch.setattr("core.command_executor.subprocess.run", fake_run)
+        cmd = CommandDefinition(name="test", template="Result: !`git status`")
+
+        rendered = cmd.render_template()
+
+        assert "中文输出" in rendered
+        assert captured["encoding"] == "utf-8"
+        assert captured["errors"] == "replace"
 
 
 class TestCommandExecutor:

@@ -431,6 +431,7 @@ cd D:\代码\Open-AwA\Android\Open-AwA-Android
 - **SECRET_KEY auto-generated**: 不设置环境变量时自动生成，生产环境必须显式配置
 - **Chat supports both SSE and WebSocket**: 修改聊天功能时需同时测试两条路径
 - **Plugin hot update state is ephemeral**: Snapshots and active/standby slots are in-memory only, lost on restart
+- **Plugin rollback supports async lifecycle**: 恢复实例时必须等待异步 `initialize()` 完成并校验结果，禁止直接调用后立即注册实例
 - **Windows ACL restrictions**: Some directories have restrictive permissions; use elevated PowerShell to replace existing files when tools fail with EPERM
 
 ---

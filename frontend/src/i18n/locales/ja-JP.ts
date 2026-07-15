@@ -231,6 +231,7 @@ const jaJP: Record<string, string> = {
   "chat.tool.subagentDone": "サブエージェント完了",
   "chat.tool.subagentRunning": "サブエージェント実行中",
   "chat.context.compressing": "圧縮中...",
+  "chat.send": "送信",
   "chat.history.title": "履歴",
   "chat.history.newChat": "新規チャット",
   "chat.history.searchPlaceholder": "タイトル・概要検索",

@@ -279,10 +279,9 @@ async def chat(
     ).info("chat request received")
 
     try:
-        # 通过 AIAgentRegistry 复用 AIAgent 实例，避免每请求重复构造重量级依赖
-        # get_or_create 内部会调用 agent.bind_db(db) 绑定当前请求的数据库会话
+        # 通过 AIAgentRegistry 复用 AIAgent 实例，并在整个请求期间独占用户级实例
         _registry_t0 = _chat_time.time()
-        agent = get_registry().get_or_create(current_user.id, db)
+        registry = get_registry()
         logger.bind(
             event="ttft_stage",
             module="chat",
@@ -293,12 +292,19 @@ async def chat(
         ).info("阶段耗时: agent_registry")
 
         if message.mode == "stream":
+            async def leased_stream() -> AsyncGenerator[Dict[str, Any], None]:
+                """在 SSE 消费完整生命周期内持有用户级 Agent 租约。"""
+                async with registry.acquire(current_user.id, db) as agent:
+                    async for chunk in agent.process_stream(message.message, context):
+                        yield chunk
+
             # 流式：包装生成器，在流结束后触发 N 轮兜底（由 _stream_with_profile_trigger 的 finally 负责）
-            stream_gen = agent.process_stream(message.message, context)
+            stream_gen = leased_stream()
             wrapped_gen = _stream_with_profile_trigger(stream_gen, current_user.id)
             return await build_sse_response(wrapped_gen)
 
-        result = await agent.process(message.message, context)
+        async with registry.acquire(current_user.id, db) as agent:
+            result = await agent.process(message.message, context)
         # 非流式：chat 完成后启动后台任务递增计数器 + 检查 N 轮兜底
         # asyncio.create_task 确保不阻塞 chat 响应，任务在后台继续执行
         asyncio.create_task(_trigger_profile_n_turn_fallback(current_user.id))
@@ -417,24 +423,27 @@ async def cancel_agent_task(
     current_user=Depends(get_current_user)
 ) -> Dict[str, Any]:
     """取消指定会话中正在执行的 Agent 任务。"""
-    from core.agent import get_agent_task, unregister_agent_task
+    from core.agent import get_agent_tasks
 
-    task = get_agent_task(session_id)
-    if task is None:
+    tasks = get_agent_tasks(str(current_user.id), session_id)
+    active_tasks = [task for task in tasks if not task.done()]
+    if not active_tasks:
         raise HTTPException(status_code=404, detail="没有找到正在执行的任务")
 
-    if task.done():
-        unregister_agent_task(session_id)
-        raise HTTPException(status_code=404, detail="任务已经完成")
-
-    task.cancel()
+    for task in active_tasks:
+        task.cancel()
     logger.bind(
         event="chat_cancel",
         session_id=session_id,
         user_id=current_user.id
     ).info("agent task cancelled by user")
 
-    return {"status": "cancelled", "session_id": session_id, "message": "任务取消请求已发送"}
+    return {
+        "status": "cancelled",
+        "session_id": session_id,
+        "cancelled_count": len(active_tasks),
+        "message": "任务取消请求已发送",
+    }
 
 
 # ---- 用户反馈 ----

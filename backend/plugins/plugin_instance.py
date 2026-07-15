@@ -33,3 +33,18 @@ def get():
                 _instance = PluginManager()
                 logger.warning("插件管理器单例未经 init() 初始化，已自动创建默认实例")
     return _instance
+
+
+def get_if_initialized():
+    """返回已初始化的插件管理器；尚未初始化时不创建默认实例。"""
+    with _lock:
+        return _instance
+
+
+def reset():
+    """原子移除并返回当前插件管理器，供关闭流程和测试隔离使用。"""
+    global _instance
+    with _lock:
+        previous = _instance
+        _instance = None
+    return previous

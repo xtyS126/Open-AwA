@@ -115,6 +115,7 @@ const renderIcon = (type: string, size = 18) => {
 
   /* 滑动手势状态：touchStartRef 记录起始 x 坐标，dragOffset 记录当前拖动偏移量（仅向左为负）*/
   const touchStartRef = useRef<number | null>(null)
+  const dragOffsetRef = useRef(0)
   const [dragOffset, setDragOffset] = useState(0)
 
   /* 监听窗口大小变化，在非移动端时自动关闭移动端菜单 */
@@ -166,6 +167,7 @@ const renderIcon = (type: string, size = 18) => {
     if (touchStartRef.current === null) return
     const offset = e.touches[0].clientX - touchStartRef.current
     if (offset < 0) {
+      dragOffsetRef.current = offset
       setDragOffset(offset)
     }
   }, [])
@@ -173,12 +175,13 @@ const renderIcon = (type: string, size = 18) => {
   /* 滑动手势：touchend 判断是否达到关闭阈值（向左 > 60px），重置状态 */
   const handleTouchEnd = useCallback(() => {
     if (touchStartRef.current === null) return
-    if (dragOffset < -60) {
+    if (dragOffsetRef.current < -60) {
       setMobileOpen(false)
     }
+    dragOffsetRef.current = 0
     setDragOffset(0)
     touchStartRef.current = null
-  }, [dragOffset])
+  }, [])
 
   /* 抽屉跟手偏移：拖动过程中临时覆盖 transform 与 transition，避免渐变延迟 */
   const asideStyle: React.CSSProperties = dragOffset !== 0
@@ -261,6 +264,7 @@ const renderIcon = (type: string, size = 18) => {
         )}
         <button
           className={styles['collapse-btn']}
+          data-testid="sidebar-collapse-btn"
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
           aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
@@ -366,6 +370,7 @@ const renderIcon = (type: string, size = 18) => {
       <div className={styles['sidebar-footer']}>
         <button
           className={styles['theme-toggle-btn']}
+          data-testid="theme-toggle-btn"
           onClick={toggleTheme}
           title={theme === 'light' ? t('sidebar.darkMode') : t('sidebar.lightMode')}
           aria-label={`${t('sidebar.theme')}: ${theme === 'light' ? t('sidebar.darkMode') : t('sidebar.lightMode')}`}

@@ -231,6 +231,7 @@ const ruRU: Record<string, string> = {
   "chat.tool.subagentDone": "Подагент: готово",
   "chat.tool.subagentRunning": "Подагент: выполняется",
   "chat.context.compressing": "Сжатие...",
+  "chat.send": "Отправить",
   "chat.history.title": "История",
   "chat.history.newChat": "Новый чат",
   "chat.history.searchPlaceholder": "Поиск...",

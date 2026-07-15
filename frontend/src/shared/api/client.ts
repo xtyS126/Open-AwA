@@ -253,6 +253,14 @@ api.interceptors.request.use(async (config) => {
     config.headers['X-CSRF-Token'] = _csrfToken
   }
 
+  // 若请求数据为 FormData,移除默认的 application/json Content-Type,
+  // 由浏览器根据 FormData 自动设置带 boundary 的 multipart/form-data 头。
+  // 否则 axios transformRequest 会因默认 application/json 头而把 FormData 误序列化为 JSON,
+  // 导致后端 multipart 解析失败(对应宠物导入 400 空响应问题)。
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    config.headers.delete('Content-Type')
+  }
+
   // 防御性清洗：移除 header 值中的非 ISO-8859-1 字符
   // 防止浏览器 setRequestHeader 抛出异常导致请求静默失败
   sanitizeHeaders(asRecord(config.headers))

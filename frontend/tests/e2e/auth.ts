@@ -4,11 +4,15 @@ const backendPort = process.env.OPENAWA_E2E_BACKEND_PORT || '18000'
 const backendApiBase = `http://127.0.0.1:${backendPort}/api`
 
 export const E2E_ADMIN_USERNAME = 'admin'
-export const E2E_ADMIN_PASSWORD = process.env.OPENAWA_ADMIN_PASSWORD || process.env.E2E_ADMIN_PASSWORD || 'openawa-e2e-admin'
+export const E2E_ADMIN_PASSWORD = process.env.OPENAWA_ADMIN_PASSWORD || process.env.E2E_ADMIN_PASSWORD || 'OpenAwAE2e1'
 
 // E2E 测试 API Key：默认值与 playwright.config.ts 中后端 OPENAWA_API_KEY 保持一致
 // 单用户模式下登录页使用 API Key 校验（调用 /auth/me），不再使用用户名/密码
 export const E2E_API_KEY = process.env.OPENAWA_API_KEY || process.env.OPENAWA_E2E_API_KEY || 'openawa-e2e-api-key-at-least-32-characters'
+
+export function getApiKey(): string {
+  return E2E_API_KEY
+}
 
 export async function loginAsAdminApi(request: APIRequestContext) {
   const loginResponse = await request.post(`${backendApiBase}/auth/login`, {
@@ -21,29 +25,31 @@ export async function loginAsAdminApi(request: APIRequestContext) {
 
   const loginJson = await loginResponse.json()
   const token = loginJson.access_token
+  const csrfToken = loginJson.csrf_token
   expect(token).toBeTruthy()
+  expect(csrfToken).toBeTruthy()
 
   const storageState = await request.storageState()
-  const csrfToken = storageState.cookies.find((cookie) => cookie.name === 'csrf_token')?.value
 
   return {
     token,
-    csrfToken: csrfToken ?? null,
+    csrfToken: csrfToken as string,
     cookies: storageState.cookies,
   }
 }
 
 export async function loginAsAdminPage(page: Page, loginUrl = '/login') {
   await page.goto(loginUrl)
-  // 等待 API Key 输入框可见（页面加载完成标志）
-  await expect(page.locator('#apiKey')).toBeVisible({ timeout: 30_000 })
-  await page.locator('#apiKey').fill(E2E_API_KEY)
-  // 登录页提交按钮文案为"连接"（加载中变为"验证中..."）
+  const apiKeyInput = page.getByLabel('访问密钥')
+  await expect(apiKeyInput).toBeVisible({ timeout: 30_000 })
+  await apiKeyInput.fill(E2E_API_KEY)
   await page.getByRole('button', { name: '连接' }).click()
-  // 校验通过后前端路由守卫自动跳转到 /chat
-  await page.waitForURL(/\/chat/, { timeout: 30_000 })
+  await expect(page).toHaveURL(/\/chat(?:\/|$)/, { timeout: 30_000 })
+  await expect(page.getByTestId('chat-input-container')).toBeVisible({ timeout: 30_000 })
 }
 
 export async function loginAndSaveState(page: Page, loginUrl = '/login') {
   await loginAsAdminPage(page, loginUrl)
 }
+
+export const loginAsAdmin = loginAsAdminPage

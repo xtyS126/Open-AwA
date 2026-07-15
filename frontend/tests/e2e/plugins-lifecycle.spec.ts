@@ -9,32 +9,25 @@ test.describe('插件生命周期 E2E', () => {
   test('插件管理页面渲染正常', async ({ page }) => {
     await page.goto('/plugins/manage')
 
-    await expect(page.getByText('插件管理')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: '插件管理' })).toBeVisible({ timeout: 20_000 })
 
-    // 验证导入插件按钮存在
-    const importButton = page.getByRole('button', { name: '导入插件' }).first()
-    await expect(importButton).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('button', { name: '刷新' })).toBeVisible()
+    await expect(page.getByPlaceholder('搜索插件名称 / 版本 / 作者 / 简介')).toBeVisible()
   })
 
   test('插件列表渲染', async ({ page }) => {
     await page.goto('/plugins/manage')
 
-    await expect(page.getByText('插件管理')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: '插件管理' })).toBeVisible({ timeout: 20_000 })
 
-    // 验证页面中存在插件列表区域或空状态提示
-    const pluginList = page.locator('.plugin-list, [data-testid="plugin-list"], table, .plugin-grid').first()
-    const hasPlugins = await pluginList.isVisible({ timeout: 10_000 }).catch(() => false)
+    const userSection = page.getByRole('heading', { name: /User Plugins|用户插件/ })
+    const builtinSection = page.getByRole('heading', { name: /System Built-in Plugins|系统内置插件/ })
+    const globalEmptyState = page.getByText(/还没有安装任何插件|没有匹配的插件/)
+    const hasPluginSection = await userSection.isVisible().catch(() => false)
+      || await builtinSection.isVisible().catch(() => false)
+    const hasEmptyState = await globalEmptyState.isVisible().catch(() => false)
 
-    if (hasPlugins) {
-      await expect(pluginList).toBeVisible()
-    }
-
-    // 检查是否有空状态提示
-    const emptyState = page.locator('text=暂无插件, text=尚未安装, text=No plugins').first()
-    const hasEmptyState = await emptyState.isVisible({ timeout: 5_000 }).catch(() => false)
-
-    // 至少应有插件列表或空状态提示其中之一
-    expect(hasPlugins || hasEmptyState).toBeTruthy()
+    expect(hasPluginSection || hasEmptyState).toBeTruthy()
   })
 
   test('插件市场页面渲染', async ({ page }) => {
@@ -55,7 +48,7 @@ test.describe('插件生命周期 E2E', () => {
   test('插件详情查看', async ({ page }) => {
     await page.goto('/plugins/manage')
 
-    await expect(page.getByText('插件管理')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: '插件管理' })).toBeVisible({ timeout: 20_000 })
 
     // 查找可点击的插件项
     const pluginItems = page.locator('[role="button"], a').filter({ hasText: /插件|plugin/i })
@@ -75,7 +68,7 @@ test.describe('插件生命周期 E2E', () => {
   test('安装/卸载交互', async ({ page }) => {
     await page.goto('/plugins/manage')
 
-    await expect(page.getByText('插件管理')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: '插件管理' })).toBeVisible({ timeout: 20_000 })
 
     // 查找安装或卸载按钮
     const installButton = page.getByRole('button', { name: /安装|Install/ }).first()
@@ -94,7 +87,7 @@ test.describe('插件生命周期 E2E', () => {
         await confirmDialog.getByRole('button', { name: /取消|Cancel/ }).first().click()
       }
       await page.waitForTimeout(1_000)
-      await expect(page.getByText('插件管理')).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByRole('heading', { name: '插件管理' })).toBeVisible({ timeout: 10_000 })
     }
 
     if (hasUninstallBtn) {
@@ -106,30 +99,26 @@ test.describe('插件生命周期 E2E', () => {
         await confirmDialog.getByRole('button', { name: /取消|Cancel/ }).first().click()
       }
       await page.waitForTimeout(1_000)
-      await expect(page.getByText('插件管理')).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByRole('heading', { name: '插件管理' })).toBeVisible({ timeout: 10_000 })
     }
 
     // 如果既没有安装也没有卸载按钮，验证页面仍然正常
     if (!hasInstallBtn && !hasUninstallBtn) {
-      await expect(page.getByText('插件管理')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '插件管理' })).toBeVisible()
     }
   })
 
-  test('导入插件模态框', async ({ page }) => {
+  test('插件搜索与刷新控件', async ({ page }) => {
     await page.goto('/plugins/manage')
 
-    await expect(page.getByText('插件管理')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: '插件管理' })).toBeVisible({ timeout: 20_000 })
 
-    const importButton = page.getByRole('button', { name: '导入插件' }).first()
-    await importButton.click()
+    const searchInput = page.getByPlaceholder('搜索插件名称 / 版本 / 作者 / 简介')
+    await expect(searchInput).toBeVisible()
+    await searchInput.fill('system-tools')
+    await expect(page.getByText('system-tools').first()).toBeVisible()
 
-    // 验证导入模态框或文件上传 UI 出现
-    const dialog = page.getByRole('dialog')
-    const fileInput = page.locator('input[type="file"]')
-
-    const hasDialog = await dialog.isVisible({ timeout: 5_000 }).catch(() => false)
-    const hasFileInput = await fileInput.isVisible({ timeout: 5_000 }).catch(() => false)
-
-    expect(hasDialog || hasFileInput).toBeTruthy()
+    await page.getByRole('button', { name: '刷新' }).click()
+    await expect(page.getByRole('heading', { name: '插件管理' })).toBeVisible()
   })
 })

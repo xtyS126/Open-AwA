@@ -558,7 +558,8 @@ def _make_fake_descriptor(name: str = "fake_skill") -> Any:
     )
 
 
-def test_initialize_loads_skills_when_vendored_available(monkeypatch):
+@pytest.mark.asyncio
+async def test_initialize_loads_skills_when_vendored_available(monkeypatch):
     """vendored 模块加载成功且 build_openclaw_skills 返回 descriptors 时，应注册到 _skills。"""
     adapter = OpenBiliClawAdapter()
 
@@ -579,9 +580,7 @@ def test_initialize_loads_skills_when_vendored_available(monkeypatch):
 
     monkeypatch.setattr("importlib.import_module", fake_import)
 
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(adapter.initialize())
+    await adapter.initialize()
 
     # 应成功加载 2 个技能
     tools = adapter.get_tools()
@@ -594,7 +593,8 @@ def test_initialize_loads_skills_when_vendored_available(monkeypatch):
     assert adapter.get_warnings() == []
 
 
-def test_initialize_records_warning_when_bootstrap_module_missing(monkeypatch):
+@pytest.mark.asyncio
+async def test_initialize_records_warning_when_bootstrap_module_missing(monkeypatch):
     """vendored bootstrap 模块导入失败时，应记录告警并保持空 skills 列表。"""
     adapter = OpenBiliClawAdapter()
 
@@ -605,9 +605,7 @@ def test_initialize_records_warning_when_bootstrap_module_missing(monkeypatch):
 
     monkeypatch.setattr("importlib.import_module", fake_import)
 
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(adapter.initialize())
+    await adapter.initialize()
 
     assert adapter.get_tools() == []
     assert adapter._inner is None
@@ -615,7 +613,8 @@ def test_initialize_records_warning_when_bootstrap_module_missing(monkeypatch):
     assert any("bootstrap" in w for w in warnings)
 
 
-def test_initialize_records_warning_when_build_adapter_missing(monkeypatch):
+@pytest.mark.asyncio
+async def test_initialize_records_warning_when_build_adapter_missing(monkeypatch):
     """bootstrap 模块缺少 build_openclaw_adapter 函数时，应记录告警。"""
     adapter = OpenBiliClawAdapter()
 
@@ -630,16 +629,15 @@ def test_initialize_records_warning_when_build_adapter_missing(monkeypatch):
 
     monkeypatch.setattr("importlib.import_module", fake_import)
 
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(adapter.initialize())
+    await adapter.initialize()
 
     assert adapter.get_tools() == []
     warnings = adapter.get_warnings()
     assert any("build_openclaw_adapter" in w for w in warnings)
 
 
-def test_initialize_records_warning_when_build_adapter_raises(monkeypatch):
+@pytest.mark.asyncio
+async def test_initialize_records_warning_when_build_adapter_raises(monkeypatch):
     """build_openclaw_adapter 抛异常时，应记录告警并降级为空 skills。"""
     adapter = OpenBiliClawAdapter()
 
@@ -655,9 +653,7 @@ def test_initialize_records_warning_when_build_adapter_raises(monkeypatch):
 
     monkeypatch.setattr("importlib.import_module", fake_import)
 
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(adapter.initialize())
+    await adapter.initialize()
 
     assert adapter.get_tools() == []
     assert adapter._inner is None
@@ -665,7 +661,8 @@ def test_initialize_records_warning_when_build_adapter_raises(monkeypatch):
     assert any("OpenClawAdapter 构造失败" in w for w in warnings)
 
 
-def test_initialize_records_warning_when_build_skills_missing(monkeypatch):
+@pytest.mark.asyncio
+async def test_initialize_records_warning_when_build_skills_missing(monkeypatch):
     """skill 模块缺少 build_openclaw_skills 函数时，应记录告警。"""
     adapter = OpenBiliClawAdapter()
 
@@ -684,9 +681,7 @@ def test_initialize_records_warning_when_build_skills_missing(monkeypatch):
 
     monkeypatch.setattr("importlib.import_module", fake_import)
 
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(adapter.initialize())
+    await adapter.initialize()
 
     # inner adapter 应已赋值（build_openclaw_adapter 成功）
     assert adapter._inner == "fake_inner"
@@ -695,7 +690,8 @@ def test_initialize_records_warning_when_build_skills_missing(monkeypatch):
     assert any("build_openclaw_skills" in w for w in warnings)
 
 
-def test_initialize_records_warning_when_build_skills_raises(monkeypatch):
+@pytest.mark.asyncio
+async def test_initialize_records_warning_when_build_skills_raises(monkeypatch):
     """build_openclaw_skills 抛异常时，应记录告警并降级为空 skills。"""
     adapter = OpenBiliClawAdapter()
 
@@ -715,16 +711,15 @@ def test_initialize_records_warning_when_build_skills_raises(monkeypatch):
 
     monkeypatch.setattr("importlib.import_module", fake_import)
 
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(adapter.initialize())
+    await adapter.initialize()
 
     assert adapter.get_tools() == []
     warnings = adapter.get_warnings()
     assert any("build_openclaw_skills 调用失败" in w for w in warnings)
 
 
-def test_initialize_records_warning_when_skills_return_non_list(monkeypatch):
+@pytest.mark.asyncio
+async def test_initialize_records_warning_when_skills_return_non_list(monkeypatch):
     """build_openclaw_skills 返回非 list 时，应记录告警并跳过技能注册。"""
     adapter = OpenBiliClawAdapter()
 
@@ -742,16 +737,15 @@ def test_initialize_records_warning_when_skills_return_non_list(monkeypatch):
 
     monkeypatch.setattr("importlib.import_module", fake_import)
 
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(adapter.initialize())
+    await adapter.initialize()
 
     assert adapter.get_tools() == []
     warnings = adapter.get_warnings()
     assert any("非列表" in w for w in warnings)
 
 
-def test_initialize_skips_invalid_descriptor(monkeypatch):
+@pytest.mark.asyncio
+async def test_initialize_skips_invalid_descriptor(monkeypatch):
     """单个 descriptor 转换失败时应跳过，不影响其他 descriptor 注册。"""
     adapter = OpenBiliClawAdapter()
 
@@ -780,9 +774,7 @@ def test_initialize_skips_invalid_descriptor(monkeypatch):
 
     monkeypatch.setattr("importlib.import_module", fake_import)
 
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(adapter.initialize())
+    await adapter.initialize()
 
     # 只应注册有效的 descriptor
     tools = adapter.get_tools()

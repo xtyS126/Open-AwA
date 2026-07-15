@@ -342,9 +342,9 @@ def init_logging(
 
     level_str = str(log_level or "INFO").upper()
 
-    # 控制台输出（stderr）
+    # 使用进程级原始 stderr，避免测试捕获流关闭后全局日志 sink 失效。
     logger.add(
-        sys.stderr,
+        sys.__stderr__,
         level=level_str,
         serialize=False,
         format=(

@@ -44,6 +44,7 @@ class _DummyUser:
 
 _USER_A = _DummyUser("user-a", "alice")
 _USER_B = _DummyUser("user-b", "bob")
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _override_user(user: _DummyUser):
@@ -210,7 +211,7 @@ class TestCreateSession:
 
     def test_create_returns_session_id(self) -> None:
         """验证创建会话返回 session_id 与空 config_options。"""
-        body = {"agent": "claude_code", "cwd": os.getcwd()}
+        body = {"agent": "claude_code", "cwd": str(_BACKEND_ROOT)}
         with _test_client(user=_USER_A) as client:
             response = client.post("/api/acp/sessions", json=body)
 
@@ -223,12 +224,12 @@ class TestCreateSession:
 
     def test_create_returns_validated_cwd(self) -> None:
         """验证创建会话会返回后端校验后的工作目录。"""
-        body = {"agent": "claude_code", "cwd": os.getcwd()}
+        body = {"agent": "claude_code", "cwd": str(_BACKEND_ROOT)}
         with _test_client(user=_USER_A) as client:
             response = client.post("/api/acp/sessions", json=body)
 
         assert response.status_code == 200, response.text
-        assert response.json()["cwd"] == str(Path(os.getcwd()).resolve())
+        assert response.json()["cwd"] == str(_BACKEND_ROOT.resolve())
 
     def test_unknown_agent_returns_404(self) -> None:
         """验证未知 agent 返回 404。"""

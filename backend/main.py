@@ -449,11 +449,35 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
         finally:
             db.close()
 
-    from core.owner import ensure_owner_user
-    with profiler.step("owner_user_init"):
-        # 启动引导检测：未初始化时记录 WARNING 引导用户通过 POST /api/system/init 完成
-        _detect_and_log_initialization_status()
 
+async def _startup_owner_user_init(profiler: StartupProfiler) -> None:
+    """启动期 owner 用户初始化（仅在系统已初始化时执行）。
+
+    设计契约（与 tests/test_first_run_startup.py 对齐）：
+    - 系统已初始化：调用 ensure_owner_user 确保 owner 存在，并赋予 admin 角色。
+    - 系统未初始化：仅记录 WARNING 引导通过 POST /api/system/init 完成首次部署，
+      保留空用户表，绝不调用 ensure_owner_user（避免在全新实例上提前建出 owner，
+      破坏 /api/system/init 端点与 setup E2E 的"全新实例无用户"前提）。
+
+    Args:
+        profiler: 启动阶段性能分析器，用于包裹启动步骤。
+    """
+    # 启动引导检测：未初始化时记录 WARNING 引导用户通过 POST /api/system/init 完成
+    _detect_and_log_initialization_status()
+
+    from core.initialization import is_initialized
+    if not is_initialized():
+        logger.bind(
+            event="owner_user_init_skipped_uninitialized",
+            module="main",
+        ).info("系统未初始化，跳过 owner 用户创建，等待首次部署初始化端点")
+        return
+
+    from security.rbac import RBACManager
+    from core.owner import ensure_owner_user
+    from db.models import SessionLocal
+
+    with profiler.step("owner_user_init"):
         db = SessionLocal()
         try:
             # 同步 DB 调用包装为 to_thread，避免阻塞事件循环
@@ -937,6 +961,7 @@ async def lifespan(app: FastAPI):
     try:
         await _startup_infrastructure(profiler)
         await _startup_data_init(profiler)
+        await _startup_owner_user_init(profiler)
         await _startup_plugin_system(profiler)
         await _startup_background_tasks(profiler)
         # task_runtime 初始化：回收悬挂会话（原 @router.on_event("startup") 迁移至 lifespan）
@@ -1157,7 +1182,9 @@ async def csrf_protection_middleware(request: Request, call_next):
             )
 
         # 通过 fastapi-csrf-protect 校验 header 中的原始 token 与 Cookie 中的签名 token 是否匹配
-        if not validate_csrf_request(request):
+        # validate_csrf_request 为 async 函数（内部 await csrf.validate_csrf），必须 await；
+        # 此前误写为同步调用会得到未 await 的 coroutine（恒 truthy），导致 CSRF 校验被静默绕过
+        if not await validate_csrf_request(request):
             return JSONResponse(
                 status_code=403,
                 content={

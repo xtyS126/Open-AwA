@@ -19,7 +19,6 @@ from config.security import (
     clear_access_token_cookie,
     create_access_token,
     decode_access_token,
-    generate_csrf_token,
     get_password_hash,
     set_access_token_cookie,
     verify_password,
@@ -28,6 +27,7 @@ from config.settings import settings
 from db.models import LoginDevice, User as UserModel, get_db
 from pydantic import BaseModel, Field, SecretStr
 from security.rate_limit_store import get_rate_limit_store
+from security.csrf_manager import generate_csrf_token_pair
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -136,8 +136,8 @@ async def login(
         user_id=user.id,
     ).info("login succeeded")
 
-    # 为当前用户登录会话生成 per-session CSRF token
-    csrf_token = generate_csrf_token(user_id=user.id, jti=str(jti) if jti else None)
+    # 登录响应同时返回原始 token，并写入配对的签名 Cookie。
+    csrf_token, _ = generate_csrf_token_pair(response)
 
     return {
         "access_token": access_token,

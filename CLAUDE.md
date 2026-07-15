@@ -769,10 +769,19 @@ git commit -m "[Type] 变更描述"
 
 ## 19.1 2026-07-10 回归新增陷阱
 
+- **首次初始化与 E2E 隔离**：Playwright 的全新临时数据库必须配套独立 `INITIALIZED_MARKER_PATH`，或由全局 setup 先完成 `/api/system/init`；否则前端会跳到 `/setup`，依赖 `#apiKey` 的登录助手会让后续 E2E 全部级联失败。首次部署向导需单独覆盖。
 - **Qdrant 缺失 point**：数据库记忆行可能早于向量 point 写入；更新元数据时记录 warning 并跳过缺失 point，不能让记忆 API 失败。
 - **显式 provider 凭证错误**：模型列表接口收到请求体中的 api_key/api_endpoint 后，远端认证失败必须返回结构化错误；仅后台使用已保存配置时允许回退本地模型列表。
 - **Windows shell 内建命令**：`command_executor.py` 保持 `shell=False`，对 echo/pwd 使用平台内建适配，不得改为 shell=True。
 - **WebSocket/SSE E2E**：使用独立临时数据库、向量路径和端口，避免锁定生产数据库或 Qdrant；WebSocket 必须同时验证 Origin 与子协议 token，SSE 必须检查 text/event-stream 和 [DONE]。
+- **Python 3.12 异步测试事件循环**：测试异步接口必须使用 `pytest.mark.asyncio` 与直接 `await`；禁止在同步测试中调用 `asyncio.get_event_loop().run_until_complete(...)`，因为前序测试关闭默认循环后会出现顺序相关的 `RuntimeError: There is no current event loop`。
+- **CSRF 双提交 token 必须成对签发**：`X-CSRF-Token` 使用响应体中的原始 token，`csrf_access_token` Cookie 保存签名 token；登录和 `/api/auth/csrf-token` 必须通过 `generate_csrf_token_pair(response)` 同时写入两者，不能把签名 Cookie 当作 header token，也不能只轮换 Cookie。
+- **插件热更新不得 deepcopy 运行时实例**：active slot 含 `plugin_instance`、sandbox 和 module 引用，直接 `deepcopy(route["slots"]["active"])` 会触发 `cannot pickle 'module' object`；回滚快照只复制可序列化元数据，运行时对象按引用或显式字段保存。
+- **插件回滚必须兼容异步生命周期**：恢复实例的 `initialize()` 可能返回 awaitable，必须复用 `TransitionExecutor._run_coroutine()` 等现有适配器等待完成并校验返回值；直接调用会产生 `coroutine was never awaited`，且插件会在未初始化完成时被注册。
+- **ACP 全局关闭必须在有效事件循环内创建协程聚合**：`_shutdown_acp_services()` 在没有运行中 loop 时必须通过 `asyncio.run()` 执行内部 async 函数，再在其中创建并等待 `asyncio.gather(...)`；禁止先在同步上下文创建 gather，否则 Python 3.12 会留下 `close_all_sessions` 未 await 协程，破坏 pytest 全局清理。
+- **Loguru 全局控制台 sink 不得持有 pytest 捕获流**：`init_logging()` 使用 `sys.__stderr__` 而非按用例替换的 `sys.stderr`；否则日志测试重新初始化后，捕获流关闭会导致后续任意日志出现 `Logging error in Loguru Handler`。
+- **Windows 命令模板输出必须显式 UTF-8 容错解码**：`command_executor.py` 的白名单 `subprocess.run(..., text=True)` 必须传 `encoding="utf-8", errors="replace"`；依赖系统 GBK 会在 Git 等 UTF-8 输出时使 reader thread 触发 `UnicodeDecodeError`。
+- **后端全量 pytest 分组运行目录**：完整串行套件已多次超过 15 分钟；按 8 组覆盖时必须在 `backend` 工作目录执行、关闭共享 coverage 数据文件并每次最多并发两组。否则 ACP 路由测试会因 `os.getcwd()` 落在白名单外产生伪 400。
 
 ## 20. API Path Prefix
 

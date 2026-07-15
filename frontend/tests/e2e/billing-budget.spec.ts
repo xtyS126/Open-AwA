@@ -1,104 +1,90 @@
-import { test, expect } from '@playwright/test'
-import { loginAndSaveState } from './auth'
+import { expect, test } from '@playwright/test'
+import { E2E_API_KEY, loginAsAdminPage } from './auth'
+
+const authorizationHeaders = {
+  Authorization: `Bearer ${E2E_API_KEY}`,
+}
+
+async function getMutationHeaders(page: Parameters<typeof loginAsAdminPage>[0]) {
+  const csrfResponse = await page.request.get('/api/auth/csrf-token', {
+    headers: authorizationHeaders,
+  })
+  expect(
+    csrfResponse.ok(),
+    `获取 CSRF token 失败: ${csrfResponse.status()} ${await csrfResponse.text()}`,
+  ).toBeTruthy()
+
+  const csrfPayload = await csrfResponse.json()
+  expect(typeof csrfPayload.csrf_token).toBe('string')
+  expect(csrfPayload.csrf_token).not.toBe('')
+
+  return {
+    ...authorizationHeaders,
+    'X-CSRF-Token': csrfPayload.csrf_token as string,
+  }
+}
 
 test.describe('计费与预算 E2E', () => {
   test.beforeEach(async ({ page }) => {
-    await loginAndSaveState(page)
+    await loginAsAdminPage(page)
   })
 
-  test('计费页面渲染正常', async ({ page }) => {
+  test('计费页面展示核心操作', async ({ page }) => {
     await page.goto('/billing')
 
-    // 验证计费/使用情况页面基本元素
-    const billingHeading = page.getByRole('heading', { name: /使用情况|计费|Billing/ })
-    const hasBillingHeading = await billingHeading.isVisible({ timeout: 20_000 }).catch(() => false)
-
-    if (hasBillingHeading) {
-      await expect(billingHeading).toBeVisible()
-    }
-
-    // 验证页面正常渲染（没有崩溃白屏）
-    await expect(page.locator('body')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '用量计费' })).toBeVisible()
+    await expect(page.getByText('查看 AI 模型调用的成本与用量统计')).toBeVisible()
+    await expect(page.getByRole('button', { name: '导出CSV' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '同步模型目录' })).toBeVisible()
   })
 
-  test('使用统计展示', async ({ page }) => {
+  test('用量统计卡片与图表完整渲染', async ({ page }) => {
     await page.goto('/billing')
 
-    // 查找使用统计相关的 UI 元素
-    const statsSection = page.locator('text=Token, text=使用量, text=调用次数, text=Usage, [data-testid="usage-stats"]').first()
-    const hasStats = await statsSection.isVisible({ timeout: 15_000 }).catch(() => false)
-
-    if (hasStats) {
-      await expect(statsSection).toBeVisible()
-    }
-
-    // 检查是否有图表或统计卡片
-    const chartOrCard = page.locator('canvas, .chart, .stat-card, [data-testid="stats-card"]').first()
-    const cardVisible = await chartOrCard.isVisible({ timeout: 10_000 }).catch(() => false)
-
-    // 验证至少页面主体已加载完成
-    expect(hasStats || cardVisible || true).toBeTruthy()
-  })
-
-  test('预算相关交互', async ({ page }) => {
-    await page.goto('/billing')
-
-    // 查找预算设置相关的 UI 元素
-    const budgetSection = page.locator('text=预算, text=Budget, text=限额, text=配额').first()
-    const hasBudget = await budgetSection.isVisible({ timeout: 15_000 }).catch(() => false)
-
-    if (hasBudget) {
-      await expect(budgetSection).toBeVisible()
-
-      // 尝试查找预算设置按钮或输入框
-      const budgetInput = page.locator('input[name*="budget"], input[name*="limit"], input[placeholder*="预算"]').first()
-      const budgetButton = page.locator('button:has-text("设置"), button:has-text("保存"), button:has-text("更新")').first()
-
-      const hasInput = await budgetInput.isVisible({ timeout: 3_000 }).catch(() => false)
-      const hasButton = await budgetButton.isVisible({ timeout: 3_000 }).catch(() => false)
-
-      if (hasInput) {
-        const originalValue = await budgetInput.inputValue()
-        await budgetInput.fill('100')
-        await expect(budgetInput).toHaveValue('100')
-        // 恢复原值
-        await budgetInput.fill(originalValue)
-      }
-
-      if (hasButton) {
-        await expect(budgetButton).toBeVisible()
-      }
+    for (const heading of ['总成本', '输入Tokens', '输出Tokens', 'API调用次数', '成本趋势', '模型使用分布']) {
+      await expect(page.getByRole('heading', { name: heading })).toBeVisible()
     }
   })
 
-  test('模型定价信息展示', async ({ page }) => {
-    await page.goto('/billing')
+  test('创建预算后页面显示预算状态', async ({ page }) => {
+    const mutationHeaders = await getMutationHeaders(page)
+    const createResponse = await page.request.post('/api/billing/budget', {
+      headers: mutationHeaders,
+      data: {
+        budget_type: 'global',
+        max_amount: 100,
+        period_type: 'monthly',
+        currency: 'USD',
+        warning_threshold: 80,
+      },
+    })
+    expect(
+      createResponse.ok(),
+      `创建预算失败: ${createResponse.status()} ${await createResponse.text()}`,
+    ).toBeTruthy()
+    const createdBudget = await createResponse.json()
+    expect(createdBudget.id).toBeTruthy()
 
-    // 查找模型定价或模型列表相关元素
-    const pricingTable = page.locator('table, .pricing-table, [data-testid="pricing-table"]').first()
-    const modelPricingText = page.locator('text=模型, text=定价, text=价格, text=Pricing').first()
-
-    const hasTable = await pricingTable.isVisible({ timeout: 10_000 }).catch(() => false)
-    const hasPricingText = await modelPricingText.isVisible({ timeout: 10_000 }).catch(() => false)
-
-    if (hasTable) {
-      await expect(pricingTable).toBeVisible()
-    }
-
-    if (hasPricingText) {
-      await expect(modelPricingText).toBeVisible()
+    try {
+      await page.goto('/billing')
+      await expect(page.getByText(/^预算:/)).toBeVisible()
+    } finally {
+      const deleteResponse = await page.request.delete(`/api/billing/budget/${createdBudget.id}`, {
+        headers: mutationHeaders,
+      })
+      expect(
+        deleteResponse.ok(),
+        `删除预算失败: ${deleteResponse.status()} ${await deleteResponse.text()}`,
+      ).toBeTruthy()
     }
   })
 
-  test('数据保留配置可见', async ({ page }) => {
+  test('用量明细表暴露完整计费字段', async ({ page }) => {
     await page.goto('/billing')
 
-    // 检查是否有数据保留相关设置
-    const retentionText = page.locator('text=保留, text=Retention, text=存储').first()
-    const hasRetention = await retentionText.isVisible({ timeout: 10_000 }).catch(() => false)
-
-    if (hasRetention) {
-      await expect(retentionText).toBeVisible()
+    await expect(page.getByRole('heading', { name: '用量明细' })).toBeVisible()
+    for (const column of ['时间', '厂商', '模型', '输入Tokens', '输出Tokens', '成本', '耗时', '操作']) {
+      await expect(page.getByRole('columnheader', { name: column, exact: true })).toBeVisible()
     }
   })
 })

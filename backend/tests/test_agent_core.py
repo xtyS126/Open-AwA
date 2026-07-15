@@ -3,10 +3,14 @@
 覆盖正常流程与边界场景，mock 外部 LLM/DB 依赖。
 """
 
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 
-from core.agent import AIAgent, AgentState
+from api.routes.chat import cancel_agent_task
+from core.agent import AIAgent, AgentState, get_agent_tasks, register_agent_task
 
 
 # ==================== Agent 初始化测试 ====================
@@ -41,6 +45,35 @@ class TestAgentInitialization:
         # （若 DB 不可用则可能为 None，但不影响基础流程）
         if agent.memory_manager is not None:
             assert agent.workflow_engine is not None
+
+
+@pytest.mark.asyncio
+async def test_cancel_agent_task_is_scoped_by_user_and_cancels_all_session_tasks():
+    """取消接口只能取消当前用户同名会话的全部活跃任务。"""
+    blocker = asyncio.Event()
+
+    async def wait_forever() -> None:
+        await blocker.wait()
+
+    user_a_tasks = [asyncio.create_task(wait_forever()) for _ in range(2)]
+    user_b_task = asyncio.create_task(wait_forever())
+    for task in user_a_tasks:
+        register_agent_task("user-a", "shared-session", task)
+    register_agent_task("user-b", "shared-session", user_b_task)
+
+    result = await cancel_agent_task(
+        "shared-session",
+        current_user=SimpleNamespace(id="user-a"),
+    )
+    await asyncio.sleep(0)
+
+    assert result["cancelled_count"] == 2
+    assert all(task.cancelled() for task in user_a_tasks)
+    assert user_b_task.done() is False
+    assert get_agent_tasks("user-b", "shared-session") == [user_b_task]
+
+    user_b_task.cancel()
+    await asyncio.gather(user_b_task, return_exceptions=True)
 
 
 # ==================== 输出模式测试 ====================

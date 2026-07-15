@@ -211,6 +211,7 @@ async def handle_websocket_session(
     try:
         while True:
             data = await websocket.receive_text()
+            ws_manager.mark_activity(websocket)
             message_data = json.loads(data)
 
             if message_data.get("type") == "message":
@@ -238,6 +239,7 @@ async def handle_websocket_session(
                         "request_id": message_request_id,
                     },
                     exclude=websocket,
+                    user_id=user_id,
                 )
 
                 result = await agent.process(message_data.get("content", ""), context)
@@ -272,6 +274,7 @@ async def handle_websocket_session(
                         "request_id": message_request_id,
                     },
                     exclude=websocket,
+                    user_id=user_id,
                 )
 
             elif message_data.get("type") == "confirm":
@@ -302,8 +305,12 @@ async def handle_websocket_session(
                     message_request_id,
                 )
 
+            elif message_data.get("type") == "pong":
+                # 客户端心跳响应只刷新活动时间，不进入业务处理。
+                continue
+
     except WebSocketDisconnect:
-        ws_manager.disconnect(session_id, websocket)
+        ws_manager.disconnect(session_id, websocket, user_id=user_id)
         logger.bind(
             event="chat_ws_disconnected",
             module="chat",
@@ -313,7 +320,7 @@ async def handle_websocket_session(
             user_id=user_id,
         ).info("websocket disconnected")
     except Exception as exc:
-        ws_manager.disconnect(session_id, websocket)
+        ws_manager.disconnect(session_id, websocket, user_id=user_id)
         logger.bind(
             event="chat_ws_error",
             module="chat",
@@ -345,7 +352,7 @@ async def handle_websocket_session(
         finally:
             await websocket.close(code=4005, reason="Internal server error")
     finally:
-        ws_manager.disconnect(session_id, websocket)
+        ws_manager.disconnect(session_id, websocket, user_id=user_id)
 
 
 def emit_task_event(task_data: Dict[str, Any]) -> Dict[str, Any]:

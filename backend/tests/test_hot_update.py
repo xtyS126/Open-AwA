@@ -10,15 +10,6 @@ from pathlib import Path
 
 import pytest
 
-# Python 3.12+ ThreadPoolExecutor 内部使用 _queue.SimpleQueue，与 pickle/deepcopy 不兼容。
-# 相关 Python issue: https://github.com/python/cpython/issues/101066
-pytestmark = [
-    pytest.mark.skipif(
-        sys.version_info >= (3, 12),
-        reason="Python 3.12+ ThreadPoolExecutor SimpleQueue 不兼容 pickle/deepcopy"
-    )
-]
-
 from plugins.hot_update_manager import HotUpdateManager, RollbackManager, RolloutConfig
 from plugins.plugin_manager import PluginManager
 
@@ -476,7 +467,8 @@ class HotV1Plugin(BasePlugin):
     version = "1.0.0"
     description = "hot update v1"
 
-    def initialize(self):
+    async def initialize(self):
+        self.initialize_completed = True
         return True
 
     def execute(self, **kwargs):
@@ -511,6 +503,25 @@ def test_plugin_manager_hot_update_gray(hot_workspace: Path):
     assert result["success"] is True
     assert result["plugin_name"] == "hot_v1"
     assert result["strategy"] == "gray"
+
+
+def test_plugin_manager_hot_update_preserves_runtime_module_reference(hot_workspace: Path):
+    """
+    验证热更新快照不会深拷贝插件实例中的模块等运行时对象。
+    """
+    manager = PluginManager(plugins_dir=str(hot_workspace))
+    manager.discover_plugins()
+    assert manager.load_plugin("hot_v1")
+
+    active_instance = manager.loaded_plugins["hot_v1"]
+    active_instance.runtime_module = sys
+
+    result = manager.hot_update_plugin("hot_v1", strategy="gray")
+
+    assert result["success"] is True
+    route = manager._runtime_routes["hot_v1"]
+    assert route["slots"]["active"]["plugin_instance"] is active_instance
+    assert active_instance.runtime_module is sys
 
 
 def test_plugin_manager_hot_update_immediate(hot_workspace: Path):
@@ -555,6 +566,7 @@ def test_plugin_manager_rollback_after_hot_update(hot_workspace: Path):
     manager.hot_update_plugin("hot_v1", strategy="gray")
     result = manager.rollback_plugin("hot_v1")
     assert result["rolled_back_to"] is not None
+    assert manager.loaded_plugins["hot_v1"].initialize_completed is True
 
 
 def test_plugin_manager_rollback_not_found_raises(hot_workspace: Path):

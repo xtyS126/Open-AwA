@@ -481,7 +481,7 @@ class TestDeleteProviderConfigurations:
     封装与TestDeleteProviderConfigurations相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
-    def test_delete_provider_configurations_soft_deletes_active_rows(self, pricing_manager, db_session):
+    def test_delete_provider_configurations_hard_deletes_all_provider_rows(self, pricing_manager, db_session):
         """
         验证delete、provider、configurations、soft、deletes、active、rows相关场景的行为是否符合预期。
         通过断言结果可以帮助定位实现与预期行为之间的偏差。
@@ -496,12 +496,11 @@ class TestDeleteProviderConfigurations:
 
         deleted_count = pricing_manager.delete_provider_configurations("deepseek")
 
-        assert deleted_count == 2
+        assert deleted_count == 3
         deepseek_rows = db_session.query(ModelConfiguration).filter(
             ModelConfiguration.provider == "deepseek"
         ).all()
-        assert len(deepseek_rows) == 3
-        assert sum(1 for row in deepseek_rows if row.is_active) == 0
+        assert deepseek_rows == []
 
         openai_row = db_session.query(ModelConfiguration).filter(
             ModelConfiguration.provider == "openai",

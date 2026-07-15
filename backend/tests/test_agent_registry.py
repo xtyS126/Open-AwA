@@ -13,6 +13,7 @@ AIAgentRegistry 实例级缓存注册表单元测试。
 真实的 VectorStoreManager/Qdrant 初始化，其余依赖保持真实调用。
 """
 
+import asyncio
 import sys
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.agent_registry import AIAgentRegistry
+import core.agent as agent_module
 from memory.manager import MemoryManager
 
 
@@ -71,6 +73,46 @@ def test_get_or_create_returns_different_instances_for_different_users() -> None
     assert len(registry._cache) == 2
     assert 1 in registry._cache
     assert 2 in registry._cache
+
+
+@pytest.mark.asyncio
+async def test_acquire_serializes_same_user_and_keeps_db_binding(monkeypatch) -> None:
+    """同一用户的并发请求不得在执行期间互相覆盖数据库会话。"""
+
+    class FakeAgent:
+        def __init__(self, db_session) -> None:
+            self.db_session = db_session
+
+        def bind_db(self, db_session) -> None:
+            self.db_session = db_session
+
+    monkeypatch.setattr(agent_module, "AIAgent", FakeAgent)
+    registry = _make_registry()
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    second_entered = asyncio.Event()
+
+    async def first_request() -> None:
+        async with registry.acquire(1, "db-1") as agent:
+            first_entered.set()
+            await release_first.wait()
+            assert agent.db_session == "db-1"
+
+    async def second_request() -> None:
+        await first_entered.wait()
+        async with registry.acquire(1, "db-2") as agent:
+            second_entered.set()
+            assert agent.db_session == "db-2"
+
+    first_task = asyncio.create_task(first_request())
+    second_task = asyncio.create_task(second_request())
+    await first_entered.wait()
+    await asyncio.sleep(0)
+    assert second_entered.is_set() is False
+
+    release_first.set()
+    await asyncio.gather(first_task, second_task)
+    assert second_entered.is_set() is True
 
 
 def test_bind_db_updates_request_db() -> None:

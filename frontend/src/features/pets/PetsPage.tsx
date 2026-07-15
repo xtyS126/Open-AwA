@@ -1,8 +1,8 @@
 /**
- * PetsPage ?? ??????
+ * PetsPage 宠物管理页
  *
- * ?????????????????????? PetSprite ?? idle ???
- * ??????/?????????????"????"???? ImportPetModal?
+ * 展示用户可用宠物，默认以 PetSprite 渲染 idle 帧动画
+ * 内置/自定义宠物的增删与激活，点击"导入宠物"打开 ImportPetModal
  */
 import { useEffect, useCallback, useMemo, useState } from 'react'
 import { Plus, Trash2, Check, PawPrint, Loader2, AlertCircle } from 'lucide-react'
@@ -13,7 +13,7 @@ import type { PetResponse } from './types'
 import styles from './PetsPage.module.css'
 
 interface PetsPageProps {
-  /** ??????????????????????? */
+  /** 控制台渲染时隐藏外层标题与边距 */
   hideHeader?: boolean
 }
 
@@ -33,20 +33,20 @@ export default function PetsPage(_props: PetsPageProps = {}) {
       setPets(list.pets)
       setActivePetId(active.pet_id)
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : '????????')
+      setLoadError(err instanceof Error ? err.message : '加载宠物列表失败')
     } finally {
       setLoading(false)
     }
   }, [])
 
-  // ??????????????? loadAll?
+  // 初次挂载与导入模态回调均触发 loadAll
   useEffect(() => {
     void loadAll()
   }, [loadAll])
 
   const handleActivate = useCallback(
     async (pet: PetResponse) => {
-      // ?????????
+      // 已激活则跳过
       if (pet.id === activePetId) return
       setPendingId(pet.id)
       try {
@@ -54,7 +54,7 @@ export default function PetsPage(_props: PetsPageProps = {}) {
         setActivePetId(pet.id)
         setPets((prev) => prev.map((item) => ({ ...item, is_active: item.id === pet.id })))
       } catch (err) {
-        setLoadError(err instanceof Error ? err.message : '??????')
+        setLoadError(err instanceof Error ? err.message : '激活失败')
       } finally {
         setPendingId(null)
       }
@@ -70,7 +70,7 @@ export default function PetsPage(_props: PetsPageProps = {}) {
       setActivePetId(null)
       setPets((prev) => prev.map((item) => ({ ...item, is_active: false })))
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : '??????')
+      setLoadError(err instanceof Error ? err.message : '关闭失败')
     } finally {
       setPendingId(null)
     }
@@ -78,7 +78,7 @@ export default function PetsPage(_props: PetsPageProps = {}) {
 
   const handleDelete = useCallback(
     async (pet: PetResponse) => {
-      if (!window.confirm(`????????? ${pet.display_name}?`)) return
+      if (!window.confirm(`确定删除宠物 ${pet.display_name}？`)) return
       setPendingId(pet.id)
       try {
         await deletePet(pet.id)
@@ -87,7 +87,7 @@ export default function PetsPage(_props: PetsPageProps = {}) {
           setActivePetId(null)
         }
       } catch (err) {
-        setLoadError(err instanceof Error ? err.message : '??????')
+        setLoadError(err instanceof Error ? err.message : '删除失败')
       } finally {
         setPendingId(null)
       }
@@ -103,11 +103,11 @@ export default function PetsPage(_props: PetsPageProps = {}) {
       <div className={styles.header}>
         <div className={styles.titleBar}>
           <PawPrint size={20} className={styles.titleIcon} />
-          <h1 className={styles.title}>????</h1>
-          <span className={styles.subtitle}>Codex Ambient Pet ? ?????????</span>
+          <h1 className={styles.title}>宠物</h1>
+          <span className={styles.subtitle}>Codex Ambient Pet · 桌面陪伴精灵</span>
         </div>
         <button type="button" className={styles.btnPrimary} onClick={() => setImportOpen(true)}>
-          <Plus size={14} /> ????
+          <Plus size={14} /> 导入宠物
         </button>
       </div>
 
@@ -119,12 +119,12 @@ export default function PetsPage(_props: PetsPageProps = {}) {
 
       {loading ? (
         <div className={styles.loading}>
-          <Loader2 size={20} className="pet-spin" /> ????
+          <Loader2 size={20} className="pet-spin" /> 加载中
         </div>
       ) : (
         <>
           <section className={styles.section}>
-            <h2 className={styles.sectionTitle}>?????{builtinPets.length}?</h2>
+            <h2 className={styles.sectionTitle}>内置宠物（{builtinPets.length}）</h2>
             <div className={styles.grid}>
               {builtinPets.map((pet) => (
                 <PetCard
@@ -140,9 +140,9 @@ export default function PetsPage(_props: PetsPageProps = {}) {
           </section>
 
           <section className={styles.section}>
-            <h2 className={styles.sectionTitle}>??????{customPets.length}?</h2>
+            <h2 className={styles.sectionTitle}>自定义宠物（{customPets.length}）</h2>
             {customPets.length === 0 ? (
-              <p className={styles.empty}>?????????????"????"???</p>
+              <p className={styles.empty}>暂无自定义宠物，点击右上"导入宠物"上传</p>
             ) : (
               <div className={styles.grid}>
                 {customPets.map((pet) => (
@@ -161,7 +161,7 @@ export default function PetsPage(_props: PetsPageProps = {}) {
 
           {activePetId !== null && (
             <button type="button" className={styles.btnGhost} onClick={() => void handleDisable()}>
-              ????????? Ambient Pet?
+              关闭当前 Ambient Pet
             </button>
           )}
         </>
@@ -195,17 +195,17 @@ function PetCard({ pet, isActive, pending, onActivate, onDelete }: PetCardProps)
         <div className={styles.nameRow}>
           <h3 className={styles.name}>{pet.display_name}</h3>
           {pet.is_builtin ? (
-            <span className={styles.badge + ' ' + styles.badgeBuiltin}>??</span>
+            <span className={styles.badge + ' ' + styles.badgeBuiltin}>内置</span>
           ) : (
-            <span className={styles.badge + ' ' + styles.badgeCustom}>???</span>
+            <span className={styles.badge + ' ' + styles.badgeCustom}>自定义</span>
           )}
           <span className={styles.badge + ' ' + styles.badgeVersion}>v{pet.sprite_version}</span>
         </div>
-        <p className={styles.desc}>{pet.description || '????'}</p>
+        <p className={styles.desc}>{pet.description || '暂无描述'}</p>
         <div className={styles.meta}>
           <span>{pet.frame_width}x{pet.frame_height}</span>
-          <span>?</span>
-          <span>{pet.columns}x{pet.rows}?? {pet.frame_count} ??</span>
+          <span>·</span>
+          <span>{pet.columns}x{pet.rows} 网格，共 {pet.frame_count} 帧</span>
         </div>
       </div>
       <div className={styles.cardActions}>
@@ -215,7 +215,7 @@ function PetCard({ pet, isActive, pending, onActivate, onDelete }: PetCardProps)
           onClick={onActivate}
           disabled={pending || isActive}
         >
-          {isActive ? <><Check size={14} /> ???</> : '??'}
+          {isActive ? <><Check size={14} /> 已激活</> : '激活'}
         </button>
         {onDelete && (
           <button
@@ -223,7 +223,7 @@ function PetCard({ pet, isActive, pending, onActivate, onDelete }: PetCardProps)
             className={styles.btnDanger}
             onClick={onDelete}
             disabled={pending}
-            aria-label="??"
+            aria-label="删除"
           >
             <Trash2 size={14} />
           </button>
