@@ -22,16 +22,16 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 
 当前仓库由两个主要应用组成：
 
-- 后端：`backend/`，使用 FastAPI、SQLAlchemy、JWT 鉴权、SQLite 默认存储
-- 前端：`frontend/`，使用 React 18、TypeScript、Vite、React Router、Zustand、Recharts
+- 后端：`lib/backend/`，使用 FastAPI、SQLAlchemy、JWT 鉴权、SQLite 默认存储
+- 前端：`lib/frontend/`，使用 React 18、TypeScript、Vite、React Router、Zustand、Recharts
 
 后端入口会在启动时初始化数据库、创建计费表并补齐默认模型定价；前端提供聊天、仪表盘、设置、技能、插件、记忆、计费等页面。
 
 相关代码可参考：
 
-- [main.py](backend/main.py#L1-L95)
-- [settings.py](backend/config/settings.py#L24-L59)
-- [App.tsx](frontend/src/App.tsx#L1-L91)
+- [main.py](lib/backend/main.py#L1-L95)
+- [settings.py](lib/backend/config/settings.py#L24-L59)
+- [App.tsx](lib/frontend/src/App.tsx#L1-L91)
 
 ## 当前能力
 
@@ -72,11 +72,11 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 
 后端路由注册见：
 
-- [main.py](backend/main.py#L860-L899)
+- [main.py](lib/backend/main.py#L860-L899)
 
 数据库模型见：
 
-- [models.py](backend/db/models.py#L20-L235)
+- [models.py](lib/backend/db/models.py#L20-L235)
 
 ## 技术栈
 
@@ -92,7 +92,7 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 
 依赖文件：
 
-- [requirements.txt](backend/requirements.txt)
+- [requirements.txt](lib/backend/requirements.txt)
 
 ### 前端
 
@@ -108,51 +108,81 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 
 依赖与脚本：
 
-- [package.json](frontend/package.json#L1-L38)
+- [package.json](lib/frontend/package.json#L1-L38)
 
 ## 仓库结构
 
 ```text
 Open-AwA/
-├─ backend/                     # FastAPI 后端
-│  ├─ api/routes/               # 业务路由（39 个模块）
-│  ├─ billing/                  # 计费相关模块
-│  ├─ channels/                 # IM 渠道适配（飞书/Telegram/钉钉等）
-│  ├─ config/                   # 配置与安全
-│  ├─ core/                     # Agent 核心流程
-│  │  ├─ autonomous/            # 自主运行模式
-│  │  ├─ builtin_tools/         # 内置工具（notify/todo）
-│  │  ├─ coding/                # 编码助手（AST/LSP/Git/Diff）
-│  │  ├─ context/               # 上下文压缩与 token 预算
-│  │  ├─ heartbeat/             # 心跳引擎
-│  │  ├─ startup/               # 启动 profiler 与任务
-│  │  ├─ task_runtime/          # 任务运行时
-│  │  └─ workspace/             # 工作区管理
-│  ├─ data/                     # 数据收集器
-│  ├─ db/                       # SQLAlchemy 模型与数据库初始化
-│  ├─ im/                       # IM 适配器（飞书/Telegram）
-│  ├─ mcp/                      # MCP 协议客户端
-│  ├─ memory/                   # 记忆与经验管理
-│  ├─ plugins/                  # 插件系统核心
-│  ├─ security/                 # 审计日志、权限控制、沙箱隔离
-│  ├─ skills/                   # Skill 系统
-│  ├─ tools/                    # 内置工具注册器
-│  ├─ workflow/                 # 工作流引擎与解析器
-│  ├─ tests/                    # 后端测试
-│  └─ main.py                   # FastAPI 入口
-├─ openawa/                     # Open-AwA CLI 包
-│  ├─ cli/                      # 命令行入口（serve/migrate/doctor/plugin 等）
-│  ├─ config/                   # CLI 配置
-│  └─ core/                     # CLI 核心启动逻辑
-├─ frontend/                    # React 前端
-│  ├─ src/features/             # 功能模块（按领域拆分，含页面/组件/store/api）
-│  ├─ src/shared/               # 共享资源（api/components/store/hooks/types/utils/perf）
-│  ├─ src/__tests__/            # 前端单测
-│  ├─ tests/e2e/                # Playwright E2E
-│  └─ package.json
-├─ plugins/                     # 示例插件目录
-└─ docs/                        # 项目文档
-   └─ archive/                  # 历史报告归档
+├─ lib/                         # 子项目与第三方库
+│  ├─ backend/                  # FastAPI 后端
+│  │  ├─ api/routes/            # 业务路由（39 个模块）
+│  │  ├─ billing/               # 计费相关模块
+│  │  ├─ acp_host/              # ACP Vibe Coding 集成
+│  │  ├─ config/                # 配置与安全
+│  │  ├─ core/                  # Agent 核心流程
+│  │  │  ├─ autonomous/         # 自主运行模式
+│  │  │  ├─ builtin_tools/      # 内置工具（notify/todo/local_search）
+│  │  │  ├─ coding/             # 编码助手（AST/LSP/Git/Diff）
+│  │  │  ├─ context/            # 上下文压缩与 token 预算
+│  │  │  ├─ heartbeat/          # 心跳引擎
+│  │  │  ├─ startup/            # 启动 profiler 与任务
+│  │  │  ├─ task_runtime/       # 任务运行时
+│  │  │  ├─ terminal/           # VT100/PTY 终端
+│  │  │  └─ workspace/          # 工作区管理
+│  │  ├─ db/                    # SQLAlchemy 模型与数据库初始化
+│  │  ├─ im/                    # IM 适配器（飞书/Telegram/钉钉）
+│  │  ├─ issue_writer/          # 问题反馈只写器
+│  │  ├─ mcp/                   # MCP 协议客户端
+│  │  ├─ memory/                # 记忆与经验管理
+│  │  ├─ pets/                  # 宠物精灵系统
+│  │  ├─ plugins/               # 插件系统核心
+│  │  ├─ security/              # 审计日志、权限控制、沙箱隔离
+│  │  ├─ skills/                # Skill 系统
+│  │  ├─ soul/                  # 灵魂系统
+│  │  ├─ tools/                 # 内置工具注册器
+│  │  ├─ workflow/              # 工作流引擎与解析器
+│  │  ├─ tests/                 # 后端测试
+│  │  └─ main.py                # FastAPI 入口
+│  ├─ frontend/                 # React 前端
+│  │  ├─ src/features/          # 功能模块（按领域拆分，含页面/组件/store/api）
+│  │  ├─ src/shared/            # 共享资源（api/components/store/hooks/types/utils/perf）
+│  │  ├─ src/__tests__/         # 前端单测
+│  │  ├─ tests/e2e/             # Playwright E2E
+│  │  └─ package.json
+│  ├─ desktop/                  # Electron 桌面壳
+│  └─ Android/                  # Android 原生项目（Open-AwA-Android）
+├─ var/                         # 运行时数据（gitignore，自动创建）
+│  ├─ data/                     # 数据库、向量库、上传文件
+│  ├─ logs/                     # 日志
+│  ├─ workspace/                # 工作区
+│  ├─ plugins/                  # 用户插件数据
+│  └─ pets/                     # 宠物数据
+├─ bin/                         # 可执行脚本
+│  ├─ dev.bat                   # 开发启动
+│  ├─ deploy.ps1                # Docker 一键部署
+│  ├─ install.ps1               # 一键安装
+│  ├─ generate_api_key.py       # API Key 生成
+│  └─ migrate_layout.py         # 目录重组迁移脚本
+├─ assets/                      # 静态资源
+│  └─ design/                   # 设计稿（原 open-awa-canvas）
+├─ deploy/                      # 部署配置
+│  ├─ Dockerfile
+│  ├─ docker-compose*.yml
+│  ├─ nginx.conf
+│  ├─ entrypoint.sh
+│  └─ nginx/                    # nginx 子配置
+├─ plugins/                     # 示例插件目录（用户可见入口）
+├─ scripts/                     # 辅助脚本（性能测试、同步等）
+├─ docs/                        # 项目文档
+│  ├─ reports/                  # 历史/回归报告
+│  ├─ audit/                    # 审计报告
+│  ├─ 架构/                     # 架构说明
+│  ├─ 指南/                     # 部署/测试指南
+│  └─ 插件开发手册/             # 插件开发文档
+├─ pyproject.toml
+├─ .env.example
+└─ .gitignore
 ```
 
 ## 快速开始
@@ -170,7 +200,7 @@ Open-AwA/
 Windows PowerShell：
 
 ```powershell
-cd d:\代码\Open-AwA\backend
+cd d:\代码\Open-AwA\lib\backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -185,7 +215,7 @@ python main.py
 ### 3. 启动前端
 
 ```powershell
-cd d:\代码\Open-AwA\frontend
+cd d:\代码\Open-AwA\lib\frontend
 npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
@@ -211,21 +241,21 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 代码位置：
 
-- [main.py](backend/main.py#L181-L460)
+- [main.py](lib/backend/main.py#L181-L460)
 
 ### 默认配置
 
-默认配置来自 [settings.py](backend/config/settings.py#L76-L241)，其中较重要的项包括：
+默认配置来自 [settings.py](lib/backend/config/settings.py#L76-L241)，其中较重要的项包括：
 
 - `API_V1_STR=/api`
-- `DATABASE_URL=sqlite:///./backend/openawa.db`（绝对路径锚定到 backend 目录）
+- `DATABASE_URL=sqlite:///./var/data/openawa.db`（绝对路径锚定到 backend 目录）
 - `ACCESS_TOKEN_EXPIRE_MINUTES=1440`
 - `SANDBOX_TIMEOUT=30`
 - `SANDBOX_MEMORY_LIMIT=512m`
 - `SANDBOX_BACKEND=restricted_python`
 - `LOG_LEVEL=INFO`
-- `VECTOR_DB_PATH=backend/data/vector_db`
-- `OPENAWA_API_KEY=`（必填，未配置时拒绝启动，可运行 `python generate_api_key.py` 生成）
+- `VECTOR_DB_PATH=var/data/qdrant`
+- `OPENAWA_API_KEY=`（必填，未配置时拒绝启动，可运行 `python bin/bin/generate_api_key.py` 生成）
 - `OPENAWA_OWNER_USERNAME=admin`
 - `RATE_LIMIT_BACKEND=memory`（多 worker 部署时建议 `database`）
 - `TRUSTED_PROXIES=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`
@@ -251,7 +281,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - 各模型提供方 API Key（`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `QWEN_API_KEY` / `ZHIPU_API_KEY` / `MOONSHOT_API_KEY`）
 - 可选：`SSL_CERTFILE` / `SSL_KEYFILE` 启用 HTTPS
 
-前端开发阶段常用环境变量（`frontend/.env.development`）：
+前端开发阶段常用环境变量（`lib/frontend/.env.development`）：
 
 - `VITE_ENABLE_DEV_AUTO_LOGIN`：是否启用开发态自动登录（`true/false`）
 - `VITE_TEST_USERNAME`：开发态自动登录用户名（仅当启用自动登录时生效）
@@ -305,14 +335,14 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 可参考以下代码：
 
-- [auth.py](backend/api/routes/auth.py#L14-L62)
-- [chat.py](backend/api/routes/chat.py#L14-L190)
-- [skills.py](backend/api/routes/skills.py#L17-L368)
-- [plugins.py](backend/api/routes/plugins.py#L15-L519)
-- [memory.py](backend/api/routes/memory.py#L12-L121)
-- [subagents.py](backend/api/routes/subagents.py)
-- [coding.py](backend/api/routes/coding.py)
-- [mcp.py](backend/api/routes/mcp.py)
+- [auth.py](lib/backend/api/routes/auth.py#L14-L62)
+- [chat.py](lib/backend/api/routes/chat.py#L14-L190)
+- [skills.py](lib/backend/api/routes/skills.py#L17-L368)
+- [plugins.py](lib/backend/api/routes/plugins.py#L15-L519)
+- [memory.py](lib/backend/api/routes/memory.py#L12-L121)
+- [subagents.py](lib/backend/api/routes/subagents.py)
+- [coding.py](lib/backend/api/routes/coding.py)
+- [mcp.py](lib/backend/api/routes/mcp.py)
 
 ### 记忆与工作流扩展接口
 
@@ -325,9 +355,9 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `/api/workflows`：工作流定义的创建、查询、更新、删除
 - `/api/workflows/execute`：显式执行工作流
 - `/api/workflows/executions/{execution_id}`：查询工作流执行状态
-- [experiences.py](backend/api/routes/experiences.py#L14-L260)
-- [conversation.py](backend/api/routes/conversation.py#L14-L139)
-- [billing.py](backend/billing/routers/billing.py#L14-L260)
+- [experiences.py](lib/backend/api/routes/experiences.py#L14-L260)
+- [conversation.py](lib/backend/api/routes/conversation.py#L14-L139)
+- [billing.py](lib/lib/backend/billing/routers/billing.py#L14-L260)
 
 ### 前端页面
 
@@ -363,18 +393,18 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 代码位置：
 
-- [App.tsx](frontend/src/App.tsx#L64-L128)
+- [App.tsx](lib/frontend/src/App.tsx#L64-L128)
 
 其中几个核心页面对应实现：
 
-- [ChatPage.tsx](frontend/src/features/chat/ChatPage.tsx)
-- [DashboardPage.tsx](frontend/src/features/dashboard/DashboardPage.tsx)
-- [PluginsPage.tsx](frontend/src/features/plugins/PluginsPage.tsx)
-- [MemoryPage.tsx](frontend/src/features/memory/MemoryPage.tsx)
-- [BillingPage.tsx](frontend/src/features/billing/BillingPage.tsx)
-- [SettingsPage.tsx](frontend/src/features/settings/SettingsPage.tsx)
-- [CodingPage.tsx](frontend/src/features/coding/CodingPage.tsx)
-- [ScheduledTasksPage.tsx](frontend/src/features/scheduledTasks/ScheduledTasksPage.tsx)
+- [ChatPage.tsx](lib/frontend/src/features/chat/ChatPage.tsx)
+- [DashboardPage.tsx](lib/frontend/src/features/dashboard/DashboardPage.tsx)
+- [PluginsPage.tsx](lib/frontend/src/features/plugins/PluginsPage.tsx)
+- [MemoryPage.tsx](lib/frontend/src/features/memory/MemoryPage.tsx)
+- [BillingPage.tsx](lib/frontend/src/features/billing/BillingPage.tsx)
+- [SettingsPage.tsx](lib/frontend/src/features/settings/SettingsPage.tsx)
+- [CodingPage.tsx](lib/frontend/src/features/coding/CodingPage.tsx)
+- [ScheduledTasksPage.tsx](lib/frontend/src/features/scheduledTasks/ScheduledTasksPage.tsx)
 
 ## 插件开发文档
 
@@ -429,48 +459,48 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ### 后端
 
 ```powershell
-cd d:\代码\Open-AwA\backend
+cd d:\代码\Open-AwA\lib\backend
 python -m pytest
 ```
 
 ### 前端单元测试
 
 ```powershell
-cd d:\代码\Open-AwA\frontend
+cd d:\代码\Open-AwA\lib\frontend
 npm run test
 ```
 
 ### 前端覆盖率
 
 ```powershell
-cd d:\代码\Open-AwA\frontend
+cd d:\代码\Open-AwA\lib\frontend
 npm run test:coverage
 ```
 
 ### 前端类型检查
 
 ```powershell
-cd d:\代码\Open-AwA\frontend
+cd d:\代码\Open-AwA\lib\frontend
 npm run typecheck
 ```
 
 ### 前端构建
 
 ```powershell
-cd d:\代码\Open-AwA\frontend
+cd d:\代码\Open-AwA\lib\frontend
 npm run build
 ```
 
 ### E2E 测试
 
 ```powershell
-cd d:\代码\Open-AwA\frontend
+cd d:\代码\Open-AwA\lib\frontend
 npm run e2e
 ```
 
 E2E 配置见：
 
-- [playwright.config.ts](frontend/playwright.config.ts#L1-L54)
+- [playwright.config.ts](lib/frontend/playwright.config.ts#L1-L54)
 
 ## 更多文档
 
@@ -530,7 +560,7 @@ E2E 配置见：
 
 以下内容是根据当前代码观察得到，建议在后续开发中继续收敛：
 
-- 前端 `App.tsx` 中保留了开发态自动登录逻辑（通过 `useAppInitialization` Hook），属于开发便利逻辑，不适合作为正式产品流程说明，见 [App.tsx](frontend/src/App.tsx#L131-L173)
-- 后端启动强制要求 `OPENAWA_API_KEY`（至少 32 字符），未配置时拒绝启动，可通过 `python generate_api_key.py` 生成
+- 前端 `App.tsx` 中保留了开发态自动登录逻辑（通过 `useAppInitialization` Hook），属于开发便利逻辑，不适合作为正式产品流程说明，见 [App.tsx](lib/frontend/src/App.tsx#L131-L173)
+- 后端启动强制要求 `OPENAWA_API_KEY`（至少 32 字符），未配置时拒绝启动，可通过 `python bin/bin/generate_api_key.py` 生成
 - 生产环境（`ENVIRONMENT=production`）启动时会强制校验 `JWT_SECRET_KEY`、`CSRF_SECRET_KEY`、`ENCRYPTION_KEY` 与 `ALLOWED_ORIGINS`，未配置将拒绝启动
 - README 只描述已存在的接口与页面，不对未完成功能做保证

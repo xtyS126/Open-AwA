@@ -136,13 +136,13 @@ case "$MODE" in
         PROFILE_ARGS=(--profile frontend)
         ;;
     prod)
-        COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.prod.yml)
+        COMPOSE_FILES=(-f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml)
         PROFILE_ARGS=()
         info "生产模式需要 DOMAIN 环境变量，请在 .env 中配置后重新运行"
-        info "首次申请 SSL 证书: bash docker/init-ssl.sh"
+        info "首次申请 SSL 证书: bash deploy/init-ssl.sh"
         ;;
     postgres)
-        COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.postgres.yml)
+        COMPOSE_FILES=(-f deploy/docker-compose.yml -f deploy/docker-compose.postgres.yml)
         PROFILE_ARGS=()
         ;;
 esac

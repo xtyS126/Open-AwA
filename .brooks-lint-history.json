@@ -1,0 +1,24 @@
+﻿[
+    {
+        "date":  "2026-07-20",
+        "mode":  "Health Dashboard",
+        "score":  68,
+        "findings":  {
+                         "critical":  5,
+                         "warning":  4,
+                         "suggestion":  0
+                     },
+        "scope":  "Entire project (lib/backend, lib/frontend, lib/desktop, lib/openawa, lib/Android, plugins). PR dimension skipped (working tree has mass restructure, not focused PR diff); weights redistributed to Architecture 0.40 / Debt 0.33 / Test 0.27."
+    },
+    {
+        "date":  "2026-07-22",
+        "findings":  {
+                         "critical":  3,
+                         "suggestion":  10,
+                         "warning":  7
+                     },
+        "score":  10,
+        "scope":  "Entire project (lib/backend, lib/frontend, lib/desktop, lib/Android/Open-AwA-Android, plugins). Excluded via project rules: 参考用文件夹/ (gitignored reference material), openbiliclaw_builtin counted as one consolidated finding.",
+        "mode":  "Tech Debt Assessment"
+    }
+]

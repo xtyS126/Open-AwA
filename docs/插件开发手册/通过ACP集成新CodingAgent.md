@@ -10,13 +10,13 @@ Open-AwA 通过 ACP 协议统一调用本地 vibe coding 应用（如 Claude Cod
 
 ## 前置条件
 
-1. 已安装 `acp` Python SDK（见 `backend/requirements.txt`）。SDK 缺失时 `ACPService` 会优雅降级，`run_turn` 抛 `ACPConfigurationError`。
+1. 已安装 `acp` Python SDK（见 `lib/backend/requirements.txt`）。SDK 缺失时 `ACPService` 会优雅降级，`run_turn` 抛 `ACPConfigurationError`。
 2. 目标 Agent 的 CLI 已安装且可通过 `<command> --version` 探测（exit code == 0 视为可用）。
 3. Open-AwA 后端服务可正常启动（参考 [后端架构说明](../架构/后端架构说明.md)）。
 
 ## 步骤 1: 创建 Agent 配置文件
 
-在 `backend/acp_host/agents/` 目录下新建 `<agent_id>.py` 文件，文件中定义模块级变量 `AGENT_CONFIG: ACPAgentConfig`。
+在 `lib/backend/acp_host/agents/` 目录下新建 `<agent_id>.py` 文件，文件中定义模块级变量 `AGENT_CONFIG: ACPAgentConfig`。
 
 ### 字段说明
 
@@ -62,8 +62,8 @@ AGENT_CONFIG = ACPAgentConfig(
 启动后端服务后调用 `GET /api/acp/agents`，确认新 agent 出现在列表中：
 
 ```bash
-# 使用 API Key 认证（从 backend/.env.local 读取）
-API_KEY=$(grep OPENAWA_API_KEY backend/.env.local | cut -d'=' -f2- | tr -d '"')
+# 使用 API Key 认证（从 lib/backend/.env.local 读取）
+API_KEY=$(grep OPENAWA_API_KEY lib/backend/.env.local | cut -d'=' -f2- | tr -d '"')
 
 # 列出所有 agent
 curl -s http://localhost:8000/api/acp/agents \
@@ -138,7 +138,7 @@ curl -X POST http://localhost:8000/api/acp/sessions/$SESSION_ID/permission \
 
 ## 调试技巧
 
-- 查看启动日志：`backend/logs/` 下的日志文件，搜索 `event="acp_session_created"` 与 `module="acp"` 关键字
+- 查看启动日志：`var/logs/` 下的日志文件，搜索 `event="acp_session_created"` 与 `module="acp"` 关键字
 - 确认 `acp` SDK 已安装：`pip show acp`，缺失时 `run_turn` 抛 `ACPConfigurationError("acp SDK not installed")`
 - 确认 agent 配置被加载：`discover_agents()` 返回的字典键应包含新 `agent_id`
 - 子进程拉起失败：检查 `command` 路径与 `env` 环境变量是否正确
@@ -158,7 +158,7 @@ curl -X POST http://localhost:8000/api/acp/sessions/$SESSION_ID/permission \
 - `mkfs`
 - `dd if=`
 
-如需扩展黑名单，修改 `backend/acp_host/permissions.py` 中的 `BLOCKED_COMMAND_PATTERNS` 元组。
+如需扩展黑名单，修改 `lib/backend/acp_host/permissions.py` 中的 `BLOCKED_COMMAND_PATTERNS` 元组。
 
 ### 路径越权防护
 

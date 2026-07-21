@@ -4,7 +4,7 @@
 > 与 [CLAUDE.md](CLAUDE.md) 的差异：本文件聚焦"规则与约束"，CLAUDE.md 聚焦"Claude Code 的具体操作流程与命令细节"。
 > AI Agent 在每次进入项目前必须完整阅读本文件，并严格遵守其中的自主权边界、记忆协议、迭代闭环与反模式。
 
-Open-AwA 是一个 AI Agent 实验性平台（FastAPI + React）。详细说明见 [README.md](README.md) 和 [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)。
+Open-AwA 是一个 AI Agent 实验性平台（FastAPI + React）。详细说明见 [README.md](README.md) 和 [PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md)。
 
 ---
 
@@ -141,7 +141,7 @@ Open-AwA 是一个 AI Agent 实验性平台（FastAPI + React）。详细说明�
 ### 4.1 Backend (Python 3.11+, FastAPI)
 
 ```bash
-cd backend
+cd lib/backend
 pip install -r requirements.txt          # 生产依赖
 pip install -r requirements-dev.txt      # 开发依赖（含 pytest）
 python main.py                           # 启动服务 (uvicorn, 端口 8000)
@@ -152,7 +152,7 @@ pytest -v --cov                          # 详细输出 + 覆盖率
 ### 4.2 Frontend (Node.js, React 18 + Vite)
 
 ```bash
-cd frontend
+cd lib/frontend
 npm install
 npm run dev                              # 开发服务器 (端口 5173)
 npm run build                            # TypeScript 检查 + Vite 构建
@@ -169,7 +169,7 @@ npm run e2e                              # Playwright E2E 测试
 ## 5. Architecture
 
 ```
-backend/
+lib/backend/                    # 子项目位于 lib/ 下
   main.py          # 入口：中间件、路由注册、数据库初始化
   api/routes/      # 业务路由（/api/auth, /chat, /skills, /plugins, /memory, /billing 等）
   api/schemas.py   # Pydantic 请求/响应模型
@@ -183,10 +183,23 @@ backend/
   skills/          # 技能引擎与经验提取
   config/          # 配置（settings, security, logging）
 
-frontend/src/
+lib/frontend/src/
   features/        # 按功能模块组织（chat, dashboard, settings, skills, plugins, memory, billing, experiences）
   shared/          # 公共模块（api, store, hooks, components, types, utils）
   __tests__/       # 单元测试
+
+var/                # 运行时数据（gitignore）
+  data/             # 数据库 openawa.db、向量库 qdrant、上传文件
+  logs/             # 运行日志
+  workspace/        # 工作区
+  plugins/          # 用户插件数据
+  pets/             # 宠物数据
+
+bin/                # 可执行脚本（dev.bat / deploy.ps1 / install.ps1 / generate_api_key.py / migrate_layout.py）
+deploy/             # Docker 部署配置（Dockerfile / docker-compose*.yml / nginx.conf / entrypoint.sh）
+assets/design/      # 设计稿（原 open-awa-canvas）
+plugins/            # 用户插件源（开发入口，运行时数据在 var/plugins/）
+scripts/            # 辅助脚本（性能测试、同步等）
 ```
 
 前端响应式断点体系统一在 tokens.css 的 --breakpoint-xs/sm/md/lg/xl 令牌，移动端适配工具类在 src/styles/responsive.css，公共 hooks 在 src/shared/hooks/useMediaQuery|useBreakpoint|useVisualViewport.ts
@@ -201,21 +214,21 @@ ACP（Agent Client Protocol）是一套用于调用本地 vibe coding 应用的�
 
 关键文件：
 
-- `backend/acp_host/` - ACP 核心模块
+- `lib/backend/acp_host/` - ACP 核心模块
   - `core.py` - 共享数据结构与异常层级（`ACPAgentConfig`/`ACPConfig`/`SuspendedPermission`/`ACPErrors` 异常族）
   - `client.py` - 托管客户端 `ACPHostedClient`，处理 ACP 协议事件分发与 permission 挂起-恢复
   - `service.py` - `ACPService` 服务层，管理子进程生命周期、prompt 轮次与模块级单例注册表
   - `permissions.py` - 权限审批适配器与硬阻断安全策略
   - `tool_adapter.py` - 工具调用事件渲染适配
   - `agents/` - 内置 Agent 配置目录（`claude_code.py`/`codex.py`/`openclaw.py`/`opencode.py`）
-- `backend/api/routes/acp.py` - ACP REST API 路由（`/api/acp/agents`、`/sessions`、SSE prompt 等）
-- `backend/core/terminal/` - VT100 仿真器与 PTY 持久会话
+- `lib/backend/api/routes/acp.py` - ACP REST API 路由（`/api/acp/agents`、`/sessions`、SSE prompt 等）
+- `lib/backend/core/terminal/` - VT100 仿真器与 PTY 持久会话
   - `vt_screen.py` - ANSI/SGR 转义序列解析与字符网格维护
   - `pty_session.py` - PTY 进程封装与屏幕快照
-- `backend/api/routes/preview_proxy.py` - 反向代理（用于本地开发服务器预览，SSRF 防护）
-- `backend/api/routes/notifications.py` - 通知 HTTP API（用于 Claude Code hooks 集成）
-- `backend/static/claude-code-hooks.json` - Claude Code hooks 配置模板
-- `frontend/src/features/vibe-coding/` - 前端三栏布局页面（Agent 选择 / 会话面板 / 终端 / 文件预览）
+- `lib/backend/api/routes/preview_proxy.py` - 反向代理（用于本地开发服务器预览，SSRF 防护）
+- `lib/backend/api/routes/notifications.py` - 通知 HTTP API（用于 Claude Code hooks 集成）
+- `lib/backend/static/claude-code-hooks.json` - Claude Code hooks 配置模板
+- `lib/frontend/src/features/vibe-coding/` - 前端三栏布局页面（Agent 选择 / 会话面板 / 终端 / 文件预览）
 
 ### 5.2 Android 原生应用（Open-AwA-Android）
 
@@ -223,7 +236,7 @@ Android 端采用**原生 Kotlin + Jetpack Compose**，作为**服务器中心�
 
 **项目位置与工具**
 
-- **原生项目根目录**：`D:\代码\Open-AwA\Android\Open-AwA-Android`（从 F 盘迁移到工作目录，因工具沙箱限制）
+- **原生项目根目录**：`D:\代码\Open-AwA\lib\Android\Open-AwA-Android`（从 F 盘迁移到工作目录，因工具沙箱限制）
   - applicationId: `com.xtys126.open_awa`
   - namespace: `com.xtys126.open_awa`
   - AGP 9.2.1 + Gradle 9.4.1，compileSdk 36，minSdk 24，targetSdk 36
@@ -259,7 +272,7 @@ app/
         OpenAwAApplication.kt   # Application 入口，初始化 BackendManager
         MainActivity.kt         # 单 Activity + Compose 入口
         core/
-          backend/
+          lib/backend/
             BackendManager.kt   # 服务器后端 URL 管理（瘦客户端）
             ApiClient.kt        # Ktor HTTP 客户端
           theme/
@@ -314,7 +327,7 @@ app/
 
 ```powershell
 # 构建 APK
-cd D:\代码\Open-AwA\Android\Open-AwA-Android
+cd D:\代码\Open-AwA\lib\Android\Open-AwA-Android
 .\gradlew.bat assembleDebug
 
 # 安装到 MuMu 模拟器
@@ -345,7 +358,7 @@ cd D:\代码\Open-AwA\Android\Open-AwA-Android
 
 **已废弃方案（mobile/ 目录，已删除）**
 
-> `mobile/` 目录的 Capacitor + Chaquopy 方案于 2026-07-08 23:30 起废弃，2026-07-09 已从仓库删除。所有移动端工作迁移到 `D:\代码\Open-AwA\Android\Open-AwA-Android`。架构从"内嵌+远程混合"改为"服务器中心多端一体"瘦客户端，不再维护内嵌 Python 后端。
+> `mobile/` 目录的 Capacitor + Chaquopy 方案于 2026-07-08 23:30 起废弃，2026-07-09 已从仓库删除。所有移动端工作迁移到 `D:\代码\Open-AwA\lib\Android\Open-AwA-Android`。架构从"内嵌+远程混合"改为"服务器中心多端一体"瘦客户端，不再维护内嵌 Python 后端。
 
 ---
 
@@ -384,14 +397,12 @@ cd D:\代码\Open-AwA\Android\Open-AwA-Android
 
 ### 7.1 架构与并发
 
-- **OUTDATED: Blocking ORM in async**: `ExperienceManager` 中 `async def` 调用同步 SQLAlchemy 查询，可能阻塞事件循环（已修复：实际为同步实现，AGENTS.md 描述失真，2026-07-04 审计确认）
 - **SQLite FK not enforced by default**: 外键约束需要在连接参数中显式启用
 - **Vector DB path is relative**: `VECTOR_DB_PATH = "./data/vector_db"`，工作目录不同会导致路径问题
 - **Billing tables init required**: `PricingManager.ensure_configuration_schema()` 必须在 lifespan startup 中执行
 - **Plugin Manager is a singleton**: 通过 `plugins.plugin_instance.get()` 获取，不要直接 `PluginManager()` 创建新实例
 - **Conversation history auto-injected**: Agent 自动从 ShortTermMemory 加载对话历史，无需手动传递
 - **resolve_max_tool_call_rounds**: 定义在 `executor.py`，`agent.py` 通过 import 引用同一函数，不可重复定义
-- **OUTDATED: Backend root directory file scatter**: 早期 backend 根目录曾散落 14+ 个独立脚本（`replace_file.py`、`elevate_script.ps1`、`grant_perm.ps1` 等），已于 2026-07-11 整理时确认全部清理完毕（实际仅余 `main.py` 与 `generate_api_key.py` 两个 .py 文件，无任何 .ps1 脚本）。新增脚本仍应放在 `scripts/` 目录，不放在 backend 根目录
 
 ### 7.2 安全与认证
 
@@ -465,8 +476,8 @@ Before `git add` and `git commit`, complete in order:
 
 所有阶段完成后运行一次完整测试：
 ```bash
-cd frontend && npm run test:coverage && cd ..
-cd backend && pytest -v --cov && cd ..
+cd lib/frontend && npm run test:coverage && cd ..
+cd lib/backend && pytest -v --cov && cd ..
 ```
 
 ### 8.4 Commit Message Format
@@ -564,8 +575,8 @@ git commit -m "[Type] 变更描述"
 
 - [CLAUDE.md](CLAUDE.md) — Claude Code 操作流程契约（构建命令、6 步验证闭环、自愈循环、架构速查、Known Pitfalls 完整版）
 - [README.md](README.md) — Project overview, capabilities, quick start
-- [CODE_WIKI.md](CODE_WIKI.md) — Comprehensive code wiki (1500+ lines): six-layer architecture, full module deep-dives
-- [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) — Detailed technical documentation
+- [CODE_WIKI.md](docs/CODE_WIKI.md) — Comprehensive code wiki (1500+ lines): six-layer architecture, full module deep-dives
+- [PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md) — Detailed technical documentation
 - [docs/架构/后端架构说明.md](docs/架构/后端架构说明.md) — Backend architecture details
 - [docs/架构/前端架构说明.md](docs/架构/前端架构说明.md) — Frontend architecture details
 - [docs/指南/部署与运行说明.md](docs/指南/部署与运行说明.md) — Deployment guide

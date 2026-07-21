@@ -2143,3 +2143,66 @@ error: option '-u, --update-snapshots [mode]' argument 'tests/e2e/compatibility/
 - **Resolved**: 2026-07-15T01:20:00+08:00
 - **Notes**: 后续命令使用显式模式，未改写已有匹配快照。
 ---
+
+## [ERR-20260722-B01] targeted-pytest-global-coverage-gate
+
+**Logged**: 2026-07-22T12:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+后端 pytest 默认启用全仓覆盖率门槛，运行小范围回归即使全部断言通过也会因总覆盖率不足退出失败。
+
+### Error
+```text
+FAIL Required test coverage of 24.0% not reached. Total coverage: 14.26%
+114 passed in 50.78s
+```
+
+### Context
+- 命令：`pytest tests/test_security_rbac.py tests/test_memory_injection_fix.py tests/test_audit_report_security_fixes.py tests/test_agent_core.py -q`
+- 工作目录：`lib/backend`
+
+### Suggested Fix
+小范围行为回归使用 `pytest --no-cov`；完整套件仍保留默认覆盖率门槛作为交付验证。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/pytest.ini
+
+### Resolution
+- **Resolved**: 2026-07-22T12:00:00+08:00
+- **Notes**: 已确认 114 项断言通过，后续使用 `--no-cov` 获取有效的针对性结果。
+---
+
+## [ERR-20260722-F01] vitest-unsupported-runinband-option
+
+**Logged**: 2026-07-22T12:05:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Vitest 不支持 Jest 的 `--runInBand` 参数，传入后会在测试收集前退出。
+
+### Error
+```text
+CACError: Unknown option `--runInBand`
+```
+
+### Context
+- 命令：`npx vitest run src/__tests__ --runInBand`
+- 工作目录：`lib/frontend`
+
+### Suggested Fix
+使用 `npx vitest run <路径>`，并在需要控制并发时采用 Vitest 支持的 pool 参数。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend/vitest.config.ts
+
+### Resolution
+- **Resolved**: 2026-07-22T12:05:00+08:00
+- **Notes**: 已改用 Vitest 原生命令重试。
+---

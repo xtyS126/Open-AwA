@@ -56,24 +56,19 @@ full = [
     "openawa[dev]",
 ]
 
-[project.scripts]
-openawa = "openawa.cli.main:cli"
-
 [project.urls]
 Homepage = "https://github.com/open-awa/open-awa"
 Documentation = "https://github.com/open-awa/open-awa"
 Repository = "https://github.com/open-awa/open-awa.git"
 
-[tool.setuptools]
-packages = ["openawa"]
-
-[tool.setuptools.package-data]
-openawa = ["config/users.yaml", "config/pricing/*.json"]
+[tool.setuptools.packages.find]
+where = ["lib"]
+include = ["backend*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
+testpaths = ["lib/backend/tests"]
+pythonpath = ["lib/backend", "."]
 
 [tool.coverage.run]
-source = ["openawa"]
-omit = ["openawa/tests/*", "openawa/cli/*"]
+source = ["lib/backend"]
+omit = ["lib/backend/tests/*"]

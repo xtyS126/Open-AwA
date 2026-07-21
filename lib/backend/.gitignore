@@ -1,0 +1,5 @@
+# 数据库 WAL/SHM 伴随文件
+*.db-shm
+*.db-wal
+# 运行时模型下载目录（已迁至 var/data/models/）
+data/models/

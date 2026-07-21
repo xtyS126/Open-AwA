@@ -1,0 +1,159 @@
+{
+  "type": "object",
+  "title": "系统工具集配置",
+  "description": "配置文件管理、终端执行、网页搜索等内置工具的运行参数。修改后需重启后端或重新加载插件生效。",
+  "properties": {
+    "file_manager_enabled": {
+      "type": "boolean",
+      "title": "启用文件管理工具",
+      "description": "开启后 Agent 可调用 read_file/write_file/list_files 等文件操作工具",
+      "default": true,
+      "x-component": "switch"
+    },
+    "file_manager_allowed_directories": {
+      "type": "string",
+      "title": "文件管理允许目录白名单",
+      "description": "逗号分隔的目录绝对路径列表，留空则限制为当前工作目录。仅这些目录及其子目录下的文件可被读写",
+      "default": "",
+      "x-component": "input",
+      "pattern": "^$|^(/[\\w\\s./-]+,?\\s*)+$"
+    },
+    "file_manager_max_file_size_mb": {
+      "type": "number",
+      "title": "单文件最大大小（MB）",
+      "description": "读取或写入单个文件时的最大字节数限制，超过则操作失败",
+      "default": 50,
+      "minimum": 1,
+      "maximum": 1024
+    },
+    "terminal_executor_enabled": {
+      "type": "boolean",
+      "title": "启用终端执行工具",
+      "description": "开启后 Agent 可调用 run_command/get_system_status 执行受控 shell 命令",
+      "default": true,
+      "x-component": "switch"
+    },
+    "terminal_executor_timeout_seconds": {
+      "type": "number",
+      "title": "终端命令超时（秒）",
+      "description": "单条命令最长执行时间，超时后强制终止进程",
+      "default": 30,
+      "minimum": 1,
+      "maximum": 600
+    },
+    "terminal_executor_max_output_chars": {
+      "type": "number",
+      "title": "终端输出最大字符数",
+      "description": "命令输出超过此长度时截断，避免内存占用过高",
+      "default": 50000,
+      "minimum": 1000,
+      "maximum": 1000000
+    },
+    "terminal_executor_allowed_directories": {
+      "type": "string",
+      "title": "终端工作目录白名单",
+      "description": "逗号分隔的允许执行命令的目录列表，留空则使用当前工作目录",
+      "default": "",
+      "x-component": "input"
+    },
+    "web_search_enabled": {
+      "type": "boolean",
+      "title": "启用网页搜索工具",
+      "description": "开启后 Agent 可调用 web_search/fetch_url 工具访问外部网络",
+      "default": true,
+      "x-component": "switch"
+    },
+    "web_search_default_engine": {
+      "type": "string",
+      "title": "默认搜索引擎",
+      "description": "未指定引擎时使用的搜索后端",
+      "default": "searxng",
+      "enum": ["searxng", "google", "bing", "duckduckgo"],
+      "x-component": "select"
+    },
+    "web_search_max_results": {
+      "type": "number",
+      "title": "搜索结果最大条数",
+      "description": "单次搜索返回的结果上限",
+      "default": 10,
+      "minimum": 1,
+      "maximum": 50
+    },
+    "web_search_timeout_seconds": {
+      "type": "number",
+      "title": "搜索请求超时（秒）",
+      "description": "发起搜索 HTTP 请求的超时时间",
+      "default": 15,
+      "minimum": 1,
+      "maximum": 120
+    },
+    "local_search_enabled": {
+      "type": "boolean",
+      "title": "启用本地检索工具",
+      "description": "开启后 Agent 可调用 local_search/index_document 等本地文档索引与检索工具",
+      "default": true,
+      "x-component": "switch"
+    },
+    "local_search_index_path": {
+      "type": "string",
+      "title": "本地检索索引路径",
+      "description": "本地文档索引存储目录的绝对路径",
+      "default": "var/data/local_search_index",
+      "x-component": "input"
+    },
+    "local_search_max_results": {
+      "type": "number",
+      "title": "本地检索最大结果数",
+      "description": "单次检索返回的最大结果条数",
+      "default": 20,
+      "minimum": 1,
+      "maximum": 100
+    },
+    "memory_manager_enabled": {
+      "type": "boolean",
+      "title": "启用记忆管理工具",
+      "description": "开启后 Agent 可调用 remember/recall/forget/list/stats 等记忆工具",
+      "default": true,
+      "x-component": "switch"
+    },
+    "memory_manager_backend": {
+      "type": "string",
+      "title": "记忆存储后端",
+      "description": "记忆事实持久化的存储引擎",
+      "default": "sqlite",
+      "enum": ["sqlite", "postgresql"],
+      "x-component": "select"
+    },
+    "memory_manager_max_facts_per_user": {
+      "type": "number",
+      "title": "单用户最大记忆数",
+      "description": "单个用户可存储的记忆事实上限，超过时按时间淘汰最旧记录",
+      "default": 1000,
+      "minimum": 100,
+      "maximum": 100000
+    },
+    "browser_extended_enabled": {
+      "type": "boolean",
+      "title": "启用浏览器扩展工具",
+      "description": "开启后 Agent 可调用 screenshot/snapshot/navigate 等浏览器自动化工具",
+      "default": false,
+      "x-component": "switch"
+    },
+    "browser_extended_headless": {
+      "type": "boolean",
+      "title": "浏览器无头模式",
+      "description": "开启后浏览器在后台运行不显示窗口",
+      "default": true,
+      "x-component": "switch"
+    },
+    "browser_extended_default_timeout_seconds": {
+      "type": "number",
+      "title": "浏览器默认超时（秒）",
+      "description": "页面加载、元素查找等操作的默认超时时间",
+      "default": 30,
+      "minimum": 1,
+      "maximum": 300
+    }
+  },
+  "required": []
+}

@@ -15,7 +15,7 @@
 ### 2.1 仓库内依据
 
 - `README.md`
-- `PROJECT_DOCUMENTATION.md`
+- `docs/PROJECT_DOCUMENTATION.md`
 - `docs/架构/未来路线图.md`
 - `docs/audit/竞品调研报告.md`
 - `docs/audit/开源方案评估报告.md`

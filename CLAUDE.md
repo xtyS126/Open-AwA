@@ -140,7 +140,7 @@
 ### 4.1 Backend (Python 3.11+, FastAPI)
 
 ```bash
-cd backend
+cd lib/backend
 pip install -r requirements.txt          # 生产依赖
 pip install -r requirements-dev.txt      # 开发依赖（含 pytest）
 python main.py                           # 启动服务 (uvicorn, 端口 8000)
@@ -152,7 +152,7 @@ pytest path/to/test.py -k "test_name"    # 运行单个测试
 ### 4.2 Frontend (Node.js 18+, React 18 + Vite)
 
 ```bash
-cd frontend
+cd lib/frontend
 npm install
 npm run dev                              # 开发服务器 (端口 5173)
 npm run build                            # TypeScript 检查 + Vite 构建
@@ -174,12 +174,12 @@ Claude Code 在完成代码修改后，必须通过真实操作验证代码可�
 验证前必须确保后端服务运行。服务管理命令：
 
 ```bash
-# 启动后端（端口 8000，后台运行，日志输出到 backend/logs/）
-cd backend
+# 启动后端（端口 8000，后台运行，日志输出到 var/logs/）
+cd lib/backend
 python main.py
 
 # 启动前端开发服务器（端口 5173，仅前端验证时需要）
-cd frontend
+cd lib/frontend
 npm run dev
 ```
 
@@ -195,11 +195,11 @@ curl -H "Authorization: Bearer <TOKEN>" http://localhost:8000/api/system/diagnos
 
 启动判定规则：
 - `GET /api/system/ping` 在 30 秒内返回 200 且 `pong=true` → 服务就绪
-- 超时或连接拒绝 → 检查 `backend/logs/` 下的启动日志，定位启动失败原因（端口占用、DB 初始化失败、插件加载异常等）
+- 超时或连接拒绝 → 检查 `var/logs/` 下的启动日志，定位启动失败原因（端口占用、DB 初始化失败、插件加载异常等）
 
 ### 5.2 Authentication & API Access（认证与 API 访问）
 
-OpenAwA 后端采用 **API Key 优先** 认证策略（见 `backend/api/dependencies.py` `get_current_user`）：
+OpenAwA 后端采用 **API Key 优先** 认证策略（见 `lib/backend/api/dependencies.py` `get_current_user`）：
 
 1. **路径 1（主认证，推荐）**：`Authorization: Bearer <OPENAWA_API_KEY>` — API Key 匹配后直接返回 owner 用户，跳过 JWT 解析和黑名单检查
 2. **路径 2（兼容降级）**：JWT Bearer token（来自 `/api/auth/login`）— 仅用于前端浏览器会话兼容
@@ -211,11 +211,11 @@ OpenAwA 后端采用 **API Key 优先** 认证策略（见 `backend/api/dependen
 #### API Key 获取
 
 ```bash
-# 方式 1：生成新 API Key（写入 backend/.env.local）
-cd backend && python generate_api_key.py
+# 方式 1：生成新 API Key（写入 lib/backend/.env.local）
+cd lib/backend && python bin/bin/generate_api_key.py
 
 # 方式 2：从现有配置读取
-grep OPENAWA_API_KEY backend/.env.local
+grep OPENAWA_API_KEY lib/backend/.env.local
 ```
 
 API Key 必须至少 32 字符，未配置时后端拒绝启动。
@@ -263,10 +263,10 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 ```bash
 # 后端单元测试
-cd backend && pytest -x --tb=short
+cd lib/backend && pytest -x --tb=short
 
 # 前端单元测试
-cd frontend && npm run test
+cd lib/frontend && npm run test
 ```
 
 - 全部通过 → 进入步骤 3
@@ -276,22 +276,22 @@ cd frontend && npm run test
 
 ```bash
 # 启动后端服务（后台运行）
-cd backend && python main.py &
+cd lib/backend && python main.py &
 
 # 等待服务就绪（最多 30 秒轮询）
 curl --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8000/api/system/ping
 ```
 
 - `pong=true` → 进入步骤 4
-- 启动失败 → 检查 `backend/logs/` 日志，进入自愈循环
+- 启动失败 → 检查 `var/logs/` 日志，进入自愈循环
 
 #### 步骤 4：E2E 场景验证（通过 test-scenarios 运行真实业务路径）
 
-系统内置 10 个真实 E2E 测试场景（定义在 `backend/api/routes/test_runner.py`），覆盖：服务健康、系统诊断、对话生命周期、非流式聊天、插件发现、技能列表、文件工具、定时任务、用户会话、MCP 状态。
+系统内置 10 个真实 E2E 测试场景（定义在 `lib/backend/api/routes/test_runner.py`），覆盖：服务健康、系统诊断、对话生命周期、非流式聊天、插件发现、技能列表、文件工具、定时任务、用户会话、MCP 状态。
 
 ```bash
-# 使用 API Key 认证（从 backend/.env.local 读取）
-API_KEY=$(grep OPENAWA_API_KEY backend/.env.local | cut -d'=' -f2- | tr -d '"')
+# 使用 API Key 认证（从 lib/backend/.env.local 读取）
+API_KEY=$(grep OPENAWA_API_KEY lib/backend/.env.local | cut -d'=' -f2- | tr -d '"')
 
 # 列出所有可用场景（无需认证）
 curl -s http://localhost:8000/api/test-scenarios
@@ -326,11 +326,11 @@ curl -s -X POST http://localhost:8000/api/test-scenarios/run \
 
 #### 步骤 5：API 集成测试（使用 api-testing skill 覆盖全部路由模块）
 
-项目内置 `api-testing` skill（位于 `backend/skills/external/api-testing/`），通过 YAML 定义测试用例，覆盖全部 24+ API 路由模块。
+项目内置 `api-testing` skill（位于 `lib/backend/skills/external/api-testing/`），通过 YAML 定义测试用例，覆盖全部 24+ API 路由模块。
 
 ```bash
 # 运行全部 API 集成测试（生成 Markdown + JSON 报告）
-cd backend/skills/external/api-testing
+cd lib/backend/skills/external/api-testing
 python -m core
 
 # 报告输出到 reports/ 目录
@@ -344,7 +344,7 @@ python -m core
 #### 步骤 6：前端构建验证
 
 ```bash
-cd frontend && npm run build
+cd lib/frontend && npm run build
 ```
 
 - 构建成功且无警告 → 验证完成，可提交
@@ -367,8 +367,8 @@ cd frontend && npm run build
 1. **捕获完整失败信息**：读取测试输出的完整错误堆栈、失败用例名、断言期望值与实际值
 2. **定位根因**：
    - 单元测试失败 → 用 `Read` 打开失败测试文件，理解断言逻辑 → 用 `Grep` 找到被测函数实现 → 对比期望与实际
-   - E2E 场景失败 → 读取场景返回的 `detail` 字段 → 定位 `backend/api/routes/test_runner.py` 中对应场景函数 → 追踪到实际业务代码
-   - 服务启动失败 → 读取 `backend/logs/` 下的启动日志 → 定位异常堆栈
+   - E2E 场景失败 → 读取场景返回的 `detail` 字段 → 定位 `lib/backend/api/routes/test_runner.py` 中对应场景函数 → 追踪到实际业务代码
+   - 服务启动失败 → 读取 `var/logs/` 下的启动日志 → 定位异常堆栈
    - 静态检查失败 → 读取 `reports/audit-result.txt`
 3. **区分失败类型**：
    - 代码缺陷 → 修复实现
@@ -387,13 +387,13 @@ cd frontend && npm run build
 1. **先重跑失败的单个用例**（快速验证修复有效）：
    ```bash
    # 后端单个测试
-   cd backend && pytest tests/test_xxx.py::test_function_name -x --tb=short
+   cd lib/backend && pytest tests/test_xxx.py::test_function_name -x --tb=short
 
    # 前端单个测试
-   cd frontend && npm run test -- --run src/__tests__/xxx.test.ts
+   cd lib/frontend && npm run test -- --run src/__tests__/xxx.test.ts
 
    # 单个 E2E 场景（使用 API Key）
-   API_KEY=$(grep OPENAWA_API_KEY backend/.env.local | cut -d'=' -f2- | tr -d '"')
+   API_KEY=$(grep OPENAWA_API_KEY lib/backend/.env.local | cut -d'=' -f2- | tr -d '"')
    curl -s -X POST http://localhost:8000/api/test-scenarios/run \
      -H "Authorization: Bearer $API_KEY" \
      -H "Content-Type: application/json" \
@@ -432,7 +432,7 @@ cd frontend && npm run build
 
 | 失败现象 | 快速定位 | 修复方向 |
 |----------|----------|----------|
-| 服务启动后立即退出 | `backend/logs/` 启动日志 | 检查 DB 连接、端口占用、插件加载 |
+| 服务启动后立即退出 | `var/logs/` 启动日志 | 检查 DB 连接、端口占用、插件加载 |
 | `chat-nonstream` 场景失败 | 场景返回的 `detail.response_preview` | 检查 LLM API Key 配置、`model_service.py` |
 | `conversation-lifecycle` 失败 | `core/conversation_sessions.py` | 检查 DB session 提交、外键约束 |
 | `plugin-discovery` 失败 | `plugins/plugin_instance.get()` | 检查插件目录扫描、插件加载异常 |
@@ -472,22 +472,22 @@ comprehension.py → planner.py → executor.py → feedback.py
 
 | System | Directory | Key Files |
 |--------|-----------|-----------|
-| Agent Core | `backend/core/` | `agent.py`, `comprehension.py`, `planner.py`, `executor.py`, `feedback.py` |
-| Plugin System | `backend/plugins/` | `plugin_manager.py`, `plugin_instance.py` (singleton), `base_plugin.py`, `plugin_sandbox.py`, `plugin_lifecycle.py` (state machine), `hot_update_manager.py` (blue-green) |
-| Skill System | `backend/skills/` | `skill_engine.py`, `skill_executor.py`, `skill_registry.py`, `skill_loader.py` |
-| Memory | `backend/memory/` | `manager.py`, `experience_manager.py`, `vector_store_manager.py` |
-| Billing | `backend/billing/` | `tracker.py`, `pricing_manager.py`, `engine.py`, `calculator.py` |
-| MCP Protocol | `backend/mcp/` | `client.py`, `manager.py` (thread-safe singleton), `transport.py`, `protocol.py` |
-| Security | `backend/security/` | `rbac.py`, `audit.py`, `permission.py`, `sandbox.py` |
-| Channels | `backend/channels/` | `manager.py` (connection pool), `base.py` (abstract adapter), 11 adapters: weixin, dingtalk, feishu, discord, telegram, slack, qq, matrix, imessage, wecom |
-| Coding | `backend/core/coding/` | AST search, LSP integration, Git panel, Diff viewer |
-| Scheduled Tasks | `backend/core/` | `scheduled_task_manager.py` (polling loop + transactional claims) |
-| Model Service | `backend/core/` | `model_service.py` (litellm adapter + shared httpx client) |
-| Subagents | `backend/core/` | `subagent.py` (StateGraph executor), task_runtime (multi-agent teams) |
-| Workflow | `backend/workflow/` | `engine.py`, `parser.py` |
-| Tools | `backend/tools/` | Tool registry, built-in tools (file, terminal, search, todo) |
-| System Diagnostics | `backend/api/routes/` | `system.py` (health checks), `test_runner.py` (10 scenario E2E tests) |
-| ACP Vibe Coding | `backend/acp_host/` | `core.py` (dataclasses + exceptions), `client.py` (ACPHostedClient), `service.py` (ACPService singleton), `permissions.py` (hard-block policy), `tool_adapter.py`, `agents/` (4 built-in agents) |
+| Agent Core | `lib/backend/core/` | `agent.py`, `comprehension.py`, `planner.py`, `executor.py`, `feedback.py` |
+| Plugin System | `lib/backend/plugins/` | `plugin_manager.py`, `plugin_instance.py` (singleton), `base_plugin.py`, `plugin_sandbox.py`, `plugin_lifecycle.py` (state machine), `hot_update_manager.py` (blue-green) |
+| Skill System | `lib/backend/skills/` | `skill_engine.py`, `skill_executor.py`, `skill_registry.py`, `skill_loader.py` |
+| Memory | `lib/backend/memory/` | `manager.py`, `experience_manager.py`, `vector_store_manager.py` |
+| Billing | `lib/backend/billing/` | `tracker.py`, `pricing_manager.py`, `engine.py`, `calculator.py` |
+| MCP Protocol | `lib/backend/mcp/` | `client.py`, `manager.py` (thread-safe singleton), `transport.py`, `protocol.py` |
+| Security | `lib/backend/security/` | `rbac.py`, `audit.py`, `permission.py`, `sandbox.py` |
+| Channels | `lib/backend/channels/` | `manager.py` (connection pool), `base.py` (abstract adapter), 11 adapters: weixin, dingtalk, feishu, discord, telegram, slack, qq, matrix, imessage, wecom |
+| Coding | `lib/backend/core/coding/` | AST search, LSP integration, Git panel, Diff viewer |
+| Scheduled Tasks | `lib/backend/core/` | `scheduled_task_manager.py` (polling loop + transactional claims) |
+| Model Service | `lib/backend/core/` | `model_service.py` (litellm adapter + shared httpx client) |
+| Subagents | `lib/backend/core/` | `subagent.py` (StateGraph executor), task_runtime (multi-agent teams) |
+| Workflow | `lib/backend/workflow/` | `engine.py`, `parser.py` |
+| Tools | `lib/backend/tools/` | Tool registry, built-in tools (file, terminal, search, todo) |
+| System Diagnostics | `lib/backend/api/routes/` | `system.py` (health checks), `test_runner.py` (10 scenario E2E tests) |
+| ACP Vibe Coding | `lib/backend/acp_host/` | `core.py` (dataclasses + exceptions), `client.py` (ACPHostedClient), `service.py` (ACPService singleton), `permissions.py` (hard-block policy), `tool_adapter.py`, `agents/` (4 built-in agents) |
 
 ### 6.4 Frontend Structure
 
@@ -523,7 +523,7 @@ features/settings/
 
 ## 7. Adding a New API Route (Backend)
 
-1. Create `backend/api/routes/my_feature.py` with an `APIRouter`
+1. Create `lib/backend/api/routes/my_feature.py` with an `APIRouter`
 2. Import in `main.py`: `from api.routes.my_feature import router as my_router`
 3. Register in `main.py`: `app.include_router(my_router)` (or `app.include_router(my_router, prefix=settings.API_V1_STR)` for `/api` prefix)
 4. Use `Depends(get_current_user)` for auth-protected endpoints, `Depends(get_db)` for DB access
@@ -575,7 +575,7 @@ SSE 事件类型：`text` | `tool` | `status` | `permission` | `usage` | `result
 | GET | `/api/notifications?limit=N` | 列出最近 N 条通知（默认 50，最大 100） |
 | GET | `/api/notifications/stream` | SSE 长连接，30s 心跳，实时推送 |
 
-Hooks 模板见 `backend/static/claude-code-hooks.json`。
+Hooks 模板见 `lib/backend/static/claude-code-hooks.json`。
 
 ### 9.3 文件预览与反向代理
 
@@ -619,12 +619,12 @@ Always use `plugins.plugin_instance.get()` to access the PluginManager. Never cr
 
 ## 11. Channels System (Multi-IM Integration)
 
-The channels system (`backend/channels/`) provides a unified abstraction for 11 IM platforms. Each platform implements the `ChannelAdapter` abstract base class:
+The channels system (`lib/backend/channels/`) provides a unified abstraction for 11 IM platforms. Each platform implements the `ChannelAdapter` abstract base class:
 
 - **Adapter pattern** — `base.py` defines `ChannelAdapter` (ABC), `ChannelMessage`, `ChannelConfig`. Each platform (weixin, dingtalk, feishu, discord, telegram, slack, qq, matrix, imessage, wecom) extends it.
 - **Connection pool** — `ChannelManager` in `manager.py` manages lifecycle (connect/disconnect/health check) and message queuing for all registered adapters.
 - **ChannelType enum** — Standardized platform identifiers used for routing and message dispatch.
-- Route: `backend/api/routes/weixin.py` handles WeChat-specific webhooks; other channels route through their respective adapters.
+- Route: `lib/backend/api/routes/weixin.py` handles WeChat-specific webhooks; other channels route through their respective adapters.
 
 Channels are distinct from MCP and Plugins — they are inbound message sources, not tool providers.
 
@@ -729,7 +729,7 @@ git commit -m "[Type] 变更描述"
 
 - **OUTDATED: Blocking ORM in async**: `ExperienceManager` uses sync SQLAlchemy queries in `async def`, may block the event loop（已修复：实际为同步实现，描述失真，2026-07-04 审计确认）
 - **SQLite FK not enforced by default**: Foreign key constraints need explicit connection parameter
-- **Vector DB path is relative**: `VECTOR_DB_PATH` resolves relative to `backend/`, can break if working directory changes
+- **Vector DB path is relative**: `VECTOR_DB_PATH` resolves relative to `lib/backend/`, can break if working directory changes
 - **Plugin Manager is a singleton**: Use `plugins.plugin_instance.get()`, never create `PluginManager()` directly. Use `pm.has_plugin(name)` / `pm.is_plugin_loaded(name)` instead of `getattr(pm, "plugin_metadata", {})`.
 - **SECRET_KEY auto-generated in dev**: Must be explicitly set as env var in production; auto-generation persists to `.env.local`
 - **Billing tables require init**: `PricingManager.ensure_configuration_schema()` must run in lifespan startup
@@ -793,8 +793,8 @@ All API routes use prefix `settings.API_V1_STR` (`/api`) except MCP, billing, ma
 
 - [AGENTS.md](AGENTS.md) — 通用 AI Agent 规则契约（自主权边界、记忆协议、迭代闭环、反模式）
 - [README.md](README.md) — Project overview, capabilities, quick start
-- [CODE_WIKI.md](CODE_WIKI.md) — Comprehensive code wiki (1500+ lines): six-layer architecture, full module deep-dives, class/function quick reference, dependency graph
-- [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) — Detailed technical documentation
+- [CODE_WIKI.md](docs/CODE_WIKI.md) — Comprehensive code wiki (1500+ lines): six-layer architecture, full module deep-dives, class/function quick reference, dependency graph
+- [PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md) — Detailed technical documentation
 - [docs/架构/后端架构说明.md](docs/架构/后端架构说明.md) — Backend architecture details
 - [docs/架构/前端架构说明.md](docs/架构/前端架构说明.md) — Frontend architecture details
 - [docs/指南/部署与运行说明.md](docs/指南/部署与运行说明.md) — Deployment guide

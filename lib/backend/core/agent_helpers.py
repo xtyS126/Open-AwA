@@ -1,0 +1,202 @@
+"""AIAgent 纯工具函数集合，不访问实例状态，可被 agent.py 与测试套件复用。
+
+本模块包含以下 8 个纯函数（原 AIAgent 的 @staticmethod，已迁移以便独立测试与演进）：
+- is_final_only_mode: 判断当前请求是否要求只返回最终答案
+- build_status_event: 构造统一的流式阶段状态事件
+- map_finish_reason_to_state: 将 LLM finish_reason 映射为 AgentState
+- get_stream_tool_kind: 根据原生 function name 推断工具类别
+- summarize_stream_tool_result: 为流式工具事件生成简短摘要
+- extract_spawned_subagent_result: 从 task_spawn_agent 结果中提取子代理标识
+- build_effective_user_input: 为 continuation 请求拼接内部补充上下文
+- build_configured_model_hint: 为 task_spawn_agent 生成精简模型目录提示
+
+core/agent.py 中对应的方法保留为类级别 backward compat 别名（@staticmethod 赋值），
+仅用于兼容既有测试 AIAgent._method_name(...) 调用，待 fix-test-implementation-coupling
+spec 落地后移除。
+"""
+
+from __future__ import annotations
+
+# 标准库
+from typing import Any, Dict, Optional
+
+# 项目内部
+from core.agent_state import AgentState
+
+
+def is_final_only_mode(context: Dict[str, Any]) -> bool:
+    """
+    判断当前请求是否要求只返回最终答案。
+
+    `output_mode=final_only` 是显式协议约定，`suppress_reasoning`
+    则作为兼容旧调用方的兜底开关。
+    """
+    output_mode = str(context.get("output_mode", "")).strip().lower()
+    # 如果明确禁用了思考模式，也应对外按 final_only 语义剥离推理内容。
+    return (
+        output_mode == "final_only"
+        or bool(context.get("suppress_reasoning"))
+        or context.get("thinking_enabled") is False
+    )
+
+
+def build_status_event(phase: str, message: str, **extra: Any) -> Dict[str, Any]:
+    """
+    构造统一的流式阶段状态事件，便于前端在首包前显示当前进度。
+    """
+    payload: Dict[str, Any] = {
+        "type": "status",
+        "phase": phase,
+        "message": message,
+    }
+    payload.update(extra)
+    return payload
+
+
+def map_finish_reason_to_state(
+    finish_reason: str,
+    current_round: int,
+    max_rounds: int,
+) -> AgentState:
+    """
+    将 LLM 返回的 finish_reason 映射为 AgentState 状态机状态。
+
+    映射规则：
+    - current_round >= max_rounds 时优先返回 TERMINAL_MAX_ROUNDS（防止无限循环）
+    - tool_calls -> CONTINUE_TOOL_CALLS（执行工具后继续下一轮）
+    - stop -> TERMINAL_END_TURN（正常结束）
+    - length -> CONTINUE_COMPACT（上下文超限，压缩后继续）
+    - content_filter -> TERMINAL_REFUSAL（模型拒绝）
+    - 其他未知值 -> TERMINAL_END_TURN（安全回退）
+
+    参数:
+        finish_reason: LLM 返回的结束原因字符串
+        current_round: 当前已执行的轮次（从 1 开始计数）
+        max_rounds: 允许的最大轮次上限
+
+    返回:
+        对应的 AgentState 枚举值
+    """
+    # 最大轮次检查优先级最高，避免在边界处仍触发工具调用导致无限循环
+    if current_round >= max_rounds:
+        return AgentState.TERMINAL_MAX_ROUNDS
+
+    normalized = str(finish_reason or "").strip().lower()
+    if normalized == "tool_calls":
+        return AgentState.CONTINUE_TOOL_CALLS
+    if normalized == "stop":
+        return AgentState.TERMINAL_END_TURN
+    if normalized == "length":
+        return AgentState.CONTINUE_COMPACT
+    if normalized == "content_filter":
+        return AgentState.TERMINAL_REFUSAL
+    # 未知 finish_reason 安全回退为正常结束
+    return AgentState.TERMINAL_END_TURN
+
+
+def get_stream_tool_kind(tool_name: str) -> str:
+    """
+    根据原生 function name 推断工具类别，便于前端展示正确的分组标签。
+    """
+    normalized = str(tool_name or "").strip()
+    if normalized.startswith("plugin_"):
+        return "plugin"
+    if normalized.startswith("mcp_"):
+        return "mcp"
+    if normalized.startswith("task_"):
+        return "task"
+    return "tool"
+
+
+def summarize_stream_tool_result(exec_result: Dict[str, Any]) -> str:
+    """
+    为流式工具事件生成简短摘要，避免前端只能看到空的占位节点。
+    """
+    if not isinstance(exec_result, dict):
+        return ""
+
+    if not exec_result.get("ok"):
+        return str(exec_result.get("error") or "工具调用失败")
+
+    payload = exec_result.get("result")
+    if isinstance(payload, dict):
+        for key in ("message", "response", "stdout", "status"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return "工具调用完成"
+
+
+def extract_spawned_subagent_result(exec_result: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    从 task_spawn_agent 的执行结果中提取真实子代理标识与运行模式。
+    """
+    if not isinstance(exec_result, dict) or not exec_result.get("ok"):
+        return None
+
+    payload = exec_result.get("result")
+    if not isinstance(payload, dict):
+        return None
+
+    nested_payload = payload.get("result")
+    if isinstance(nested_payload, dict) and nested_payload.get("agent_id"):
+        payload = nested_payload
+
+    agent_id = payload.get("agent_id")
+    if not isinstance(agent_id, str) or not agent_id.strip():
+        return None
+
+    run_mode = str(payload.get("run_mode") or "").strip().lower()
+    status = str(payload.get("status") or "").strip().lower()
+    return {
+        "agent_id": agent_id.strip(),
+        "run_mode": run_mode,
+        "status": status,
+    }
+
+
+def build_effective_user_input(user_input: str, context: Dict[str, Any]) -> str:
+    """
+    为 continuation 请求拼接内部补充上下文，使模型在同一轮任务中继续推进。
+    """
+    continuation = context.get("continuation")
+    if not isinstance(continuation, dict):
+        return user_input
+
+    aggregated_context = str(continuation.get("aggregated_context") or "").strip()
+    if not aggregated_context:
+        return user_input
+
+    source = str(continuation.get("source") or "subagent").strip() or "subagent"
+    instruction = (
+        f"以下内容是同一轮任务中来自 {source} 的补充执行结果。"
+        "请将其视为当前任务的内部上下文，基于这些结果继续完成上一轮任务。"
+        "除非确有必要，否则不要重复启动已经完成的子代理。"
+    )
+
+    normalized_user_input = str(user_input or "").strip()
+    if normalized_user_input:
+        return f"{normalized_user_input}\n\n{instruction}\n\n[子代理聚合结果]\n{aggregated_context}"
+    return f"{instruction}\n\n[子代理聚合结果]\n{aggregated_context}"
+
+
+def build_configured_model_hint(capabilities: Dict[str, Any], limit: int = 12) -> str:
+    """
+    为 task_spawn_agent 生成精简的模型目录提示，帮助模型自行选择已配置模型。
+    """
+    configured_models = (
+        capabilities.get("configured_models")
+        if isinstance(capabilities.get("configured_models"), dict)
+        else {}
+    )
+    entries = configured_models.get("entries") if isinstance(configured_models.get("entries"), list) else []
+    labels = [
+        str(entry.get("label", "")).strip()
+        for entry in entries[:limit]
+        if isinstance(entry, dict) and str(entry.get("label", "")).strip()
+    ]
+    if not labels:
+        return "当前未发现可枚举的已配置模型；若省略 provider 和 model，将回退到系统默认配置。"
+
+    suffix = " 等" if len(entries) > len(labels) else ""
+    return f"当前可选的已配置模型: {'、'.join(labels)}{suffix}。"
