@@ -51,3 +51,21 @@ describe('setBackendUrl', () => {
     expect(localStorage.getItem('openawa_backend_url')).toBe('http://new-backend:8000/api')
   })
 })
+
+describe('refreshCsrfToken', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it('未认证时不请求受保护的 CSRF 端点', async () => {
+    const { api, clearCachedApiKey, refreshCsrfToken } = await import('@/shared/api/client')
+    const getSpy = vi.spyOn(api, 'get')
+    clearCachedApiKey()
+
+    await refreshCsrfToken()
+
+    expect(getSpy).not.toHaveBeenCalled()
+  })
+})

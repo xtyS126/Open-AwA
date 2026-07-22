@@ -155,6 +155,11 @@ let _csrfToken: string | null = null
  * 因此不会因 CSRF 校验失败而递归。
  */
 export async function refreshCsrfToken(): Promise<void> {
+  // CSRF 端点需要认证；未持有已验证的访问密钥时不发送无意义的 401 请求。
+  if (!getCachedApiKey()) {
+    return
+  }
+
   try {
     const response = await api.get('/auth/csrf-token', { withCredentials: true })
     const token = response.data?.csrf_token

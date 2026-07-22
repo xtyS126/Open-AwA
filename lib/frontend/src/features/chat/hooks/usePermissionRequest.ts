@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { securityAPI } from '@/shared/api/securityApi'
 import { getCachedApiKey, API_BASE_URL } from '@/shared/api/client'
 import type { PermissionRequest } from '@/shared/api/securityApi'
+import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
 
 /** SSE 事件中权限请求的数据结构 */
@@ -67,6 +68,7 @@ function isMobilePlatform(): boolean {
  * 组件卸载或 sessionId 变化时自动断开并重连。
  */
 export function usePermissionRequest(sessionId: string | undefined): UsePermissionRequestReturn {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const [pendingRequests, setPendingRequests] = useState<PermissionRequest[]>([])
   const [connected, setConnected] = useState(false)
   const reconnectAttemptRef = useRef(0)
@@ -90,7 +92,8 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
 
   // 建立 SSE 连接
   useEffect(() => {
-    if (!sessionId || sessionId === 'default') {
+    // 路由重定向前 ChatPage 可能短暂挂载；必须等待认证确认后再建立受保护 SSE。
+    if (!isAuthenticated || !sessionId || sessionId === 'default') {
       setConnected(false)
       return
     }
@@ -244,7 +247,7 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
       setConnected(false)
       setPendingRequests([])
     }
-  }, [sessionId, handlePermissionRequest, handlePermissionReply])
+  }, [isAuthenticated, sessionId, handlePermissionRequest, handlePermissionReply])
 
   // 批准权限请求（允许一次）
   const approve = useCallback(async (requestId: string) => {
