@@ -7,7 +7,6 @@ import asyncio
 import threading
 import json
 import time
-import uuid
 from typing import Any, Dict, List, Optional, Set, Tuple
 from loguru import logger
 from .comprehension import ComprehensionLayer
@@ -19,12 +18,11 @@ from .abort_controller import AbortController
 from memory.experience_manager import ExperienceManager
 from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
-from plugins.plugin_manager import PluginManager
 from plugins import plugin_instance
-from mcp.manager import MCPManager
 from workflow.engine import WorkflowEngine
 from .behavior_logger import behavior_logger
 from .behavior_entry_builder import build_behavior_entries
+from .behavior_recorder import BehaviorRecorder
 from .conversation_recorder import conversation_recorder
 from .magic_commands import get_magic_command_registry
 from .compaction_manager import CompactionManager
@@ -37,8 +35,6 @@ from core.streaming_events import (
     emit_task_event,
     emit_tool_event,
     emit_subagent_start_event,
-    emit_subagent_stop_event,
-    emit_agent_message_event,
     emit_task_created_event,
     emit_task_updated_event,
     emit_team_event,
@@ -51,6 +47,7 @@ from core.agent_capability_builder import (
     collect_mcp_capabilities,
     collect_configured_model_capabilities,
 )
+from core.capability_aggregator import CapabilityAggregator
 from core.agent_context_builder import (
     strip_reasoning_content,
     apply_scheduled_execution_defaults,
@@ -183,8 +180,7 @@ class AIAgent:
         # 能力缓存（Task 7 使用），实例复用场景下按需失效
         # 采用 TTL + 显式 invalidate：避免 _compute_tools_version 依赖 context["agent_capabilities"]
         # 导致的循环依赖问题（fresh context 中 capabilities 未构建，version 为空字符串）
-        self._capabilities_cache: Optional[Dict[str, Any]] = None
-        self._capabilities_cache_ts: float = 0.0
+        self._capability_aggregator = CapabilityAggregator(self._CAPABILITIES_CACHE_TTL)
 
         _skill_t0 = time.time()
         self.skill_engine = SkillEngine(self._db_session)
@@ -202,6 +198,12 @@ class AIAgent:
         # 限制并发 fire-and-forget 记录任务数，防止高并发下 Task 堆积
         from config.settings import settings as _agent_settings
         self._record_semaphore = asyncio.Semaphore(_agent_settings.RECORD_SEMAPHORE_SIZE)
+        self._behavior_recorder = BehaviorRecorder(
+            behavior_logger,
+            conversation_recorder,
+            self._record_with_backpressure,
+            self._handle_record_task_result,
+        )
 
         # 初始化记忆管理器，并注入到反馈层
         _mem_t0 = time.time()
@@ -231,9 +233,6 @@ class AIAgent:
 
         # 工具定义实例级缓存：按技能/插件/MCP 工具版本失效
         # 避免每次 process_stream 重复构建 _build_native_tools 的开销
-        self._tools_cache: Optional[List[Dict[str, Any]]] = None
-        self._tools_cache_version: str = ""
-
         _init_total_ms = round((time.time() - _init_t0) * 1000, 2)
         logger.bind(
             event="agent_init_breakdown",
@@ -308,6 +307,42 @@ class AIAgent:
             return self._db_session_request
         return self._db_session_bound
 
+    @property
+    def _capabilities_cache(self) -> Optional[Dict[str, Any]]:
+        """兼容既有调用，返回能力聚合器持有的缓存。"""
+        return self._capability_aggregator.capabilities_cache
+
+    @_capabilities_cache.setter
+    def _capabilities_cache(self, value: Optional[Dict[str, Any]]) -> None:
+        self._capability_aggregator.capabilities_cache = value
+
+    @property
+    def _capabilities_cache_ts(self) -> float:
+        """兼容既有调用，返回能力缓存时间戳。"""
+        return self._capability_aggregator.capabilities_cache_ts
+
+    @_capabilities_cache_ts.setter
+    def _capabilities_cache_ts(self, value: float) -> None:
+        self._capability_aggregator.capabilities_cache_ts = value
+
+    @property
+    def _tools_cache(self) -> Optional[List[Dict[str, Any]]]:
+        """兼容既有调用，返回原生工具缓存。"""
+        return self._capability_aggregator.tools_cache
+
+    @_tools_cache.setter
+    def _tools_cache(self, value: Optional[List[Dict[str, Any]]]) -> None:
+        self._capability_aggregator.tools_cache = value
+
+    @property
+    def _tools_cache_version(self) -> str:
+        """兼容既有调用，返回工具缓存版本。"""
+        return self._capability_aggregator.tools_cache_version
+
+    @_tools_cache_version.setter
+    def _tools_cache_version(self, value: str) -> None:
+        self._capability_aggregator.tools_cache_version = value
+
     def invalidate_capabilities_cache(self) -> None:
         """
         主动失效实例级 capabilities 与 tools 缓存。
@@ -316,10 +351,7 @@ class AIAgent:
         影响能力集合的事件发生后调用，确保下一次 process_stream 重建 capabilities。
         若不调用，TTL（默认 30 秒）到期后也会自动失效重建。
         """
-        self._capabilities_cache = None
-        self._capabilities_cache_ts = 0.0
-        self._tools_cache = None
-        self._tools_cache_version = ""
+        self._capability_aggregator.invalidate()
         logger.bind(
             event="capabilities_cache_invalidated",
             module="agent",
@@ -453,84 +485,16 @@ class AIAgent:
         在进入最终模型回答前，把当前会话可用的技能、插件和 MCP 连接态写入上下文。
         这样模型在回答“我能不能调用某能力”时能基于真实运行态，而不是凭空猜测。
         """
-        # 保留：同一次 process_stream 内的二次访问直接 return
-        if isinstance(context.get("agent_capabilities"), dict):
-            return
-
-        # 检查实例级 capabilities 缓存（TTL 策略）
-        # 用 TTL 替代原 version 比对，避免 _compute_tools_version 依赖
-        # context["agent_capabilities"] 导致的循环依赖（fresh context 中
-        # capabilities 未构建，version 为空字符串，缓存检查永不命中）
-        now = time.time()
-        if (
-            self._capabilities_cache is not None
-            and self._tools_cache is not None
-            and (now - self._capabilities_cache_ts) < self._CAPABILITIES_CACHE_TTL
-        ):
-            context["agent_capabilities"] = self._capabilities_cache
-            context["_tools"] = self._tools_cache
-            logger.bind(
-                event="capabilities_instance_cache_hit",
-                module="agent",
-                session_id=context.get("session_id", ""),
-                cache_age=round(now - self._capabilities_cache_ts, 3),
-            ).debug("复用实例级缓存的 capabilities 与工具定义")
-            return
-
-        # 缓存未命中，正常构建 capabilities
-        skill_plugin_enabled = bool(context.get("enable_skill_plugin", True))
-        skills: List[Dict[str, Any]] = []
-        plugins: List[Dict[str, Any]] = []
-
-        if skill_plugin_enabled:
-            skills = self._summarize_skill_capabilities(await self.get_available_skills())
-            plugins = self._summarize_plugin_capabilities(await self.get_available_plugins())
-
-        configured_models = self._collect_configured_model_capabilities(context)
-
-        context["agent_capabilities"] = {
-            "skills_enabled": skill_plugin_enabled,
-            "plugins_enabled": skill_plugin_enabled,
-            "tool_dispatch_mode": "platform_managed",
-            "skills": skills,
-            "plugins": plugins,
-            "configured_models": configured_models,
-            "mcp": await self._collect_mcp_capabilities(context),
-        }
-
-        # 根据 Agent 类型注入差异化系统提示（白名单校验，防止注入非预期角色）
-        ALLOWED_AGENT_TYPES = {"Explore", "Plan", "general-purpose"}
-        agent_type = context.get("agent_type", "general-purpose")
-        if agent_type not in ALLOWED_AGENT_TYPES:
-            logger.warning(f"非法的 agent_type '{agent_type}'，已回退为 general-purpose")
-            agent_type = "general-purpose"
-        context["agent_type"] = agent_type
-        if agent_type == "Explore":
-            context.setdefault("agent_type_hint", "你是一个只读的代码探索Agent，专注于搜索、阅读和分析代码。不要修改任何文件。")
-        elif agent_type == "Plan":
-            context.setdefault("agent_type_hint", "你是一个规划Agent，专注于分析需求并制定执行计划。不要直接执行代码或修改文件。")
-        elif agent_type == "general-purpose":
-            context.setdefault("agent_type_hint", "你是一个通用Agent，具备完整的读写和执行能力。")
-
-        # 从运行态能力摘要构建原生 tool_calls 定义，使 LLM 能通过 function calling 协议触发工具
-        # 实例级缓存：与 capabilities 缓存共用同一 TTL，跨 process_stream 调用复用同一份工具定义
-        # capabilities 缓存未命中时 tools 缓存必然也未命中（TTL 同步过期），此时重建 tools
-        tools = self._build_native_tools(context["agent_capabilities"])
-        self._tools_cache = tools
-        logger.bind(
-            event="tool_definition_built",
-            module="agent",
-            tool_count=len(tools),
-            session_id=context.get("session_id", ""),
-        ).debug("工具定义已构建并写入实例级缓存")
-
-        # 写入实例级 capabilities 缓存与时间戳
-        # 下次同一实例在 TTL 内进入可直接复用，跳过 skills/plugins/mcp 三次查询
-        self._capabilities_cache = context["agent_capabilities"]
-        self._capabilities_cache_ts = time.time()
-
-        # 同一次 process_stream 内的二次访问仍走 context 缓存
-        context["_tools"] = tools
+        await self._capability_aggregator.inject(
+            context,
+            get_available_skills=self.get_available_skills,
+            get_available_plugins=self.get_available_plugins,
+            summarize_skills=self._summarize_skill_capabilities,
+            summarize_plugins=self._summarize_plugin_capabilities,
+            collect_configured_models=self._collect_configured_model_capabilities,
+            collect_mcp=self._collect_mcp_capabilities,
+            build_native_tools=self._build_native_tools,
+        )
 
     @staticmethod
     def _compute_tools_version(context: Dict[str, Any]) -> str:
@@ -726,93 +690,20 @@ class AIAgent:
         2. 否则从 llm_tokens_used 构造简单 breakdown（向后兼容旧调用方）
         最终 llm_tokens_used 从 breakdown.total_tokens 派生，保证下游记录器一致。
         """
-        # 统一 token 计数来源：优先 token_breakdown，否则从 llm_tokens_used 构造
-        if token_breakdown is None and llm_tokens_used is not None:
-            token_breakdown = TokenBreakdown(
-                output_tokens=llm_tokens_used,
-                method="api_usage",
-                estimated=False,
-            )
-        if token_breakdown is not None:
-            # 向后兼容：从 breakdown 派生 llm_tokens_used 供下游记录器使用
-            llm_tokens_used = token_breakdown.total_tokens
-
-        user_id = context.get("user_id")
-        session_id = context.get("session_id", "default")
-        if not user_id:
-            return
-
-        disable_behavior_logging = bool(
-            context.get("scheduled_execution_isolated") or context.get("disable_behavior_logging")
+        self._behavior_recorder.schedule(
+            node_type=node_type,
+            user_message=user_message,
+            context=context,
+            db_session=self._db_session,
+            status=status,
+            error_message=error_message,
+            llm_input=llm_input,
+            llm_output=llm_output,
+            llm_tokens_used=llm_tokens_used,
+            token_breakdown=token_breakdown,
+            execution_duration_ms=execution_duration_ms,
+            metadata=metadata,
         )
-        disable_conversation_record = bool(
-            context.get("scheduled_execution_isolated") or context.get("disable_conversation_record")
-        )
-
-        if not disable_behavior_logging:
-            behavior_entries = self._build_behavior_entries(
-                user_id=user_id,
-                node_type=node_type,
-                status=status,
-                error_message=error_message,
-                llm_output=llm_output,
-                llm_tokens_used=llm_tokens_used,
-                execution_duration_ms=execution_duration_ms,
-                metadata=metadata,
-            )
-            for entry in behavior_entries:
-                task = asyncio.create_task(self._record_with_backpressure(behavior_logger.record(entry)))
-                task.add_done_callback(lambda t: self._handle_record_task_result(t))
-
-        if disable_conversation_record:
-            return
-
-        task = asyncio.create_task(
-            self._record_with_backpressure(
-                conversation_recorder.record(
-                    node_type=node_type,
-                    session_id=session_id,
-                    user_message=user_message,
-                    user_id=user_id,
-                    provider=context.get("provider"),
-                    model=context.get("model"),
-                    llm_input=llm_input,
-                    llm_output=llm_output,
-                    llm_tokens_used=llm_tokens_used,
-                    execution_duration_ms=execution_duration_ms,
-                    status=status,
-                    error_message=error_message,
-                    metadata=metadata,
-                )
-            )
-        )
-        task.add_done_callback(lambda t: self._handle_record_task_result(t))
-
-        # 写入 usage_records 表（计费扣减）
-        # 仅当 token_breakdown 非 None 且绑定 db_session 时执行
-        # 计费失败由 UsageTracker.record_llm_call 内部 catch，不传播到 Agent 主流程
-        if token_breakdown is not None and self._db_session:
-            try:
-                from billing.usage_tracker import UsageTracker
-                usage_tracker = UsageTracker(self._db_session)
-                usage_task = asyncio.create_task(
-                    self._record_with_backpressure(
-                        usage_tracker.record_llm_call(
-                            user_id=str(user_id) if user_id is not None else "",
-                            session_id=session_id,
-                            provider=context.get("provider") or "",
-                            model=context.get("model") or "",
-                            token_breakdown=token_breakdown,
-                            duration_ms=execution_duration_ms or 0,
-                        )
-                    )
-                )
-                usage_task.add_done_callback(lambda t: self._handle_record_task_result(t))
-            except Exception as exc:
-                logger.bind(
-                    module="agent",
-                    event="usage_record_schedule_error",
-                ).error(f"计费扣减任务调度失败: {exc}")
 
     def _build_behavior_entries(
         self,
@@ -1466,8 +1357,6 @@ class AIAgent:
                             tool_name = tc.get("function", {}).get("name", "unknown")
                             tool_id = tc.get("id", "")
                             tool_kind = get_stream_tool_kind(tool_name)
-                            # 为每个工具创建子中止控制器，根 controller abort 时级联中止
-                            tool_abort = self.root_abort_controller.create_child()
                             spawn_agent_type = "Explore"
                             spawn_description = ""
 
@@ -1845,12 +1734,6 @@ class AIAgent:
         current_task = asyncio.current_task()
         if current_task is not None and session_id:
             register_agent_task(task_user_id, session_id, current_task)
-
-        # 提前初始化流式处理变量，避免 try 块早期异常导致 finally 中引用未定义变量
-        full_content = ""
-        full_reasoning = ""
-        accumulated_tool_events: list = []
-        _stream_start_time = time.time()
 
         try:
             conversation_history = await self._build_conversation_history(session_id)

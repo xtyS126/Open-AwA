@@ -5,7 +5,6 @@
 
 import ast
 import hashlib
-import http.client
 import importlib
 import inspect
 import io
@@ -14,7 +13,6 @@ import os
 import re
 import shutil
 import sys
-import ssl
 import tempfile
 import threading
 import urllib.parse
@@ -41,6 +39,7 @@ from .plugin_validator import PluginValidator
 from .plugin_context import build_plugin_context
 from .plugin_security_scanner import PluginSecurityScanner
 from .plugin_permission_manager import PluginPermissionManager
+from .plugin_marketplace_service import PluginMarketplaceService
 
 
 class PluginManager:
@@ -62,14 +61,6 @@ class PluginManager:
     # 最大允许下载的插件包体积（字节），默认 50MB
     MAX_DOWNLOAD_SIZE: int = 50 * 1024 * 1024
 
-    NPM_PACKAGE_PATTERN = re.compile(
-        r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
-    )
-    NPM_VERSION_PATTERN = re.compile(
-        r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-        r"(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
-        r"(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
-    )
     DANGEROUS_IMPORT_MODULES = {
         "subprocess",
         "socket",
@@ -151,6 +142,10 @@ class PluginManager:
             self.plugin_metadata,
             self._runtime_permission_store,
             self._runtime_permission_audit,
+        )
+        self.marketplace_service = PluginMarketplaceService(
+            allowed_download_domains=self.ALLOWED_DOWNLOAD_DOMAINS,
+            max_download_size=self.MAX_DOWNLOAD_SIZE,
         )
         self.extension_registry = ExtensionRegistry()
         self._runtime_routes: Dict[str, Dict[str, Any]] = {}
@@ -342,30 +337,6 @@ class PluginManager:
             授权结果，包含已授权和缺失的权限信息。
         """
         return self.permission_manager.authorize(plugin_name, permissions)
-        if plugin_name not in self.plugin_metadata:
-            raise ValueError(f"Plugin '{plugin_name}' not found")
-
-        current = self._runtime_permission_store.get(plugin_name, set())
-        current.update(permission.strip() for permission in permissions if isinstance(permission, str) and permission.strip())
-        self._runtime_permission_store[plugin_name] = current
-
-        requested = set(self.plugin_metadata.get(plugin_name, {}).get("requested_permissions", []))
-        granted = sorted(current)
-        missing = sorted(permission for permission in requested if permission not in current)
-
-        self._runtime_permission_audit.setdefault(plugin_name, []).append(
-            {
-                "action": "authorize",
-                "permissions": sorted(set(permissions)),
-            }
-        )
-
-        return {
-            "plugin_name": plugin_name,
-            "requested_permissions": sorted(requested),
-            "granted_permissions": granted,
-            "missing_permissions": missing,
-        }
 
     def revoke_plugin_permissions(self, plugin_name: str, permissions: List[str]) -> Dict[str, Any]:
         """
@@ -379,31 +350,6 @@ class PluginManager:
             撤销结果，包含当前权限状态。
         """
         return self.permission_manager.revoke(plugin_name, permissions)
-        if plugin_name not in self.plugin_metadata:
-            raise ValueError(f"Plugin '{plugin_name}' not found")
-
-        current = self._runtime_permission_store.get(plugin_name, set())
-        to_remove = {permission.strip() for permission in permissions if isinstance(permission, str) and permission.strip()}
-        current = {permission for permission in current if permission not in to_remove}
-        self._runtime_permission_store[plugin_name] = current
-
-        requested = set(self.plugin_metadata.get(plugin_name, {}).get("requested_permissions", []))
-        granted = sorted(current)
-        missing = sorted(permission for permission in requested if permission not in current)
-
-        self._runtime_permission_audit.setdefault(plugin_name, []).append(
-            {
-                "action": "revoke",
-                "permissions": sorted(to_remove),
-            }
-        )
-
-        return {
-            "plugin_name": plugin_name,
-            "requested_permissions": sorted(requested),
-            "granted_permissions": granted,
-            "missing_permissions": missing,
-        }
 
     def get_plugin_permission_status(self, plugin_name: str) -> Dict[str, Any]:
         """
@@ -416,19 +362,6 @@ class PluginManager:
             权限状态信息，包含所需、已授权和缺失的权限。
         """
         return self.permission_manager.status(plugin_name)
-        if plugin_name not in self.plugin_metadata:
-            raise ValueError(f"Plugin '{plugin_name}' not found")
-
-        requested = set(self.plugin_metadata.get(plugin_name, {}).get("requested_permissions", []))
-        granted = set(self._runtime_permission_store.get(plugin_name, set()))
-        missing = sorted(permission for permission in requested if permission not in granted)
-
-        return {
-            "plugin_name": plugin_name,
-            "requested_permissions": sorted(requested),
-            "granted_permissions": sorted(granted),
-            "missing_permissions": missing,
-        }
 
     def _enforce_runtime_permissions(self, plugin_name: str) -> None:
         """
@@ -441,12 +374,7 @@ class PluginManager:
         Raises:
             PermissionError: 插件缺少必要的运行权限。
         """
-        return self.permission_manager.enforce(plugin_name)
-        status = self.get_plugin_permission_status(plugin_name)
-        if status["missing_permissions"]:
-            raise PermissionError(
-                f"Plugin '{plugin_name}' 缺少运行权限: {status['missing_permissions']}"
-            )
+        self.permission_manager.enforce(plugin_name)
 
     def restore_plugin_permissions(self, plugin_name: str, granted: List[str]) -> Dict[str, Any]:
         """
@@ -461,38 +389,6 @@ class PluginManager:
             恢复后的权限状态信息。
         """
         return self.permission_manager.restore(plugin_name, granted)
-        if plugin_name not in self.plugin_metadata:
-            raise ValueError(f"Plugin '{plugin_name}' not found")
-
-        # 对恢复的权限做去重和规范化，避免脏数据污染运行时状态
-        normalized = sorted({
-            p.strip() for p in granted
-            if isinstance(p, str) and p.strip()
-        })
-
-        requested = set(self.plugin_metadata.get(plugin_name, {}).get("requested_permissions", []))
-        # 只恢复插件清单中实际声明的权限，避免回放无关或已弃用的权限项
-        valid = [p for p in normalized if p in requested]
-        skipped = [p for p in normalized if p not in requested]
-
-        self._runtime_permission_store[plugin_name] = set(valid)
-
-        if skipped:
-            logger.bind(plugin=plugin_name, skipped=skipped).warning(
-                f"Plugin '{plugin_name}' 恢复权限时跳过未声明的权限项"
-            )
-
-        missing = sorted(p for p in requested if p not in set(valid))
-        logger.bind(plugin=plugin_name, granted=valid, missing=missing).info(
-            f"Plugin '{plugin_name}' 权限已从数据库恢复"
-        )
-
-        return {
-            "plugin_name": plugin_name,
-            "requested_permissions": sorted(requested),
-            "granted_permissions": valid,
-            "missing_permissions": missing,
-        }
 
     def _should_bypass_runtime_permissions(self, method: str) -> bool:
         """
@@ -1073,17 +969,10 @@ class PluginManager:
         Raises:
             ValueError: URL 不安全或不在白名单中。
         """
-        parsed = urllib.parse.urlparse(source_url)
-        hostname = parsed.hostname or ""
-
-        # 校验域名白名单
-        if hostname not in self.ALLOWED_DOWNLOAD_DOMAINS:
-            raise ValueError(
-                f"域名 '{hostname}' 不在允许下载的白名单中。"
-                f"允许的域名: {sorted(self.ALLOWED_DOWNLOAD_DOMAINS)}"
-            )
-
-        return self._resolve_remote_download_ips(hostname)
+        return self.marketplace_service.validate_remote_url(
+            source_url,
+            self._resolve_remote_download_ips,
+        )
 
     def _download_remote_plugin_via_pinned_ip(
         self,
@@ -1094,68 +983,11 @@ class PluginManager:
         """
         使用已校验的固定 IP 下载远程插件，避免下载阶段再次触发 DNS 解析。
         """
-        parsed = urllib.parse.urlparse(source_url)
-        hostname = parsed.hostname or ""
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        request_path = parsed.path or "/"
-        if parsed.query:
-            request_path = f"{request_path}?{parsed.query}"
-
-        last_error: Optional[Exception] = None
-        for resolved_ip in resolved_ips:
-            socket_obj: Optional[socket.socket] = None
-            response: Optional[http.client.HTTPResponse] = None
-            try:
-                raw_socket = socket.create_connection((resolved_ip, port), timeout=timeout)
-                raw_socket.settimeout(timeout)
-                socket_obj = raw_socket
-                if parsed.scheme == "https":
-                    ssl_context = ssl.create_default_context()
-                    socket_obj = ssl_context.wrap_socket(raw_socket, server_hostname=hostname)
-                    socket_obj.settimeout(timeout)
-
-                request_bytes = (
-                    f"GET {request_path} HTTP/1.1\r\n"
-                    f"Host: {hostname}\r\n"
-                    "User-Agent: OpenAwAPluginManager/1.0\r\n"
-                    "Accept: application/zip, application/octet-stream\r\n"
-                    "Connection: close\r\n\r\n"
-                ).encode("ascii")
-                socket_obj.sendall(request_bytes)
-
-                response = http.client.HTTPResponse(socket_obj)
-                response.begin()
-
-                content_length = response.getheader("Content-Length")
-                if content_length is not None:
-                    try:
-                        if int(content_length) > self.MAX_DOWNLOAD_SIZE:
-                            raise ValueError(
-                                f"插件包体积 ({content_length} bytes) 超过限制 ({self.MAX_DOWNLOAD_SIZE} bytes)"
-                            )
-                    except ValueError:
-                        raise
-
-                content = response.read(self.MAX_DOWNLOAD_SIZE + 1)
-                if len(content) > self.MAX_DOWNLOAD_SIZE:
-                    raise ValueError(
-                        f"插件包体积 ({len(content)} bytes) 超过限制 ({self.MAX_DOWNLOAD_SIZE} bytes)"
-                    )
-
-                headers = {key.lower(): value for key, value in response.getheaders()}
-                return response.status, headers, content
-            except Exception as exc:
-                last_error = exc
-                continue
-            finally:
-                if response is not None:
-                    response.close()
-                if socket_obj is not None:
-                    socket_obj.close()
-
-        if last_error is None:
-            raise ValueError("远程插件下载失败")
-        raise ValueError(f"远程插件下载失败: {last_error}") from last_error
+        return self.marketplace_service.download_via_pinned_ip(
+            source_url,
+            resolved_ips,
+            timeout,
+        )
 
     def register_plugin_from_url(
         self,
@@ -1203,25 +1035,11 @@ class PluginManager:
             if response.is_redirect:
                 status_code = 302
 
-        if status_code in (301, 302, 303, 307, 308):
-            raise ValueError("远程插件下载不允许重定向，请提供直链地址")
-        if status_code >= 400:
-            raise ValueError(f"远程插件下载失败，HTTP 状态码: {status_code}")
-
-        if not response_content:
-            raise ValueError("Remote plugin package is empty")
-
-        # 校验下载体积限制
-        if len(response_content) > self.MAX_DOWNLOAD_SIZE:
-            raise ValueError(
-                f"插件包体积 ({len(response_content)} bytes) 超过限制 ({self.MAX_DOWNLOAD_SIZE} bytes)"
-            )
-
-        # 校验内容类型
-        content_type = response_headers.get("content-type", "")
-        allowed_types = {"application/zip", "application/octet-stream", "application/x-zip-compressed"}
-        if content_type and not any(t in content_type for t in allowed_types):
-            raise ValueError(f"不支持的内容类型: {content_type}，仅允许 ZIP 文件")
+        self.marketplace_service.validate_remote_response(
+            status_code,
+            response_headers,
+            response_content,
+        )
 
         source_name = os.path.basename(parsed.path) or "remote_plugin.zip"
         extract_dir = self._create_source_extract_dir(source_name)
@@ -1251,7 +1069,7 @@ class PluginManager:
         Returns:
             合法返回 True，否则返回 False。
         """
-        return bool(self.NPM_PACKAGE_PATTERN.fullmatch(package_name))
+        return self.marketplace_service.validate_npm_package_name(package_name)
 
     def validate_npm_version(self, version: str) -> bool:
         """
@@ -1263,49 +1081,14 @@ class PluginManager:
         Returns:
             合法返回 True，否则返回 False。
         """
-        return bool(self.NPM_VERSION_PATTERN.fullmatch(version))
+        return self.marketplace_service.validate_npm_version(version)
 
     def parse_npm_source(self, npm_source: str) -> Dict[str, str]:
         """
         解析npm、source相关输入内容，并转换为内部可用结构。
         它常用于屏蔽外部协议差异并统一上层业务使用的数据格式。
         """
-        source = npm_source.strip()
-        if source.startswith("npm:"):
-            source = source[4:]
-
-        if source.startswith("@"):
-            version_sep = source.rfind("@")
-            if version_sep <= 0:
-                raise ValueError("npm source must include package name and version")
-            package_name = source[:version_sep]
-            version = source[version_sep + 1:]
-        else:
-            if "@" not in source:
-                raise ValueError("npm source must include package name and version")
-            package_name, version = source.split("@", 1)
-
-        if not package_name or not version:
-            raise ValueError("npm source must include package name and version")
-
-        if not self.validate_npm_package_name(package_name):
-            raise ValueError(f"Invalid npm package name: {package_name}")
-
-        if not self.validate_npm_version(version):
-            raise ValueError(f"Invalid npm version: {version}")
-
-        encoded_name = package_name.replace("/", "%2f")
-        package_base_name = package_name.split("/")[-1]
-        tarball_url = f"https://registry.npmjs.org/{encoded_name}/-/{package_base_name}-{version}.tgz"
-
-        return {
-            "source": "npm",
-            "raw": npm_source,
-            "package_name": package_name,
-            "version": version,
-            "registry": "https://registry.npmjs.org",
-            "tarball_url": tarball_url,
-        }
+        return self.marketplace_service.parse_npm_source(npm_source)
 
     def register_plugin_from_npm_source(self, npm_source: str) -> Dict[str, str]:
         """

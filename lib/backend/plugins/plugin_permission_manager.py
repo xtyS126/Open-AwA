@@ -1,4 +1,6 @@
-from typing import Any, Dict, List, MutableMapping, MutableSequence, Set
+from typing import Any, Dict, List, MutableMapping, Set
+
+from loguru import logger
 
 
 class PluginPermissionManager:
@@ -43,11 +45,24 @@ class PluginPermissionManager:
     def restore(self, plugin_name: str, grants: List[str]) -> Dict[str, Any]:
         status = self.status(plugin_name)
         requested = set(status["requested_permissions"])
-        self._grants[plugin_name] = {
+        normalized = {
             item.strip() for item in grants
-            if isinstance(item, str) and item.strip() in requested
+            if isinstance(item, str) and item.strip()
         }
-        return self.status(plugin_name)
+        valid = normalized & requested
+        skipped = sorted(normalized - requested)
+        self._grants[plugin_name] = valid
+        if skipped:
+            logger.bind(plugin=plugin_name, skipped=skipped).warning(
+                f"Plugin '{plugin_name}' 恢复权限时跳过未声明的权限项"
+            )
+        result = self.status(plugin_name)
+        logger.bind(
+            plugin=plugin_name,
+            granted=result["granted_permissions"],
+            missing=result["missing_permissions"],
+        ).info(f"Plugin '{plugin_name}' 权限已从数据库恢复")
+        return result
 
     def enforce(self, plugin_name: str) -> None:
         status = self.status(plugin_name)

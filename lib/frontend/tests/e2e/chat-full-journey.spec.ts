@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { loginAsAdminPage } from './auth'
 
-const messagePlaceholder = 'type your question... (try /diary for daily diary)'
+const messagePlaceholder = /输入你的问题\.\.\. \(试试 \/diary 写每日日记\)|type your question\.\.\. \(try \/diary for daily diary\)/i
 
 test.describe('完整聊天旅程 E2E', () => {
   test.beforeEach(async ({ page }) => {

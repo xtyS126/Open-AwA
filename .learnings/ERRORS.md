@@ -2,7 +2,7 @@
 
 **Logged**: 2026-05-03T23:16:00+08:00
 **Priority**: medium
-**Status**: pending
+**Status**: resolved
 **Area**: config
 
 ### Summary
@@ -586,7 +586,7 @@ AttributeError: 'NoneType' object has no attribute 'query'
 
 **Logged**: 2026-07-14T03:00:00+08:00
 **Priority**: medium
-**Status**: in_progress
+**Status**: resolved
 **Area**: tests
 
 ### Summary
@@ -2205,4 +2205,316 @@ CACError: Unknown option `--runInBand`
 ### Resolution
 - **Resolved**: 2026-07-22T12:05:00+08:00
 - **Notes**: 已改用 Vitest 原生命令重试。
+---
+
+## [ERR-20260722-002] apply_patch_context_mismatch
+
+**Logged**: 2026-07-22T12:45:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+组合式补丁包含与当前源码不一致的上下文，验证阶段被安全拒绝且未写入文件。
+
+### Error
+```text
+apply_patch verification failed: Failed to find expected lines in plugin_manager.py
+```
+
+### Context
+- 操作：将远端插件市场校验与固定 IP 下载提取到 PluginMarketplaceService。
+- 原因：补丁按先前读取的局部内容构造，目标方法周边已有差异。
+
+### Suggested Fix
+先读取目标方法的完整局部内容，再按精确上下文拆分为小补丁；不要把未验证的多文件大补丁作为唯一写入步骤。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/plugins/plugin_manager.py
+
+### Resolution
+- **Resolved**: 2026-07-22T12:45:00+08:00
+- **Notes**: 补丁被拒绝前未改动文件，后续将采用精确小补丁。
+---
+
+## [ERR-20260722-003] powershell_rg_glob
+
+**Logged**: 2026-07-22T13:15:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+PowerShell 将包含星号的测试路径作为无效字面路径传给 rg，导致只完成部分搜索。
+
+### Error
+```text
+rg: lib\backend\tests\test_agent*: 文件名、目录名或卷标语法不正确。
+```
+
+### Context
+- 操作：定位 AIAgent 流式处理和相关测试。
+- 环境：Windows PowerShell。
+
+### Suggested Fix
+用 `rg -g 'test_agent*.py'` 指定包含模式，或先用 `rg --files` 取得匹配文件。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-22T13:15:00+08:00
+- **Notes**: 后续搜索改用 rg 的 `-g` 选项。
+---
+
+## [ERR-20260722-004] sandbox_background_test_policy
+
+**Logged**: 2026-07-22T13:25:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+环境策略拒绝包含临时日志删除的后台 pytest 启动命令，测试进程未被创建。
+
+### Error
+```text
+Start-Process command rejected: blocked by policy
+```
+
+### Context
+- 操作：启动 `pytest --no-cov -q` 后台完整回归并重定向输出。
+- 原因：同一命令包含 `Remove-Item` 清理临时日志。
+
+### Suggested Fix
+不在后台测试启动命令中包含删除操作；优先直接运行分组测试，或用唯一的新日志路径避免清理。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-22T13:25:00+08:00
+- **Notes**: 未产生文件系统变更，改用直接分组回归。
+---
+
+## [ERR-20260722-005] backend_st_group_timeout
+
+**Logged**: 2026-07-22T13:32:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+后端 S–T 大分组在五分钟内未完成，工具超时前没有产生可作为通过结论的最终结果。
+
+### Error
+```text
+Exit code: 124
+command timed out after 304020 milliseconds
+```
+
+### Context
+- 命令：`pytest` 运行 soul、skill、security、sandbox、streaming 和 subagent 相关测试。
+- 工作目录：`lib/backend`。
+
+### Suggested Fix
+按子系统继续拆分回归；定位持续超时的具体测试后再考虑并发、fixture 或资源清理优化，不能将超时当作测试通过。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-22T13:52:00+08:00
+- **Notes**: 以 soul/skill、流式/子代理和安全/沙箱独立分组完成回归；组合超时未复现为单组测试失败。
+---
+
+## [ERR-20260722-006] security_sandbox_group_timeout
+
+**Logged**: 2026-07-22T13:35:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+安全与沙箱集合在 123 秒被执行环境终止，pytest 的终端输出阶段随后出现无效句柄。
+
+### Error
+```text
+Exit code: 124
+OSError: [Errno 22] Invalid argument
+```
+
+### Context
+- 命令：`pytest --no-cov` 运行 security 与 sandbox 相关测试。
+- 超时后 pytest 在写入 GBK stdout 时触发终端错误。
+
+### Suggested Fix
+为该集合提供足够的命令时限，或拆为已知稳定的安全核心集合和独立 sandbox 集合；终端错误是超时取消的派生现象，不能替代真实测试结论。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_security_rbac.py
+
+### Resolution
+- **Resolved**: 2026-07-22T13:52:00+08:00
+- **Notes**: 安全核心与安全/沙箱扩展分别在 300 秒时限内通过。
+---
+
+## [ERR-20260722-007] backend_start_permission_denied
+
+**Logged**: 2026-07-22T13:42:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: backend
+
+### Summary
+在 Windows 环境以隐藏后台进程启动本地 FastAPI 后端时被拒绝访问，端口 8000 保持未监听。
+
+### Error
+```text
+Io(Os { code: 5, kind: PermissionDenied, message: "拒绝访问。" })
+```
+
+### Context
+- 命令：`Start-Process python main.py`，工作目录为 `lib/backend`。
+- 目的：执行 `/api/system/ping` 服务级验证。
+- 未关闭任何进程；检查确认 8000 没有监听。
+
+### Suggested Fix
+由具有本地启动权限的会话运行后端，或在用户授权的提升终端中启动；启动成功后验证 ping 和 E2E。
+
+### Metadata
+- Reproducible: unknown
+- Related Files: lib/backend/main.py
+---
+
+## [ERR-20260722-008] tool_call_json_syntax
+
+**Logged**: 2026-07-22T13:48:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+测试启动工具调用的参数 JSON 缺少闭合括号，命令没有执行。
+
+### Error
+```text
+SyntaxError: missing ) after argument list
+```
+
+### Context
+- 操作：运行剩余安全与沙箱回归。
+- 影响：无文件改动、无测试进程启动。
+
+### Suggested Fix
+提交工具调用前检查参数对象闭合与 JSON 格式。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-22T13:48:00+08:00
+- **Notes**: 已重新构造正确参数。
+---
+
+## [ERR-20260722-009] repeated_tool_call_json_syntax
+
+**Logged**: 2026-07-22T13:56:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+第二次测试调用仍遗漏工具参数对象闭合，命令未运行。
+
+### Error
+```text
+SyntaxError: missing ) after argument list
+```
+
+### Context
+- 操作：验证 BehaviorRecorder 的隔离用量修复。
+- 影响：无工作区副作用。
+
+### Suggested Fix
+复用已成功的工具调用 JSON 模板，并在发出前检查 `});` 结构。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_behavior_recorder.py
+
+### Resolution
+- **Resolved**: 2026-07-22T13:56:00+08:00
+- **Notes**: 已改为正确的参数对象格式。
+---
+
+## [ERR-20260722-010] playwright_powershell_unicode_selector
+
+**Logged**: 2026-07-22T14:05:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+通过 PowerShell here-string 传递的中文 Playwright role 名称发生编码失配，按钮定位超时。
+
+### Error
+```text
+Locator.click: Timeout 30000ms exceeded
+waiting for get_by_role("button", name="??")
+```
+
+### Context
+- 操作：浏览器验证登录页错误反馈。
+- 已成功验证 `/chat` 未认证重定向到 `/login`；按钮点击前没有发送登录请求。
+
+### Suggested Fix
+PowerShell 内联浏览器脚本优先使用 `button[type=submit]`、ID 或 data 属性，不依赖中文文本选择器。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend/src/features/auth/LoginPage.tsx
+
+### Resolution
+- **Resolved**: 2026-07-22T14:05:00+08:00
+- **Notes**: 后续使用 CSS 语义选择器重跑。
+---
+
+## [ERR-20260722-011] chat_e2e_i18n_placeholder
+
+**Logged**: 2026-07-22T14:08:00+08:00
+**Priority**: medium
+**Status**: in_progress
+**Area**: tests
+
+### Summary
+聊天完整旅程 E2E 仍匹配旧英文输入框 placeholder，中文默认语言下找不到真实输入框。
+
+### Error
+```text
+getByPlaceholder('type your question... (try /diary for daily diary)')
+Expected: visible
+Error: element(s) not found
+```
+
+### Context
+- 命令：`npx playwright test tests/e2e/chat-full-journey.spec.ts --project=chromium`。
+- 认证 E2E 已通过，失败发生在登录后的聊天输入框定位。
+
+### Suggested Fix
+将测试的 placeholder 匹配改为中英文兼容正则，并保留默认 zh-CN 运行覆盖。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend/tests/e2e/chat-full-journey.spec.ts
+
+### Resolution
+- **Resolved**: 2026-07-22T14:12:00+08:00
+- **Notes**: placeholder 改为中英文兼容正则后，完整聊天 Chromium E2E 5/5 通过。
 ---
