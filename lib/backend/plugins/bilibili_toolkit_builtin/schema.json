@@ -243,6 +243,107 @@
           "default": false
         }
       }
+    },
+    "danmaku_option": {
+      "type": "object",
+      "title": "弹幕渲染选项",
+      "description": "控制 ASS 弹幕字幕的字体、字号、透明度、描边、轨道高度等渲染参数",
+      "properties": {
+        "font": {
+          "type": "string",
+          "title": "字体名称",
+          "description": "ASS 字体名称，需播放器/系统已安装该字体",
+          "default": "sans-serif",
+          "x-component": "input"
+        },
+        "font_size": {
+          "type": "number",
+          "title": "字号缩放系数",
+          "description": "字号缩放系数，1.0 表示基准字号 25 像素，2.0 表示 50 像素",
+          "default": 1.0,
+          "minimum": 0.1,
+          "maximum": 10.0
+        },
+        "alpha": {
+          "type": "number",
+          "title": "不透明度",
+          "description": "弹幕不透明度 0-1，1.0 表示完全不透明，0.0 表示完全透明",
+          "default": 0.7,
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "stroke": {
+          "type": "number",
+          "title": "描边宽度",
+          "description": "弹幕文字描边宽度（像素），0 表示无描边",
+          "default": 1.5,
+          "minimum": 0.0,
+          "maximum": 10.0
+        },
+        "lane_size": {
+          "type": "number",
+          "title": "轨道高度",
+          "description": "弹幕轨道高度（像素），影响 lane 数量与弹幕行高",
+          "default": 32,
+          "minimum": 8,
+          "maximum": 128
+        },
+        "duration": {
+          "type": "number",
+          "title": "滚动弹幕时长",
+          "description": "滚动弹幕的固定显示时长（秒），最少 3 秒",
+          "default": 15.0,
+          "minimum": 3.0,
+          "maximum": 60.0
+        },
+        "width_ratio": {
+          "type": "number",
+          "title": "弹幕宽度比例",
+          "description": "弹幕像素长度缩放系数，用于调整滚动弹幕的水平间距",
+          "default": 1.2,
+          "minimum": 0.5,
+          "maximum": 5.0
+        },
+        "horizontal_gap": {
+          "type": "number",
+          "title": "最小水平间距",
+          "description": "两条滚动弹幕之间的最小水平间距（像素）",
+          "default": 20.0,
+          "minimum": 0.0,
+          "maximum": 200.0
+        },
+        "float_percentage": {
+          "type": "number",
+          "title": "滚动弹幕高度百分比",
+          "description": "滚动弹幕最多占用的屏幕高度百分比，0.5 表示占一半",
+          "default": 0.5,
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "bottom_percentage": {
+          "type": "number",
+          "title": "底部弹幕高度百分比",
+          "description": "底部/顶部弹幕最多占用的屏幕高度百分比",
+          "default": 0.3,
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "bold": {
+          "type": "boolean",
+          "title": "加粗",
+          "description": "弹幕文字是否加粗",
+          "default": true,
+          "x-component": "switch"
+        },
+        "time_offset": {
+          "type": "number",
+          "title": "时间轴偏移",
+          "description": "弹幕时间轴整体偏移（秒），正值延后，负值提前",
+          "default": 0.0,
+          "minimum": -60.0,
+          "maximum": 60.0
+        }
+      }
     }
   },
   "required": []

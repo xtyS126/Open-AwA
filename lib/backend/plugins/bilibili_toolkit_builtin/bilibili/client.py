@@ -165,6 +165,65 @@ class BilibiliClient:
 
         return payload
 
+    async def request_raw(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        need_wbi: bool = False,
+        headers: dict[str, str] | None = None,
+    ) -> bytes:
+        """发起对 B 站 API 的请求并返回原始字节。
+
+        与 :meth:`request` 的差异在于不解析 JSON、不校验业务码，用于
+        protobuf 等二进制响应（如 ``/x/v2/dm/wbi/web/seg.so`` 弹幕分段接口）。
+        风控信号（HTTP 412/403）仍会通过 :func:`check_response` 检测并抛出
+        :class:`RiskControlError`。
+
+        Args:
+            method: HTTP 方法（``GET`` / ``POST``）。
+            path: 接口路径，形如 ``/x/v2/dm/wbi/web/seg.so``。
+            params: 查询参数。
+            need_wbi: 是否对参数进行 WBI 签名。WBI 签名要求 params 非 None。
+            headers: 额外的请求头，会与默认 UA/Referer 合并。
+
+        Returns:
+            响应体原始字节。
+
+        Raises:
+            BilibiliAPIError: HTTP 异常时抛出。
+            RiskControlError: 检测到风控信号（412/403）时抛出。
+        """
+        # 构造最终请求参数
+        request_params: dict[str, Any] = dict(params or {})
+        if need_wbi:
+            img_key, sub_key = await self.get_wbi_keys()
+            request_params = sign_wbi(request_params, img_key, sub_key)
+
+        # 合并请求头
+        request_headers: dict[str, str] = {}
+        if headers:
+            request_headers.update(headers)
+
+        # 并发限流
+        async with self._semaphore:
+            try:
+                response = await self._http_client.request(
+                    method=method.upper(),
+                    url=path,
+                    params=request_params or None,
+                    headers=request_headers or None,
+                )
+            except httpx.HTTPError as exc:
+                raise BilibiliAPIError(f"HTTP 请求失败: {exc}") from exc
+
+        # 风控检测（412/403 会直接抛 RiskControlError；二进制响应体由
+        # check_response 内部跳过业务码检测）
+        check_response(response)
+
+        return response.content
+
     async def get_wbi_keys(self) -> tuple[str, str]:
         """获取并缓存 WBI img_key 与 sub_key。
 
