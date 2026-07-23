@@ -1077,6 +1077,18 @@ class AIAgent:
         # 流结束（正常或异常）时调用 abort() 清理所有子任务
         self.root_abort_controller = AbortController()
 
+        # 先发送首个状态事件，避免命令处理或后续准备工作让前端长时间无反馈。
+        # 即使输入是魔法命令，前端也可以立刻显示正在处理，随后由命令结果覆盖。
+        yield build_status_event("starting", "正在准备对话上下文")
+
+        # TTFT 诊断：首个 SSE 事件已发出，记录从入口到此处的耗时
+        logger.bind(
+            event="ttft_first_event",
+            module="agent",
+            session_id=_ttft_session_id,
+            elapsed_ms=round((time.time() - _ttft_t0) * 1000, 2),
+        ).info("首个 SSE 事件已发送（TTFT 基准点）")
+
         # 检测魔法命令
         cmd_result = await self._check_and_handle_magic_command(user_input, context)
         if cmd_result is not None:
@@ -1089,16 +1101,6 @@ class AIAgent:
             if cmd_result.get("clears_context"):
                 yield {"type": "context_cleared", "content": ""}
             return
-
-        yield build_status_event("starting", "正在准备对话上下文")
-
-        # TTFT 诊断：首个 SSE 事件已发出，记录从入口到此处的耗时
-        logger.bind(
-            event="ttft_first_event",
-            module="agent",
-            session_id=_ttft_session_id,
-            elapsed_ms=round((time.time() - _ttft_t0) * 1000, 2),
-        ).info("首个 SSE 事件已发送（TTFT 基准点）")
 
         self._prepare_context(user_input, context)
 
@@ -1557,7 +1559,9 @@ class AIAgent:
                             tool_results.append({"tool_call": tc, "result": result})
 
                         # 构建工具调用消息并注入到上下文中
-                        tool_messages = []
+                        # 保留本次请求此前所有工具轮次的消息。连续工具调用时，
+                        # 下一轮模型必须同时看到先前已完成工具的结果，不能只保留最新一轮。
+                        tool_messages = list(context.get("_tool_messages", []))
                         assistant_tool_calls = [
                             {
                                 "id": tc.get("id", ""),
@@ -1583,6 +1587,15 @@ class AIAgent:
                             # 在返回前持久化本轮累积的工具消息到上下文，避免结果丢失
                             context["_tool_messages"] = tool_messages
                             context["_pending_background_subagents"] = True
+                            # 后台子代理会让当前 SSE 提前结束，必须先保存原用户消息、思考与工具事件。
+                            # 后续隐藏续写会在同一条助手消息上追加最终正文，刷新页面时也不会丢失执行现场。
+                            await self.feedback.update_memory(
+                                user_input=user_input,
+                                response="",
+                                context=context,
+                                reasoning_content=full_reasoning if full_reasoning else None,
+                                tool_events=accumulated_tool_events if accumulated_tool_events else None,
+                            )
                             yield build_status_event("waiting_subagents", "子代理已创建，等待运行结果")
                             return
 

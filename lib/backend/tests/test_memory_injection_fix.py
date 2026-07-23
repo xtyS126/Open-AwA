@@ -235,6 +235,7 @@ class TestUpdateMemoryPersistence:
         # 用 AsyncMock 替代 MemoryManager
         self.mock_memory_manager = MagicMock()
         self.mock_memory_manager.add_short_term_memory = AsyncMock()
+        self.mock_memory_manager.append_to_last_assistant_memory = AsyncMock()
         self.mock_memory_manager.add_long_term_memory = AsyncMock()
         self.feedback.set_memory_manager(self.mock_memory_manager)
 
@@ -310,3 +311,48 @@ class TestUpdateMemoryPersistence:
 
         assert not self.mock_memory_manager.add_long_term_memory.called
         assert not self.mock_memory_manager.add_short_term_memory.called
+
+    def test_subagent_continuation_appends_reasoning_and_tool_events(self):
+        """隐藏续写应把完整执行元数据合并到原助手消息。"""
+        tool_events = [{"id": "subagent-1", "status": "completed"}]
+
+        asyncio.run(self.feedback.update_memory(
+            user_input="隐藏续写提示",
+            response="## 最终答复",
+            context={
+                "user_id": "test_user",
+                "session_id": "test_session",
+                "continuation": {
+                    "source": "subagent",
+                    "merge_with_last_assistant": True,
+                    "aggregated_context": "子代理最终输出",
+                },
+            },
+            reasoning_content="续写思考",
+            tool_events=tool_events,
+        ))
+
+        self.mock_memory_manager.append_to_last_assistant_memory.assert_awaited_once_with(
+            session_id="test_session",
+            content="## 最终答复",
+            user_id="test_user",
+            reasoning_content="续写思考",
+            tool_events=[
+                *tool_events,
+                {
+                    "id": "subagent-aggregation",
+                    "kind": "subagent",
+                    "name": "子代理汇总",
+                    "status": "completed",
+                    "detail": "子代理执行结果已汇总",
+                    "subagent": {
+                        "agentId": "subagent-aggregation",
+                        "agentType": "汇总",
+                        "runMode": "background",
+                        "logs": "子代理最终输出",
+                        "summary": "子代理最终输出",
+                        "visible": True,
+                    },
+                },
+            ],
+        )

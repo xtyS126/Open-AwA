@@ -24,6 +24,7 @@ from .schemas import (
     AvoidanceProbeResponse,
     ChatRequest,
     ChatResponse,
+    VideoDownloadResponse,
     DelightItem,
     DelightResponse,
     FeedbackRequest,
@@ -50,6 +51,8 @@ class SupportsOpenClawServices(Protocol):
     account_sync_service: Any
     recommendation_engine: Any
     llm_service: Any
+    config: Any
+    bilibili_client: Any
 
 
 @dataclass(slots=True)
@@ -302,6 +305,28 @@ class OpenClawAdapter:
         except Exception as exc:  # pragma: no cover - defensive adapter boundary
             raise AdapterOperationError("Failed to run Socratic dialogue turn.") from exc
         return ChatResponse(reply=str(reply), session=request.session)
+
+    async def download_video(self, bvid: str, max_size_mb: int = 500) -> VideoDownloadResponse:
+        """下载用户明确指定的 B 站公开视频，不接受任意远程地址。"""
+        try:
+            data_path = getattr(self.services.config, "data_path", None)
+            if data_path is None:
+                raise AdapterOperationError("OpenBiliClaw 数据目录不可用")
+            downloaded = await self.services.bilibili_client.download_video(
+                bvid,
+                data_path / "downloads",
+                max_size_mb=max_size_mb,
+            )
+        except AdapterOperationError:
+            raise
+        except Exception as exc:  # pragma: no cover - 防御性适配边界
+            raise AdapterOperationError(f"视频下载失败: {exc}") from exc
+        return VideoDownloadResponse(
+            bvid=downloaded.bvid,
+            title=downloaded.title,
+            file_path=downloaded.file_path,
+            file_size=downloaded.file_size,
+        )
 
     async def get_next_probe(self) -> InterestProbeResponse:
         """返回下一个要询问用户的推测性兴趣假设。

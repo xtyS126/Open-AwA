@@ -2518,3 +2518,101 @@ Error: element(s) not found
 - **Resolved**: 2026-07-22T14:12:00+08:00
 - **Notes**: placeholder 改为中英文兼容正则后，完整聊天 Chromium E2E 5/5 通过。
 ---
+
+## [ERR-20260723-001] chat-refresh-persistence-regression
+
+**Logged**: 2026-07-23T07:21:44+08:00
+**Priority**: critical
+**Status**: resolved
+**Area**: backend
+
+### Summary
+后台子代理提前结束 SSE 时未保存完整消息快照，刷新后用户问题、思考和子代理过程丢失，结构化日志还会以原始 JSON 渲染。
+
+### Error
+```text
+刷新聊天页面后用户消息、思考内容和子代理内容消失；子代理计划和工具事件显示为原始 JSON。
+sqlite3.OperationalError: LIKE or GLOB pattern too complex
+MemoryPersistenceError: 记忆持久化失败
+```
+
+### Context
+- 后台子代理路径在返回 SSE 前没有统一保存用户消息与执行元数据。
+- 隐藏续写只合并助手正文，没有合并思考、工具事件和子代理汇总。
+- 前端没有统一归一化 `plan/task/tool/status/chunk` 结构化事件。
+- 超长工具输出直接进入 SQLite 模糊记忆查询。
+
+### Suggested Fix
+在后台子代理提前返回前保存完整消息快照；隐藏续写按字段合并执行元数据；前端集中归一化子代理事件；所有 SQLite 模糊记忆查询统一压缩并限制长度。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/core/agent.py, lib/backend/core/feedback.py, lib/backend/memory/manager.py, lib/frontend/src/features/chat/utils/subagentLogNormalizer.ts
+
+### Resolution
+- **Resolved**: 2026-07-23T07:21:44+08:00
+- **Notes**: 后端定向测试 52 项、前端聊天测试 131 项、TypeScript、Vite 构建和浏览器整页刷新验证均已通过。
+
+---
+
+## [ERR-20260723-002] runtime-database-acl-readonly
+
+**Logged**: 2026-07-23T07:21:44+08:00
+**Priority**: high
+**Status**: pending
+**Area**: infra
+
+### Summary
+真实运行数据库及 WAL/SHM 旁车文件归 Administrators 所有，当前用户只有读取权限，后端无法写入并阻塞真实服务启动。
+
+### Error
+```text
+sqlite3.OperationalError: attempt to write a readonly database
+```
+
+### Context
+- 目标：`var/data/openawa.db`、`openawa.db-wal`、`openawa.db-shm`。
+- 未删除、替换或修改真实数据库；浏览器验收使用只读快照启动隔离后端。
+- 权限修复需要提升权限的 PowerShell，当前非提升会话不能安全完成。
+
+### Suggested Fix
+在提升权限终端中先复核绝对路径，再修复 `var/data` 目录和三个数据库文件的所有者及当前用户修改权限，随后重启真实后端验证写事务；不得删除 WAL/SHM 或真实数据库。
+
+### Metadata
+- Reproducible: yes
+- Related Files: var/data/openawa.db, var/data/openawa.db-wal, var/data/openawa.db-shm
+- See Also: ERR-20260704-004
+
+---
+
+## [ERR-20260723-003] browser-evaluate-dom-click
+
+**Logged**: 2026-07-23T07:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+浏览器验收脚本在页面上下文中直接调用祖先元素的 `click()` 时出现方法不可调用错误。
+
+### Error
+```text
+TypeError: target?.parentElement?.parentElement?.click is not a function
+```
+
+### Context
+- 操作：展开刷新后恢复的最后一个思维链节点。
+- 应用页面本身已正常渲染，错误仅发生在临时验收脚本。
+
+### Suggested Fix
+通过定位真实可交互头部后分派标准鼠标事件，或使用稳定的语义定位器点击，不直接假设任意祖先节点暴露 `click()`。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend/src/features/chat
+
+### Resolution
+- **Resolved**: 2026-07-23T07:35:00+08:00
+- **Notes**: 改用标准鼠标事件继续验收，不修改应用代码。
+
+---

@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from api.routes import memory as memory_routes
 from db.models import LongTermMemory, WorkflowExecution, WorkflowStep, init_db
 from memory import manager as memory_manager_module
+from memory import vector_store_manager as vector_store_manager_module
 from memory.manager import MemoryManager
 from memory.vector_store_manager import (
     HashEmbeddingProvider,
@@ -59,6 +60,7 @@ class FakeVectorStore:
         self.metadata_updates = []
         self.deleted = []
         self.count_value = 0
+        self.search_calls = []
 
     async def upsert_memory(self, memory_id, content, **kwargs):
         self.upserts.append((memory_id, content, kwargs))
@@ -67,6 +69,7 @@ class FakeVectorStore:
         self.metadata_updates.append((memory_id, kwargs))
 
     async def search(self, *args, **kwargs):
+        self.search_calls.append((args, kwargs))
         return list(self.search_results)
 
     def delete_memory(self, memory_id):
@@ -267,8 +270,39 @@ async def test_vector_embedding_providers_and_factory(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", failing_import)
     monkeypatch.setattr("memory.vector_store_manager.settings.OPENAI_API_KEY", None, raising=False)
-    fallback = create_embedding_provider(None)
-    assert isinstance(fallback, HashEmbeddingProvider)
+    with pytest.raises(RuntimeError, match="sentence-transformers"):
+        create_embedding_provider(None)
+
+
+def test_local_embedding_provider_prefers_project_cached_snapshot(monkeypatch, tmp_path):
+    """本地模型存在时应直接加载项目缓存，不能依赖网络或用户目录缓存。"""
+    snapshot = (
+        tmp_path
+        / "sentence_transformers"
+        / "models--sentence-transformers--all-MiniLM-L6-v2"
+        / "snapshots"
+        / "test-snapshot"
+    )
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+
+    loaded_paths = []
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_name, cache_folder=None):
+            loaded_paths.append(model_name)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        types.SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
+    )
+    monkeypatch.setattr(vector_store_manager_module, "_MODELS_DIR", str(tmp_path))
+
+    provider = SentenceTransformerEmbeddingProvider("all-MiniLM-L6-v2")
+    provider._ensure_model()
+
+    assert loaded_paths == [str(snapshot)]
 
 
 async def test_vector_store_manager_helper_paths(tmp_path):
@@ -423,6 +457,68 @@ async def test_memory_manager_short_term_context_and_edge_paths():
     assert await manager.evaluate_memory_quality(99999) is None
     assert await manager.delete_long_term_memory(99999) is False
     await manager.update_memory_access(99999)
+
+
+@pytest.mark.asyncio
+async def test_memory_manager_appends_continuation_metadata_to_existing_assistant():
+    """子代理续写必须合并正文、思考与工具事件，保证刷新后可以完整恢复。"""
+    factory = build_session_factory()
+    MemoryManager._shared_vector_store = FakeVectorStore()
+    manager = MemoryManager(factory)
+
+    await manager.add_short_term_memory(
+        "session-continuation",
+        "assistant",
+        "",
+        reasoning_content="第一轮思考",
+        tool_events=[{"id": "tool-1", "status": "running"}],
+    )
+    await manager.append_to_last_assistant_memory(
+        "session-continuation",
+        "## 最终答复",
+        reasoning_content="续写思考",
+        tool_events=[
+            {"id": "tool-1", "status": "completed", "output": "完成"},
+            {"id": "tool-2", "status": "completed"},
+        ],
+    )
+
+    memories = await manager.get_short_term_memories("session-continuation")
+    assert len(memories) == 1
+    assert memories[0].content == "## 最终答复"
+    assert memories[0].reasoning_content == "第一轮思考\n\n续写思考"
+    assert memories[0].tool_events == [
+        {"id": "tool-1", "status": "completed", "output": "完成"},
+        {"id": "tool-2", "status": "completed"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_memory_manager_preserves_layer_and_limits_oversized_search_query():
+    """记忆分层参数必须透传，超长代理转录不能直接进入 LIKE 或向量检索。"""
+    factory = build_session_factory()
+    fake_vector_store = FakeVectorStore()
+    MemoryManager._shared_vector_store = fake_vector_store
+    manager = MemoryManager(factory)
+
+    memory = await manager.add_long_term_memory(
+        content="需要永久保留的核心偏好",
+        importance=0.2,
+        user_id="user-1",
+        memory_layer="core",
+    )
+    assert memory.memory_layer == "core"
+    assert memory.importance == 0.9
+    assert fake_vector_store.upserts[0][2]["metadata"]["memory_layer"] == "core"
+
+    oversized_query = "开头上下文 " + ("中间代理转录 " * 8000) + " 结尾结论"
+    await manager.search_memories(oversized_query, user_id="user-1")
+
+    assert fake_vector_store.search_calls
+    normalized_query = fake_vector_store.search_calls[0][0][0]
+    assert len(normalized_query) <= MemoryManager._MAX_SEARCH_QUERY_CHARS + 5
+    assert normalized_query.startswith("开头上下文")
+    assert normalized_query.endswith("结尾结论")
 
 
 @pytest.mark.asyncio

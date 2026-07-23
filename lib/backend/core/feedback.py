@@ -144,11 +144,31 @@ class FeedbackLayer:
         try:
             if is_subagent_continuation:
                 merge_with_last_assistant = bool(continuation.get("merge_with_last_assistant", True))
+                continuation_tool_events = list(tool_events or [])
+                aggregated_context = str(continuation.get("aggregated_context") or "").strip()
+                if aggregated_context:
+                    continuation_tool_events.append({
+                        "id": "subagent-aggregation",
+                        "kind": "subagent",
+                        "name": "子代理汇总",
+                        "status": "completed",
+                        "detail": "子代理执行结果已汇总",
+                        "subagent": {
+                            "agentId": "subagent-aggregation",
+                            "agentType": "汇总",
+                            "runMode": "background",
+                            "logs": aggregated_context,
+                            "summary": aggregated_context[:2000],
+                            "visible": True,
+                        },
+                    })
                 if merge_with_last_assistant:
                     await self.memory_manager.append_to_last_assistant_memory(
                         session_id=context.get("session_id", "default"),
                         content=response,
                         user_id=user_id,
+                        reasoning_content=reasoning_content or None,
+                        tool_events=continuation_tool_events or None,
                     )
                 else:
                     await self.memory_manager.add_short_term_memory(
@@ -156,6 +176,8 @@ class FeedbackLayer:
                         role="assistant",
                         content=response,
                         user_id=user_id,
+                        reasoning_content=reasoning_content or None,
+                        tool_events=continuation_tool_events or None,
                     )
                 return
 

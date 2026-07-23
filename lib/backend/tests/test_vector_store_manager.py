@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from memory.vector_store_manager import VectorStoreManager
+from memory.vector_store_manager import HashEmbeddingProvider, VectorStoreManager
 
 
 class SemanticTestEmbeddingProvider:
@@ -115,3 +115,28 @@ async def test_vector_store_respects_user_filter_and_archive_status(tmp_path):
 
     assert {hit.memory_id for hit in hits} == {10}
     assert {hit.memory_id for hit in archived_hits} == {10, 11}
+
+
+async def test_vector_store_preserves_legacy_collection_when_embedding_dimension_changes(tmp_path):
+    """嵌入维度变更时应创建兼容 collection，不能删除已有用户向量。"""
+    persist_directory = str(tmp_path / "vector_db")
+    collection_name = "long_term_memory"
+    legacy_manager = VectorStoreManager(
+        persist_directory=persist_directory,
+        collection_name=collection_name,
+        embedding_provider=HashEmbeddingProvider(dimension=4),
+    )
+    await legacy_manager.upsert_memory(1, "旧向量记录", user_id="user-1")
+    legacy_manager.close()
+
+    manager = VectorStoreManager(
+        persist_directory=persist_directory,
+        collection_name=collection_name,
+        embedding_provider=HashEmbeddingProvider(dimension=6),
+    )
+    await manager.upsert_memory(2, "新向量记录", user_id="user-1")
+
+    assert manager.collection_name == "long_term_memory__d6"
+    assert manager.client.collection_exists(collection_name)
+    assert manager.count(user_id="user-1") == 1
+    manager.close()

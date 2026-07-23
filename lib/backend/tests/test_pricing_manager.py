@@ -86,18 +86,63 @@ class TestInitializeDefaultConfigurations:
         """
         count = pricing_manager.initialize_default_configurations()
 
-        assert count == 15, "Should create 15 default configurations"
+        assert count == 7, "Should create seven current provider defaults"
 
         configs = db_session.query(ModelConfiguration).all()
-        assert len(configs) == 15, "Should have 15 configurations in database"
+        assert len(configs) == 7, "Should have seven configurations in database"
 
         providers = [c.provider for c in configs]
         assert "openai" in providers
         assert "anthropic" in providers
         assert "google" in providers
+        assert "deepseek" in providers
         assert "alibaba" in providers
         assert "moonshot" in providers
         assert "zhipu" in providers
+
+    def test_default_catalog_models_exist_in_pricing_and_capabilities(self):
+        """默认模型必须同时存在于定价和能力目录，确保聊天调用可解析。"""
+        from config.config_loader import config_loader
+
+        config_loader.invalidate_cache()
+        default_configs = config_loader.load_default_configurations()
+        pricing_keys = {
+            (item["provider"], item["model"])
+            for item in config_loader.load_pricing_data()
+        }
+        capability_keys = set(config_loader.load_model_capabilities())
+
+        assert {(item["provider"], item["model"]) for item in default_configs} == {
+            ("openai", "gpt-5.5"),
+            ("anthropic", "claude-sonnet-4-6"),
+            ("google", "gemini-3.1-pro"),
+            ("deepseek", "deepseek-v4-pro"),
+            ("alibaba", "qwen3.5-plus"),
+            ("moonshot", "kimi-k2.6"),
+            ("zhipu", "glm-5"),
+        }
+        for item in default_configs:
+            key = (item["provider"], item["model"])
+            assert key in pricing_keys
+            assert key in capability_keys
+
+    def test_provider_recovery_uses_default_catalog(self):
+        """厂商凭据恢复时必须从同一默认目录取得模型。"""
+        expected_models = {
+            "openai": "gpt-5.5",
+            "anthropic": "claude-sonnet-4-6",
+            "google": "gemini-3.1-pro",
+            "deepseek": "deepseek-v4-pro",
+            "alibaba": "qwen3.5-plus",
+            "moonshot": "kimi-k2.6",
+            "zhipu": "glm-5",
+        }
+
+        for provider, expected_model in expected_models.items():
+            recovered = PricingManager._get_default_models_for_provider(provider)
+            assert len(recovered) == 1
+            assert recovered[0]["model"] == expected_model
+            assert recovered[0]["is_default"] is (provider == "openai")
 
     def test_initialize_skips_when_configurations_exist(self, pricing_manager, db_session):
         """
@@ -116,9 +161,69 @@ class TestInitializeDefaultConfigurations:
 
         count = pricing_manager.initialize_default_configurations()
 
-        assert count == 0, "Should return 0 when configurations exist"
+        assert count == 0, "Should preserve existing user configurations"
         configs = db_session.query(ModelConfiguration).all()
         assert len(configs) == 1, "Should only have the existing configuration"
+
+    def test_legacy_cleanup_preserves_selected_models_then_adds_current_defaults(
+        self, pricing_manager, db_session
+    ):
+        """旧种子仅在未配置凭据、端点和已选模型时清理。"""
+        stale_config = ModelConfiguration(
+            provider="openai",
+            model="gpt-4.1",
+            display_name="GPT-4.1",
+            is_active=True,
+            is_default=True,
+        )
+        selected_config = ModelConfiguration(
+            provider="deepseek",
+            model="deepseek-chat",
+            display_name="DeepSeek Chat",
+            selected_models='["deepseek-v4-pro"]',
+            is_active=True,
+            is_default=False,
+        )
+        db_session.add_all([stale_config, selected_config])
+        db_session.commit()
+
+        assert pricing_manager.remove_legacy_default_configurations() == 1
+        assert db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "openai",
+            ModelConfiguration.model == "gpt-4.1",
+        ).first() is None
+        assert db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "deepseek",
+            ModelConfiguration.model == "deepseek-chat",
+        ).first() is not None
+
+        assert pricing_manager.initialize_default_configurations(add_missing=True) == 7
+        current_default = pricing_manager.get_default_configuration()
+        assert current_default is not None
+        assert (current_default.provider, current_default.model) == ("openai", "gpt-5.5")
+
+    def test_legacy_selection_refreshes_first_model_and_preserves_choices(
+        self, pricing_manager, db_session
+    ):
+        """旧首选模型应替换为当前模板，后续模型顺序保持可追溯。"""
+        config = ModelConfiguration(
+            provider="deepseek",
+            model="deepseek-chat",
+            display_name="DeepSeek Chat",
+            selected_models='["deepseek-v3", "deepseek-r1", "deepseek-v4-pro"]',
+            is_active=True,
+            is_default=True,
+        )
+        db_session.add(config)
+        db_session.commit()
+
+        assert pricing_manager.refresh_legacy_default_model_selections() == 1
+        db_session.refresh(config)
+        assert pricing_manager.parse_selected_models(config.selected_models) == [
+            "deepseek-v4-pro",
+            "deepseek-v3",
+            "deepseek-r1",
+        ]
 
     def test_initialize_sets_first_as_default(self, pricing_manager, db_session):
         """
@@ -131,7 +236,7 @@ class TestInitializeDefaultConfigurations:
         default_configs = [c for c in configs if c.is_default]
 
         assert len(default_configs) == 1, "Should have exactly one default configuration"
-        assert default_configs[0].model == "gpt-4.1", "GPT-4.1 should be the default"
+        assert default_configs[0].model == "gpt-5.5", "GPT-5.5 should be the default"
         assert default_configs[0].provider == "openai"
 
     def test_initialize_respects_sort_order(self, pricing_manager, db_session):
@@ -156,14 +261,14 @@ class TestInitializeDefaultConfigurations:
         """
         pricing_manager.initialize_default_configurations()
 
-        gpt41 = db_session.query(ModelConfiguration).filter(
+        gpt55 = db_session.query(ModelConfiguration).filter(
             ModelConfiguration.provider == "openai",
-            ModelConfiguration.model == "gpt-4.1"
+            ModelConfiguration.model == "gpt-5.5"
         ).first()
 
-        assert gpt41 is not None
-        assert gpt41.display_name == "GPT-4.1"
-        assert "复杂推理与长文本" in gpt41.description
+        assert gpt55 is not None
+        assert gpt55.display_name == "GPT-5.5"
+        assert "多模态输入与工具调用" in gpt55.description
 
     def test_initialize_all_active(self, pricing_manager, db_session):
         """
@@ -188,7 +293,7 @@ class TestInitializeDefaultConfigurations:
 
         assert count2 == 0, "Second initialization should return 0"
         configs = db_session.query(ModelConfiguration).all()
-        assert len(configs) == 15, "Should still have only 17 configurations"
+        assert len(configs) == 7, "Should still have seven configurations"
 
     def test_initialize_no_duplicate_provider_model_combinations(self, pricing_manager, db_session):
         """
@@ -205,7 +310,7 @@ class TestInitializeDefaultConfigurations:
             assert key not in seen, f"Duplicate configuration: {key}"
             seen.add(key)
 
-        assert len(seen) == 15, "Should have 17 unique provider:model combinations"
+        assert len(seen) == 7, "Should have seven unique provider:model combinations"
 
 
 class TestInitializeDefaultPricing:
@@ -270,7 +375,7 @@ class TestGetActiveConfigurations:
 
         active = pricing_manager.get_active_configurations()
 
-        assert len(active) == 15
+        assert len(active) == 7
         for config in active:
             assert config.is_active is True
 
@@ -287,7 +392,7 @@ class TestGetActiveConfigurations:
 
         active = pricing_manager.get_active_configurations()
 
-        assert len(active) == 14
+        assert len(active) == 6
         inactive_ids = [c.id for c in db_session.query(ModelConfiguration).filter(
             ModelConfiguration.is_active == False
         ).all()]
@@ -324,7 +429,7 @@ class TestDefaultConfiguration:
 
         assert default is not None
         assert default.is_default is True
-        assert default.model == "gpt-4.1"
+        assert default.model == "gpt-5.5"
 
     def test_get_default_returns_none_when_no_default(self, pricing_manager, db_session):
         """

@@ -1,3 +1,5 @@
+import { normalizeSubagentLogText } from './subagentLogNormalizer'
+
 export type LogSegmentType = 'text' | 'think' | 'terminal' | 'tool' | 'task' | 'status' | 'plan' | 'error'
 
 export interface LogSegment {
@@ -214,7 +216,7 @@ export function parseSubagentLogs(logs: string): LogSegment[] {
   let lastPrefixTag: string | null = null
 
   // 按行处理，同时处理块级标记（<think> 和 ```）
-  const lines = logs.split('\n')
+  const lines = normalizeSubagentLogText(logs).split('\n')
   let lineIdx = 0
   const pendingInlineSegments: string[] = []
 

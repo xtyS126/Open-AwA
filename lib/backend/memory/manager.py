@@ -28,6 +28,7 @@ class MemoryManager:
 
     _shared_vector_store: Optional[VectorStoreManager] = None
     _shared_vector_store_lock = Lock()
+    _MAX_SEARCH_QUERY_CHARS = 1024
 
     def __init__(self, session_factory):
         # 使用会话工厂而非固定会话，确保每次线程内操作都使用独立短生命周期会话，避免 Session 被跨线程共享
@@ -237,11 +238,14 @@ class MemoryManager:
         session_id: str,
         content: str,
         user_id: Optional[str] = None,
+        reasoning_content: Optional[str] = None,
+        tool_events: Optional[list] = None,
         workspace_id: str = "default",
     ) -> ShortTermMemory:
         normalized_content = str(content or "").strip()
-        if not normalized_content:
-            raise ValueError("content cannot be empty")
+        normalized_reasoning = str(reasoning_content or "").strip()
+        if not normalized_content and not normalized_reasoning and not tool_events:
+            raise ValueError("content, reasoning_content and tool_events cannot all be empty")
 
         with self.session_factory() as db:
             memory = (
@@ -265,13 +269,48 @@ class MemoryManager:
                     role="assistant",
                     increment_message_count=True,
                 )
-                memory = ShortTermMemory(session_id=session_id, role="assistant", content=normalized_content, workspace_id=workspace_id)
+                memory = ShortTermMemory(
+                    session_id=session_id,
+                    role="assistant",
+                    content=normalized_content,
+                    reasoning_content=normalized_reasoning or None,
+                    tool_events=tool_events or None,
+                    workspace_id=workspace_id,
+                )
                 db.add(memory)
             else:
                 previous_content = str(memory.content or "").strip()
-                memory.content = (
-                    f"{previous_content}\n\n{normalized_content}" if previous_content else normalized_content
-                )
+                if normalized_content:
+                    memory.content = (
+                        f"{previous_content}\n\n{normalized_content}" if previous_content else normalized_content
+                    )
+                previous_reasoning = str(memory.reasoning_content or "").strip()
+                if normalized_reasoning:
+                    memory.reasoning_content = (
+                        f"{previous_reasoning}\n\n{normalized_reasoning}"
+                        if previous_reasoning else normalized_reasoning
+                    )
+                if tool_events:
+                    merged_events = list(memory.tool_events or [])
+                    event_index = {
+                        str(event.get("id")): index
+                        for index, event in enumerate(merged_events)
+                        if isinstance(event, dict) and event.get("id")
+                    }
+                    for event in tool_events:
+                        if not isinstance(event, dict):
+                            continue
+                        event_id = str(event.get("id") or "")
+                        if event_id and event_id in event_index:
+                            merged_events[event_index[event_id]] = {
+                                **merged_events[event_index[event_id]],
+                                **event,
+                            }
+                        else:
+                            merged_events.append(event)
+                            if event_id:
+                                event_index[event_id] = len(merged_events) - 1
+                    memory.tool_events = merged_events or None
                 memory.timestamp = datetime.now(timezone.utc)
                 ensure_conversation(
                     db,
@@ -295,8 +334,17 @@ class MemoryManager:
         session_id: str,
         content: str,
         user_id: Optional[str] = None,
+        reasoning_content: Optional[str] = None,
+        tool_events: Optional[list] = None,
     ) -> ShortTermMemory:
-        memory = await asyncio.to_thread(self._append_to_last_assistant_memory_sync, session_id, content, user_id)
+        memory = await asyncio.to_thread(
+            self._append_to_last_assistant_memory_sync,
+            session_id,
+            content,
+            user_id,
+            reasoning_content,
+            tool_events,
+        )
         logger.debug(f"Appended assistant short-term memory for session {session_id}")
         return memory
 
@@ -444,6 +492,7 @@ class MemoryManager:
         memory_metadata: Optional[Dict[str, Any]] = None,
         source_type: Optional[str] = None,
         workspace_id: str = "default",
+        memory_layer: str = "semantic",
     ) -> LongTermMemory:
         vector = embedding
         if vector is None:
@@ -459,15 +508,17 @@ class MemoryManager:
             memory_metadata,
             source_type,
             workspace_id,
+            memory_layer,
         )
         await self.vector_store.upsert_memory(
             memory.id,
             content,
             user_id=user_id,
-            importance=importance,
+            importance=memory.importance,
             archive_status=memory.archive_status,
             metadata={
                 **(memory.memory_metadata or {}),
+                "memory_layer": memory.memory_layer,
                 "confidence": memory.confidence,
                 "quality_score": memory.quality_score,
                 "access_count": memory.access_count,
@@ -478,6 +529,16 @@ class MemoryManager:
         self.working_memory.put(str(memory.id), self._build_runtime_payload(memory), user_id=user_id)
         logger.debug(f"Added long-term memory with importance {importance}")
         return memory
+
+    @classmethod
+    def _normalize_search_query(cls, query: str) -> str:
+        """压缩超长检索文本，避免 SQLite LIKE 与嵌入模型接收整段代理转录。"""
+        normalized = " ".join(str(query or "").split())
+        if len(normalized) <= cls._MAX_SEARCH_QUERY_CHARS:
+            return normalized
+
+        half = cls._MAX_SEARCH_QUERY_CHARS // 2
+        return f"{normalized[:half]} ... {normalized[-half:]}"
 
     def _get_and_evaluate_long_term_memories_sync(
         self,
@@ -629,9 +690,13 @@ class MemoryManager:
         vector_weight: float = 0.65,
         workspace_id: str = "default",
     ) -> List[LongTermMemory]:
+        normalized_query = self._normalize_search_query(query)
+        if not normalized_query:
+            return []
+
         keyword_matches = await asyncio.to_thread(
             self._search_memories_sync,
-            query,
+            normalized_query,
             limit,
             user_id,
             include_archived,
@@ -645,14 +710,14 @@ class MemoryManager:
         vector_scores: Dict[int, float] = {}
         if use_vector:
             # 短消息跳过向量检索：避免短查询（如"你好"）触发嵌入计算与 Qdrant 查询，只保留关键词检索结果
-            if len(query) < self._SHORT_QUERY_THRESHOLD:
+            if len(normalized_query) < self._SHORT_QUERY_THRESHOLD:
                 logger.debug(
-                    f"Query too short ({len(query)} chars), skipping vector search"
+                    f"Query too short ({len(normalized_query)} chars), skipping vector search"
                 )
                 vector_hits = []
             else:
                 # 查询级 LRU 缓存：相同 (query, user_id) 短时间内复用向量检索结果
-                cache_key: Tuple[str, Optional[str]] = (query, user_id)
+                cache_key: Tuple[str, Optional[str]] = (normalized_query, user_id)
                 cached_hits: Optional[List[Any]] = None
                 with self._vector_search_cache_lock:
                     if cache_key in self._vector_search_cache:
@@ -662,7 +727,7 @@ class MemoryManager:
                     vector_hits = cached_hits
                 else:
                     vector_hits = await self.vector_store.search(
-                        query,
+                        normalized_query,
                         user_id=user_id,
                         limit=limit,
                         include_archived=include_archived,

@@ -137,6 +137,16 @@ class ChatResponse:
 
 
 @dataclass(slots=True)
+class VideoDownloadResponse:
+    """视频下载工具的受控输出。"""
+
+    bvid: str
+    title: str
+    file_path: str
+    file_size: int
+
+
+@dataclass(slots=True)
 class InterestProbeItem:
     """agent 想让用户确认的单个推测性兴趣假设。
 

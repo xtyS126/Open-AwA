@@ -783,6 +783,15 @@ git commit -m "[Type] 变更描述"
 - **Windows 命令模板输出必须显式 UTF-8 容错解码**：`command_executor.py` 的白名单 `subprocess.run(..., text=True)` 必须传 `encoding="utf-8", errors="replace"`；依赖系统 GBK 会在 Git 等 UTF-8 输出时使 reader thread 触发 `UnicodeDecodeError`。
 - **后端全量 pytest 分组运行目录**：完整串行套件已多次超过 15 分钟；按 8 组覆盖时必须在 `backend` 工作目录执行、关闭共享 coverage 数据文件并每次最多并发两组。否则 ACP 路由测试会因 `os.getcwd()` 落在白名单外产生伪 400。
 
+## 19.2 2026-07-23 聊天刷新恢复新增陷阱
+
+- **后台子代理返回前必须保存完整消息快照**：SSE 主流程在后台子代理启动后提前返回时，必须先保存用户问题、已产生的思考、工具事件、子代理元数据和助手占位消息；否则页面刷新后只能看到残缺的助手正文，用户问题、思考和子代理过程都会丢失。
+- **隐藏续写必须按字段合并执行元数据**：后台续写完成后不能只覆盖助手正文，还要合并 `thinking`、`tool_calls`、子代理汇总与执行元数据；已有事件按稳定标识去重，避免刷新后重复或缺失。
+- **子代理结构化日志必须先归一化再渲染**：`plan`、`task`、`tool`、`status`、`chunk` 等事件不得直接作为 JSON 文本交给 Markdown；终态 transcript 优先复用缓存，伪子代理标识必须保留完整 fallback logs，不能只保留 summary。
+- **记忆查询不得直接使用超长工具输出**：SQLite 的模糊搜索输入必须先统一清洗、压缩和截断；整段工具结果或大型 JSON 直接进入 `LIKE`/`GLOB` 会触发 `LIKE or GLOB pattern too complex`，进而使聊天流式请求失败。
+- **反馈层长期记忆调用保持显式契约**：`add_long_term_memory` 必须以 `memory_layer=` 显式传递记忆层，修改反馈链路时需用契约测试防止位置参数漂移导致 `MemoryPersistenceError`。
+- **真实运行库 ACL 必须同时覆盖旁车文件**：Windows 上修复 `var/data/openawa.db` 写权限时，要在提升权限终端检查数据库目录以及 `openawa.db`、`openawa.db-wal`、`openawa.db-shm` 的所有者和写权限；禁止通过删除真实库或旁车文件绕过 `attempt to write a readonly database`。
+
 ## 20. API Path Prefix
 
 All API routes use prefix `settings.API_V1_STR` (`/api`) except MCP, billing, marketplace, security, weixin, tools, subagents, system (diagnostics), and test-scenarios which use their own prefixes. See `main.py` lines 390-417 for the full registration list.

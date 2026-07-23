@@ -424,7 +424,7 @@ describe('SettingsPage', () => {
       }))
       // 再更新已选模型列表
       expect(modelApiMocks.updateProviderSelectedModels).toHaveBeenCalledWith('openai', expect.objectContaining({
-        selected_models: ['legacy-local-model', 'gpt-4.1']
+        selected_models: ['gpt-4.1']
       }))
     })
 

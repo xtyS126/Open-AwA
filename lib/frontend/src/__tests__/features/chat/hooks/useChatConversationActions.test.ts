@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import { createElement, StrictMode, type ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -158,5 +158,50 @@ describe('useChatConversationActions - StrictMode 守卫', () => {
 
     rerender({ conversationId: 'session-def' })
     expect(loadConversationList).toHaveBeenCalledTimes(1)
+  })
+
+  it('刷新加载历史时恢复 Markdown、思考与子代理工具事件', async () => {
+    apiMocks.getHistory.mockResolvedValue({
+      data: [
+        { id: 1, role: 'user', content: '我的问题', timestamp: '2026-07-23T00:00:00Z' },
+        {
+          id: 2,
+          role: 'assistant',
+          content: '## Markdown 标题\n\n- 列表项',
+          reasoning_content: '先分析上下文',
+          toolEvents: [{
+            id: 'subagent-aggregation',
+            kind: 'subagent',
+            name: '子代理汇总',
+            status: 'completed',
+            subagent: { logs: '**子代理结论**', visible: true },
+          }],
+          timestamp: '2026-07-23T00:00:01Z',
+        },
+      ],
+    })
+    const setMessages = vi.fn()
+    const buildMessageMetaFromMessages = vi.fn(() => ({}))
+
+    renderHook(() => useChatConversationActions(buildParams({
+      sessionId: 'session-history',
+      conversationId: 'session-history',
+      historyInitialized: true,
+      setMessages,
+      mergeServerHistoryWithCached: (server) => server,
+      buildMessageMetaFromMessages,
+    })), { wrapper: routerWrapper })
+
+    await waitFor(() => expect(setMessages).toHaveBeenCalled())
+    const restored = setMessages.mock.calls.at(-1)?.[0]
+    expect(restored).toHaveLength(2)
+    expect(restored[0]).toMatchObject({ role: 'user', content: '我的问题' })
+    expect(restored[1]).toMatchObject({
+      role: 'assistant',
+      content: '## Markdown 标题\n\n- 列表项',
+      reasoning_content: '先分析上下文',
+    })
+    expect(restored[1].toolEvents[0].subagent.logs).toBe('**子代理结论**')
+    expect(buildMessageMetaFromMessages).toHaveBeenCalledWith(restored)
   })
 })

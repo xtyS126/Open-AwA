@@ -180,12 +180,15 @@ export function applyToolPatchToSegments(
   patch: Partial<ToolEventMeta>
 ): AssistantMessageSegment[] {
   const nextSegments = cloneSegments(segments)
-  const lastThoughtIndex = getLastThoughtIndex(nextSegments)
-  if (lastThoughtIndex < 0) {
+  // 工具完成事件可能晚于下一段思考到达，必须按工具 ID 回写原始思维段。
+  for (let index = nextSegments.length - 1; index >= 0; index -= 1) {
+    const segment = nextSegments[index]
+    if (segment?.kind !== 'thought' || !segment.toolEvents.some((tool) => tool.id === toolId)) {
+      continue
+    }
+    segment.toolEvents = patchToolEvent(segment.toolEvents, toolId, patch)
     return nextSegments
   }
-  const thoughtSegment = nextSegments[lastThoughtIndex] as AssistantThoughtSegment
-  thoughtSegment.toolEvents = patchToolEvent(thoughtSegment.toolEvents, toolId, patch)
   return nextSegments
 }
 

@@ -37,6 +37,10 @@ RestrictedPython>=8.0,<9.0
 cachetools>=5.3.0,<6.0.0
 # tiktoken 用于 OpenAI 系列模型的精确 token 估算（billing/token_counter.py 第三层策略）
 tiktoken>=0.7.0
+# 本地长期记忆嵌入模型。三者需保持兼容，避免导入失败后静默回退到哈希嵌入。
+sentence-transformers>=3.4.1,<4.0.0
+transformers>=4.41.0,<5.0.0
+huggingface-hub>=0.25.0,<1.0.0
 acp>=0.1.0,<1.0.0
 psutil>=5.9.0,<7.0.0
 pywinpty>=2.0.0,<3.0.0; sys_platform == "win32"

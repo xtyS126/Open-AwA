@@ -24,7 +24,9 @@ from config.settings import settings
 # 模型下载统一存储到项目根 var/data/models/ 目录，不散落到系统各处
 # __file__ = lib/backend/memory/vector_store_manager.py；parents[2] = lib/backend；parents[3] = 项目根
 def _get_models_dir() -> str:
-    _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    _project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    )
     _dir = os.path.join(_project_root, "var", "data", "models")
     os.makedirs(_dir, exist_ok=True)
     return _dir
@@ -195,6 +197,33 @@ class SentenceTransformerEmbeddingProvider:
             logger.warning(f"从魔搭社区下载模型失败 ({ms_model_name}): {exc}")
             return None
 
+    def _find_cached_model_path(self) -> Optional[str]:
+        """查找项目模型目录中已完整下载的模型快照，优先完全离线加载。"""
+        normalized_name = self.model_name.replace("/", "--")
+        candidates = (
+            os.path.join(
+                _MODELS_DIR,
+                "sentence_transformers",
+                f"models--sentence-transformers--{normalized_name}",
+                "snapshots",
+            ),
+            os.path.join(
+                _MODELS_DIR,
+                "huggingface",
+                "hub",
+                f"models--sentence-transformers--{normalized_name}",
+                "snapshots",
+            ),
+        )
+        for snapshots_dir in candidates:
+            if not os.path.isdir(snapshots_dir):
+                continue
+            for snapshot_name in sorted(os.listdir(snapshots_dir), reverse=True):
+                snapshot_path = os.path.join(snapshots_dir, snapshot_name)
+                if os.path.isfile(os.path.join(snapshot_path, "config.json")):
+                    return snapshot_path
+        return None
+
     def _ensure_model(self):
         """
         延迟初始化模型，按优先级尝试下载：
@@ -207,6 +236,12 @@ class SentenceTransformerEmbeddingProvider:
         # 使用项目内的模型缓存目录，避免每次重启重复下载
         _cache_dir = os.path.join(_MODELS_DIR, "sentence_transformers")
         os.makedirs(_cache_dir, exist_ok=True)
+
+        cached_model_path = self._find_cached_model_path()
+        if cached_model_path:
+            self._model = self._SentenceTransformer(cached_model_path, cache_folder=_cache_dir)
+            logger.info(f"从本地缓存加载嵌入模型成功: {self.model_name} -> {cached_model_path}")
+            return
 
         # 优先尝试 HuggingFace
         try:
@@ -264,12 +299,8 @@ def create_embedding_provider(provider_type: Optional[str] = None) -> EmbeddingP
     if api_key:
         return OpenAIEmbeddingProvider(api_key=api_key)
 
-    try:
-        model_name = os.getenv("MEMORY_LOCAL_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-        return SentenceTransformerEmbeddingProvider(model_name=model_name)
-    except Exception as exc:
-        logger.warning(f"未检测到可用嵌入模型，已回退到哈希嵌入: {exc}")
-        return HashEmbeddingProvider()
+    model_name = os.getenv("MEMORY_LOCAL_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    return SentenceTransformerEmbeddingProvider(model_name=model_name)
 
 
 def _tokenize(text: str) -> List[str]:
@@ -344,8 +375,7 @@ def _detect_dense_dimension(provider: EmbeddingProvider) -> int:
             future = executor.submit(_probe_dimension_in_thread, provider)
             return future.result(timeout=60)
     except Exception as exc:
-        logger.warning(f"探测嵌入维度失败，回退到默认维度 {DEFAULT_HASH_DIMENSION}: {exc}")
-    return DEFAULT_HASH_DIMENSION
+        raise RuntimeError(f"探测嵌入模型维度失败，拒绝使用不确定维度创建向量库: {exc}") from exc
 
 
 class VectorStoreManager:
@@ -367,6 +397,7 @@ class VectorStoreManager:
 
         self.embedding_provider = embedding_provider or create_embedding_provider(provider_type)
         self.collection_name = collection_name
+        self._base_collection_name = collection_name
 
         # 嵌入式 Qdrant，数据持久化到本地路径
         self.client = QdrantClient(path=self.persist_directory)
@@ -385,8 +416,12 @@ class VectorStoreManager:
             return
 
         dimension = _detect_dense_dimension(self.embedding_provider)
+        self._create_collection(self.collection_name, dimension)
+
+    def _create_collection(self, collection_name: str, dimension: int) -> None:
+        """按指定稠密向量维度创建带稀疏向量的 collection。"""
         self.client.create_collection(
-            collection_name=self.collection_name,
+            collection_name=collection_name,
             vectors_config={
                 DENSE_VECTOR_NAME: models.VectorParams(
                     size=dimension,
@@ -396,6 +431,57 @@ class VectorStoreManager:
             sparse_vectors_config={
                 SPARSE_VECTOR_NAME: models.SparseVectorParams()
             },
+        )
+
+    def _get_dense_dimension(self, collection_name: str) -> Optional[int]:
+        """读取 collection 的稠密向量维度，旧格式或读取失败时返回 None。"""
+        try:
+            collection = self.client.get_collection(collection_name)
+            vectors = collection.config.params.vectors
+            vector_params = vectors.get(DENSE_VECTOR_NAME) if isinstance(vectors, dict) else None
+            dimension = getattr(vector_params, "size", None)
+            return dimension if isinstance(dimension, int) and dimension > 0 else None
+        except Exception as exc:
+            logger.bind(
+                event="vector_collection_dimension_read_failed",
+                module="vector_store",
+                collection=collection_name,
+                error_type=type(exc).__name__,
+            ).warning(f"读取向量 collection 维度失败: {exc}")
+            return None
+
+    def _ensure_collection_dimension(self, dimension: int) -> None:
+        """为当前嵌入维度选择兼容 collection，保留旧 collection 以避免丢失用户数据。"""
+        if dimension <= 0:
+            raise ValueError("嵌入向量不能为空")
+
+        current_dimension = self._get_dense_dimension(self.collection_name)
+        if current_dimension is None or current_dimension == dimension:
+            return
+
+        previous_collection = self.collection_name
+        compatible_collection = f"{self._base_collection_name}__d{dimension}"
+        self.collection_name = compatible_collection
+
+        if self.client.collection_exists(compatible_collection):
+            compatible_dimension = self._get_dense_dimension(compatible_collection)
+            if compatible_dimension != dimension:
+                raise RuntimeError(
+                    f"向量 collection {compatible_collection} 维度为 {compatible_dimension}，"
+                    f"与当前嵌入维度 {dimension} 不兼容"
+                )
+        else:
+            self._create_collection(compatible_collection, dimension)
+
+        logger.bind(
+            event="vector_collection_dimension_migrated",
+            module="vector_store",
+            previous_collection=previous_collection,
+            compatible_collection=compatible_collection,
+            previous_dimension=current_dimension,
+            dimension=dimension,
+        ).warning(
+            "检测到嵌入维度变更，已切换到兼容 collection；旧 collection 保留，未删除用户数据"
         )
 
     @property
@@ -436,6 +522,7 @@ class VectorStoreManager:
         同时写入 dense 与 sparse 向量，供混合检索使用。
         """
         vector = embedding or (await self.embedding_provider.embed_texts([content]))[0]
+        self._ensure_collection_dimension(len(vector))
         sparse_vector = compute_sparse_vector(content)
         payload = {
             "memory_id": int(memory_id),
@@ -526,6 +613,7 @@ class VectorStoreManager:
             ).warning("嵌入返回空结果，跳过向量检索")
             return []
         dense_vector = embedded[0]
+        self._ensure_collection_dimension(len(dense_vector))
         sparse_vector = compute_sparse_vector(query_text)
 
         # 单次调用 Qdrant 原生混合检索：prefetch 双路召回 + RRF 融合

@@ -1,3 +1,6 @@
+import asyncio
+from unittest.mock import AsyncMock
+
 import pytest
 
 from api.services.chat_protocol import build_sse_response
@@ -101,6 +104,30 @@ async def test_ai_agent_process_stream_emits_status_before_plan(monkeypatch):
     assert events[0]["phase"] == "starting"
     assert any(event.get("type") == "status" and event.get("phase") == "planning" for event in events[:-1])
     assert events[-1]["type"] == "plan"
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_process_stream_emits_starting_before_slow_magic_command(monkeypatch):
+    """首个流式状态不得被耗时的魔法命令处理阻塞。"""
+
+    agent = AIAgent()
+
+    async def slow_magic_command(user_input, context):
+        await asyncio.sleep(0.2)
+        return {
+            "command_name": "help",
+            "success": True,
+            "message": "帮助信息",
+        }
+
+    monkeypatch.setattr(agent, "_check_and_handle_magic_command", slow_magic_command)
+
+    stream = agent.process_stream("/help", {"session_id": "session-ttft"})
+    first_event = await asyncio.wait_for(anext(stream), timeout=0.05)
+    await stream.aclose()
+
+    assert first_event["type"] == "status"
+    assert first_event["phase"] == "starting"
 
 
 @pytest.mark.asyncio
@@ -330,6 +357,7 @@ async def test_ai_agent_process_stream_allows_more_than_five_tool_rounds(monkeyp
 
     agent = AIAgent()
     stream_call_count = {"value": 0}
+    tool_message_counts: list[int] = []
 
     async def fake_inject_runtime_capabilities(context):
         return None
@@ -359,6 +387,7 @@ async def test_ai_agent_process_stream_allows_more_than_five_tool_rounds(monkeyp
 
     async def fake_stream_call(prompt, context):
         stream_call_count["value"] += 1
+        tool_message_counts.append(len(context.get("_tool_messages", [])))
         if stream_call_count["value"] <= 6:
             yield {"content": f"第{stream_call_count['value']}轮。", "reasoning_content": ""}
             yield {
@@ -394,6 +423,7 @@ async def test_ai_agent_process_stream_allows_more_than_five_tool_rounds(monkeyp
         events.append(event)
 
     assert stream_call_count["value"] == 7
+    assert tool_message_counts[:3] == [0, 2, 4]
     assert any(event.get("content") == "第七轮完成。" for event in events)
 
 
@@ -530,3 +560,73 @@ async def test_build_sse_response_falls_back_for_plain_exception():
     assert "流式响应异常，请重试" not in body
     # 应以 [DONE] 结束
     assert body.endswith("data: [DONE]\n\n")
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_process_stream_persists_pending_background_subagent_exchange(monkeypatch):
+    """后台子代理让流提前结束前，必须持久化原问题、思考和工具事件。"""
+    agent = AIAgent()
+
+    async def fake_inject_runtime_capabilities(context):
+        return None
+
+    async def fake_build_conversation_history(session_id):
+        return []
+
+    async def fake_recognize_intent(user_input):
+        return "chat"
+
+    async def fake_extract_entities(user_input):
+        return {}
+
+    async def fake_create_plan(intent, entities, context):
+        return {"intent": "chat", "steps": [], "requires_confirmation": False}
+
+    async def fake_stream_call(prompt, context):
+        yield {"content": "", "reasoning_content": "需要交给子代理处理。"}
+        yield {
+            "type": "tool_calls",
+            "tool_calls": [{
+                "id": "call-subagent-background",
+                "type": "function",
+                "function": {
+                    "name": "task_spawn_agent",
+                    "arguments": '{"agent_type":"Explore","prompt":"执行任务","description":"后台检索"}',
+                },
+            }],
+        }
+
+    async def fake_execute_tool_call(tool_call, context, on_subagent_event=None):
+        return {
+            "ok": True,
+            "result": {
+                "agent_id": "agt-background-1",
+                "run_mode": "background",
+                "status": "running",
+            },
+            "tool_name": "task_spawn_agent",
+        }
+
+    monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
+    monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
+    monkeypatch.setattr(agent, "_retrieve_relevant_experiences", AsyncMock(return_value=[]))
+    monkeypatch.setattr(agent, "_retrieve_relevant_memories", AsyncMock(return_value=[]))
+    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.executor, "_call_llm_api_stream", fake_stream_call)
+    monkeypatch.setattr(agent.executor, "_execute_tool_call", fake_execute_tool_call)
+    monkeypatch.setattr(agent.feedback, "update_memory", AsyncMock())
+
+    events = [event async for event in agent.process_stream(
+        "请查找完整视频列表",
+        {"session_id": "session-background", "user_id": "user-1"},
+    )]
+
+    assert any(event.get("phase") == "waiting_subagents" for event in events)
+    agent.feedback.update_memory.assert_awaited_once()
+    persisted = agent.feedback.update_memory.await_args.kwargs
+    assert persisted["user_input"] == "请查找完整视频列表"
+    assert persisted["response"] == ""
+    assert persisted["reasoning_content"] == "需要交给子代理处理。"
+    assert persisted["tool_events"][0]["id"] == "call-subagent-background"

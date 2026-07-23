@@ -282,19 +282,32 @@ export function useProviderForm({
         : fallbackSelectedModels
 
       const models = data.models || []
-      setFetchedRemoteModels(models)
-
-      // 更新供应商表单的 selected_models，使主页面显示它们
-      setProviderForm(prev => ({ ...prev, selected_models: selectedModels }))
 
       if (!data.success) {
+        setFetchedRemoteModels([])
         setProviderModelsError(data.error?.message || '获取模型列表失败')
         return
       }
 
+      // 本地价格目录只用于后端无凭据时的兜底，不能作为可导入模型，避免把过期模板写入用户配置。
+      if (data.source !== 'remote') {
+        setFetchedRemoteModels([])
+        setProviderModelsError('未获取到远端模型，请检查基础 URL、API Key 和供应商服务状态')
+        return
+      }
+
+      setFetchedRemoteModels(models)
+
+      // 只保留远端仍存在的既有选择，重新导入时会自然移除旧本地回退模型。
+      const remoteModelNames = new Set(models.map(model => model.model))
+      const validSelectedModels = selectedModels.filter(model => remoteModelNames.has(model))
+
+      // 更新供应商表单的 selected_models，使主页面显示它们
+      setProviderForm(prev => ({ ...prev, selected_models: validSelectedModels }))
+
       if (openModal) {
         // 打开模态框并预选模型
-        setModalSelectedModels(selectedModels)
+        setModalSelectedModels(validSelectedModels)
         setShowImportModal(true)
       }
     } catch {

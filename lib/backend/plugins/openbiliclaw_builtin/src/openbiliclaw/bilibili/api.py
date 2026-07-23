@@ -12,6 +12,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, ClassVar, cast
 from urllib.parse import quote, urlencode, urlparse
 
@@ -71,6 +72,16 @@ class VideoInfo:
     danmaku_count: int = 0
     tags: list[str] | None = None
     pub_date: str = ""
+
+
+@dataclass
+class DownloadedVideo:
+    """已落盘的视频文件信息。"""
+
+    bvid: str
+    title: str
+    file_path: str
+    file_size: int
 
 
 @dataclass
@@ -451,6 +462,74 @@ class BilibiliAPIClient:
             share_count=stat.get("share", 0),
             danmaku_count=stat.get("danmaku", 0),
             pub_date=data.get("pubdate", ""),
+        )
+
+    async def download_video(
+        self,
+        bvid: str,
+        target_dir: Path,
+        *,
+        max_size_mb: int = 500,
+    ) -> DownloadedVideo:
+        """下载用户指定的单个公开视频到受控目录。"""
+        normalized_bvid = str(bvid or "").strip()
+        if not re.fullmatch(r"BV[0-9A-Za-z]{10}", normalized_bvid):
+            raise BilibiliAPIError("请输入有效的 B 站 BV 号")
+        if not 1 <= max_size_mb <= 2048:
+            raise BilibiliAPIError("最大下载体积必须在 1 到 2048 MB 之间")
+
+        view = await self._get_json("/x/web-interface/view", {"bvid": normalized_bvid})
+        aid = int(view.get("aid", 0) or 0)
+        cid = int(view.get("cid", 0) or 0)
+        if aid <= 0 or cid <= 0:
+            raise BilibiliAPIError("无法解析该视频的下载信息")
+        play = await self._get_json(
+            "/x/player/playurl",
+            {"avid": aid, "cid": cid, "qn": 64, "fnval": 0, "fourk": 1, "platform": "html5"},
+        )
+        durl = play.get("durl")
+        if not isinstance(durl, list) or not durl:
+            raise BilibiliAPIError("该视频当前没有可下载的视频流")
+        source_urls = [
+            str(item.get("url", "")).strip()
+            for item in durl
+            if isinstance(item, dict) and str(item.get("url", "")).strip().startswith("https://")
+        ]
+        if not source_urls:
+            raise BilibiliAPIError("下载地址无效")
+
+        title = str(view.get("title", "") or normalized_bvid)
+        safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", title).strip(" ._")[:100]
+        target_dir.mkdir(parents=True, exist_ok=True)
+        destination = target_dir / f"{normalized_bvid}_{safe_name or normalized_bvid}.mp4"
+        temporary = destination.with_suffix(".part")
+        limit_bytes = max_size_mb * 1024 * 1024
+        written = 0
+        try:
+            await self._respect_rate_limit()
+            with temporary.open("wb") as output:
+                for source_url in source_urls:
+                    async with self._client.stream("GET", source_url) as response:
+                        response.raise_for_status()
+                        content_length = response.headers.get("content-length")
+                        if content_length and written + int(content_length) > limit_bytes:
+                            raise BilibiliAPIError("视频体积超过本次允许的下载上限")
+                        async for chunk in response.aiter_bytes(1024 * 256):
+                            written += len(chunk)
+                            if written > limit_bytes:
+                                raise BilibiliAPIError("视频体积超过本次允许的下载上限")
+                            output.write(chunk)
+            temporary.replace(destination)
+        except httpx.HTTPError as exc:
+            raise BilibiliAPIError(f"视频下载失败: {exc}") from exc
+        finally:
+            if temporary.exists():
+                temporary.unlink(missing_ok=True)
+        return DownloadedVideo(
+            bvid=normalized_bvid,
+            title=title,
+            file_path=str(destination),
+            file_size=written,
         )
 
     async def search(

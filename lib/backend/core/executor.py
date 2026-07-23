@@ -1616,7 +1616,6 @@ class ExecutionLayer:
         tool_messages = context.get("_tool_messages", [])
         if tool_messages:
             messages.extend(tool_messages)
-            context.pop("_tool_messages", None)
         _tools = context.get("_tools")
         full_content = ""
         full_reasoning = ""

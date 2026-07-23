@@ -8,6 +8,7 @@ import type {
   UsageMeta,
 } from '@/features/chat/types'
 import { asRecord, isRecord } from '@/shared/types/api'
+import { normalizeSubagentLogText, normalizeSubagentTranscriptEntry } from './subagentLogNormalizer'
 
 export const SUBAGENT_LOG_LIMIT = 50000
 export const SUBAGENT_LOG_TRUNCATE_RATIO = 0.1
@@ -167,7 +168,7 @@ function normalizeRuntimeSubagentStatus(state: unknown, hasError: boolean): Task
 }
 
 function normalizeSubagentSnapshotLogs(logs: string): Pick<SubagentExecutionState, 'logs' | 'truncated'> {
-  const normalizedLogs = String(logs || '')
+  const normalizedLogs = normalizeSubagentLogText(logs)
   if (!normalizedLogs) {
     return {
       logs: '',
@@ -178,19 +179,7 @@ function normalizeSubagentSnapshotLogs(logs: string): Pick<SubagentExecutionStat
 }
 
 function transcriptEntryToText(entry: unknown): string {
-  if (!entry || typeof entry !== 'object') {
-    return String(entry || '').trim()
-  }
-
-  const record = asRecord(entry)
-  for (const key of ['message', 'content', 'response', 'summary', 'error', 'data']) {
-    const value = record[key]
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim()
-    }
-  }
-
-  return JSON.stringify(record)
+  return normalizeSubagentTranscriptEntry(entry)
 }
 
 export function createEmptyExecutionMeta(): AssistantExecutionMeta {
@@ -346,15 +335,16 @@ export function applySubagentMessage(
   const existing = meta.toolEvents.find((tool) => tool.id === payload.agentId)
   const nextOutputAt = Date.now()
   const existingLogs = existing?.subagent?.logs || ''
-  const logSeparator = getStructuredSubagentLogSeparator(existingLogs, payload.message)
-  const nextLogs = appendSubagentLogs(existingLogs, logSeparator + payload.message)
+  const normalizedMessage = normalizeSubagentLogText(payload.message)
+  const logSeparator = getStructuredSubagentLogSeparator(existingLogs, normalizedMessage)
+  const nextLogs = appendSubagentLogs(existingLogs, logSeparator + normalizedMessage)
 
   return applyToolUpdate(meta, {
     id: payload.agentId,
     kind: 'subagent',
     name: normalizeSubagentName(payload.agentType || existing?.subagent?.agentType),
     status: existing?.status === 'error' ? 'error' : 'running',
-    detail: payload.message,
+    detail: normalizedMessage,
     startedAt: existing?.startedAt,
     subagent: {
       agentId: payload.agentId,

@@ -258,10 +258,27 @@ class PricingManager:
 
     LEGACY_DEFAULT_CONFIGURATION_KEYS = [
         ("openai", "gpt-4"),
+        ("openai", "gpt-4o"),
         ("openai", "gpt-4o-mini"),
+        ("openai", "gpt-4.1"),
+        ("anthropic", "claude-3-haiku"),
+        ("anthropic", "claude-3.5-haiku"),
         ("anthropic", "claude-3.5-sonnet"),
         ("google", "gemini-2.0-flash"),
-        ("deepseek", "deepseek-chat")
+        ("google", "gemini-2.0-flash-lite"),
+        ("google", "gemini-2.5-flash"),
+        ("google", "gemini-2.5-pro"),
+        ("deepseek", "deepseek-chat"),
+        ("deepseek", "deepseek-reasoner"),
+        ("deepseek", "deepseek-v3"),
+        ("deepseek", "deepseek-r1"),
+        ("deepseek", "deepseek-v3.1"),
+        ("deepseek", "deepseek-v3.2"),
+        ("alibaba", "qwen-turbo"),
+        ("alibaba", "qwen-plus"),
+        ("moonshot", "moonshot-v1-8k"),
+        ("zhipu", "glm-4"),
+        ("zhipu", "glm-4-plus"),
     ]
 
     def __init__(self, db: Session):
@@ -790,17 +807,20 @@ class PricingManager:
         self.db.commit()
         return count
 
-    def initialize_default_configurations(self) -> int:
+    def initialize_default_configurations(self, add_missing: bool = False) -> int:
         """
         初始化默认模型配置数据。从 default_configurations.json 加载。
 
         Returns:
             新创建的记录数量。
+
+        Args:
+            add_missing: 已存在配置时是否补齐缺失的内置默认项。
         """
         self.ensure_configuration_schema()
 
         existing_count = self.db.query(ModelConfiguration).count()
-        if existing_count > 0:
+        if existing_count > 0 and not add_missing:
             return 0
 
         # 从 config_loader 加载 JSON 配置（支持测试 mock）
@@ -821,14 +841,28 @@ class PricingManager:
             duplicate_text = ", ".join(f"{provider}/{model}" for provider, model in duplicates)
             raise ValueError(f"Duplicate default configurations found: {duplicate_text}")
 
+        existing_keys = {
+            (config.provider, config.model)
+            for config in self.db.query(ModelConfiguration.provider, ModelConfiguration.model).all()
+        }
+        has_default = self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.is_default == True
+        ).first() is not None
+
         count = 0
         for data in configurations:
             normalized = self._normalize_configuration_payload(data)
+            if (normalized["provider"], normalized["model"]) in existing_keys:
+                continue
+            if normalized.get("is_default", False) and has_default:
+                normalized["is_default"] = False
             config = ModelConfiguration(**normalized)
             self.db.add(config)
+            has_default = has_default or config.is_default
             count += 1
 
-        self.db.commit()
+        if count:
+            self.db.commit()
         return count
 
     def remove_legacy_default_configurations(self) -> int:
@@ -848,10 +882,16 @@ class PricingManager:
         if not conditions:
             return 0
 
-        rows = self.db.query(ModelConfiguration).filter(
+        candidates = self.db.query(ModelConfiguration).filter(
             or_(*conditions),
-            ModelConfiguration.api_key.is_(None)
+            ModelConfiguration.api_key.is_(None),
+            ModelConfiguration.api_endpoint.is_(None),
+            ModelConfiguration.credential_id.is_(None),
         ).all()
+        rows = [
+            row for row in candidates
+            if not self.parse_selected_models(row.selected_models)
+        ]
 
         count = len(rows)
         if count == 0:
@@ -862,6 +902,49 @@ class PricingManager:
 
         self.db.commit()
         return count
+
+    def refresh_legacy_default_model_selections(self) -> int:
+        """将旧内置模型的首选项迁移为当前厂商模板，保留其余用户选择。"""
+        self.ensure_configuration_schema()
+
+        try:
+            from config.config_loader import config_loader
+            configurations = config_loader.load_default_configurations()
+        except Exception as exc:
+            logger.bind(module="pricing_manager", event="config_loader_error").warning(
+                f"读取默认模型目录失败: {exc}"
+            )
+            return 0
+
+        current_defaults = {
+            self.normalize_provider(item.get("provider")): self.normalize_model(item.get("model"))
+            for item in configurations
+            if item.get("is_active", True) and item.get("provider") and item.get("model")
+        }
+        legacy_keys = set(self.LEGACY_DEFAULT_CONFIGURATION_KEYS)
+        updated_count = 0
+
+        for config in self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.is_active == True
+        ).all():
+            provider = self.normalize_provider(config.provider)
+            current_model = current_defaults.get(provider)
+            selected_models = self.parse_selected_models(config.selected_models)
+            if not current_model or not selected_models or selected_models[0] == current_model:
+                continue
+
+            first_model = self.normalize_model(selected_models[0])
+            if (provider, first_model) not in legacy_keys:
+                continue
+
+            config.selected_models = self.serialize_selected_models(
+                [current_model, *selected_models]
+            )
+            updated_count += 1
+
+        if updated_count:
+            self.db.commit()
+        return updated_count
 
     def validate_pricing_data(self, data: Dict) -> tuple:
         """
@@ -1063,38 +1146,28 @@ class PricingManager:
 
     @staticmethod
     def _get_default_models_for_provider(provider: str) -> list:
-        """获取 provider 的默认模型列表（用于恢复被删除的配置）。"""
-        provider_defaults = {
-            "openai": [
-                {"model": "gpt-4o", "display_name": "GPT-4o", "is_default": True},
-                {"model": "gpt-4o-mini", "display_name": "GPT-4o Mini"},
-            ],
-            "deepseek": [
-                {"model": "deepseek-chat", "display_name": "DeepSeek Chat", "is_default": True},
-                {"model": "deepseek-reasoner", "display_name": "DeepSeek Reasoner"},
-            ],
-            "anthropic": [
-                {"model": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6", "is_default": True},
-                {"model": "claude-haiku-4-5-20251001", "display_name": "Claude Haiku 4.5"},
-            ],
-            "moonshot": [
-                {"model": "moonshot-v1-8k", "display_name": "Moonshot v1 8K", "is_default": True},
-            ],
-            "zhipu": [
-                {"model": "glm-4-plus", "display_name": "GLM-4 Plus", "is_default": True},
-            ],
-            "alibaba": [
-                {"model": "qwen-turbo", "display_name": "通义千问 Turbo", "is_default": True},
-            ],
-            "google": [
-                {"model": "gemini-2.0-flash", "display_name": "Gemini 2.0 Flash", "is_default": True},
-            ],
-        }
-        display_name = provider_defaults.get(provider, [{}])[0].get("display_name", provider) if provider_defaults.get(provider) else provider
-        return provider_defaults.get(
-            provider,
-            [{"model": f"{provider}-default", "display_name": display_name, "is_default": True}],
-        )
+        """从默认配置目录读取指定厂商的恢复模型，避免维护第二份过期清单。"""
+        try:
+            from config.config_loader import config_loader
+            configurations = config_loader.load_default_configurations()
+        except Exception as exc:
+            logger.bind(module="pricing_manager", event="config_loader_error").warning(
+                f"读取 {provider} 默认模型失败: {exc}"
+            )
+            configurations = []
+
+        provider_defaults = [
+            {
+                "model": item["model"],
+                "display_name": item.get("display_name", item["model"]),
+                "is_default": item.get("is_default", False),
+            }
+            for item in configurations
+            if item.get("provider") == provider and item.get("is_active", True)
+        ]
+        if provider_defaults:
+            return provider_defaults
+        return [{"model": f"{provider}-default", "display_name": provider, "is_default": True}]
 
     def get_all_provider_credentials(self) -> List[ProviderCredential]:
         """获取所有激活的 Provider 凭据。"""

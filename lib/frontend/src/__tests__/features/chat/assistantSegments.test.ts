@@ -158,6 +158,27 @@ describe('assistantSegments', () => {
     }
   })
 
+  it('工具完成晚于下一段思考时仍回写到原思维段', () => {
+    let segments = appendAssistantChunk([], { reasoningContent: '先分析' })
+    segments = applyToolEventToSegments(segments, {
+      id: 'tool-delayed',
+      kind: 'plugin',
+      name: 'query_status',
+      status: 'completed',
+    })
+    segments = appendAssistantChunk(segments, { reasoningContent: '根据工具结果继续分析' })
+    segments = applyToolPatchToSegments(segments, 'tool-delayed', {
+      output: '工具结果',
+      status: 'completed',
+    })
+
+    expect(segments).toHaveLength(2)
+    if (segments[0]?.kind === 'thought' && segments[1]?.kind === 'thought') {
+      expect(segments[0].toolEvents[0]?.output).toBe('工具结果')
+      expect(segments[1].toolEvents).toHaveLength(0)
+    }
+  })
+
   it('applyToolPatchToSegments 在空 segments 上不崩溃', () => {
     const result = applyToolPatchToSegments([], 'nonexistent', { output: 'x' })
     expect(result).toEqual([])

@@ -322,6 +322,20 @@ class TestPasswordBearerAuth:
         assert body["id"] == owner_user.id
         assert body["role"] == "admin"
 
+    @pytest.mark.asyncio
+    async def test_password_bearer_can_request_csrf_token(
+        self, client, owner_user, owner_cache_set
+    ) -> None:
+        """密码 Bearer 必须能够获取后续写操作所需的 CSRF token。"""
+        from fastapi import Response
+        from main import get_csrf_token
+
+        response = Response()
+        payload = await get_csrf_token(response, owner_user)
+
+        assert payload["csrf_token"]
+        assert "csrf_access_token=" in response.headers["set-cookie"]
+
     def test_password_login_succeeds_with_special_chars(
         self, client, owner_user, owner_cache_set, db_session
     ) -> None:

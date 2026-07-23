@@ -421,12 +421,22 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
             count = await asyncio.to_thread(pricing_manager.initialize_default_pricing)
             if count > 0:
                 logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
-            config_count = await asyncio.to_thread(pricing_manager.initialize_default_configurations)
-            if config_count > 0:
-                logger.bind(event="configurations_initialized", module="main", count=config_count).info("initialized default model configurations")
             removed = await asyncio.to_thread(pricing_manager.remove_legacy_default_configurations)
             if removed > 0:
                 logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
+            config_count = await asyncio.to_thread(
+                pricing_manager.initialize_default_configurations,
+                removed > 0,
+            )
+            if config_count > 0:
+                logger.bind(event="configurations_initialized", module="main", count=config_count).info("initialized default model configurations")
+            refreshed = await asyncio.to_thread(
+                pricing_manager.refresh_legacy_default_model_selections
+            )
+            if refreshed > 0:
+                logger.bind(event="legacy_model_selections_refreshed", module="main", count=refreshed).info(
+                    "refreshed legacy provider default model selections"
+                )
         finally:
             db.close()
 
@@ -1131,7 +1141,10 @@ async def _extract_user_id_from_request(request: Request) -> Optional[str]:
 
 
 @app.get("/api/auth/csrf-token")
-async def get_csrf_token(request: Request, response: Response):
+async def get_csrf_token(
+    response: Response,
+    current_user = Depends(get_current_user),
+):
     """
     返回当前用户会话的 CSRF token（需认证）。
 
@@ -1140,9 +1153,7 @@ async def get_csrf_token(request: Request, response: Response):
     同时后端将签名 token 写入 Cookie（双提交 Cookie 模式），
     中间件校验 header 中的原始 token 与 Cookie 中的签名 token 是否匹配。
     """
-    user_id = await _extract_user_id_from_request(request)
-    if user_id is None:
-        raise FastAPIHTTPException(status_code=401, detail="Authentication required")
+    user_id = str(current_user.id)
     # 兼容旧版 per-session 签名 token（前端内存缓存路径，向后兼容）
     legacy_token = generate_csrf_token(user_id)
     # 同时通过 fastapi-csrf-protect 生成双提交 Cookie 模式的 token 对

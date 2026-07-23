@@ -2,6 +2,22 @@ import { describe, expect, it } from 'vitest'
 import { parseSubagentLogs } from '@/features/chat/utils/logParser'
 
 describe('logParser', () => {
+  it('不会把原始 JSON 事件作为 Markdown 正文输出', () => {
+    const logs = [
+      JSON.stringify({ event: 'subagent_start', description: '正在获取合集' }),
+      JSON.stringify({ type: 'plan', plan: { steps: [{ step: 1 }] } }),
+      JSON.stringify({ type: 'chunk', content: '## 最终列表' }),
+    ].join('\n')
+
+    const segments = parseSubagentLogs(logs)
+    const renderedText = segments.map((segment) => segment.content).join('\n')
+
+    expect(renderedText).toContain('正在获取合集')
+    expect(renderedText).toContain('最终列表')
+    expect(renderedText).not.toContain('{"event"')
+    expect(renderedText).not.toContain('{"type"')
+  })
+
   it('合并连续的思考前缀行为单个思考片段', () => {
     const segments = parseSubagentLogs('[思考] 我\n[思考]正在\n[思考]分析问题')
 

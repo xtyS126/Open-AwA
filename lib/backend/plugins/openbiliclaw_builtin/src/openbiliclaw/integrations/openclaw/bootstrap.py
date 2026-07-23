@@ -18,6 +18,7 @@ from openbiliclaw.discovery.strategies.strategies import (
     TrendingStrategy,
 )
 from openbiliclaw.llm import build_llm_registry
+from openbiliclaw.llm.openawa_provider import OpenAwAProvider
 from openbiliclaw.llm.service import LLMService, module_overrides_from_config
 from openbiliclaw.llm.usage_recorder import UsageRecorder
 from openbiliclaw.memory.manager import MemoryManager
@@ -51,7 +52,13 @@ class OpenClawAdapterServices:
 def build_openclaw_adapter_services() -> OpenClawAdapterServices:
     """构建 OpenClaw 适配器的共享服务集合。"""
     config = load_config()
-    llm_registry = build_llm_registry(config)
+    # 内置插件不维护独立模型密钥，统一复用 OpenAwA 当前默认模型配置。
+    # 这样插件工具始终可注册，且供应商配置的变更会在下一次调用时自动生效。
+    llm_registry = build_llm_registry(
+        config,
+        provider_overrides={"openawa": OpenAwAProvider()},
+        fallback_order=["openawa"],
+    )
     module_overrides = module_overrides_from_config(config)
     llm_concurrency = _llm_concurrency_from_config(config)
 

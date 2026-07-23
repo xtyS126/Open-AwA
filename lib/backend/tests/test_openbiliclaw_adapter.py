@@ -73,6 +73,7 @@ _EXPECTED_SKILL_NAMES: List[str] = [
     "openbiliclaw_get_delight",
     "openbiliclaw_get_runtime_status",
     "openbiliclaw_chat",
+    "openbiliclaw_download_video",
     "openbiliclaw_next_probe",
     "openbiliclaw_next_avoidance_probe",
     "openbiliclaw_respond_avoidance_probe",
@@ -170,13 +171,13 @@ def _find_skill(skills: List[OpenClawSkillDescriptor], name: str) -> OpenClawSki
 # ---------------------------------------------------------------------------
 
 
-def test_build_tools_returns_exactly_ten_skills(skills):
-    """build_openclaw_skills 应返回恰好 10 个技能描述符。"""
-    assert len(skills) == 10
+def test_build_tools_returns_exactly_eleven_skills(skills):
+    """build_openclaw_skills 应返回恰好 11 个技能描述符。"""
+    assert len(skills) == 11
 
 
 def test_skill_names_match_expected(skills):
-    """10 个技能的 name 应与预期列表完全一致。"""
+    """11 个技能的 name 应与预期列表完全一致。"""
     actual_names = [skill.name for skill in skills]
     assert actual_names == _EXPECTED_SKILL_NAMES
 

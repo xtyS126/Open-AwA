@@ -10,13 +10,14 @@ import {
   SUBAGENT_INACTIVITY_TIMEOUT_MS,
 } from '@/features/chat/utils/executionMeta'
 import { applyToolEventToSegments } from '@/features/chat/utils/assistantSegments'
+import { normalizeSubagentLogText } from '@/features/chat/utils/subagentLogNormalizer'
 
 /** 子代理运行时同步轮询间隔（毫秒） */
 const SUBAGENT_RUNTIME_SYNC_INTERVAL_MS = 1200
 
 /** 构建子代理聚合输出行 */
 function buildSubagentAggregateLine(name: string, text: string, failed: boolean): string {
-  const normalizedText = text.trim()
+  const normalizedText = normalizeSubagentLogText(text).trim()
   if (!normalizedText) {
     return failed ? `[ERROR] Subagent ${name}: 未返回可用输出` : `Subagent ${name}: `
   }
@@ -75,6 +76,7 @@ export function useSubagentSync({
   const subagentSyncInFlightRef = useRef<Record<string, boolean>>({})
   const subagentAggregationTimerRef = useRef<Record<string, number>>({})
   const aggregatedSubagentIdsRef = useRef<Record<string, Set<string>>>({})
+  const subagentTranscriptCacheRef = useRef<Record<string, string>>({})
 
   // 内部函数 ref，用于稳定闭包之间的相互调用
   const syncSubagentRuntimeRef = useRef<(assistantMessageId: string, agentId: string, agentType?: string) => void>(() => {})
@@ -127,8 +129,13 @@ export function useSubagentSync({
   ) => {
     const settledResults = await Promise.allSettled(subagents.map(async (tool) => {
       const fallbackText = tool.subagent?.archivedLogs || tool.subagent?.logs || tool.subagent?.summary || tool.detail || ''
-      if (tool.id.startsWith('sub_') || fallbackText.trim()) {
+      if (tool.id.startsWith('sub_')) {
         return buildSubagentAggregateLine(tool.name, fallbackText, tool.status === 'error')
+      }
+
+      const cachedTranscript = subagentTranscriptCacheRef.current[tool.id]
+      if (cachedTranscript) {
+        return buildSubagentAggregateLine(tool.name, cachedTranscript, tool.status === 'error')
       }
 
       try {
@@ -260,6 +267,9 @@ export function useSubagentSync({
               Array.isArray(transcriptResult.value.transcript) ? transcriptResult.value.transcript : []
             )
           : ''
+        if (transcriptText) {
+          subagentTranscriptCacheRef.current[agentId] = transcriptText
+        }
 
         const nextAgentType = agentDetail?.agent_type || agentType || currentTool?.subagent?.agentType
         const snapshotPayload = {
@@ -321,6 +331,7 @@ export function useSubagentSync({
     }
     subagentSyncTimerRef.current = {}
     subagentSyncInFlightRef.current = {}
+    subagentTranscriptCacheRef.current = {}
     for (const timerId of Object.values(subagentAggregationTimerRef.current)) {
       window.clearTimeout(timerId)
     }

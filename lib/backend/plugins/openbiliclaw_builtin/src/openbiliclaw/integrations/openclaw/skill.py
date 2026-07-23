@@ -108,6 +108,15 @@ def build_openclaw_skills(adapter: Any) -> list[OpenClawSkillDescriptor]:
 
         return await _run_handler(action)
 
+    async def download_video_handler(payload: dict[str, object]) -> dict[str, object]:
+        async def action() -> Any:
+            return await adapter.download_video(
+                bvid=str(payload.get("bvid", "")),
+                max_size_mb=_to_int(payload.get("max_size_mb", 500), default=500),
+            )
+
+        return await _run_handler(action)
+
     async def get_next_probe_handler(payload: dict[str, object]) -> dict[str, object]:
         del payload
         return await _run_handler(adapter.get_next_probe)
@@ -194,6 +203,19 @@ def build_openclaw_skills(adapter: Any) -> list[OpenClawSkillDescriptor]:
                 "required": ["message"],
             },
             handler=chat_handler,
+        ),
+        OpenClawSkillDescriptor(
+            name="openbiliclaw_download_video",
+            description="下载用户明确提供的 B 站公开视频。只接受 BV 号，文件保存到 OpenBiliClaw 的受控下载目录。",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "bvid": {"type": "string", "pattern": "^BV[0-9A-Za-z]{10}$"},
+                    "max_size_mb": {"type": "integer", "minimum": 1, "maximum": 2048},
+                },
+                "required": ["bvid"],
+            },
+            handler=download_video_handler,
         ),
         OpenClawSkillDescriptor(
             name="openbiliclaw_next_probe",
