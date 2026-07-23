@@ -113,6 +113,8 @@ class BilibiliToolkitBuiltinPlugin(BasePlugin):
             self._dependency_warnings.append(warning)
             self._adapter = None
             self._tools = []
+            # 即使适配层失败，5 个 B 站下载工具仍可用（不依赖 vendored openbiliclaw）
+            self._tools.extend(self._load_download_tools())
             # 适配层失败仍检测 ffmpeg，便于用户一次性看到所有告警
             if not await check_ffmpeg_or_warn():
                 self._dependency_warnings.append(
@@ -122,6 +124,10 @@ class BilibiliToolkitBuiltinPlugin(BasePlugin):
 
         self._dependency_warnings.extend(self._adapter.get_warnings())
         self._tools = self._adapter.get_tools()
+
+        # 追加阶段 16 实现的 5 个 B 站视频下载工具（订阅/触发/查询）
+        # 与 OpenClaw 适配层的 10 个信息获取工具并存，工具名不冲突
+        self._tools.extend(self._load_download_tools())
 
         # 检测 ffmpeg 可用性（不阻塞加载，不可用仅记录 WARNING）
         # 视频合并功能依赖 ffmpeg，缺失时插件仍以 loaded_with_warnings 状态加载
@@ -205,3 +211,40 @@ class BilibiliToolkitBuiltinPlugin(BasePlugin):
     def get_dependency_warnings(self) -> List[str]:
         """返回加载过程中收集到的所有告警信息。"""
         return list(self._dependency_warnings)
+
+    def _load_download_tools(self) -> List[Dict[str, Any]]:
+        """加载阶段 16 实现的 5 个 B 站视频下载工具定义。
+
+        工具定义位于 ``plugins.bilibili_toolkit_builtin.tools.BILIBILI_TOOLKIT_TOOLS``，
+        包含 ``bilibili_add_subscription`` / ``bilibili_list_subscriptions`` /
+        ``bilibili_trigger_download`` / ``bilibili_get_download_status`` /
+        ``bilibili_list_videos`` 共 5 个工具。
+
+        与 OpenClaw 适配层的 10 个信息获取工具并存：
+        - OpenClaw 工具：B 站/X/抖音等平台的信息检索（search / video_info 等）
+        - 下载工具：B 站订阅管理、视频下载触发、状态查询
+
+        工具名互不冲突，LLM 可同时调用两类工具完成"搜索 → 订阅 → 下载"完整链路。
+
+        延迟导入避免 ``tools`` 模块在插件初始化早期被加载（``tools`` 依赖
+        ``api.routes``，后者依赖 ``db.models.bilibili_toolkit`` 与 workflow 层，
+        全部为已实现的稳定模块，可安全导入）。
+
+        Returns:
+            工具定义字典列表，每个字典含 ``name`` / ``description`` /
+            ``parameters`` / ``handler`` 四个键。导入失败时返回空列表
+            并记录 WARNING，不阻塞插件加载。
+        """
+        try:
+            from plugins.bilibili_toolkit_builtin.tools import (
+                BILIBILI_TOOLKIT_TOOLS,
+            )
+        except ImportError as exc:
+            # 模块导入失败时仅记录 WARNING，不影响 OpenClaw 工具
+            warning = (
+                f"加载 B 站下载工具失败，5 个工具将不可用: {exc}"
+            )
+            logger.warning(warning)
+            self._dependency_warnings.append(warning)
+            return []
+        return list(BILIBILI_TOOLKIT_TOOLS)

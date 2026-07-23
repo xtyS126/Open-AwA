@@ -53,6 +53,7 @@ from api.routes.acp import router as acp_router
 from api.routes.pets import router as pets_router
 from api.routes.preview_proxy import router as preview_proxy_router
 from api.routes.notifications import router as notifications_router
+from plugins.bilibili_toolkit_builtin.api.routes import router as bilibili_toolkit_router
 
 from billing.routers import billing
 from config.logging import (
@@ -1578,6 +1579,7 @@ app.include_router(acp_router)
 app.include_router(preview_proxy_router)
 # 通知 HTTP API，前缀 /api/notifications 已内置在 router 定义中
 app.include_router(notifications_router)
+app.include_router(bilibili_toolkit_router, prefix=settings.API_V1_STR)
 app.include_router(pets_router, prefix=settings.API_V1_STR)
 # [NEW] Task 3: 多 Agent 讨论任务路由，前缀 /api/discussions 已内置在 router 定义中
 app.include_router(discussions.router)

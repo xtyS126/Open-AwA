@@ -4,7 +4,8 @@
 1. manifest.json 字段解析：name/version/pluginApiVersion/extensions 等关键字段
 2. 依赖检测逻辑：mock importlib.util.find_spec 验证关键依赖缺失时抛
    BuiltinPluginDependencyError，可选依赖缺失仅记录告警
-3. 技能转换：initialize 成功后 get_tools 返回 10 个工具，
+3. 技能转换：initialize 成功后 get_tools 返回 15 个工具
+   （10 个 OpenClaw 适配层工具 + 5 个阶段 16 下载工具），
    且 _skill_to_tool_def 保留 name/description/parameters 等字段
 
 测试隔离原则：
@@ -222,8 +223,13 @@ def test_get_tools_returns_empty_list_before_initialize(plugin_instance):
 
 
 @pytest.mark.asyncio
-async def test_get_tools_returns_ten_tools_after_initialize(plugin_instance):
-    """initialize 成功且 adapter 返回 10 个工具后，get_tools 应返回长度为 10 的列表。"""
+async def test_get_tools_returns_fifteen_tools_after_initialize(plugin_instance):
+    """initialize 成功且 adapter 返回 10 个工具后，get_tools 应返回长度为 15 的列表。
+
+    阶段 16 起，``plugin.py:initialize`` 在 adapter 工具基础上追加 5 个 B 站
+    下载工具（``bilibili_add_subscription`` 等），因此最终工具数为
+    ``10 (OpenClaw 适配层) + 5 (下载工具) = 15``。
+    """
     # 构造 10 个工具定义（模拟 adapter.get_tools 返回值）
     fake_tools: List[Dict[str, Any]] = [
         {
@@ -251,9 +257,20 @@ async def test_get_tools_returns_ten_tools_after_initialize(plugin_instance):
             await plugin_instance.initialize()
 
     tools = plugin_instance.get_tools()
-    assert len(tools) == 10
-    # 验证工具列表与 adapter 返回值一致
+    # 10 个 OpenClaw 适配层工具 + 5 个阶段 16 下载工具
+    assert len(tools) == 15
+    # plugin.py 使用 self._tools = adapter.get_tools() 后再 extend，
+    # 因此 tools 与 fake_tools 是同一引用（extend 原地扩展）
     assert tools is fake_tools
+    # 前 10 个应为 OpenClaw 适配层工具，后 5 个为阶段 16 下载工具
+    openclaw_tool_names: List[str] = [t["name"] for t in tools[:10]]
+    assert openclaw_tool_names == [f"openbiliclaw_tool_{i}" for i in range(10)]
+    download_tool_names: List[str] = [t["name"] for t in tools[10:]]
+    assert "bilibili_add_subscription" in download_tool_names
+    assert "bilibili_list_subscriptions" in download_tool_names
+    assert "bilibili_trigger_download" in download_tool_names
+    assert "bilibili_get_download_status" in download_tool_names
+    assert "bilibili_list_videos" in download_tool_names
 
 
 def test_get_dependency_warnings_returns_copy(plugin_instance):
@@ -307,7 +324,13 @@ def test_execute_raises_not_implemented(plugin_instance):
 
 @pytest.mark.asyncio
 async def test_initialize_degrades_when_adapter_initialize_fails(plugin_instance):
-    """adapter.initialize 抛异常时，插件应降级为空工具列表并返回 True。"""
+    """adapter.initialize 抛异常时，插件应降级为仅含 5 个下载工具并返回 True。
+
+    阶段 16 起，``plugin.py:initialize`` 在适配层失败分支仍会调用
+    ``_load_download_tools()`` 追加 5 个 B 站下载工具，因为下载工具
+    不依赖 vendored openbiliclaw（仅依赖 ``api.routes`` / ``db.models``
+    / ``workflow`` 等已实现的稳定模块），可独立工作。
+    """
     with patch(
         "plugins.bilibili_toolkit_builtin.plugin.importlib.util.find_spec"
     ) as mock_spec:
@@ -325,8 +348,15 @@ async def test_initialize_degrades_when_adapter_initialize_fails(plugin_instance
 
     # 降级模式仍返回 True
     assert result is True
-    # 工具列表应为空
-    assert plugin_instance.get_tools() == []
+    # 工具列表应仅含 5 个下载工具（适配层失败，下载工具独立可用）
+    tools = plugin_instance.get_tools()
+    assert len(tools) == 5
+    tool_names: List[str] = [t["name"] for t in tools]
+    assert "bilibili_add_subscription" in tool_names
+    assert "bilibili_list_subscriptions" in tool_names
+    assert "bilibili_trigger_download" in tool_names
+    assert "bilibili_get_download_status" in tool_names
+    assert "bilibili_list_videos" in tool_names
     # 应记录告警
     warnings = plugin_instance.get_dependency_warnings()
     assert any("BilibiliToolkitAdapter.initialize" in w for w in warnings)
