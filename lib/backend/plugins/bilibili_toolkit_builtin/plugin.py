@@ -23,6 +23,7 @@ from loguru import logger
 
 from plugins.base_plugin import BasePlugin
 from plugins.bilibili_toolkit_builtin.adapter import BilibiliToolkitAdapter
+from plugins.bilibili_toolkit_builtin.merger import check_ffmpeg_or_warn
 
 
 class BuiltinPluginDependencyError(Exception):
@@ -112,10 +113,22 @@ class BilibiliToolkitBuiltinPlugin(BasePlugin):
             self._dependency_warnings.append(warning)
             self._adapter = None
             self._tools = []
+            # 适配层失败仍检测 ffmpeg，便于用户一次性看到所有告警
+            if not await check_ffmpeg_or_warn():
+                self._dependency_warnings.append(
+                    "ffmpeg 不可用，视频合并功能将无法使用（请安装 ffmpeg 并确保在 PATH 中）"
+                )
             return True
 
         self._dependency_warnings.extend(self._adapter.get_warnings())
         self._tools = self._adapter.get_tools()
+
+        # 检测 ffmpeg 可用性（不阻塞加载，不可用仅记录 WARNING）
+        # 视频合并功能依赖 ffmpeg，缺失时插件仍以 loaded_with_warnings 状态加载
+        if not await check_ffmpeg_or_warn():
+            self._dependency_warnings.append(
+                "ffmpeg 不可用，视频合并功能将无法使用（请安装 ffmpeg 并确保在 PATH 中）"
+            )
 
         if self._dependency_warnings:
             logger.warning(

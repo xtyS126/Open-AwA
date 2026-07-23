@@ -58,6 +58,7 @@ class Quality(int, Enum):
     # 音频清晰度
     DolbyAudio = 30255
     HiResAudio = 30251
+    HighAudio = 30280  # 192k 普通高音质
 
 
 class DashVideo(BaseModel):

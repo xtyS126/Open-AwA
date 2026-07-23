@@ -170,6 +170,79 @@
       "default": "INFO",
       "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
       "x-component": "select"
+    },
+    "filter_option": {
+      "type": "object",
+      "title": "流筛选选项",
+      "description": "控制视频/音频流的选择范围与编码偏好，影响 playurl 解析后的最佳流选择",
+      "properties": {
+        "video_max_quality": {
+          "type": "string",
+          "title": "视频最高清晰度",
+          "description": "视频流允许的最高清晰度，超过此清晰度的流被过滤",
+          "enum": ["360p","480p","720p","720p60","1080p","1080p_plus","1080p60","1080p_hdr","1440p","1440p_hfr","1440p_hdr","4k","6k","8k","dolby_vision","hdr"],
+          "default": "8k"
+        },
+        "video_min_quality": {
+          "type": "string",
+          "title": "视频最低清晰度",
+          "description": "视频流允许的最低清晰度，低于此清晰度的流被过滤",
+          "enum": ["360p","480p","720p","720p60","1080p","1080p_plus","1080p60","1080p_hdr","1440p","1440p_hfr","1440p_hdr","4k","6k","8k","dolby_vision","hdr"],
+          "default": "360p"
+        },
+        "video_codecs": {
+          "type": "array",
+          "title": "视频编码偏好",
+          "description": "按数组顺序优先选择视频编码（AVC > HEVC > AV1），未在列表中的编码排最后",
+          "items": {"type": "string", "enum": ["avc","hevc","av1"]},
+          "default": ["avc","hevc","av1"]
+        },
+        "audio_max_quality": {
+          "type": "string",
+          "title": "音频最高清晰度",
+          "description": "音频流允许的最高清晰度",
+          "enum": ["dolby","hires","high"],
+          "default": "hires"
+        },
+        "audio_min_quality": {
+          "type": "string",
+          "title": "音频最低清晰度",
+          "description": "音频流允许的最低清晰度",
+          "enum": ["dolby","hires","high"],
+          "default": "high"
+        },
+        "audio_codecs": {
+          "type": "array",
+          "title": "音频编码偏好",
+          "description": "按数组顺序优先选择音频编码",
+          "items": {"type": "string", "enum": ["mp4a","ec3"]},
+          "default": ["mp4a","ec3"]
+        },
+        "no_dolby_video": {
+          "type": "boolean",
+          "title": "过滤杜比视界视频",
+          "description": "开启后过滤 quality=DolbyVision 的视频流",
+          "default": false
+        },
+        "no_dolby_audio": {
+          "type": "boolean",
+          "title": "过滤杜比全景声音频",
+          "description": "开启后过滤 quality=DolbyAudio 的音频流",
+          "default": false
+        },
+        "no_hdr": {
+          "type": "boolean",
+          "title": "过滤 HDR 视频",
+          "description": "开启后过滤 quality=HDR 的视频流",
+          "default": false
+        },
+        "no_hires": {
+          "type": "boolean",
+          "title": "过滤 HiRes 音频",
+          "description": "开启后过滤 quality=HiResAudio 的音频流",
+          "default": false
+        }
+      }
     }
   },
   "required": []
