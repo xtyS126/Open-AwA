@@ -144,6 +144,14 @@ from db.models.pet import (
     UserActivePet,
 )
 
+# ---- Bilibili Toolkit 域 ----
+from db.models.bilibili_toolkit import (
+    BilibiliToolkitDownloadTask,
+    BilibiliToolkitPage,
+    BilibiliToolkitSubscription,
+    BilibiliToolkitVideo,
+)
+
 from db.models.event_log import EventLog
 from db.permission_models import PermissionSaved  # noqa: E402
 
@@ -237,6 +245,11 @@ __all__ = [
     # 宠物域
     "Pet",
     "UserActivePet",
+    # Bilibili Toolkit 域
+    "BilibiliToolkitDownloadTask",
+    "BilibiliToolkitPage",
+    "BilibiliToolkitSubscription",
+    "BilibiliToolkitVideo",
     # 外部依赖模型
     "PermissionSaved",
     "EventLog",
