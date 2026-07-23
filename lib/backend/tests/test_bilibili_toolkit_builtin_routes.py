@@ -1,4 +1,4 @@
-"""OpenBiliClaw 内置插件 API 路由层 403 保护测试。
+"""bilibili-toolkit-builtin 内置插件 API 路由层 403 保护测试。
 
 覆盖三个核心场景：
 1. 内置插件不可卸载：DELETE /api/plugins/{id} 在 is_uninstallable=True 时返回 403
@@ -169,9 +169,9 @@ def _mock_plugin_manager_loaded(plugin_name: str, loaded: bool = False) -> Magic
 def test_delete_builtin_plugin_returns_403(monkeypatch):
     """DELETE 内置插件应返回 403，且响应包含"内置插件不可卸载"。"""
     plugin_id = _seed_plugin(
-        "openbiliclaw-builtin", is_uninstallable=True, source="builtin"
+        "bilibili-toolkit-builtin", is_uninstallable=True, source="builtin"
     )
-    monkeypatch.setattr(plugin_instance, "get", lambda: _mock_plugin_manager_loaded("openbiliclaw-builtin"))
+    monkeypatch.setattr(plugin_instance, "get", lambda: _mock_plugin_manager_loaded("bilibili-toolkit-builtin"))
 
     with _test_client() as client:
         response = client.delete(f"/api/plugins/{plugin_id}")
@@ -183,9 +183,9 @@ def test_delete_builtin_plugin_returns_403(monkeypatch):
 def test_disable_builtin_plugin_returns_403(monkeypatch):
     """PUT toggle 内置插件应返回 403，禁止启用/禁用切换。"""
     plugin_id = _seed_plugin(
-        "openbiliclaw-builtin", is_uninstallable=True, source="builtin"
+        "bilibili-toolkit-builtin", is_uninstallable=True, source="builtin"
     )
-    monkeypatch.setattr(plugin_instance, "get", lambda: _mock_plugin_manager_loaded("openbiliclaw-builtin"))
+    monkeypatch.setattr(plugin_instance, "get", lambda: _mock_plugin_manager_loaded("bilibili-toolkit-builtin"))
 
     with _test_client() as client:
         response = client.put(f"/api/plugins/{plugin_id}/toggle")
@@ -197,9 +197,9 @@ def test_disable_builtin_plugin_returns_403(monkeypatch):
 def test_audit_log_recorded_on_forbidden_delete(monkeypatch):
     """DELETE 内置插件被 403 拦截后，应写入 result=blocked 的审计日志。"""
     plugin_id = _seed_plugin(
-        "openbiliclaw-builtin", is_uninstallable=True, source="builtin"
+        "bilibili-toolkit-builtin", is_uninstallable=True, source="builtin"
     )
-    monkeypatch.setattr(plugin_instance, "get", lambda: _mock_plugin_manager_loaded("openbiliclaw-builtin"))
+    monkeypatch.setattr(plugin_instance, "get", lambda: _mock_plugin_manager_loaded("bilibili-toolkit-builtin"))
 
     with _test_client() as client:
         client.delete(f"/api/plugins/{plugin_id}")
@@ -213,7 +213,7 @@ def test_audit_log_recorded_on_forbidden_delete(monkeypatch):
         blocked_logs = [log for log in logs if log.result == "blocked"]
         assert len(blocked_logs) >= 1
         # 资源应为内置插件名
-        assert blocked_logs[0].resource == "openbiliclaw-builtin"
+        assert blocked_logs[0].resource == "bilibili-toolkit-builtin"
     finally:
         db.close()
 
@@ -221,9 +221,9 @@ def test_audit_log_recorded_on_forbidden_delete(monkeypatch):
 def test_audit_log_recorded_on_forbidden_toggle(monkeypatch):
     """PUT toggle 内置插件被 403 拦截后，应写入 result=blocked 的审计日志。"""
     plugin_id = _seed_plugin(
-        "openbiliclaw-builtin", is_uninstallable=True, source="builtin"
+        "bilibili-toolkit-builtin", is_uninstallable=True, source="builtin"
     )
-    monkeypatch.setattr(plugin_instance, "get", lambda: _mock_plugin_manager_loaded("openbiliclaw-builtin"))
+    monkeypatch.setattr(plugin_instance, "get", lambda: _mock_plugin_manager_loaded("bilibili-toolkit-builtin"))
 
     with _test_client() as client:
         client.put(f"/api/plugins/{plugin_id}/toggle")
@@ -234,7 +234,7 @@ def test_audit_log_recorded_on_forbidden_toggle(monkeypatch):
         assert len(logs) >= 1
         blocked_logs = [log for log in logs if log.result == "blocked"]
         assert len(blocked_logs) >= 1
-        assert blocked_logs[0].resource == "openbiliclaw-builtin"
+        assert blocked_logs[0].resource == "bilibili-toolkit-builtin"
     finally:
         db.close()
 

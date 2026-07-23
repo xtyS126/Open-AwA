@@ -1,4 +1,4 @@
-"""OpenBiliClaw 适配层：包装 vendored 的 OpenClawAdapter 并转换为 Open-AwA 工具定义。
+"""Bilibili Toolkit 适配层：包装 vendored 的 OpenClawAdapter 并转换为 Open-AwA 工具定义。
 
 适配策略：
 - 通过 ``importlib.import_module`` 动态加载 vendored 的
@@ -31,8 +31,8 @@ _BOOTSTRAP_MODULE = f"{_VENDORED_PACKAGE_NAME}.integrations.openclaw.bootstrap"
 _SKILL_MODULE = f"{_VENDORED_PACKAGE_NAME}.integrations.openclaw.skill"
 
 
-class OpenBiliClawAdapter:
-    """OpenBiliClaw 上游 ``OpenClawAdapter`` 的 Open-AwA 侧包装器。"""
+class BilibiliToolkitAdapter:
+    """Bilibili Toolkit 上游 ``OpenClawAdapter`` 的 Open-AwA 侧包装器。"""
 
     def __init__(self) -> None:
         # 上游 OpenClawAdapter 实例（成功加载后赋值）
@@ -54,7 +54,7 @@ class OpenBiliClawAdapter:
         if not callable(build_adapter):
             warning = (
                 "vendored openbiliclaw.bootstrap 缺少 build_openclaw_adapter 工厂函数，"
-                "OpenBiliClaw 工具集将不可用"
+                "Bilibili Toolkit 工具集将不可用"
             )
             logger.warning(warning)
             self._warnings.append(warning)
@@ -62,11 +62,11 @@ class OpenBiliClawAdapter:
 
         try:
             # 上游工厂函数会调用 load_config()、build_llm_registry() 等完整初始化链路，
-            # 可能因缺少 OpenBiliClaw 配置文件或 LLM provider 而抛异常
+            # 可能因缺少 Bilibili Toolkit 配置文件或 LLM provider 而抛异常
             self._inner = build_adapter()
         except Exception as exc:  # noqa: BLE001 - 适配层边界，统一降级
             warning = (
-                f"OpenClawAdapter 构造失败，OpenBiliClaw 工具集将降级为空: {exc}"
+                f"OpenClawAdapter 构造失败，Bilibili Toolkit 工具集将降级为空: {exc}"
             )
             logger.warning(warning)
             self._warnings.append(warning)
@@ -103,13 +103,13 @@ class OpenBiliClawAdapter:
                 tool_def = self._skill_to_tool_def(descriptor)
             except Exception as exc:  # noqa: BLE001 - 单个 descriptor 转换失败不影响其他
                 logger.warning(
-                    f"OpenBiliClaw 技能转换失败，跳过: {getattr(descriptor, 'name', '<unknown>')} - {exc}"
+                    f"Bilibili Toolkit 技能转换失败，跳过: {getattr(descriptor, 'name', '<unknown>')} - {exc}"
                 )
                 continue
             self._skills.append(tool_def)
 
         logger.info(
-            f"OpenBiliClaw 适配层加载完成，注册 {len(self._skills)} 个工具"
+            f"Bilibili Toolkit 适配层加载完成，注册 {len(self._skills)} 个工具"
         )
 
     def get_tools(self) -> List[Dict[str, Any]]:
@@ -164,7 +164,7 @@ class OpenBiliClawAdapter:
         except Exception as exc:  # noqa: BLE001 - 适配层边界，统一降级
             warning = (
                 f"vendored 模块 {module_name} 导入失败，"
-                f"OpenBiliClaw 工具集将降级为空: {exc}"
+                f"Bilibili Toolkit 工具集将降级为空: {exc}"
             )
             logger.warning(warning)
             self._warnings.append(warning)

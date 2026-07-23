@@ -9,7 +9,7 @@
  * 1. 配置 OpenAwA 后端地址（默认 127.0.0.1:8000）
  * 2. 保存 OpenAwA API Key（chrome.storage.local，仅扩展作用域可读）
  * 3. 获取当前浏览器中目标平台的 Cookie（chrome.cookies API）
- * 4. 将 B 站 Cookie 同步到后端 openbiliclaw-builtin 插件的 bilibili_cookie 字段
+ * 4. 将 B 站 Cookie 同步到后端 bilibili-toolkit-builtin 插件的 bilibili_cookie 字段
  *
  * 后端 API 约定：
  * - GET  /api/plugins                      获取插件列表（Bearer API Key 认证）
@@ -56,7 +56,7 @@ let state = {
   backendHost: DEFAULT_HOST,
   backendPort: DEFAULT_PORT,
   apiKey: null,
-  pluginId: null, // openbiliclaw-builtin 插件 ID（缓存）
+  pluginId: null, // bilibili-toolkit-builtin 插件 ID（缓存）
   currentPlatform: "bilibili",
   currentCookie: null, // { cookieString, length, domain, count }
 };
@@ -223,7 +223,7 @@ function showApiKeySavedState(masked) {
 // ==================== 后端 API 调用 ====================
 
 /**
- * 获取 openbiliclaw-builtin 插件 ID（带缓存）。
+ * 获取 bilibili-toolkit-builtin 插件 ID（带缓存）。
  */
 async function getPluginId() {
   if (state.pluginId) return state.pluginId;
@@ -238,11 +238,16 @@ async function getPluginId() {
   const data = await response.json();
   // 兼容 { items: [...] } 和 [...] 两种返回格式
   const plugins = Array.isArray(data) ? data : (data.items || data.plugins || []);
+  // 主匹配新名 bilibili-toolkit-builtin；保留 openbiliclaw-builtin / openbiliclaw_builtin
+  // 作为兜底，兼容未完成迁移的旧后端记录（迁移在 main.py 启动种子时执行）。
   const target = plugins.find(
-    (p) => p.name === "openbiliclaw-builtin" || p.name === "openbiliclaw_builtin"
+    (p) =>
+      p.name === "bilibili-toolkit-builtin" ||
+      p.name === "openbiliclaw-builtin" ||
+      p.name === "openbiliclaw_builtin"
   );
   if (!target) {
-    throw new Error("后端未找到 openbiliclaw-builtin 插件，请确认插件已注册");
+    throw new Error("后端未找到 bilibili-toolkit-builtin 插件，请确认插件已注册");
   }
 
   state.pluginId = target.id;
@@ -434,7 +439,7 @@ async function handleSyncCookie() {
     await savePluginConfig(pluginId, patch);
     setStatus(
       "cookie-status",
-      `同步成功：已写入 openbiliclaw-builtin.${syncField}`,
+      `同步成功：已写入 bilibili-toolkit-builtin.${syncField}`,
       "success"
     );
     setGlobalStatus("Cookie 同步完成", "success");

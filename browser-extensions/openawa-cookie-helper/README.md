@@ -1,6 +1,6 @@
 # OpenAwA Cookie 助手
 
-OpenAwA 浏览器扩展 - 获取 B 站/X/抖音等平台 Cookie 并同步到 OpenAwA 后端的 `openbiliclaw-builtin` 插件配置。
+OpenAwA 浏览器扩展 - 获取 B 站/X/抖音等平台 Cookie 并同步到 OpenAwA 后端的 `bilibili-toolkit-builtin` 插件配置。
 
 ## 认证方式
 
@@ -18,7 +18,7 @@ API Key 来源：
 - 配置 OpenAwA 后端地址（默认 `127.0.0.1:8000`）
 - 保存 OpenAwA API Key（存入 `chrome.storage.local`，仅扩展作用域可读）
 - 获取浏览器中目标平台的 Cookie（bilibili / X / 抖音 / 小红书 / YouTube / 知乎 / Reddit）
-- 将 B 站 Cookie 一键同步到后端 `openbiliclaw-builtin` 插件的 `bilibili_cookie` 字段
+- 将 B 站 Cookie 一键同步到后端 `bilibili-toolkit-builtin` 插件的 `bilibili_cookie` 字段
 - 其他平台 Cookie 支持获取与掩码预览（同步功能随插件 schema 字段扩展）
 
 ## 安装（开发者模式）
@@ -41,28 +41,28 @@ API Key 来源：
    - 点击「获取 Cookie」，下方显示掩码预览与字符数
 4. **同步到后端**（仅 B 站支持）：
    - 确认已保存 API Key
-   - 点击「同步到后端」，Cookie 将写入 `openbiliclaw-builtin` 插件的 `bilibili_cookie` 字段
+   - 点击「同步到后端」，Cookie 将写入 `bilibili-toolkit-builtin` 插件的 `bilibili_cookie` 字段
    - 同步采用合并策略，不会覆盖插件的其他配置项
 
 ## 同步目标
 
 | 平台 | 后端插件 | 配置字段 | 状态 |
 |------|----------|----------|------|
-| bilibili | openbiliclaw-builtin | `bilibili_cookie` | 已支持同步 |
-| x / twitter | openbiliclaw-builtin | `x_cookie` | 已支持同步 |
-| douyin | openbiliclaw-builtin | `douyin_cookie` | 已支持同步 |
-| xiaohongshu | openbiliclaw-builtin | `xiaohongshu_cookie` | 已支持同步 |
-| youtube | openbiliclaw-builtin | `youtube_cookie` | 已支持同步 |
-| zhihu | openbiliclaw-builtin | `zhihu_cookie` | 已支持同步 |
-| reddit | openbiliclaw-builtin | `reddit_cookie` | 已支持同步 |
+| bilibili | bilibili-toolkit-builtin | `bilibili_cookie` | 已支持同步 |
+| x / twitter | bilibili-toolkit-builtin | `x_cookie` | 已支持同步 |
+| douyin | bilibili-toolkit-builtin | `douyin_cookie` | 已支持同步 |
+| xiaohongshu | bilibili-toolkit-builtin | `xiaohongshu_cookie` | 已支持同步 |
+| youtube | bilibili-toolkit-builtin | `youtube_cookie` | 已支持同步 |
+| zhihu | bilibili-toolkit-builtin | `zhihu_cookie` | 已支持同步 |
+| reddit | bilibili-toolkit-builtin | `reddit_cookie` | 已支持同步 |
 
-> 所有平台的 Cookie 均同步到 `openbiliclaw-builtin` 插件的对应字段。插件仅作为内容接入渠道，AI 能力由 OpenAwA 主平台统一提供。
+> 所有平台的 Cookie 均同步到 `bilibili-toolkit-builtin` 插件的对应字段。插件仅作为内容接入渠道，AI 能力由 OpenAwA 主平台统一提供。
 
 ## 后端 API 约定
 
 扩展通过以下 OpenAwA 后端 API 联动（均使用 API Key 认证）：
 
-- `GET /api/plugins` - 查询插件列表，定位 `openbiliclaw-builtin`
+- `GET /api/plugins` - 查询插件列表，定位 `bilibili-toolkit-builtin`
 - `GET /api/plugins/{id}/config/export` - 获取插件当前配置（注意：非 `/config`，后者不存在）
 - `PUT /api/plugins/{id}/config` - 保存插件配置（API Key 自动获得 owner 权限）
 

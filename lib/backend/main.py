@@ -583,6 +583,44 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                     )
                 db.commit()
 
+                # 迁移：将旧名 openbiliclaw-builtin 的种子记录改名为 bilibili-toolkit-builtin
+                # 保留 enabled / source / category / is_uninstallable / config 等全部字段，
+                # 仅更新 name 与 author。幂等：无旧名记录时跳过；新名已存在时删除旧记录。
+                _OLD_PLUGIN_NAME = "openbiliclaw-builtin"
+                _NEW_PLUGIN_NAME = "bilibili-toolkit-builtin"
+                legacy_plugin = db.query(PluginModel).filter(
+                    PluginModel.name == _OLD_PLUGIN_NAME
+                ).first()
+                if legacy_plugin is not None:
+                    existing_new = db.query(PluginModel).filter(
+                        PluginModel.name == _NEW_PLUGIN_NAME
+                    ).first()
+                    if existing_new is None:
+                        # 直接改名，保留全部配置
+                        legacy_plugin.name = _NEW_PLUGIN_NAME
+                        legacy_plugin.author = "OpenBiliClaw Team"
+                        db.commit()
+                        logger.bind(
+                            event="builtin_plugin_renamed",
+                            module="main",
+                            plugin=_NEW_PLUGIN_NAME,
+                            old_name=_OLD_PLUGIN_NAME,
+                        ).info(
+                            f"已迁移内置插件 {_OLD_PLUGIN_NAME} → {_NEW_PLUGIN_NAME}"
+                        )
+                    else:
+                        # 新名记录已存在（可能由人工或前次启动创建），删除旧记录避免重复
+                        db.delete(legacy_plugin)
+                        db.commit()
+                        logger.bind(
+                            event="builtin_plugin_dedup",
+                            module="main",
+                            plugin=_NEW_PLUGIN_NAME,
+                            old_name=_OLD_PLUGIN_NAME,
+                        ).warning(
+                            f"检测到新旧两条记录，已删除旧名 {_OLD_PLUGIN_NAME} 保留 {_NEW_PLUGIN_NAME}"
+                        )
+
                 # 注册 system-tools 系统内置插件（如不存在）
                 existing_plugin = db.query(PluginModel).filter(PluginModel.name == "system-tools").first()
                 if not existing_plugin:
@@ -603,14 +641,14 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                         "已注册系统内置插件 system-tools"
                     )
 
-                # 注册 openbiliclaw-builtin 系统内置插件（如不存在）
-                existing_openbiliclaw = db.query(PluginModel).filter(
-                    PluginModel.name == "openbiliclaw-builtin"
+                # 注册 bilibili-toolkit-builtin 系统内置插件（如不存在）
+                existing_bilibili_toolkit = db.query(PluginModel).filter(
+                    PluginModel.name == "bilibili-toolkit-builtin"
                 ).first()
-                if not existing_openbiliclaw:
-                    new_openbiliclaw = PluginModel(
+                if not existing_bilibili_toolkit:
+                    new_bilibili_toolkit = PluginModel(
                         id=str(uuid.uuid4()),
-                        name="openbiliclaw-builtin",
+                        name="bilibili-toolkit-builtin",
                         version="0.3.147",
                         enabled=True,
                         config={},
@@ -620,13 +658,13 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                         is_uninstallable=True,
                         dependencies=[],
                     )
-                    db.add(new_openbiliclaw)
+                    db.add(new_bilibili_toolkit)
                     db.commit()
                     logger.bind(
                         event="builtin_plugin_seeded",
                         module="main",
-                        plugin="openbiliclaw-builtin",
-                    ).info("已注册系统内置插件 openbiliclaw-builtin")
+                        plugin="bilibili-toolkit-builtin",
+                    ).info("已注册系统内置插件 bilibili-toolkit-builtin")
 
                 # 注册 user-profile-builtin 系统内置插件（如不存在）
                 existing_user_profile = db.query(PluginModel).filter(
@@ -663,7 +701,7 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
 
         pm = plugin_instance.get()
         # 导入内置插件依赖缺失异常，用于在加载循环中单独捕获
-        from plugins.openbiliclaw_builtin.plugin import BuiltinPluginDependencyError
+        from plugins.bilibili_toolkit_builtin.plugin import BuiltinPluginDependencyError
 
         def _load_enabled_plugins_sync() -> list[dict]:
             """同步查询已启用插件列表，预提取字段以避免 session 关闭后 ORM 实例 detach。"""

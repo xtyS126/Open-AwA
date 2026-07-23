@@ -10,7 +10,7 @@
 - 工具方法为 async，由 ``execute_plugin_async`` 调用；
   ``execute_plugin`` (同步) 通过沙箱内的 ``run_coroutine`` 兼容。
 - ``user_id`` 由 Agent 调用时显式传入参数（来自认证上下文），不在插件 config 中。
-- ``execute()`` 抛 ``NotImplementedError``，与 openbiliclaw-builtin 一致。
+- ``execute()`` 抛 ``NotImplementedError``，与 bilibili-toolkit-builtin 一致。
 - 配置项通过 ``self.config`` 注入，覆盖各组件的类属性默认值。
 - 工具定义不含 ``handler`` 字段（不可 pickle），仅声明 ``name``/``description``/``parameters``。
 """

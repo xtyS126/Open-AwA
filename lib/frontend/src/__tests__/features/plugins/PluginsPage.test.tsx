@@ -260,7 +260,7 @@ describe('PluginsPage builtin plugins section', () => {
     vi.stubGlobal('alert', vi.fn())
     vi.stubGlobal('confirm', vi.fn(() => true))
 
-    // 默认 mock 数据：2 个用户插件 + 1 个内置插件（openbiliclaw-builtin）
+    // 默认 mock 数据：2 个用户插件 + 1 个内置插件（bilibili-toolkit-builtin）
     getAllMock.mockResolvedValue({
       data: [
         {
@@ -279,7 +279,7 @@ describe('PluginsPage builtin plugins section', () => {
         },
         {
           id: 'builtin-1',
-          name: 'openbiliclaw-builtin',
+          name: 'bilibili-toolkit-builtin',
           version: '0.3.147',
           enabled: true,
           source: 'builtin',
@@ -295,7 +295,7 @@ describe('PluginsPage builtin plugins section', () => {
     getPermissionsMock.mockResolvedValue({
       data: {
         plugin_id: 'builtin-1',
-        plugin_name: 'openbiliclaw-builtin',
+        plugin_name: 'bilibili-toolkit-builtin',
         requested_permissions: [],
         granted_permissions: [],
         missing_permissions: [],
@@ -350,7 +350,7 @@ describe('PluginsPage builtin plugins section', () => {
       renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
       })
 
       // 通过分区标题定位 section 容器，再在容器内查找计数徽章
@@ -367,7 +367,7 @@ describe('PluginsPage builtin plugins section', () => {
 
       await waitFor(() => {
         // 卡片头部应显示完整的插件名称
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
         // 版本徽章格式为 "v{version}"
         expect(screen.getByText('v0.3.147')).toBeInTheDocument()
       })
@@ -380,7 +380,7 @@ describe('PluginsPage builtin plugins section', () => {
       renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
       })
 
       // 定位内置插件分区
@@ -393,11 +393,11 @@ describe('PluginsPage builtin plugins section', () => {
       renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
       })
 
       const builtinSection = screen.getByText('系统内置插件').closest('section')!
-      // openbiliclaw-builtin 已启用，显示"禁用"按钮
+      // bilibili-toolkit-builtin 已启用，显示"禁用"按钮
       const toggleButton = within(builtinSection).getByText('禁用').closest('button')!
       expect(toggleButton).toBeDisabled()
       // aria-disabled 与 aria-label 标识禁用原因
@@ -409,7 +409,7 @@ describe('PluginsPage builtin plugins section', () => {
       renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
       })
 
       const builtinSection = screen.getByText('系统内置插件').closest('section')!
@@ -422,7 +422,7 @@ describe('PluginsPage builtin plugins section', () => {
       renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
       })
 
       const builtinSection = screen.getByText('系统内置插件').closest('section')!
@@ -437,7 +437,7 @@ describe('PluginsPage builtin plugins section', () => {
       renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
       })
 
       const builtinSection = screen.getByText('系统内置插件').closest('section')!
@@ -474,7 +474,7 @@ describe('PluginsPage builtin plugins section', () => {
       renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
       })
 
       const builtinSection = screen.getByText('系统内置插件').closest('section')!
@@ -490,7 +490,7 @@ describe('PluginsPage builtin plugins section', () => {
       renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
       })
 
       const builtinSection = screen.getByText('系统内置插件').closest('section')!
@@ -503,7 +503,7 @@ describe('PluginsPage builtin plugins section', () => {
       renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        expect(screen.getByText('bilibili-toolkit-builtin')).toBeInTheDocument()
       })
 
       const builtinSection = screen.getByText('系统内置插件').closest('section')!

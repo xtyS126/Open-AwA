@@ -1,4 +1,4 @@
-"""OpenBiliClaw 适配层与 10 个技能 handler 的单元测试。
+"""Bilibili Toolkit 适配层与 10 个技能 handler 的单元测试。
 
 覆盖三个核心场景：
 1. build_openclaw_skills 返回 10 个 OpenClawSkillDescriptor，name 与 spec 列表一致
@@ -8,7 +8,7 @@
 
 测试隔离：
 - mock OpenClawAdapter（vendored 上游适配层）的 10 个异步方法
-- 通过 OpenBiliClawAdapter._skill_to_tool_def 验证 descriptor 转换逻辑
+- 通过 BilibiliToolkitAdapter._skill_to_tool_def 验证 descriptor 转换逻辑
 - vendored 包通过 sys.path 注入加载，加载失败时整个文件用 pytest.skip 跳过
 """
 
@@ -28,7 +28,7 @@ if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
 # 将 vendored 包源码目录加入 sys.path，便于导入 build_openclaw_skills
-_VENDORED_SRC = _BACKEND_DIR / "plugins" / "openbiliclaw_builtin" / "src"
+_VENDORED_SRC = _BACKEND_DIR / "plugins" / "bilibili_toolkit_builtin" / "src"
 if str(_VENDORED_SRC) not in sys.path:
     sys.path.insert(0, str(_VENDORED_SRC))
 
@@ -53,8 +53,8 @@ except Exception as exc:  # noqa: BLE001 - 捕获所有导入异常以支持降�
     _VENDORED_AVAILABLE = False
     _VENDORED_IMPORT_ERROR = exc
 
-# 始终可导入：被测的 OpenBiliClawAdapter（仅依赖 stdlib + loguru）
-from plugins.openbiliclaw_builtin.adapter import OpenBiliClawAdapter  # noqa: E402
+# 始终可导入：被测的 BilibiliToolkitAdapter（仅依赖 stdlib + loguru）
+from plugins.bilibili_toolkit_builtin.adapter import BilibiliToolkitAdapter  # noqa: E402
 
 
 # 全部测试用例依赖 vendored 包，缺失时整文件跳过
@@ -191,8 +191,8 @@ def test_skill_descriptors_have_handlers(skills):
 
 
 def test_skill_to_tool_def_preserves_name_and_description(skills):
-    """OpenBiliClawAdapter._skill_to_tool_def 应保留 name 与 description。"""
-    adapter = OpenBiliClawAdapter()
+    """BilibiliToolkitAdapter._skill_to_tool_def 应保留 name 与 description。"""
+    adapter = BilibiliToolkitAdapter()
     for descriptor in skills:
         tool_def = adapter._skill_to_tool_def(descriptor)
         assert tool_def["name"] == descriptor.name
@@ -201,7 +201,7 @@ def test_skill_to_tool_def_preserves_name_and_description(skills):
 
 def test_skill_to_tool_def_includes_parameters_schema(skills):
     """转换后的工具定义应包含 parameters 字段，且为 dict 含 type/properties。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     for descriptor in skills:
         tool_def = adapter._skill_to_tool_def(descriptor)
         params = tool_def["parameters"]
@@ -212,7 +212,7 @@ def test_skill_to_tool_def_includes_parameters_schema(skills):
 
 def test_skill_to_tool_def_preserves_handler(skills):
     """转换后的工具定义应保留原 handler 引用，便于 PluginManager 直接调用。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     for descriptor in skills:
         tool_def = adapter._skill_to_tool_def(descriptor)
         assert tool_def["handler"] is descriptor.handler
@@ -220,7 +220,7 @@ def test_skill_to_tool_def_preserves_handler(skills):
 
 def test_skill_to_tool_def_raises_on_missing_name():
     """descriptor.name 缺失或非字符串时应抛 ValueError。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     bad_descriptor = MagicMock()
     bad_descriptor.name = None
     bad_descriptor.description = ""
@@ -233,7 +233,7 @@ def test_skill_to_tool_def_raises_on_missing_name():
 
 def test_skill_to_tool_def_raises_on_empty_name():
     """descriptor.name 为空字符串时应抛 ValueError。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     bad_descriptor = MagicMock()
     bad_descriptor.name = "  "
     bad_descriptor.description = ""
@@ -246,7 +246,7 @@ def test_skill_to_tool_def_raises_on_empty_name():
 
 def test_skill_to_tool_def_raises_on_non_callable_handler():
     """descriptor.handler 不可调用时应抛 ValueError。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     bad_descriptor = MagicMock()
     bad_descriptor.name = "valid_name"
     bad_descriptor.description = ""
@@ -259,7 +259,7 @@ def test_skill_to_tool_def_raises_on_non_callable_handler():
 
 def test_skill_to_tool_def_fills_default_schema_when_invalid():
     """input_schema 非 dict 时应回退为默认空 schema。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     descriptor = MagicMock()
     descriptor.name = "valid_name"
     descriptor.description = ""
@@ -504,25 +504,25 @@ def test_respond_avoidance_probe_handler_returns_error_on_invalid_response(skill
 
 
 # ---------------------------------------------------------------------------
-# OpenBiliClawAdapter 适配层行为测试
+# BilibiliToolkitAdapter 适配层行为测试
 # ---------------------------------------------------------------------------
 
 
 def test_adapter_get_tools_returns_empty_before_initialize():
     """未调用 initialize 时，get_tools 应返回空列表。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     assert adapter.get_tools() == []
 
 
 def test_adapter_get_warnings_returns_empty_before_initialize():
     """未调用 initialize 时，get_warnings 应返回空列表。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     assert adapter.get_warnings() == []
 
 
 def test_adapter_get_warnings_returns_copy():
     """get_warnings 应返回列表副本，外部修改不影响内部状态。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     adapter._warnings.append("warning1")
     warnings = adapter.get_warnings()
     warnings.append("external")
@@ -532,7 +532,7 @@ def test_adapter_get_warnings_returns_copy():
 
 def test_adapter_cleanup_resets_state():
     """cleanup 应清空内部状态。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
     adapter._inner = MagicMock()
     adapter._skills = [{"name": "tool1"}]
     adapter._warnings = ["warning"]
@@ -545,7 +545,7 @@ def test_adapter_cleanup_resets_state():
 
 
 # ---------------------------------------------------------------------------
-# OpenBiliClawAdapter.initialize() 降级路径测试
+# BilibiliToolkitAdapter.initialize() 降级路径测试
 # ---------------------------------------------------------------------------
 
 
@@ -562,7 +562,7 @@ def _make_fake_descriptor(name: str = "fake_skill") -> Any:
 @pytest.mark.asyncio
 async def test_initialize_loads_skills_when_vendored_available(monkeypatch):
     """vendored 模块加载成功且 build_openclaw_skills 返回 descriptors 时，应注册到 _skills。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
 
     # 构造 mock bootstrap 与 skill 模块
     fake_bootstrap = MagicMock()
@@ -597,7 +597,7 @@ async def test_initialize_loads_skills_when_vendored_available(monkeypatch):
 @pytest.mark.asyncio
 async def test_initialize_records_warning_when_bootstrap_module_missing(monkeypatch):
     """vendored bootstrap 模块导入失败时，应记录告警并保持空 skills 列表。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
 
     def fake_import(module_name: str):
         if module_name.endswith(".bootstrap"):
@@ -617,7 +617,7 @@ async def test_initialize_records_warning_when_bootstrap_module_missing(monkeypa
 @pytest.mark.asyncio
 async def test_initialize_records_warning_when_build_adapter_missing(monkeypatch):
     """bootstrap 模块缺少 build_openclaw_adapter 函数时，应记录告警。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
 
     fake_bootstrap = MagicMock()
     # 删除 build_openclaw_adapter 属性
@@ -640,7 +640,7 @@ async def test_initialize_records_warning_when_build_adapter_missing(monkeypatch
 @pytest.mark.asyncio
 async def test_initialize_records_warning_when_build_adapter_raises(monkeypatch):
     """build_openclaw_adapter 抛异常时，应记录告警并降级为空 skills。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
 
     fake_bootstrap = MagicMock()
     fake_bootstrap.build_openclaw_adapter = MagicMock(
@@ -665,7 +665,7 @@ async def test_initialize_records_warning_when_build_adapter_raises(monkeypatch)
 @pytest.mark.asyncio
 async def test_initialize_records_warning_when_build_skills_missing(monkeypatch):
     """skill 模块缺少 build_openclaw_skills 函数时，应记录告警。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
 
     fake_bootstrap = MagicMock()
     fake_bootstrap.build_openclaw_adapter = MagicMock(return_value="fake_inner")
@@ -694,7 +694,7 @@ async def test_initialize_records_warning_when_build_skills_missing(monkeypatch)
 @pytest.mark.asyncio
 async def test_initialize_records_warning_when_build_skills_raises(monkeypatch):
     """build_openclaw_skills 抛异常时，应记录告警并降级为空 skills。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
 
     fake_bootstrap = MagicMock()
     fake_bootstrap.build_openclaw_adapter = MagicMock(return_value="fake_inner")
@@ -722,7 +722,7 @@ async def test_initialize_records_warning_when_build_skills_raises(monkeypatch):
 @pytest.mark.asyncio
 async def test_initialize_records_warning_when_skills_return_non_list(monkeypatch):
     """build_openclaw_skills 返回非 list 时，应记录告警并跳过技能注册。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
 
     fake_bootstrap = MagicMock()
     fake_bootstrap.build_openclaw_adapter = MagicMock(return_value="fake_inner")
@@ -748,7 +748,7 @@ async def test_initialize_records_warning_when_skills_return_non_list(monkeypatc
 @pytest.mark.asyncio
 async def test_initialize_skips_invalid_descriptor(monkeypatch):
     """单个 descriptor 转换失败时应跳过，不影响其他 descriptor 注册。"""
-    adapter = OpenBiliClawAdapter()
+    adapter = BilibiliToolkitAdapter()
 
     # 第一个 descriptor 的 name 为 None（无效），第二个正常
     invalid_descriptor = MagicMock()

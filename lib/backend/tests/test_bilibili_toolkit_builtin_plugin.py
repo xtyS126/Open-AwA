@@ -1,4 +1,4 @@
-"""OpenBiliClaw 内置插件入口类的单元测试。
+"""bilibili-toolkit-builtin 内置插件入口类的单元测试。
 
 覆盖三个核心场景：
 1. manifest.json 字段解析：name/version/pluginApiVersion/extensions 等关键字段
@@ -10,7 +10,7 @@
 测试隔离原则：
 - 每个用例独立 fixture，不依赖全局状态
 - importlib.util.find_spec 全部 mock，避免受运行环境影响
-- OpenBiliClawAdapter 全部 mock，避免触发 vendored 包真实加载
+- BilibiliToolkitAdapter 全部 mock，避免触发 vendored 包真实加载
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ _BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from plugins.openbiliclaw_builtin.plugin import (  # noqa: E402
+from plugins.bilibili_toolkit_builtin.plugin import (  # noqa: E402
     BuiltinPluginDependencyError,
-    OpenBiliClawBuiltinPlugin,
+    BilibiliToolkitBuiltinPlugin,
     _OPTIONAL_DEPENDENCIES,
     _REQUIRED_DEPENDENCIES,
 )
@@ -43,7 +43,7 @@ from plugins.openbiliclaw_builtin.plugin import (  # noqa: E402
 _MANIFEST_PATH = (
     Path(__file__).resolve().parents[1]
     / "plugins"
-    / "openbiliclaw_builtin"
+    / "bilibili_toolkit_builtin"
     / "manifest.json"
 )
 
@@ -58,7 +58,7 @@ def test_manifest_has_correct_name_and_version():
     """manifest 应声明正确的 name、version、pluginApiVersion 与 extensions 字段。"""
     manifest = _load_manifest()
 
-    assert manifest["name"] == "openbiliclaw-builtin"
+    assert manifest["name"] == "bilibili-toolkit-builtin"
     assert manifest["version"] == "0.3.147"
     assert manifest["pluginApiVersion"] == "1.0.0"
     assert isinstance(manifest["extensions"], list) and len(manifest["extensions"]) >= 1
@@ -75,11 +75,11 @@ def test_manifest_declares_required_fields():
 
 
 def test_plugin_class_attributes_match_manifest():
-    """OpenBiliClawBuiltinPlugin 的类属性应与 manifest 一致。"""
+    """BilibiliToolkitBuiltinPlugin 的类属性应与 manifest 一致。"""
     manifest = _load_manifest()
 
-    assert OpenBiliClawBuiltinPlugin.name == manifest["name"]
-    assert OpenBiliClawBuiltinPlugin.version == manifest["version"]
+    assert BilibiliToolkitBuiltinPlugin.name == manifest["name"]
+    assert BilibiliToolkitBuiltinPlugin.version == manifest["version"]
 
 
 # ---------------------------------------------------------------------------
@@ -96,21 +96,21 @@ def _make_spec(found: bool) -> Optional[Any]:
 
 
 @pytest.fixture
-def plugin_instance() -> OpenBiliClawBuiltinPlugin:
+def plugin_instance() -> BilibiliToolkitBuiltinPlugin:
     """提供一个未初始化的插件实例。"""
-    return OpenBiliClawBuiltinPlugin(config={})
+    return BilibiliToolkitBuiltinPlugin(config={})
 
 
 @pytest.mark.asyncio
 async def test_initialize_succeeds_when_all_deps_present(plugin_instance):
     """所有关键依赖与可选依赖均存在时，initialize 不抛异常且返回 True。"""
     # 让所有 find_spec 都返回非 None
-    with patch("plugins.openbiliclaw_builtin.plugin.importlib.util.find_spec") as mock_spec:
+    with patch("plugins.bilibili_toolkit_builtin.plugin.importlib.util.find_spec") as mock_spec:
         mock_spec.return_value = _make_spec(True)
 
         # 同时 mock 适配层 initialize，避免触发 vendored 真实加载
         with patch(
-            "plugins.openbiliclaw_builtin.plugin.OpenBiliClawAdapter"
+            "plugins.bilibili_toolkit_builtin.plugin.BilibiliToolkitAdapter"
         ) as mock_adapter_cls:
             mock_adapter = MagicMock()
             mock_adapter.initialize = AsyncMock(return_value=None)
@@ -138,7 +138,7 @@ async def test_initialize_raises_when_critical_dep_missing(plugin_instance):
         return _make_spec(True)
 
     with patch(
-        "plugins.openbiliclaw_builtin.plugin.importlib.util.find_spec",
+        "plugins.bilibili_toolkit_builtin.plugin.importlib.util.find_spec",
         side_effect=fake_find_spec,
     ):
         with pytest.raises(BuiltinPluginDependencyError) as exc_info:
@@ -162,7 +162,7 @@ async def test_initialize_raises_when_multiple_deps_missing(plugin_instance):
         return _make_spec(True)
 
     with patch(
-        "plugins.openbiliclaw_builtin.plugin.importlib.util.find_spec",
+        "plugins.bilibili_toolkit_builtin.plugin.importlib.util.find_spec",
         side_effect=fake_find_spec,
     ):
         with pytest.raises(BuiltinPluginDependencyError) as exc_info:
@@ -188,11 +188,11 @@ async def test_initialize_records_warning_when_optional_dep_missing(plugin_insta
         return _make_spec(True)
 
     with patch(
-        "plugins.openbiliclaw_builtin.plugin.importlib.util.find_spec",
+        "plugins.bilibili_toolkit_builtin.plugin.importlib.util.find_spec",
         side_effect=fake_find_spec,
     ):
         with patch(
-            "plugins.openbiliclaw_builtin.plugin.OpenBiliClawAdapter"
+            "plugins.bilibili_toolkit_builtin.plugin.BilibiliToolkitAdapter"
         ) as mock_adapter_cls:
             mock_adapter = MagicMock()
             mock_adapter.initialize = AsyncMock(return_value=None)
@@ -236,11 +236,11 @@ async def test_get_tools_returns_ten_tools_after_initialize(plugin_instance):
     ]
 
     with patch(
-        "plugins.openbiliclaw_builtin.plugin.importlib.util.find_spec"
+        "plugins.bilibili_toolkit_builtin.plugin.importlib.util.find_spec"
     ) as mock_spec:
         mock_spec.return_value = _make_spec(True)
         with patch(
-            "plugins.openbiliclaw_builtin.plugin.OpenBiliClawAdapter"
+            "plugins.bilibili_toolkit_builtin.plugin.BilibiliToolkitAdapter"
         ) as mock_adapter_cls:
             mock_adapter = MagicMock()
             mock_adapter.initialize = AsyncMock(return_value=None)
@@ -309,11 +309,11 @@ def test_execute_raises_not_implemented(plugin_instance):
 async def test_initialize_degrades_when_adapter_initialize_fails(plugin_instance):
     """adapter.initialize 抛异常时，插件应降级为空工具列表并返回 True。"""
     with patch(
-        "plugins.openbiliclaw_builtin.plugin.importlib.util.find_spec"
+        "plugins.bilibili_toolkit_builtin.plugin.importlib.util.find_spec"
     ) as mock_spec:
         mock_spec.return_value = _make_spec(True)
         with patch(
-            "plugins.openbiliclaw_builtin.plugin.OpenBiliClawAdapter"
+            "plugins.bilibili_toolkit_builtin.plugin.BilibiliToolkitAdapter"
         ) as mock_adapter_cls:
             mock_adapter = MagicMock()
             mock_adapter.initialize = AsyncMock(
@@ -329,4 +329,4 @@ async def test_initialize_degrades_when_adapter_initialize_fails(plugin_instance
     assert plugin_instance.get_tools() == []
     # 应记录告警
     warnings = plugin_instance.get_dependency_warnings()
-    assert any("OpenBiliClawAdapter.initialize" in w for w in warnings)
+    assert any("BilibiliToolkitAdapter.initialize" in w for w in warnings)

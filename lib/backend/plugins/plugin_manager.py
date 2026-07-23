@@ -168,7 +168,7 @@ class PluginManager:
 
         plugin_manager.py 本身位于 backend/plugins/ 目录下，
         因此默认插件目录即为当前文件所在目录（backend/plugins/），
-        内置插件（如 openbiliclaw_builtin）与用户安装的插件均在此目录下。
+        内置插件（如 bilibili_toolkit_builtin）与用户安装的插件均在此目录下。
 
         Returns:
             插件目录的绝对路径。

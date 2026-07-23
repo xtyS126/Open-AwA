@@ -154,10 +154,10 @@ class MarketplaceRegistry:
         # 遍历插件子目录，从 manifest.json 构造元数据
         registered = 0
         # 系统内置插件目录名集合：由 DB seed 单独管理，跳过市场发现
-        # system-tools / openbiliclaw_builtin / user_profile_builtin 均为内置
+        # system-tools / bilibili_toolkit_builtin / user_profile_builtin 均为内置
         _BUILTIN_PLUGIN_DIRS = {
             "system_tools",
-            "openbiliclaw_builtin",
+            "bilibili_toolkit_builtin",
             "user_profile_builtin",
         }
         for sub in plugins_path.iterdir():

@@ -1,6 +1,6 @@
-# OpenBiliClaw 内置插件第三方依赖清单
+# bilibili-toolkit-builtin 内置插件第三方依赖清单
 # 版本下限对齐参考项目 OpenBiliClaw v0.3.147 的 pyproject.toml
-# 安装方式: pip install -r backend/plugins/openbiliclaw_builtin/requirements.txt
+# 安装方式: pip install -r backend/plugins/bilibili_toolkit_builtin/requirements.txt
 
 httpx>=0.27
 pydantic>=2.0

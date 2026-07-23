@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "OpenAwA Cookie 助手",
   "version": "1.1.0",
-  "description": "OpenAwA 浏览器扩展 - 获取 B 站/X/抖音等平台 Cookie 并同步到 OpenAwA 后端的 openbiliclaw-builtin 插件配置",
+  "description": "OpenAwA 浏览器扩展 - 获取 B 站/X/抖音等平台 Cookie 并同步到 OpenAwA 后端的 bilibili-toolkit-builtin 插件配置",
   "permissions": [
     "activeTab",
     "cookies",
