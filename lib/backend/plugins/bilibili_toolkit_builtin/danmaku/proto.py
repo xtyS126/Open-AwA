@@ -39,12 +39,34 @@ _DANMAKU_ELEM_FULL_NAME: str = "bilibili.danmaku.DanmakuElem"
 _DM_SEG_REPLY_FULL_NAME: str = "bilibili.danmaku.DmSegMobileReply"
 
 
+def _get_message_class(descriptor: Any) -> type[_ProtoMessage]:
+    """兼容多版本 protobuf 地获取 Message 类。
+
+    ``message_factory.GetMessageClass`` 在 protobuf 4.x 起作为顶层函数存在，
+    但在部分 5.x / 6.x 发行版中曾被短暂移除或改名；旧版本（<4.0）则需要通过
+    ``MessageFactory().GetPrototype(descriptor)`` 获取。这里用 ``getattr``
+    动态探测，保证在 4.x / 5.x / 6.x 与旧版本上都能正常工作。
+
+    Args:
+        descriptor: ``DescriptorPool.FindMessageTypeByName`` 返回的消息描述符。
+
+    Returns:
+        与描述符对应的 protobuf Message 子类。
+    """
+    # 优先使用顶层 GetMessageClass（protobuf 4.x+ 推荐入口）
+    get_class = getattr(message_factory, "GetMessageClass", None)
+    if get_class is not None:
+        return get_class(descriptor)
+    # fallback: 旧版本 protobuf 通过 MessageFactory.GetPrototype 获取
+    return message_factory.MessageFactory().GetPrototype(descriptor)
+
+
 def _build_danmaku_message_class() -> type[_ProtoMessage]:
     """在模块加载时构造 DanmakuElem 与 DmSegMobileReply protobuf Message 类。
 
     通过 :class:`descriptor_pool.DescriptorPool` 动态注册 ``.proto`` 描述符，
-    再用 :func:`message_factory.GetMessageClass` 创建对应的 Python Message 类。
-    整个过程在 import 时完成一次，后续直接复用类对象。
+    再用 :func:`_get_message_class` 创建对应的 Python Message 类（兼容多版本
+    protobuf）。整个过程在 import 时完成一次，后续直接复用类对象。
 
     Returns:
         DanmakuElem 的 Message 子类。
@@ -88,8 +110,8 @@ def _build_danmaku_message_class() -> type[_ProtoMessage]:
 
     # 同时构造两个类，DmSegMobileReply 类挂在模块级变量上以便解析使用
     global _DmSegMobileReplyClass
-    _DmSegMobileReplyClass = message_factory.GetMessageClass(reply_desc)
-    return message_factory.GetMessageClass(elem_desc)
+    _DmSegMobileReplyClass = _get_message_class(reply_desc)
+    return _get_message_class(elem_desc)
 
 
 def _add_field(
