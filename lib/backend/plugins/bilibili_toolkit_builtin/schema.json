@@ -344,6 +344,62 @@
           "maximum": 60.0
         }
       }
+    },
+    "video_name": {
+      "type": "string",
+      "title": "视频目录名模板",
+      "description": "Jinja2 模板，渲染视频目录名。支持变量 bvid / title / upper_name / upper_mid / pubtime / fav_time",
+      "default": "{{title}}",
+      "x-component": "input",
+      "maxLength": 256
+    },
+    "page_name": {
+      "type": "string",
+      "title": "分 P 文件名模板",
+      "description": "Jinja2 模板，渲染分 P 文件名（不含扩展名）。在 video 变量基础上追加 ptitle / pid 变量",
+      "default": "{{bvid}}",
+      "x-component": "input",
+      "maxLength": 256
+    },
+    "video_default_path": {
+      "type": "string",
+      "title": "视频默认根目录模板",
+      "description": "Jinja2 模板，渲染视频默认根目录路径（无 video_name 时回退使用）",
+      "default": "videos/{{title}}",
+      "x-component": "input",
+      "maxLength": 512
+    },
+    "page_default_path": {
+      "type": "string",
+      "title": "分 P 默认文件名模板",
+      "description": "Jinja2 模板，渲染分 P 默认文件名（无 page_name 时回退使用）",
+      "default": "{{bvid}}",
+      "x-component": "input",
+      "maxLength": 256
+    },
+    "upper_path": {
+      "type": "string",
+      "title": "UP 主 NFO 根目录",
+      "description": "UP 主 person NFO 与头像的存储根目录名",
+      "default": "upers",
+      "x-component": "input",
+      "maxLength": 128
+    },
+    "nfo_time_type": {
+      "type": "string",
+      "title": "NFO 时间字段类型",
+      "description": "NFO 中 premiered / year 字段使用的时间来源：fav=收藏时间，pub=发布时间",
+      "default": "fav",
+      "enum": ["fav", "pub"],
+      "x-component": "select"
+    },
+    "time_format": {
+      "type": "string",
+      "title": "时间格式",
+      "description": "pubtime / fav_time 等时间变量渲染为字符串时的 strftime 格式",
+      "default": "%Y-%m-%d %H:%M:%S",
+      "x-component": "input",
+      "maxLength": 64
     }
   },
   "required": []

@@ -14,6 +14,9 @@ anthropic>=0.40
 # 阶段 8：弹幕 protobuf 解析与 ASS 渲染所需依赖
 protobuf>=4.0
 
+# 阶段 10：路径模板渲染所需依赖（Jinja2 替代 Rust 版 Handlebars）
+jinja2>=3.0
+
 # OpenBiliClaw 完整运行还依赖以下包，但 Open-AwA 仅启用 OpenClaw 适配层时
 # 可以延后安装；缺失会以 loaded_with_warnings 状态加载，不阻塞启动。
 # 如需启用全部能力（抖音/YouTube/X/小红书发现、桌面打包等），请参考
