@@ -839,6 +839,75 @@ class MemoryManager:
             logger.info(f"Deleted long-term memory {memory_id}")
         return result
 
+    def _archive_long_term_memory_sync(
+        self,
+        memory_id: int,
+        archive_status: str = "deprecated",
+    ) -> bool:
+        """同步归档单条长期记忆。
+
+        与 :meth:`delete_long_term_memory` 不同：归档保留 DB 行与向量数据，
+        仅更新 ``archive_status`` 字段，使该记忆在后续 ``search_memories`` /
+        ``get_long_term_memories`` 等查询中被自动过滤（默认
+        ``archive_status != "archived"``）。``deprecated`` 状态用于标记
+        "用户主动遗忘但保留审计痕迹"的记忆。
+
+        Args:
+            memory_id: 长期记忆 ID。
+            archive_status: 归档状态值，支持 ``deprecated`` / ``archived``。
+
+        Returns:
+            ``True`` 表示归档成功，``False`` 表示记忆不存在或状态未变化。
+        """
+        with self.session_factory() as db:
+            memory = db.query(LongTermMemory).filter(
+                LongTermMemory.id == memory_id
+            ).first()
+            if memory is None:
+                return False
+            if memory.archive_status == archive_status:
+                # 状态已是目标值，无需重复写入
+                return True
+            memory.archive_status = archive_status
+            db.commit()
+            # 同步向量库元数据，保证检索时过滤一致
+            try:
+                self.vector_store.update_memory_metadata(
+                    memory_id, archive_status=archive_status
+                )
+            except Exception as exc:
+                # 向量库同步失败不影响 DB 已提交的归档状态，
+                # 但记录 warning 便于后续对账
+                logger.warning(
+                    f"向量库归档元数据同步失败 memory_id={memory_id}: {exc}"
+                )
+            return True
+
+    async def archive_long_term_memory(
+        self,
+        memory_id: int,
+        archive_status: str = "deprecated",
+    ) -> bool:
+        """归档单条长期记忆（标记为废弃而非删除，保留审计痕迹）。
+
+        Args:
+            memory_id: 长期记忆 ID。
+            archive_status: 目标归档状态，默认 ``deprecated``。
+
+        Returns:
+            ``True`` 表示归档成功，``False`` 表示记忆不存在。
+        """
+        result = await asyncio.to_thread(
+            self._archive_long_term_memory_sync,
+            memory_id,
+            archive_status,
+        )
+        if result:
+            logger.info(
+                f"Archived long-term memory {memory_id} (status={archive_status})"
+            )
+        return result
+
     def _archive_memories_sync(
         self,
         user_id: Optional[str],

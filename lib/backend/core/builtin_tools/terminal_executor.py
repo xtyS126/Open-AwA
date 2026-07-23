@@ -62,6 +62,15 @@ MAX_OUTPUT_LENGTH = 50000
 # 默认超时时间（秒）
 DEFAULT_TIMEOUT = 30
 
+# Windows cmd.exe 内建命令平台适配已迁移到 core.command_platform 共享模块
+# sandbox.py 与 terminal_executor.py 共用同一份解析逻辑，避免双写漂移
+# 重新导出 WINDOWS_BUILTIN_COMMANDS 与 _resolve_command_for_platform，
+# 供 tests/test_terminal_executor_platform.py 直接导入校验
+from core.command_platform import (
+    WINDOWS_BUILTIN_COMMANDS,
+    resolve_command_for_platform as _resolve_command_for_platform,
+)
+
 
 class TerminalExecutorSkill:
     """
@@ -156,7 +165,15 @@ class TerminalExecutorSkill:
         start_time = time.time()
         process = None
         try:
-            args = shlex.split(command)
+            args, resolve_error = _resolve_command_for_platform(command)
+            if resolve_error:
+                return {
+                    "success": False,
+                    "error": resolve_error,
+                    "command": command,
+                    "working_dir": working_dir,
+                    "duration_ms": 0,
+                }
             process = await asyncio.create_subprocess_exec(
                 *args,
                 stdout=asyncio.subprocess.PIPE,

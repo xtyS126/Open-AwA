@@ -80,6 +80,9 @@ class ChatMessage(BaseModel):
     thinking_depth: Optional[int] = Field(None, ge=0, le=5, description="思考深度 0-5")
     max_tool_call_rounds: Optional[int] = Field(None, ge=1, le=50000, description="单次对话允许的最大工具回环轮次")
     continuation: Optional[ChatContinuation] = None
+    # 任务 ID：前端生成，用于支持 SSE 断连重连恢复。
+    # 缺省时后端自动生成并在响应头 X-Chat-Task-Id 中返回。
+    task_id: Optional[str] = Field(None, description="聊天任务 ID，支持 SSE 重连恢复")
 
 
 class ChatResponse(BaseModel):

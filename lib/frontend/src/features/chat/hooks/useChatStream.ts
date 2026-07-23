@@ -223,6 +223,21 @@ export interface UseChatStreamParams {
    * 跳转设置页重新录入 API Key 的对话框。
    */
   onApiKeyStale?: () => void
+  /**
+   * 后端为本次流式任务分配 task_id 后回调（仅 stream 模式触发）。
+   * 调用方通常在此持久化 task_id + assistantMessageId + sessionId 到 sessionStorage，
+   * 以便页面切换后通过 resubscribeToTask 恢复。
+   */
+  onTaskStarted?: (taskId: string, assistantMessageId: string, sessionId: string) => void
+  /**
+   * 每收到一个带 _seq 的事件时回调，调用方据此更新 sessionStorage 中的 lastSeq，
+   * 用于断连重连时定位 from_seq。
+   */
+  onTaskSeq?: (taskId: string, seq: number) => void
+  /**
+   * 任务结束（正常完成、失败、取消）后回调，调用方应清除 sessionStorage 中的任务记录。
+   */
+  onTaskFinished?: (taskId: string) => void
 }
 
 export interface UseChatStreamReturn {
@@ -234,8 +249,25 @@ export interface UseChatStreamReturn {
     ensureConversationSession: () => Promise<string>,
     onFinally: () => void
   ) => Promise<void>
-  /** 中止当前流式请求 */
+  /** 中止当前流式请求（仅断开 SSE 连接，不取消后端任务，用于页面切换） */
   abortStream: () => void
+  /**
+   * 重连订阅已存在的后端任务事件流。
+   * 用于页面切换回来后恢复被中断的流式输出。
+   *
+   * 调用前需由调用方校验 sessionId 匹配，本函数仅依据 task_id 重连后端事件流。
+   *
+   * @param taskId 后端任务 ID
+   * @param assistantMessageId 前端已存在的助手消息 ID（用于继续追加内容）
+   * @param fromSeq 起始事件 seq（含），默认 -1 表示从头回放
+   */
+  resubscribeToTask: (
+    taskId: string,
+    assistantMessageId: string,
+    fromSeq?: number
+  ) => Promise<void>
+  /** 获取当前活跃任务 ID（供 ChatPage 在用户主动 abort 时取消后端任务） */
+  getActiveTaskId: () => string | null
 }
 
 /**
@@ -267,6 +299,9 @@ export function useChatStream({
   messageMeta,
   setMessageMeta,
   onApiKeyStale,
+  onTaskStarted,
+  onTaskSeq,
+  onTaskFinished,
 }: UseChatStreamParams): UseChatStreamReturn {
   const activeRequestIdRef = useRef(0)
   const activeAbortControllerRef = useRef<AbortController | null>(null)
@@ -277,6 +312,10 @@ export function useChatStream({
     // 避免在 useRef 初始化中调用 Date.now()（impure function）违反纯渲染规则
     lastUpdateTime: 0,
   })
+  // 当前活跃的后端任务 ID（用于 ChatPage 用户主动 abort 时取消后端任务）
+  const activeTaskIdRef = useRef<string | null>(null)
+  // 当前活跃任务已处理到的最大 seq（用于断连重连时定位 from_seq）
+  const activeTaskLastSeqRef = useRef<number>(-1)
 
   const addMessage = useSessionStore((s) => s.addMessage)
   const addActiveToolCall = useToolCallStore((s) => s.addActiveToolCall)
@@ -287,6 +326,27 @@ export function useChatStream({
   const abortStream = useCallback(() => {
     activeAbortControllerRef.current?.abort()
   }, [])
+
+  const getActiveTaskId = useCallback(() => activeTaskIdRef.current, [])
+
+  /**
+   * 从事件中提取 _seq 并更新 activeTaskLastSeqRef + 触发 onTaskSeq 回调。
+   * 返回 true 表示事件携带了有效 _seq。
+   */
+  const trackEventSeq = useCallback(
+    (event: { _seq?: number } | undefined, taskId: string): boolean => {
+      const seq = typeof event?._seq === 'number' ? event._seq : undefined
+      if (seq === undefined) {
+        return false
+      }
+      if (seq > activeTaskLastSeqRef.current) {
+        activeTaskLastSeqRef.current = seq
+        onTaskSeq?.(taskId, seq)
+      }
+      return true
+    },
+    [onTaskSeq]
+  )
 
   const handleSendMessage = useCallback(
     async (
@@ -406,12 +466,24 @@ export function useChatStream({
       setStreamingAssistantId(assistantMessageId)
       streamExecution.beginStreamExecution(outputMode)
 
+      // 生成 task_id：前端先生成，传给后端，便于页面切换后通过 task_id 重连恢复
+      // 仅 stream 模式需要（direct 模式无 SSE，无需重连）
+      // 声明在 try 外部以便 finally 块访问（任务结束时清理追踪状态）
+      const streamTaskId = outputMode === 'stream' ? crypto.randomUUID() : undefined
+      if (streamTaskId) {
+        activeTaskIdRef.current = streamTaskId
+        activeTaskLastSeqRef.current = -1
+        // 通知 ChatPage 持久化 task_id + assistantMessageId + sessionId
+        onTaskStarted?.(streamTaskId, assistantMessageId, targetSessionId)
+      }
+
       try {
         const { provider, model } = parseSelectedModel(selectedModel)
         const executionOptions = {
           ...(thinkingEnabled ? { thinking_enabled: true, thinking_depth: thinkingDepth } : {}),
           max_tool_call_rounds: getConfiguredMaxToolCallRounds(),
           ...(options?.continuation ? { continuation: options.continuation } : {}),
+          ...(streamTaskId ? { task_id: streamTaskId } : {}),
         }
 
         if (outputMode === 'stream') {
@@ -432,6 +504,11 @@ export function useChatStream({
                 (event) => {
                   if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
                     return
+                  }
+
+                  // 追踪事件 seq（用于断连重连时定位 from_seq）
+                  if (streamTaskId) {
+                    trackEventSeq(event, streamTaskId)
                   }
 
                   streamExecution.markStreamStreaming()
@@ -676,6 +753,14 @@ export function useChatStream({
             streamExecution.setIdleStreamState()
           }
         }
+        // 任务结束（无论成功/失败/取消）：通知 ChatPage 清除 sessionStorage 任务记录
+        // 仅在当前请求仍是活跃请求时触发，避免被新的请求覆盖后误清
+        if (streamTaskId && activeRequestIdRef.current === requestId) {
+          const finishedTaskId = streamTaskId
+          activeTaskIdRef.current = null
+          activeTaskLastSeqRef.current = -1
+          onTaskFinished?.(finishedTaskId)
+        }
         onFinally()
       }
     },
@@ -707,11 +792,230 @@ export function useChatStream({
       upsertConversation,
       setMessageMeta,
       onApiKeyStale,
+      onTaskStarted,
+      onTaskSeq,
+      onTaskFinished,
+      trackEventSeq,
+    ]
+  )
+
+  /**
+   * 重连订阅已存在的后端任务事件流。
+   *
+   * 使用场景：用户切换到其他页面后切回 ChatPage，此时原 SSE 连接已断开，
+   * 但后端任务仍在运行（或已完成）。前端通过 task_id + from_seq 重连订阅，
+   * 后端从 from_seq 开始回放历史事件 + 继续推送实时事件。
+   *
+   * 与 handleSendMessage 的差异：
+   * - 不发送新的用户消息
+   * - 复用已存在的 assistantMessageId（不创建新消息）
+   * - 调用 GET /chat/stream/{taskId} 而非 POST /chat
+   * - 不传 executionOptions（任务已在使用原始参数运行）
+   */
+  const resubscribeToTask = useCallback(
+    async (
+      taskId: string,
+      assistantMessageId: string,
+      fromSeq: number = -1
+    ) => {
+      const requestId = activeRequestIdRef.current + 1
+      activeRequestIdRef.current = requestId
+      activeAbortControllerRef.current?.abort()
+      const abortController = new AbortController()
+      activeAbortControllerRef.current = abortController
+
+      // 设置任务追踪状态
+      activeTaskIdRef.current = taskId
+      activeTaskLastSeqRef.current = fromSeq
+
+      let streamErrorHandled = false
+      // 重连场景下助手消息已存在（由 handleSendMessage 首次创建并持久化到 sessionStore）
+      // 标记为 true 以跳过 ensureAssistantMessage 的创建逻辑
+      let assistantMessageCreated = true
+
+      // 重置缓冲区：重连后从 fromSeq 开始接收事件，缓冲区需清空以避免旧内容残留
+      bufferRef.current = { content: '', reasoning: '', lastUpdateTime: Date.now() }
+
+      setLoading(true)
+      setStreamingAssistantId(assistantMessageId)
+      streamExecution.beginStreamExecution('stream')
+
+      try {
+        await chatAPI.resubscribeStream(
+          taskId,
+          (event) => {
+            if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
+              return
+            }
+
+            // 追踪事件 seq
+            trackEventSeq(event, taskId)
+
+            streamExecution.markStreamStreaming()
+
+            if (event?.type === 'status') {
+              const nextStageMessage =
+                typeof event.message === 'string' ? event.message.trim() : ''
+              streamExecution.setStreamStageMessage(nextStageMessage || null)
+              return
+            }
+
+            if (event?.type === 'chunk') {
+              assistantMessageCreated = handleStreamChunkEvent({
+                assistantMessageId,
+                event,
+                assistantMessageCreated,
+                // 重连场景：消息已存在，ensureAssistantMessage 为空操作
+                ensureAssistantMessage: () => false,
+                updateAssistantSegments,
+                appendAssistantMessageText,
+                flushBuffer,
+                buffer: bufferRef.current,
+                isDocumentHidden: document.hidden,
+              })
+              return
+            }
+
+            // 工具调用追踪
+            if (event?.type === 'tool') {
+              const toolData = event.tool
+              const toolId = String(toolData?.id || '')
+              const toolStatus = String(toolData?.status || '')
+              if (toolStatus === 'running') {
+                addActiveToolCall(toolId)
+              } else if (toolStatus === 'completed' || toolStatus === 'error') {
+                removeActiveToolCall(toolId)
+              }
+            }
+
+            // 结构化事件分发（子代理、todo、usage 等）
+            dispatchStructuredStreamEvent(event, {
+              assistantMessageId,
+              messageMeta,
+              addToast,
+              updateAssistantMeta,
+              updateAssistantSegments,
+              clearSubagentAggregationTimer: subagentSync.clearSubagentAggregationTimer,
+              scheduleSubagentTimeout: subagentSync.scheduleSubagentTimeout,
+              syncSubagentRuntime: subagentSync.syncSubagentRuntime,
+              clearSubagentTimeout: subagentSync.clearSubagentTimeout,
+              clearSubagentSyncTimer: subagentSync.clearSubagentSyncTimer,
+              scheduleSubagentAggregation: subagentSync.scheduleSubagentAggregation,
+              setTodoItems,
+              setTodoSummary,
+              setAskUserRequest,
+              dispatchUsageUpdated: ({ callId, provider, model }) => {
+                dispatchBillingUsageUpdated({ callId, provider, model })
+              },
+            })
+          },
+          (error) => {
+            const normalizedError = error instanceof Error ? error : new Error(String(error))
+            const friendlyErrorMessage = getUserFriendlyErrorMessage(normalizedError)
+            streamErrorHandled = true
+            flushBuffer(assistantMessageId)
+            streamExecution.markStreamFailed(sanitizeDisplayedError(friendlyErrorMessage))
+            appLogger.error({
+              event: 'chat_resubscribe_error',
+              module: 'chat_page',
+              action: 'receive_resubscribe_stream',
+              status: 'failure',
+              message: 'chat resubscribe stream error',
+              extra: {
+                error_category: classifyError(normalizedError),
+                error: normalizedError.message,
+                task_id: taskId,
+              },
+            })
+            const errorContent = `\n\n${friendlyErrorMessage}`
+            appendAssistantMessageText(assistantMessageId, errorContent)
+            updateAssistantSegments(assistantMessageId, (segments) =>
+              appendAssistantChunk(segments, {
+                content: errorContent,
+              })
+            )
+            finalizeAssistantMessageSegments(assistantMessageId)
+          },
+          { signal: abortController.signal, from_seq: Math.max(0, fromSeq + 1) }
+        )
+
+        flushBuffer(assistantMessageId)
+        finalizeAssistantMessageSegments(assistantMessageId)
+        streamExecution.clearStreamStageMessage()
+        streamExecution.setIdleStreamState()
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          // 组件卸载或新请求中断：清理流式状态，不展示错误
+          streamExecution.clearStreamStageMessage()
+          streamExecution.setIdleStreamState()
+          return
+        }
+        const normalizedError = error instanceof Error ? error : new Error(String(error))
+        appLogger.error({
+          event: 'chat_resubscribe_failed',
+          module: 'chat_page',
+          action: 'resubscribe',
+          status: 'failure',
+          message: 'chat resubscribe failed',
+          extra: { error: normalizedError.message, task_id: taskId },
+        })
+        if (isMountedRef.current && activeRequestIdRef.current === requestId && !streamErrorHandled) {
+          const friendlyErrorMessage = getUserFriendlyErrorMessage(normalizedError)
+          const errorContent = `\n\n${friendlyErrorMessage}`
+          appendAssistantMessageText(assistantMessageId, errorContent)
+          updateAssistantSegments(assistantMessageId, (segments) =>
+            appendAssistantChunk(segments, {
+              content: errorContent,
+            })
+          )
+        }
+      } finally {
+        resetActiveToolCalls()
+        if (isMountedRef.current && activeRequestIdRef.current === requestId) {
+          setLoading(false)
+          setStreamingAssistantId(null)
+          streamExecution.clearStreamStageMessage()
+          if (!streamErrorHandled) {
+            streamExecution.setIdleStreamState()
+          }
+        }
+        // 任务结束：清除追踪状态并通知 ChatPage 清除 sessionStorage
+        if (activeRequestIdRef.current === requestId) {
+          const finishedTaskId = taskId
+          activeTaskIdRef.current = null
+          activeTaskLastSeqRef.current = -1
+          onTaskFinished?.(finishedTaskId)
+        }
+      }
+    },
+    [
+      isMountedRef,
+      updateAssistantMeta,
+      updateAssistantSegments,
+      finalizeAssistantMessageSegments,
+      appendAssistantMessageText,
+      flushBuffer,
+      addToast,
+      streamExecution,
+      subagentSync,
+      setTodoItems,
+      setTodoSummary,
+      setAskUserRequest,
+      setStreamingAssistantId,
+      setLoading,
+      messageMeta,
+      addActiveToolCall,
+      removeActiveToolCall,
+      resetActiveToolCalls,
+      onTaskFinished,
+      trackEventSeq,
     ]
   )
 
   return {
     handleSendMessage,
     abortStream,
+    resubscribeToTask,
+    getActiveTaskId,
   }
 }

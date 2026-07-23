@@ -183,6 +183,7 @@ class Settings(BaseSettings):
     SANDBOX_TIMEOUT: int = 30
     SANDBOX_MEMORY_LIMIT: str = "512m"
     SANDBOX_BACKEND: str = "restricted_python"
+    AGENT_WORKSPACE_UNRESTRICTED_COMMANDS: bool = True
 
     # Agent 运行时配置
     MAX_TOOL_CALL_ROUNDS: int = 12        # 工具调用回环最大轮数

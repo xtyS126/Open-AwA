@@ -182,8 +182,28 @@ class FileManagerSkill:
             return {"success": False, "error": "Is a directory"}
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            # 先以二进制模式读取，再尝试 utf-8 解码
+            # 避免 .jpg / .png / .mp4 等二进制文件触发 UnicodeDecodeError
+            with open(file_path, 'rb') as f:
+                raw_bytes = f.read()
+            try:
+                content = raw_bytes.decode('utf-8')
+            except UnicodeDecodeError as decode_err:
+                # 二进制文件不返回原始字节，仅返回元信息与提示，避免污染上下文
+                logger.warning(
+                    f"File is not UTF-8 text, returning metadata only: {file_path}"
+                )
+                return {
+                    "success": True,
+                    "path": file_path,
+                    "is_binary": True,
+                    "size": len(raw_bytes),
+                    "content": None,
+                    "error": (
+                        f"Binary file ({len(raw_bytes)} bytes) cannot be decoded "
+                        f"as UTF-8: {decode_err.reason} at position {decode_err.start}"
+                    ),
+                }
             logger.info(f"Successfully read file: {file_path}")
             return {
                 "success": True,
@@ -295,12 +315,14 @@ class FileManagerSkill:
             return {"success": False, "error": "Access denied"}
 
         # 删除文件前保存检查点快照（仅当目标为文件且检查点存储器已注入时）
+        # 注意：CheckpointStore.save 签名为 (session_id, tool_name, file_path, operation_type)
+        # operation_type 必须为 "overwrite" / "create" / "delete"，此处删除操作用 "delete"
         if self.checkpoint_store and Path(file_path).is_file():
             self.checkpoint_store.save(
-                session_path=kwargs.get('session_path'),
-                tool="delete_file",
+                session_id=kwargs.get('session_id', 'default'),
+                tool_name="delete_file",
                 file_path=file_path,
-                reason="delete_file即将删除",
+                operation_type="delete",
             )
 
         try:

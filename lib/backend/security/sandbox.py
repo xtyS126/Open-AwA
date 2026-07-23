@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from loguru import logger
 from config.settings import settings
+from core.command_platform import resolve_command_for_platform
 from security.command_validators import ValidationResult, validate_command
 from security.command_whitelist import (
     ALLOWED_COMMANDS,
@@ -453,6 +454,13 @@ class Sandbox:
         if not command_list:
             raise SandboxPermissionError("命令列表不能为空")
 
+        if settings.AGENT_WORKSPACE_UNRESTRICTED_COMMANDS:
+            hard_blocked = ("rm -rf /", "sudo rm -rf /", "mkfs", "dd if=")
+            normalized = (command_str or " ".join(command_list)).lower()
+            if any(pattern in normalized for pattern in hard_blocked):
+                raise SandboxPermissionError("命令匹配系统级硬阻断规则")
+            return
+
         # 调用验证器流水线：检测命令注入、危险模式等
         # 优先使用原始命令字符串（保留引号、转义等信息），否则由列表拼接
         pipeline_input = command_str if command_str is not None else ' '.join(command_list)
@@ -464,11 +472,19 @@ class Sandbox:
             )
 
         executable = command_list[0]
+        cmd_args = command_list[1:]
+
+        # Windows 下 cmd.exe /c 包装的命令需拆包后基于真实命令名校验
+        # 例：["cmd.exe", "/c", "echo", "hello"] -> executable="echo", cmd_args=["hello"]
+        if os.name == 'nt' and len(command_list) >= 3 and \
+                os.path.basename(executable).lower() == 'cmd.exe' and command_list[1] == '/c':
+            executable = command_list[2]
+            cmd_args = command_list[3:]
 
         # 委托给 command_whitelist.validate_command_safety_detailed 进行统一校验
         # 包括：危险命令黑名单 + 白名单 + 参数危险模式 + ACP 硬阻断模式（rm -rf / 等）
         is_safe, err_msg = _validate_command_safety_detailed(
-            executable, command_list[1:]
+            executable, cmd_args
         )
         if not is_safe:
             raise SandboxPermissionError(err_msg or "命令被安全策略拒绝")
@@ -528,22 +544,29 @@ class Sandbox:
         exec_timeout = timeout if timeout is not None else self.timeout
         logger.info(f"Sandbox execute_command: {command[:100]!r}, timeout={exec_timeout}s")
 
-        # 解析命令字符串为参数列表（防止 shell 注入）
-        try:
-            command_list = shlex.split(command)
-        except ValueError as e:
-            logger.warning(f"Command parse failed: {e}")
-            return {"status": "error", "message": f"命令解析失败: {e}"}
+        # 解析命令字符串为参数列表（防止 shell 注入），并做 Windows 平台适配
+        # Windows 下 cmd.exe 内建命令（echo/dir 等）需通过 cmd.exe /c 包装，否则
+        # create_subprocess_exec 会抛 WinError 2
+        command_list, resolve_error = resolve_command_for_platform(command)
+        if resolve_error:
+            logger.warning(f"Command resolve failed: {resolve_error}")
+            return {"status": "error", "message": resolve_error}
 
         if not command_list:
             return {"status": "error", "message": "命令不能为空"}
 
-        # 权限检查
-        allowed = await self.check_permission("execute", command_list[0])
-        if not allowed:
-            return {"status": "error", "message": f"权限拒绝: 不允许执行命令 '{command_list[0]}'"}
+        # 权限检查：取原始命令名（cmd.exe /c 包装后第一个元素可能是 cmd.exe）
+        # 对 cmd.exe /c 包装的命令，校验原始命令名（args[1]）的权限
+        perm_target = command_list[0]
+        if os.name == 'nt' and len(command_list) >= 2 and \
+                os.path.basename(command_list[0]).lower() == 'cmd.exe' and command_list[1] == '/c':
+            perm_target = command_list[2] if len(command_list) > 2 else command_list[0]
 
-        # 命令白名单校验
+        allowed = settings.AGENT_WORKSPACE_UNRESTRICTED_COMMANDS or await self.check_permission("execute", perm_target)
+        if not allowed:
+            return {"status": "error", "message": f"权限拒绝: 不允许执行命令 '{perm_target}'"}
+
+        # 命令白名单校验：传入原始命令字符串，让验证器基于原始命令判断
         try:
             self._validate_command(command_list, command)
         except SandboxPermissionError as e:

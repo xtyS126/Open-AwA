@@ -29,6 +29,13 @@ from core.litellm_adapter import CLIENT_VERSION_HEADER
 from config.security import decode_access_token
 from core.agent import AIAgent
 from core.agent_registry import get_registry
+from core.chat_task_manager import (
+    TASK_STATUS_CANCELLED,
+    TASK_STATUS_COMPLETED,
+    TASK_STATUS_FAILED,
+    generate_task_id,
+    get_chat_task_manager,
+)
 from db.models import ConversationRecord, SessionLocal, User, get_db
 
 
@@ -295,16 +302,44 @@ async def chat(
         ).info("阶段耗时: agent_registry")
 
         if message.mode == "stream":
-            async def leased_stream() -> AsyncGenerator[Dict[str, Any], None]:
-                """在 SSE 消费完整生命周期内持有用户级 Agent 租约。"""
-                async with registry.acquire(current_user.id, db) as agent:
-                    async for chunk in agent.process_stream(message.message, context):
-                        yield chunk
+            # 任务 ID：前端可传入（用于重连），缺省时后端生成
+            task_id = message.task_id or generate_task_id()
+            task_manager = get_chat_task_manager()
+            # 确保清理循环已启动（幂等）
+            task_manager.start_cleanup_loop()
 
-            # 流式：包装生成器，在流结束后触发 N 轮兜底（由 _stream_with_profile_trigger 的 finally 负责）
-            stream_gen = leased_stream()
-            wrapped_gen = _stream_with_profile_trigger(stream_gen, current_user.id)
-            return await build_sse_response(wrapped_gen)
+            # 注册任务到管理器（若 task_id 已存在则复用，支持前端重连同一 task_id）
+            await task_manager.register_task(
+                task_id=task_id,
+                user_id=current_user.id,
+                session_id=message.session_id,
+                request_id=context["request_id"],
+            )
+
+            # 检查任务是否已在运行（前端重连场景）：已运行则直接订阅，不重复启动
+            status_info = await task_manager.get_task_status(task_id)
+            if status_info and status_info["status"] == "pending":
+                # 首次注册：启动后台任务执行 agent.process_stream
+                async def leased_stream() -> AsyncGenerator[Dict[str, Any], None]:
+                    """在任务完整生命周期内持有用户级 Agent 租约。"""
+                    async with registry.acquire(current_user.id, db) as agent:
+                        async for chunk in agent.process_stream(message.message, context):
+                            yield chunk
+
+                # 包装：流结束后触发 N 轮兜底
+                wrapped_gen = _stream_with_profile_trigger(leased_stream(), current_user.id)
+                await task_manager.start_task(task_id, lambda: wrapped_gen)
+
+            # 订阅任务事件流（断连重连时从 from_seq=0 开始回放全部历史事件）
+            # 注意：subscribe 是 async generator，build_sse_response 会消费它
+            from_seq = 0  # 完整回放历史事件，确保前端重连后能看到全部输出
+            subscription = task_manager.subscribe(task_id, from_seq)
+
+            # 构造 SSE 响应，附带 task_id 响应头方便前端记录
+            sse_response = await build_sse_response(subscription)
+            # 在响应头中暴露 task_id，前端首次连接时记录、重连时复用
+            sse_response.headers["X-Chat-Task-Id"] = task_id
+            return sse_response
 
         async with registry.acquire(current_user.id, db) as agent:
             result = await agent.process(message.message, context)
@@ -448,6 +483,114 @@ async def cancel_agent_task(
         "cancelled_count": len(active_tasks),
         "message": "任务取消请求已发送",
     }
+
+
+# ---- 聊天任务管理（SSE 断连重连恢复） ----
+
+@router.get(
+    "/stream/{task_id}",
+    summary="重连订阅聊天任务 SSE 流",
+    description="前端切换页面或网络断开后，通过 task_id 重连订阅任务事件流，从历史事件回放后继续实时接收。",
+)
+async def resubscribe_chat_task(
+    task_id: str,
+    from_seq: int = Query(0, ge=0, description="起始事件 seq（含），默认 0 完整回放"),
+    current_user=Depends(get_current_user),
+):
+    """重连订阅聊天任务事件流。"""
+    task_manager = get_chat_task_manager()
+    status_info = await task_manager.get_task_status(task_id)
+    if status_info is None:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    # 鉴权：仅任务所有者可订阅
+    if status_info.get("user_id") != current_user.id:
+        raise HTTPException(status_code=403, detail="无权订阅他人任务")
+
+    logger.bind(
+        event="chat_task_resubscribe",
+        module="chat",
+        task_id=task_id,
+        from_seq=from_seq,
+        task_status=status_info.get("status"),
+        user_id=current_user.id,
+    ).info("重连订阅聊天任务")
+
+    subscription = task_manager.subscribe(task_id, from_seq)
+    sse_response = await build_sse_response(subscription)
+    sse_response.headers["X-Chat-Task-Id"] = task_id
+    return sse_response
+
+
+@router.post(
+    "/cancel-task/{task_id}",
+    summary="取消指定聊天任务",
+    description="取消指定 task_id 对应的聊天任务，级联清理所有子任务（工具执行、子代理等）。",
+)
+async def cancel_chat_task(
+    task_id: str,
+    current_user=Depends(get_current_user),
+) -> Dict[str, Any]:
+    """取消指定聊天任务。"""
+    task_manager = get_chat_task_manager()
+    status_info = await task_manager.get_task_status(task_id)
+    if status_info is None:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    if status_info.get("user_id") != current_user.id:
+        raise HTTPException(status_code=403, detail="无权取消他人任务")
+
+    cancelled = await task_manager.cancel_task(task_id)
+    logger.bind(
+        event="chat_task_cancel",
+        module="chat",
+        task_id=task_id,
+        user_id=current_user.id,
+        cancelled=cancelled,
+    ).info("用户取消聊天任务")
+
+    return {
+        "status": "cancelled" if cancelled else "already_done",
+        "task_id": task_id,
+        "message": "任务取消请求已发送" if cancelled else "任务已结束或不存在",
+    }
+
+
+@router.get(
+    "/tasks",
+    summary="列出当前用户的聊天任务",
+    description="返回当前用户进行中的聊天任务列表，前端用于切回页面时检查可恢复的任务。",
+)
+async def list_chat_tasks(
+    current_user=Depends(get_current_user),
+    session_id: Optional[str] = Query(None, description="按会话过滤"),
+    include_finished: bool = Query(False, description="是否包含已结束任务"),
+) -> Dict[str, Any]:
+    """列出当前用户的聊天任务。"""
+    task_manager = get_chat_task_manager()
+    tasks = await task_manager.list_user_tasks(
+        user_id=current_user.id,
+        session_id=session_id,
+        include_finished=include_finished,
+    )
+    return {"tasks": tasks, "count": len(tasks)}
+
+
+@router.get(
+    "/tasks/{task_id}",
+    summary="查询聊天任务状态",
+    description="返回指定 task_id 的任务状态、事件计数、错误信息等。",
+)
+async def get_chat_task_status(
+    task_id: str,
+    current_user=Depends(get_current_user),
+) -> Dict[str, Any]:
+    """查询指定聊天任务状态。"""
+    task_manager = get_chat_task_manager()
+    status_info = await task_manager.get_task_status(task_id)
+    if status_info is None:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    if status_info.get("user_id") != current_user.id:
+        raise HTTPException(status_code=403, detail="无权查询他人任务")
+    return status_info
 
 
 # ---- 用户反馈 ----

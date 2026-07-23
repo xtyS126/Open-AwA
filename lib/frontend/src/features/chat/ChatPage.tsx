@@ -4,7 +4,6 @@ import { PanelLeft } from 'lucide-react'
 import { chatAPI, diaryAPI } from '@/shared/api/api'
 import { useConversationHistory } from '@/features/chat/hooks/useConversationHistory'
 import { useStreamExecutionState } from '@/features/chat/hooks/useStreamExecutionState'
-import { useTaskPanelState } from '@/features/chat/hooks/useTaskPanelState'
 import { useChatBroadcastEffects } from '@/features/chat/hooks/useChatBroadcastEffects'
 import { useChatConversationActions } from '@/features/chat/hooks/useChatConversationActions'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
@@ -12,11 +11,6 @@ import { useModelStore } from '@/features/chat/store/modelStore'
 import { useToolCallStore } from '@/features/chat/store/toolCallStore'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 import { shallow } from 'zustand/shallow'
-import {
-  applyToolPatchToSegments,
-} from '@/features/chat/utils/assistantSegments'
-import { applySubagentStop, applyToolUpdate } from '@/features/chat/utils/executionMeta'
-import { stopAgent } from '@/shared/api/taskRuntimeApi'
 import { useI18nStore } from '@/i18n'
 import { appLogger } from '@/shared/utils/logger'
 import { useToast } from '@/shared/components/Toast'
@@ -35,7 +29,6 @@ import { ChatInput } from './components/ChatInput'
 import { PermissionRequestNotification } from './components/PermissionRequestNotification'
 import type { FileAttachment } from './components/ChatInput'
 // P1: TaskPanel/TodoPanel 按需懒加载，减少聊天页首屏 JS
-const TaskPanel = React.lazy(() => import('./components/TaskPanel').then(m => ({ default: m.TaskPanel })))
 const TodoPanel = React.lazy(() => import('./components/TodoPanel').then(m => ({ default: m.TodoPanel })))
 const AskUserCard = React.lazy(() => import('./components/AskUserCard').then(m => ({ default: m.AskUserCard })))
 import type { TodoItem } from './components/TodoPanel'
@@ -143,12 +136,6 @@ function ChatPage() {
     clearHistoryError,
     loadConversationList,
   } = useConversationHistory()
-  const {
-    activeExecution,
-    taskPanelExpanded,
-    toggleTaskPanel,
-    resetTaskPanelState,
-  } = useTaskPanelState(messages, messageMeta, streamingAssistantId)
   const { addToast, ToastContainer } = useToast()
   const messageMetaRef = useRef<Record<string, import('@/features/chat/types').AssistantExecutionMeta>>({})
 
@@ -300,7 +287,7 @@ function ChatPage() {
     upsertConversation,
     removeConversation,
     resetStreamExecutionState,
-    resetTaskPanelState,
+    resetTaskPanelState: () => undefined,
     setMessageMeta,
     setStreamingAssistantId,
     setFeedbackState,
@@ -360,6 +347,87 @@ function ChatPage() {
     handleSendRef: handleSendRef as React.MutableRefObject<((message?: string | undefined, attachments?: unknown[] | undefined, options?: import('@/features/chat/hooks/useSubagentSync').SendOptions | undefined) => Promise<void>) | undefined>,
   })
 
+  // ---- SSE 断连重连恢复：sessionStorage 持久化活跃任务 ----
+  // 用户切换页面时 ChatPage 卸载，SSE 连接断开但后端任务继续运行。
+  // 这里把 task_id + assistantMessageId + lastSeq 持久化到 sessionStorage，
+  // 用户切回页面时通过 resubscribeToTask 恢复流式输出。
+  const ACTIVE_TASK_STORAGE_KEY = 'chat:active-task'
+  const activeTaskLastSeqRef = useRef<number>(-1)
+
+  const persistActiveTask = useCallback(
+    (taskId: string, assistantMessageId: string, taskSessionId: string) => {
+      try {
+        activeTaskLastSeqRef.current = -1
+        sessionStorage.setItem(
+          ACTIVE_TASK_STORAGE_KEY,
+          JSON.stringify({
+            taskId,
+            assistantMessageId,
+            sessionId: taskSessionId,
+            lastSeq: -1,
+            createdAt: Date.now(),
+          })
+        )
+      } catch (err) {
+        // sessionStorage 写入失败（如隐私模式）不阻塞主流程
+        appLogger.warning({
+          event: 'chat_task_persist_failed',
+          module: 'chat_page',
+          message: '持久化活跃任务到 sessionStorage 失败',
+          extra: { error: err instanceof Error ? err.message : String(err) },
+        })
+      }
+    },
+    []
+  )
+
+  const updateActiveTaskSeq = useCallback((taskId: string, seq: number) => {
+    activeTaskLastSeqRef.current = seq
+    try {
+      const raw = sessionStorage.getItem(ACTIVE_TASK_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as { taskId?: string; lastSeq?: number }
+      if (parsed.taskId !== taskId) return
+      parsed.lastSeq = seq
+      sessionStorage.setItem(ACTIVE_TASK_STORAGE_KEY, JSON.stringify(parsed))
+    } catch {
+      // 序列化失败时静默，不阻塞流式输出
+    }
+  }, [])
+
+  const clearActiveTask = useCallback((taskId?: string) => {
+    try {
+      if (taskId) {
+        const raw = sessionStorage.getItem(ACTIVE_TASK_STORAGE_KEY)
+        if (raw) {
+          const parsed = JSON.parse(raw) as { taskId?: string }
+          if (parsed.taskId !== taskId) return
+        }
+      }
+      sessionStorage.removeItem(ACTIVE_TASK_STORAGE_KEY)
+      activeTaskLastSeqRef.current = -1
+    } catch {
+      // 清理失败静默
+    }
+  }, [])
+
+  const loadActiveTask = useCallback(() => {
+    try {
+      const raw = sessionStorage.getItem(ACTIVE_TASK_STORAGE_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as {
+        taskId: string
+        assistantMessageId: string
+        sessionId: string
+        lastSeq: number
+        createdAt: number
+      }
+      return parsed
+    } catch {
+      return null
+    }
+  }, [])
+
   const chatStream = useChatStream({
     sessionId,
     outputMode,
@@ -391,10 +459,15 @@ function ChatPage() {
     messageMeta,
     setMessageMeta,
     onApiKeyStale: () => setShowApiKeyStaleDialog(true),
+    onTaskStarted: persistActiveTask,
+    onTaskSeq: updateActiveTaskSeq,
+    onTaskFinished: clearActiveTask,
   })
 
   // 组件卸载时取消进行中的流式请求并清理子代理定时器，防止资源泄露。
-  // 必须在 chatStream/subagentSync 声明之后定义，避免变量在声明前被访问。
+  // 注意：abortStream 仅断开 SSE 连接（AbortController.abort），
+  // 后端任务在 ChatTaskManager 中独立运行，不会被取消。
+  // 用户切回页面时通过 resubscribeToTask 恢复流式输出。
   useEffect(() => {
     isMountedRef.current = true
     return () => {
@@ -411,6 +484,66 @@ function ChatPage() {
         void err
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 页面切换回来后恢复进行中的流式任务。
+  // 检查 sessionStorage 中是否有活跃任务，若有且 sessionId 匹配则重连订阅。
+  // 仅在组件首次挂载时执行一次（通过 ref 守卫避免 StrictMode 双调用重复重连）。
+  const resubscribeAttemptedRef = useRef(false)
+  useEffect(() => {
+    if (resubscribeAttemptedRef.current) return
+    resubscribeAttemptedRef.current = true
+    const activeTask = loadActiveTask()
+    if (!activeTask) return
+    // 仅当任务的目标会话与当前会话一致时才重连；
+    // 会话不匹配说明用户已切换到其他对话，不在此恢复（任务仍在后端运行）
+    if (!sessionId || sessionId === 'default') {
+      // 当前会话未确定时也尝试恢复（覆盖从 default 会话发起的任务）
+      void sessionId
+    } else if (activeTask.sessionId !== sessionId) {
+      // 会话不匹配：清除过期记录，不重连
+      clearActiveTask(activeTask.taskId)
+      return
+    }
+    // 异步检查任务是否仍在运行或已完成，然后重连
+    void (async () => {
+      try {
+        const statusResp = await chatAPI.getTaskStatus(activeTask.taskId)
+        const status = statusResp.data
+        if (!status) {
+          clearActiveTask(activeTask.taskId)
+          return
+        }
+        // 任务已结束且无新事件可回放：清除记录，不重连
+        const lastSeq = activeTask.lastSeq ?? -1
+        if (
+          (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') &&
+          status.next_seq <= lastSeq + 1
+        ) {
+          clearActiveTask(activeTask.taskId)
+          return
+        }
+        // 任务仍在运行或有未消费事件：重连订阅
+        activeTaskLastSeqRef.current = lastSeq
+        await chatStream.resubscribeToTask(
+          activeTask.taskId,
+          activeTask.assistantMessageId,
+          lastSeq
+        )
+      } catch (err) {
+        appLogger.warning({
+          event: 'chat_resubscribe_mount_failed',
+          module: 'chat_page',
+          message: '恢复流式任务失败',
+          extra: {
+            task_id: activeTask.taskId,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        })
+        clearActiveTask(activeTask.taskId)
+      }
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -470,13 +603,20 @@ function ChatPage() {
       if (sessionId && sessionId !== 'default') {
         chatAPI.cancelSession(sessionId).catch(() => { /* 静默，abort 已处理 */ })
       }
+      // 用户主动 abort：取消后端任务（ChatTaskManager 取消 background_task）
+      // 避免 SSE 断开后后端任务继续运行浪费资源
+      const activeTaskId = chatStream.getActiveTaskId()
+      if (activeTaskId) {
+        chatAPI.cancelTask(activeTaskId).catch(() => { /* 静默，任务可能已结束 */ })
+        clearActiveTask(activeTaskId)
+      }
       setStreamingAssistantId(null)
       resetActiveToolCalls()
     } finally {
       setAborting(false)
       setShowAbortConfirm(false)
     }
-  }, [sessionId, resetActiveToolCalls, chatStream])
+  }, [sessionId, resetActiveToolCalls, chatStream, clearActiveTask])
 
   const handleAbort = useCallback(() => {
     // 通过 getState() 读取最新 activeToolCalls，避免 useCallback 依赖 activeToolCalls 导致引用频繁变化
@@ -523,6 +663,7 @@ function ChatPage() {
     }
   }, [])
 
+  /*
   const handleStopAgent = useCallback(async (agentId: string) => {
     try {
       const result = await stopAgent(agentId)
@@ -563,6 +704,7 @@ function ChatPage() {
       })
     }
   }, [subagentSync, streamingAssistantId, updateAssistantMeta, updateAssistantSegments, t])
+  */
 
   return (
     <div className={styles['chat-page']}>
@@ -707,21 +849,6 @@ function ChatPage() {
                 request={askUserRequest}
                 onResolved={() => setAskUserRequest(null)}
               />
-            </React.Suspense>
-
-            <React.Suspense fallback={(
-              <div style={{ padding: 'var(--space-2) var(--space-3)' }}>
-                <Skeleton variant="rectangular" height="var(--space-6)" width="40%" />
-              </div>
-            )}>
-              <TaskPanel
-                steps={activeExecution?.meta.steps || []}
-                toolEvents={activeExecution?.meta.toolEvents || []}
-                isStreaming={activeExecution?.isStreaming || false}
-                onStopAgent={(agentId) => void handleStopAgent(agentId)}
-                expanded={taskPanelExpanded}
-              onToggle={toggleTaskPanel}
-            />
             </React.Suspense>
 
             <ChatInput

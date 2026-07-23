@@ -46,6 +46,8 @@ export interface ChatStreamEvent {
   run_mode?: unknown
   summary?: unknown
   state?: unknown
+  /** 后端注入的事件序列号，用于断连重连时定位 from_seq */
+  _seq?: number
   [key: string]: unknown
 }
 
@@ -173,6 +175,29 @@ export interface ChatCancelResponse {
   session_id: string
   message: string
   [key: string]: unknown
+}
+
+/** 聊天任务摘要（列表项） */
+export interface ChatTaskSummary {
+  task_id: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  session_id: string
+  created_at: number
+  finished_at: number | null
+  event_count: number
+}
+
+/** 聊天任务详细状态 */
+export interface ChatTaskStatus {
+  task_id: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  event_count: number
+  next_seq: number
+  created_at: number
+  finished_at: number | null
+  error: { code?: string; message?: string } | null
+  session_id: string
+  user_id: string
 }
 
 export interface ChatFeedbackResponse {

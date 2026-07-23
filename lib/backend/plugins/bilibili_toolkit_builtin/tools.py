@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import re
 import asyncio
 import json
 import uuid
@@ -141,11 +142,69 @@ async def bilibili_add_subscription(
 
     return {
         "subscription_id": subscription.id,
+        "task_id": task_id,
         "message": (
             f"订阅已创建并触发首次扫描: id={subscription.id}, task_id={task_id}"
         ),
         "videos": [],  # 首批视频列表由后台扫描异步写入，此处返回空
     }
+
+
+async def bilibili_download_collection(
+    db: Session,
+    user_id: int,
+    source: str,
+    path: str,
+    name: Optional[str] = None,
+) -> dict:
+    """从合集链接或 season_id 创建并触发可追踪的下载任务。"""
+    source_text = str(source or "").strip()
+    match = re.search(r"(?:sid|season_id)=(\d+)", source_text)
+
+    if match is not None:
+        season_id = int(match.group(1))
+    elif source_text.isdigit():
+        season_id = int(source_text)
+    else:
+        return {
+            "error": "collection_identifier_required",
+            "message": "未识别到合集 sid 或 season_id，请提供合集链接或 season_id。",
+        }
+
+    existing = (
+        db.execute(
+            select(BilibiliToolkitSubscription).where(
+                BilibiliToolkitSubscription.type == "season",
+                BilibiliToolkitSubscription.source_id == season_id,
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    if existing is not None:
+        task_id = uuid.uuid4().hex
+        _running_tasks[task_id] = existing.id
+        asyncio.create_task(_execute_download(task_id, existing))
+        return {
+            "subscription_id": existing.id,
+            "task_id": task_id,
+            "season_id": season_id,
+            "reused_subscription": True,
+            "message": "已复用已有合集订阅并触发下载。",
+        }
+
+    result = await bilibili_add_subscription(
+        db=db,
+        user_id=user_id,
+        subscription_type="season",
+        source_id=season_id,
+        name=name or f"B站合集 {season_id}",
+        path=path,
+    )
+    result["season_id"] = season_id
+    result["reused_subscription"] = False
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +479,33 @@ BILIBILI_TOOLKIT_TOOLS: List[Dict[str, Any]] = [
         "handler": bilibili_add_subscription,
     },
     {
+        "name": "bilibili_download_collection",
+        "description": (
+            "直接下载 B 站合集。输入合集 URL、包含 sid 的链接，"
+            "或直接输入 season_id；工具会创建或复用 season 订阅，"
+            "并立即返回后台下载 task_id。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "合集 URL、包含 sid/season_id 的链接，或 season_id。",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "下载根目录，必须位于允许的工作区内。",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "可选的合集显示名称。",
+                },
+            },
+            "required": ["source", "path"],
+        },
+        "handler": bilibili_download_collection,
+    },
+    {
         "name": "bilibili_list_subscriptions",
         "description": (
             "列出当前所有 B 站订阅源，返回每项的 id / type / source_id / "
@@ -503,6 +589,7 @@ BILIBILI_TOOLKIT_TOOLS: List[Dict[str, Any]] = [
 __all__ = [
     # 工具函数
     "bilibili_add_subscription",
+    "bilibili_download_collection",
     "bilibili_list_subscriptions",
     "bilibili_trigger_download",
     "bilibili_get_download_status",

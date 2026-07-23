@@ -348,7 +348,7 @@
     "video_name": {
       "type": "string",
       "title": "视频目录名模板",
-      "description": "Jinja2 模板，渲染视频目录名。支持变量 bvid / title / upper_name / upper_mid / pubtime / fav_time",
+      "description": "Jinja2 模板，渲染视频目录名。支持变量 bvid / title / upper_name / upper_mid / pubtime / fav_time。Jellyfin/Emby 刮削建议：电影用 '{{title}} ({{pubtime}})' 命名目录，与同名 .nfo 共存；剧集（多 P 视频）目录名即节目名，配合 page_name 的 S01E0x 命名即可被识别为分集",
       "default": "{{title}}",
       "x-component": "input",
       "maxLength": 256
@@ -356,7 +356,7 @@
     "page_name": {
       "type": "string",
       "title": "分 P 文件名模板",
-      "description": "Jinja2 模板，渲染分 P 文件名（不含扩展名）。在 video 变量基础上追加 ptitle / pid 变量",
+      "description": "Jinja2 模板，渲染分 P 文件名（不含扩展名）。在 video 变量基础上追加 ptitle / pid 变量。Jellyfin/Emby 刮削建议：单 P 视频用 '{{title}}' 与同名 .nfo 共存即被识别为电影；多 P 视频必须用 '{{title}} - S01E{{pid}}' 这种含 'S01E0x' 后缀的命名，Jellyfin 才会将其识别为剧集分集并自动关联 tvshow.nfo",
       "default": "{{bvid}}",
       "x-component": "input",
       "maxLength": 256

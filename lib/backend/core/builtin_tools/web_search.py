@@ -192,6 +192,8 @@ class WebSearchSkill:
             # 降级到 DuckDuckGo 路径继续执行
 
         # DuckDuckGo 路径（默认 provider 或 SearXNG 降级）
+        # DuckDuckGo 在部分网络环境（如中国大陆）可能不可达，
+        # 失败时自动降级到 Bing HTML 抓取（cn.bing.com 通常可达）。
         try:
             results = await self._duckduckgo_search(query, max_results)
             logger.info(
@@ -204,21 +206,49 @@ class WebSearchSkill:
                 "count": len(results),
                 "provider": "duckduckgo",
             }
-        except asyncio.TimeoutError:
-            logger.warning(f"Search timed out for query: {query}")
-            return {"success": False, "error": "搜索请求超时"}
-        except (http.client.HTTPException, OSError) as e:
-            # 网络错误：DNS 解析失败、连接被拒、SSL 握手失败等
-            logger.error(f"DuckDuckGo search network error: {e}")
-            return {"success": False, "error": f"搜索失败: 网络错误 - {str(e)}"}
-        except ValueError as e:
-            # SSRF 校验失败或 HTML 解析异常
-            logger.error(f"DuckDuckGo search invalid data: {e}")
-            return {"success": False, "error": f"搜索失败: {str(e)}"}
+        except (asyncio.TimeoutError, http.client.HTTPException, OSError, ValueError) as e:
+            # DuckDuckGo 超时/网络错误/解析失败，降级到 Bing
+            logger.warning(
+                f"DuckDuckGo search failed, falling back to Bing: {type(e).__name__}: {e}"
+            )
         except Exception as e:
-            # 安全网：捕获未知异常，避免 Agent 崩溃
-            logger.error(f"Search unexpected error: {e}")
-            return {"success": False, "error": f"搜索失败: {str(e)}"}
+            # 未知异常也尝试 Bing 降级，确保搜索可用性
+            logger.warning(
+                f"DuckDuckGo search unexpected error, falling back to Bing: {e}"
+            )
+
+        # Bing 降级路径（DuckDuckGo 不可达时的最终兜底）
+        try:
+            results = await self._bing_search(query, max_results)
+            if results:
+                logger.info(
+                    f"Bing search completed: query='{query}', results={len(results)}"
+                )
+                return {
+                    "success": True,
+                    "query": query,
+                    "results": results,
+                    "count": len(results),
+                    "provider": "bing",
+                }
+            # Bing 返回空结果，视为失败继续走错误返回
+            logger.warning(f"Bing search returned no results: query='{query}'")
+        except (asyncio.TimeoutError, http.client.HTTPException, OSError, ValueError) as e:
+            logger.error(f"Bing search error: {e}")
+        except Exception as e:
+            logger.error(f"Bing search unexpected error: {e}")
+
+        # 所有 provider 均失败，返回结构化错误与配置建议
+        return {
+            "success": False,
+            "error": (
+                "搜索失败：DuckDuckGo 与 Bing 均不可达。"
+                "可能原因：当前网络环境无法访问海外搜索引擎，"
+                "或未配置可用的 SearXNG 实例。"
+                "建议：在系统设置中配置一个可达的 SearXNG provider base_url，"
+                "或检查网络代理配置。"
+            ),
+        }
 
     async def _duckduckgo_search(self, query: str, max_results: int) -> List[Dict[str, str]]:
         """
@@ -248,6 +278,102 @@ class WebSearchSkill:
             # 网络错误/SSRF 校验失败/HTML 解析异常等，原样抛出由上层处理
             logger.error(f"DuckDuckGo search error: {e}")
             raise
+
+        return results
+
+    async def _bing_search(self, query: str, max_results: int) -> List[Dict[str, str]]:
+        """
+        通过 Bing HTML 页面提取搜索结果（DuckDuckGo 不可达时的降级方案）。
+
+        使用 cn.bing.com（中国大陆可达）的 HTML 搜索接口，
+        解析 ``<li class="b_algo">`` 结果块中的标题、链接与摘要。
+        不依赖第三方搜索库，直接解析 HTML。
+        """
+        import html as html_module
+
+        encoded_query = urllib.parse.quote_plus(query)
+        # cn.bing.com 在中国大陆通常可达，作为 DuckDuckGo 的降级方案
+        url_path = f"/search?q={encoded_query}&count={max_results}&setlang=zh-CN"
+
+        results: List[Dict[str, str]] = []
+        try:
+            raw_html = await asyncio.wait_for(
+                self._http_get("cn.bing.com", url_path),
+                timeout=REQUEST_TIMEOUT,
+            )
+            results = self._parse_bing_html(raw_html, max_results)
+        except asyncio.TimeoutError:
+            logger.warning(f"Bing search timed out for query: {query}")
+            raise
+        except (http.client.HTTPException, OSError, ValueError) as e:
+            logger.error(f"Bing search error: {e}")
+            raise
+
+        return results
+
+    def _parse_bing_html(self, html_content: str, max_results: int) -> List[Dict[str, str]]:
+        """
+        从 Bing HTML 搜索结果中提取链接和摘要。
+
+        Bing 结果块结构：``<li class="b_algo">...<h2><a href="...">title</a></h2>...<p>snippet</p>...``。
+        使用简单字符串解析，不依赖 BeautifulSoup。
+        """
+        import html as html_module
+
+        results: List[Dict[str, str]] = []
+        search_start = 0
+
+        while len(results) < max_results:
+            # Bing 结果块以 <li class="b_algo"> 开头
+            block_marker = 'class="b_algo"'
+            block_pos = html_content.find(block_marker, search_start)
+            if block_pos == -1:
+                break
+
+            # 在当前结果块内查找下一个结果块的边界，避免跨块提取
+            next_block_pos = html_content.find(block_marker, block_pos + len(block_marker))
+            block_end = next_block_pos if next_block_pos != -1 else len(html_content)
+            block_html = html_content[block_pos:block_end]
+
+            # 提取标题与链接：<h2><a href="...">title</a></h2>
+            href = ""
+            title = ""
+            h2_pos = block_html.find("<h2")
+            if h2_pos != -1:
+                a_start = block_html.find('<a', h2_pos)
+                if a_start != -1:
+                    href_start = block_html.find('href="', a_start)
+                    if href_start != -1:
+                        href_start += len('href="')
+                        href_end = block_html.find('"', href_start)
+                        href = block_html[href_start:href_end]
+                    # 标题在 <a ...>title</a>
+                    title_start = block_html.find('>', a_start) + 1
+                    title_end = block_html.find('</a>', title_start)
+                    if title_end > title_start:
+                        title = block_html[title_start:title_end]
+                        title = self._strip_html_tags(title)
+                        title = html_module.unescape(title).strip()
+
+            # 提取摘要：<p>snippet</p> 或 <div class="b_caption"><p>...</p>
+            snippet = ""
+            p_pos = block_html.find("<p", h2_pos if h2_pos != -1 else 0)
+            if p_pos != -1:
+                snippet_start = block_html.find('>', p_pos) + 1
+                snippet_end = block_html.find('</p>', snippet_start)
+                if snippet_end > snippet_start:
+                    snippet = block_html[snippet_start:snippet_end]
+                    snippet = self._strip_html_tags(snippet)
+                    snippet = html_module.unescape(snippet).strip()
+
+            if href and title:
+                results.append({
+                    "title": title[:200],
+                    "url": href,
+                    "snippet": snippet[:500],
+                })
+
+            search_start = block_pos + len(block_marker)
 
         return results
 

@@ -45,6 +45,8 @@ import type {
   ChatUndoOperationResponse,
   IssueFeedbackPayload,
   IssueFeedbackSubmitResponse,
+  ChatTaskSummary,
+  ChatTaskStatus,
 } from './types'
 
 // 向后兼容：保持原有命名导出
@@ -94,6 +96,8 @@ interface ChatStreamEvent {
   task?: ApiObject | null
   tool?: ApiObject | null
   usage?: ApiObject | null
+  /** 后端注入的事件序列号，用于断连重连时定位 from_seq */
+  _seq?: number
   [key: string]: unknown
 }
 
@@ -294,6 +298,9 @@ export interface ChatExecutionOptions {
   thinking_depth?: number
   max_tool_call_rounds?: number
   continuation?: ChatContinuationPayload
+  // 任务 ID：前端生成，用于支持 SSE 断连重连恢复
+  // 缺省时后端自动生成并在响应头 X-Chat-Task-Id 中返回
+  task_id?: string
 }
 
 export interface ChatResponsePayload {
@@ -366,6 +373,9 @@ const buildChatRequestPayload = (
   if (executionOptions?.continuation) {
     payload.continuation = executionOptions.continuation
   }
+  if (executionOptions?.task_id) {
+    payload.task_id = executionOptions.task_id
+  }
 
   return payload
 }
@@ -395,7 +405,8 @@ export const chatAPI = {
     onError?: (error: unknown) => void,
     requestOptions?: { signal?: AbortSignal; _csrfRetried?: boolean },
     executionOptions?: ChatExecutionOptions,
-    attachments?: ChatAttachmentPayload[]
+    attachments?: ChatAttachmentPayload[],
+    onTaskId?: (taskId: string) => void
   ) => {
     let isErrorLogged = false
     const url = `${API_BASE_URL}/chat`
@@ -566,6 +577,23 @@ export const chatAPI = {
         }
       }
 
+      // 读取后端返回的 task_id（用于 SSE 断连重连恢复）
+      // 后端在响应头 X-Chat-Task-Id 中返回 task_id，前端记录后切回页面时可重连
+      // 放在 CSRF 重试之后，确保从最终有效的 response 读取
+      const responseTaskId = response.headers.get('x-chat-task-id')
+      if (responseTaskId && onTaskId) {
+        try {
+          onTaskId(responseTaskId)
+        } catch (callbackErr) {
+          appLogger.warning({
+            event: 'chat_stream_task_id_callback_error',
+            module: 'api',
+            message: 'onTaskId 回调异常',
+            extra: { error: String(callbackErr) },
+          })
+        }
+      }
+
       appLogger.info({
         event: 'api_response',
         module: 'api',
@@ -670,6 +698,136 @@ export const chatAPI = {
   /** 取消正在执行的 Agent 任务 */
   cancelSession: (sessionId: string) =>
     api.post<ChatCancelResponse>(`/chat/cancel/${sessionId}`),
+
+  /** 取消指定聊天任务（按 task_id，级联清理子任务） */
+  cancelTask: (taskId: string) =>
+    api.post<{ status: string; task_id: string; message: string }>(`/chat/cancel-task/${taskId}`),
+
+  /** 列出当前用户的聊天任务（用于切回页面时检查可恢复任务） */
+  listTasks: (params?: { session_id?: string; include_finished?: boolean }) =>
+    api.get<{ tasks: Array<ChatTaskSummary>; count: number }>('/chat/tasks', { params }),
+
+  /** 查询指定聊天任务状态 */
+  getTaskStatus: (taskId: string) =>
+    api.get<ChatTaskStatus>(`/chat/tasks/${taskId}`),
+
+  /**
+   * 重连订阅聊天任务 SSE 流。
+   * 前端切换页面或网络断开后，通过 task_id 重连订阅任务事件流，
+   * 后端先回放历史事件（seq >= from_seq）再继续推送实时事件。
+   */
+  resubscribeStream: async (
+    taskId: string,
+    onEvent?: (event: ChatStreamEvent) => void,
+    onError?: (error: unknown) => void,
+    requestOptions?: { signal?: AbortSignal; from_seq?: number }
+  ) => {
+    let isErrorLogged = false
+    const fromSeq = requestOptions?.from_seq ?? 0
+    const url = `${API_BASE_URL}/chat/stream/${encodeURIComponent(taskId)}?from_seq=${fromSeq}`
+    const requestId = generateRequestId()
+
+    appLogger.info({
+      event: 'api_request',
+      module: 'api',
+      action: 'GET',
+      status: 'start',
+      request_id: requestId,
+      message: 'resubscribe chat task stream',
+      extra: { url, task_id: taskId, from_seq: fromSeq },
+    })
+
+    try {
+      const apiKey = getCachedApiKey()
+      const csrfToken = getCachedCsrfToken()
+      const headers: Record<string, string> = {
+        'X-Request-Id': requestId,
+      }
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`
+      }
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken
+      }
+      for (const hKey of Object.keys(headers)) {
+        // eslint-disable-next-line no-control-regex
+        headers[hKey] = headers[hKey].replace(/[^\x00-\xFF]/g, '')
+      }
+
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers,
+        signal: requestOptions?.signal,
+      })
+
+      if (!response.ok) {
+        isErrorLogged = true
+        const err = await response.json().catch(() => ({}))
+        const errorMessage = err?.detail || err?.error?.message || 'Resubscribe failed'
+        appLogger.error({
+          event: 'api_response',
+          module: 'api',
+          action: 'GET',
+          status: 'failure',
+          request_id: requestId,
+          message: 'resubscribe failed',
+          extra: { url, status_code: response.status, error: errorMessage },
+        })
+        throw createStreamError(errorMessage)
+      }
+
+      if (!response.body) throw new Error('ReadableStream not yet supported in this browser.')
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      let done = false
+      let buffer = ''
+      const MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+      let totalBytes = 0
+
+      while (!done) {
+        const { value, done: doneReading } = await reader.read()
+        done = doneReading
+        if (value) {
+          totalBytes += value.byteLength
+          if (totalBytes > MAX_RESPONSE_BYTES) {
+            void reader.cancel().catch(() => {})
+            throw new Error('响应超过 10MB 上限，已中止')
+          }
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          parseSSELines(lines, onEvent, onError, 'chunk')
+        }
+      }
+
+      if (buffer.trim()) {
+        const remainingLines = buffer.trim().split('\n')
+        parseSSELines(remainingLines, onEvent, onError, 'tail')
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        throw e
+      }
+      if (!isErrorLogged) {
+        appLogger.error({
+          event: 'api_response',
+          module: 'api',
+          action: 'GET',
+          status: 'failure',
+          request_id: requestId,
+          message: 'resubscribe stream failed',
+          extra: {
+            url,
+            error: e instanceof Error ? e.message : String(e),
+          },
+        })
+      }
+      onError?.(e)
+      throw e
+    }
+  },
 
   /** 提交用户消息反馈（点赞/点踩） */
   sendFeedback: (payload: ChatFeedbackPayload) =>

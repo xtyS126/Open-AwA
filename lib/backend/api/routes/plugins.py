@@ -113,8 +113,14 @@ def _resolve_plugin_root_dir(plugin_name: str) -> Optional[str]:
     兼容两种插件入口结构：
     - 扁平结构：``<plugin_root>/plugin.py``（内置插件常用）
     - 嵌套结构：``<plugin_root>/src/index.py``（外部插件常用）
+
+    查找范围包括两个目录：
+    - 用户插件目录：项目根 ``plugins/``（plugins_dir）
+    - 内置插件目录：``lib/backend/plugins/``（bilibili-toolkit-builtin 等系统内置插件）
     """
     plugins_base = PathLib(_get_plugin_manager().plugins_dir).resolve()
+    # 内置插件目录：lib/backend/plugins/（本文件位于 lib/backend/api/routes/）
+    backend_plugins_base = PathLib(__file__).resolve().parent.parent.parent / "plugins"
 
     _ensure_plugin_discovered(plugin_name)
     metadata = _get_plugin_manager().plugin_metadata.get(plugin_name, {})
@@ -123,31 +129,36 @@ def _resolve_plugin_root_dir(plugin_name: str) -> Optional[str]:
         entry_file = PathLib(metadata_path).resolve()
         # 扁平结构：入口文件所在目录直接包含 manifest.json
         direct_root = entry_file.parent
-        if (direct_root / "manifest.json").is_file() and direct_root.is_relative_to(plugins_base):
+        if (direct_root / "manifest.json").is_file() and (
+            direct_root.is_relative_to(plugins_base)
+            or direct_root.is_relative_to(backend_plugins_base)
+        ):
             return str(direct_root)
         # 嵌套结构：约定插件入口通常为 <plugin_root>/src/index.py
         nested_root = direct_root.parent
-        if nested_root.is_dir() and nested_root.is_relative_to(plugins_base):
+        if nested_root.is_dir() and (
+            nested_root.is_relative_to(plugins_base)
+            or nested_root.is_relative_to(backend_plugins_base)
+        ):
             return str(nested_root)
 
-    # 回退：直接拼接插件名（兼容下划线/横线命名差异）
+    # 回退：在用户插件目录与内置插件目录中查找
     name_variants = [plugin_name, plugin_name.replace("-", "_")]
-    for variant in name_variants:
-        direct_candidate = plugins_base / variant
-        if direct_candidate.resolve().is_relative_to(plugins_base) and direct_candidate.is_dir():
-            return str(direct_candidate)
-
-    if not plugins_base.is_dir():
-        return None
-
-    for child in os.listdir(str(plugins_base)):
-        child_dir = plugins_base / child
-        if not child_dir.is_dir():
+    for search_base in (plugins_base, backend_plugins_base):
+        if not search_base.is_dir():
             continue
-        manifest_path = child_dir / "manifest.json"
-        manifest = _read_json_file(str(manifest_path))
-        if manifest and str(manifest.get("name", "")).strip() == plugin_name:
-            return str(child_dir)
+        for variant in name_variants:
+            direct_candidate = search_base / variant
+            if direct_candidate.resolve().is_relative_to(search_base) and direct_candidate.is_dir():
+                return str(direct_candidate)
+        for child in os.listdir(str(search_base)):
+            child_dir = search_base / child
+            if not child_dir.is_dir():
+                continue
+            manifest_path = child_dir / "manifest.json"
+            manifest = _read_json_file(str(manifest_path))
+            if manifest and str(manifest.get("name", "")).strip() == plugin_name:
+                return str(child_dir)
     return None
 
 

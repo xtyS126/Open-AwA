@@ -2167,7 +2167,13 @@ class ExecutionLayer:
                     and not pm.load_plugin(resolved_plugin_name)
                 ):
                     return {"ok": False, "error": f"Failed to load plugin: {resolved_plugin_name}"}
-                result = await pm.execute_plugin_async(resolved_plugin_name, plugin_method, **func_args)
+                result = await pm.execute_registered_tool_async(
+                    resolved_plugin_name,
+                    plugin_method,
+                    db=context.get("db"),
+                    user_id=context.get("user_id"),
+                    **func_args,
+                )
                 # 检查插件返回结果状态，非成功状态标记为失败
                 if isinstance(result, dict) and result.get("status") == "error":
                     return {"ok": False, "error": result.get("message", "Plugin returned error"), "result": result, "tool_name": func_name}

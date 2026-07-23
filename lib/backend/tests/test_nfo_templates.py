@@ -251,11 +251,13 @@ def test_render_movie_nfo_uniqueid_aid(sample_video: VideoInfo):
 
 
 def test_render_movie_nfo_empty_tags(sample_video: VideoInfo):
-    """tags 为空时 <genre> 应为空字符串。"""
+    """tags 为空时应省略 <genre> 与 <tag> 元素（避免 Jellyfin 创建空分类）。"""
     sample_video.tags = []
     nfo = render_movie_nfo(sample_video)
     root = ET.fromstring(nfo)
-    assert root.findtext("genre") == ""
+    # tags 为空时直接省略 genre/tag 元素，比输出空字符串更干净
+    assert root.find("genre") is None
+    assert root.find("tag") is None
 
 
 def test_render_movie_nfo_empty_desc(sample_video: VideoInfo):
@@ -352,11 +354,12 @@ def test_render_tvshow_nfo_country_studio_fixed(sample_video: VideoInfo):
 
 
 def test_render_tvshow_nfo_empty_tags(sample_video: VideoInfo):
-    """tags 为空时 <genre> 应为空字符串。"""
+    """tags 为空时应省略 <genre> 与 <tag> 元素。"""
     sample_video.tags = []
     nfo = render_tvshow_nfo(sample_video)
     root = ET.fromstring(nfo)
-    assert root.findtext("genre") == ""
+    assert root.find("genre") is None
+    assert root.find("tag") is None
 
 
 # ---------------------------------------------------------------------------
@@ -575,3 +578,325 @@ def test_render_upper_nfo_only_three_fields():
     root = ET.fromstring(nfo)
     children = [child.tag for child in root]
     assert set(children) == {"title", "uniqueid", "country"}
+
+
+# ---------------------------------------------------------------------------
+# Jellyfin/Emby 兼容性增强字段测试
+# ---------------------------------------------------------------------------
+
+
+def test_render_movie_nfo_outline_truncated(sample_video: VideoInfo):
+    """Movie NFO <outline> 应为 desc 截断至 150 字符。"""
+    sample_video.desc = "a" * 200  # 200 字符
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    outline = root.findtext("outline") or ""
+    assert len(outline) == 150
+    assert outline == "a" * 150
+
+
+def test_render_movie_nfo_outline_empty_when_desc_empty(sample_video: VideoInfo):
+    """desc 为空时 <outline> 应为空字符串。"""
+    sample_video.desc = ""
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("outline") == ""
+
+
+def test_render_movie_nfo_runtime_from_first_page(sample_video: VideoInfo):
+    """Movie NFO <runtime> 应取 pages[0].duration 转换为分钟。"""
+    # sample_video.pages[0].duration=120 秒 → 2 分钟
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("runtime") == "2"
+
+
+def test_render_movie_nfo_runtime_minimum_one_minute(sample_video: VideoInfo):
+    """duration 不足 1 分钟时 runtime 应至少为 1。"""
+    sample_video.pages[0].duration = 30  # 30 秒
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("runtime") == "1"
+
+
+def test_render_movie_nfo_runtime_zero_when_no_pages():
+    """pages 为空时 runtime 应为 0。"""
+    video = VideoInfo(
+        bvid="BV1xx", aid=1, title="t", upper_name="u", pages=[], pubtime=0
+    )
+    nfo = render_movie_nfo(video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("runtime") == "0"
+
+
+def test_render_movie_nfo_sorttitle_equals_title(sample_video: VideoInfo):
+    """<sorttitle> 应与 <title> 一致。"""
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("sorttitle") == root.findtext("title")
+
+
+def test_render_movie_nfo_mpaa_always_nr(sample_video: VideoInfo):
+    """<mpaa> 应固定为 NR。"""
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("mpaa") == "NR"
+
+
+def test_render_movie_nfo_uniqueid_default_attribute(sample_video: VideoInfo):
+    """<uniqueid> 应含 default="true" 属性，告知 Jellyfin 用此 ID 作主匹配键。"""
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    uid = root.find("uniqueid")
+    assert uid is not None
+    assert uid.get("default") == "true"
+
+
+def test_render_movie_nfo_multiple_genres(sample_video: VideoInfo):
+    """每个 tag 应输出一个 <genre> 元素，便于 Jellyfin 多分类过滤。"""
+    sample_video.tags = ["科技", "知识", "人工智能"]
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    genres = [g.text for g in root.findall("genre")]
+    assert genres == ["科技", "知识", "人工智能"]
+
+
+def test_render_movie_nfo_multiple_tags(sample_video: VideoInfo):
+    """每个 tag 应同时输出一个 <tag> 元素，Jellyfin 区分 genre 与 tag 两维。"""
+    sample_video.tags = ["科技", "知识"]
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    tags = [t.text for t in root.findall("tag")]
+    assert tags == ["科技", "知识"]
+
+
+def test_render_movie_nfo_credits_is_upper_name(sample_video: VideoInfo):
+    """<credits> 应为 UP 主名（作为内容创作者）。"""
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("credits") == "测试UP主"
+
+
+def test_render_movie_nfo_director_is_upper_name(sample_video: VideoInfo):
+    """<director> 应为 UP 主名。"""
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("director") == "测试UP主"
+
+
+def test_render_movie_nfo_actor_thumb_url(sample_video: VideoInfo):
+    """<actor><thumb> 应含 UP 主头像 URL。"""
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    actor = root.find("actor")
+    assert actor is not None
+    assert actor.findtext("thumb") == "https://example.com/face.jpg"
+
+
+def test_render_movie_nfo_actor_profile_url(sample_video: VideoInfo):
+    """<actor><profile> 应含 UP 主空间 URL。"""
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    actor = root.find("actor")
+    assert actor is not None
+    assert actor.findtext("profile") == "https://space.bilibili.com/12345"
+
+
+def test_render_movie_nfo_actor_thumb_omitted_when_no_face():
+    """upper_face 为空时应省略 <actor><thumb>。"""
+    video = VideoInfo(
+        bvid="BV1xx", aid=1, title="t",
+        upper_mid=123, upper_name="u", upper_face="",
+        pages=[Page(cid=1, page=1, name="p", duration=60)],
+    )
+    nfo = render_movie_nfo(video)
+    root = ET.fromstring(nfo)
+    actor = root.find("actor")
+    assert actor is not None
+    assert actor.find("thumb") is None
+
+
+def test_render_movie_nfo_actor_profile_omitted_when_no_mid():
+    """upper_mid=0 时应省略 <actor><profile>。"""
+    video = VideoInfo(
+        bvid="BV1xx", aid=1, title="t",
+        upper_mid=0, upper_name="u", upper_face="https://x/f.jpg",
+        pages=[Page(cid=1, page=1, name="p", duration=60)],
+    )
+    nfo = render_movie_nfo(video)
+    root = ET.fromstring(nfo)
+    actor = root.find("actor")
+    assert actor is not None
+    assert actor.find("profile") is None
+
+
+def test_render_movie_nfo_thumb_poster_and_fanart(sample_video: VideoInfo):
+    """应输出 <thumb aspect="poster"> 与 <thumb aspect="fanart">，URL 均为视频封面。"""
+    nfo = render_movie_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    poster = root.find('thumb[@aspect="poster"]')
+    fanart = root.find('thumb[@aspect="fanart"]')
+    assert poster is not None
+    assert fanart is not None
+    assert poster.text == "https://example.com/cover.jpg"
+    assert fanart.text == "https://example.com/cover.jpg"
+
+
+def test_render_movie_nfo_thumb_omitted_when_no_cover():
+    """cover 为空时应省略 <thumb> 元素。"""
+    video = VideoInfo(
+        bvid="BV1xx", aid=1, title="t",
+        upper_mid=1, upper_name="u", cover="",
+        pages=[Page(cid=1, page=1, name="p", duration=60)],
+    )
+    nfo = render_movie_nfo(video)
+    root = ET.fromstring(nfo)
+    assert root.find("thumb") is None
+
+
+def test_render_tvshow_nfo_outline(sample_video: VideoInfo):
+    """TVShow NFO 应含 <outline> 短简介。"""
+    nfo = render_tvshow_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("outline") is not None
+
+
+def test_render_tvshow_nfo_runtime_sum_of_all_pages(sample_video: VideoInfo):
+    """TVShow NFO <runtime> 应为所有分 P duration 之和（分钟）。
+
+    sample_video: pages[0].duration=120 + pages[1].duration=240 = 360 秒 = 6 分钟
+    """
+    nfo = render_tvshow_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("runtime") == "6"
+
+
+def test_render_tvshow_nfo_uniqueid_default_attribute(sample_video: VideoInfo):
+    """TVShow NFO <uniqueid> 应含 default="true"。"""
+    nfo = render_tvshow_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    uid = root.find("uniqueid")
+    assert uid is not None
+    assert uid.get("default") == "true"
+
+
+def test_render_tvshow_nfo_multiple_genres(sample_video: VideoInfo):
+    """TVShow NFO 每个 tag 应输出一个 <genre>。"""
+    sample_video.tags = ["科技", "知识"]
+    nfo = render_tvshow_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    genres = [g.text for g in root.findall("genre")]
+    assert genres == ["科技", "知识"]
+
+
+def test_render_tvshow_nfo_actor_thumb_and_profile(sample_video: VideoInfo):
+    """TVShow NFO <actor> 应含 thumb 与 profile。"""
+    nfo = render_tvshow_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    actor = root.find("actor")
+    assert actor is not None
+    assert actor.findtext("thumb") == "https://example.com/face.jpg"
+    assert actor.findtext("profile") == "https://space.bilibili.com/12345"
+
+
+def test_render_tvshow_nfo_sorttitle_and_mpaa(sample_video: VideoInfo):
+    """TVShow NFO 应含 <sorttitle> 与 <mpaa>。"""
+    nfo = render_tvshow_nfo(sample_video)
+    root = ET.fromstring(nfo)
+    assert root.findtext("sorttitle") == "测试视频标题"
+    assert root.findtext("mpaa") == "NR"
+
+
+def test_render_episode_nfo_showtitle(sample_video: VideoInfo, sample_page: Page):
+    """Episode NFO <showtitle> 应为视频标题，用于关联父 TVShow。"""
+    nfo = render_episode_nfo(sample_video, sample_page)
+    root = ET.fromstring(nfo)
+    assert root.findtext("showtitle") == "测试视频标题"
+
+
+def test_render_episode_nfo_outline(sample_video: VideoInfo, sample_page: Page):
+    """Episode NFO 应含 <outline> 短简介。"""
+    nfo = render_episode_nfo(sample_video, sample_page)
+    root = ET.fromstring(nfo)
+    assert root.findtext("outline") is not None
+
+
+def test_render_episode_nfo_runtime_from_page(sample_video: VideoInfo, sample_page: Page):
+    """Episode NFO <runtime> 应取 page.duration 分钟。
+
+    sample_page.duration=120 秒 → 2 分钟
+    """
+    nfo = render_episode_nfo(sample_video, sample_page)
+    root = ET.fromstring(nfo)
+    assert root.findtext("runtime") == "2"
+
+
+def test_render_episode_nfo_runtime_minimum_one(sample_video: VideoInfo):
+    """page.duration 不足 1 分钟时 runtime 应为 1。"""
+    page = Page(cid=999, page=1, name="p", duration=15)
+    nfo = render_episode_nfo(sample_video, page)
+    root = ET.fromstring(nfo)
+    assert root.findtext("runtime") == "1"
+
+
+def test_render_episode_nfo_uniqueid_default_attribute(
+    sample_video: VideoInfo, sample_page: Page
+):
+    """Episode NFO <uniqueid> 应含 default="true"。"""
+    nfo = render_episode_nfo(sample_video, sample_page)
+    root = ET.fromstring(nfo)
+    uid = root.find("uniqueid")
+    assert uid is not None
+    assert uid.get("default") == "true"
+
+
+def test_render_episode_nfo_thumb_url(sample_video: VideoInfo, sample_page: Page):
+    """Episode NFO <thumb> 应含视频封面 URL。"""
+    nfo = render_episode_nfo(sample_video, sample_page)
+    root = ET.fromstring(nfo)
+    assert root.findtext("thumb") == "https://example.com/cover.jpg"
+
+
+def test_render_episode_nfo_thumb_omitted_when_no_cover(
+    sample_video: VideoInfo, sample_page: Page
+):
+    """cover 为空时应省略 <thumb> 元素。"""
+    sample_video.cover = ""
+    nfo = render_episode_nfo(sample_video, sample_page)
+    root = ET.fromstring(nfo)
+    assert root.find("thumb") is None
+
+
+def test_render_movie_nfo_xml_well_formed(sample_video: VideoInfo):
+    """Movie NFO 应为合法 XML（ElementTree 可解析）。"""
+    nfo = render_movie_nfo(sample_video)
+    # 解析不抛异常即合法
+    ET.fromstring(nfo)
+
+
+def test_render_tvshow_nfo_xml_well_formed(sample_video: VideoInfo):
+    """TVShow NFO 应为合法 XML。"""
+    nfo = render_tvshow_nfo(sample_video)
+    ET.fromstring(nfo)
+
+
+def test_render_episode_nfo_xml_well_formed(
+    sample_video: VideoInfo, sample_page: Page
+):
+    """Episode NFO 应为合法 XML。"""
+    nfo = render_episode_nfo(sample_video, sample_page)
+    ET.fromstring(nfo)
+
+
+def test_render_movie_nfo_no_trailing_newline_after_enhance(sample_video: VideoInfo):
+    """增强字段后 NFO 结尾仍不应有换行。"""
+    nfo = render_movie_nfo(sample_video)
+    assert not nfo.endswith("\n")
+
+
+def test_render_episode_nfo_no_trailing_newline_after_enhance(
+    sample_video: VideoInfo, sample_page: Page
+):
+    """增强字段后 Episode NFO 结尾仍不应有换行。"""
+    nfo = render_episode_nfo(sample_video, sample_page)
+    assert not nfo.endswith("\n")

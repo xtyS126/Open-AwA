@@ -32,7 +32,6 @@ from .budget_tracker import BudgetTracker
 from .content_replacement import ContentReplacementState, enforce_tool_result_budget
 from .soul_state import SoulStateManager
 from core.streaming_events import (
-    emit_task_event,
     emit_tool_event,
     emit_subagent_start_event,
     emit_task_created_event,
@@ -1343,12 +1342,6 @@ class AIAgent:
                                 description=f"第 {round_count} 轮工具调用前快照",
                             )
 
-                        # 发射 task 事件
-                        yield emit_task_event({
-                            "step_count": len(tool_calls),
-                            "steps": [{"name": tc.get("function", {}).get("name", "unknown")} for tc in tool_calls],
-                        })
-
                         # 执行每个工具
                         tool_results = []
                         for tc in tool_calls:
@@ -1362,12 +1355,15 @@ class AIAgent:
                             spawn_agent_type = "Explore"
                             spawn_description = ""
 
+                            # 对所有工具解析参数：emit_tool_event 的 input 字段需要展示真实入参，
+                            # 不能只在 task_spawn_agent 分支内赋值，否则会触发 UnboundLocalError
+                            func_args_str = tc.get("function", {}).get("arguments", "{}")
+                            try:
+                                func_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
+                            except json.JSONDecodeError:
+                                func_args = {}
+
                             if tool_name == "task_spawn_agent":
-                                func_args_str = tc.get("function", {}).get("arguments", "{}")
-                                try:
-                                    func_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
-                                except json.JSONDecodeError:
-                                    func_args = {}
                                 spawn_agent_type = func_args.get("agent_type", "Explore")
                                 spawn_description = func_args.get("description", "")
 
@@ -1376,6 +1372,7 @@ class AIAgent:
                                 "kind": tool_kind,
                                 "name": tool_name,
                                 "status": "running",
+                                "input": func_args if isinstance(func_args, dict) else {},
                             })
 
                             if tool_name == "task_spawn_agent":

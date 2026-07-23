@@ -2006,6 +2006,17 @@ class PluginManager:
         统一解析插件执行入口。
         对直接方法调用保持兼容；对仅通过 get_tools 暴露的历史工具，自动回落到 execute(action=<tool_name>)。
         """
+        # help 工具优先路由到 BasePlugin.get_help，避免被 _normalize_tool_definition
+        # 误判为"未知 action"并落到 plugin.execute(action="help")（如 system-tools
+        # 的 execute 不识别 help，会返回"未知操作: help"）。
+        # 必须在通用 hasattr 检查之前处理，因为部分插件未直接暴露 help 方法。
+        if (
+            method == "help"
+            and hasattr(plugin_instance, "get_help")
+            and callable(getattr(plugin_instance, "get_help"))
+        ):
+            return "get_help", kwargs
+
         if hasattr(plugin_instance, method) and callable(getattr(plugin_instance, method)):
             return method, kwargs
 
@@ -2022,9 +2033,6 @@ class PluginManager:
             merged_kwargs = dict(default_params) if isinstance(default_params, dict) else {}
             merged_kwargs.update(kwargs)
             return resolved_method, merged_kwargs
-
-        if method == "help" and hasattr(plugin_instance, "get_help") and callable(getattr(plugin_instance, "get_help")):
-            return "get_help", kwargs
 
         return method, kwargs
 
@@ -2130,6 +2138,28 @@ class PluginManager:
         filtered_kwargs = self._filter_plugin_method_kwargs(plugin_instance, resolved_method, resolved_kwargs)
         result = await sandbox.execute_plugin(plugin_instance, resolved_method, **filtered_kwargs)
         return self._normalize_plugin_execution_result(result)
+
+    async def execute_registered_tool_async(self, plugin_name: str, tool_name: str, **kwargs) -> Dict[str, Any]:
+        """执行插件显式注册的工具处理器，并保留插件状态与权限检查。"""
+        if plugin_name not in self.loaded_plugins:
+            return {"status": "error", "message": f"Plugin '{plugin_name}' is not loaded"}
+        try:
+            self._enforce_runtime_permissions(plugin_name)
+        except PermissionError as exc:
+            return {"status": "permission_required", "message": str(exc)}
+        if self.state_machine.get_state(plugin_name) != PluginState.ENABLED:
+            return {"status": "error", "message": f"Plugin '{plugin_name}' is not enabled"}
+        for definition in self.get_plugin_tools(plugin_name):
+            if str(definition.get("name") or "") != tool_name:
+                continue
+            handler = definition.get("handler")
+            if not callable(handler):
+                break
+            result = handler(**kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+            return {"status": "success", "result": result, "data": result}
+        return await self.execute_plugin_async(plugin_name, tool_name, **kwargs)
 
     def _normalize_plugin_execution_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """

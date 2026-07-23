@@ -293,7 +293,7 @@ class TestProviderSwitching:
     async def test_search_returns_error_when_both_providers_fail(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """searxng 与 duckduckgo 都失败时，应返回错误结构，不抛异常给上层。"""
+        """searxng、duckduckgo、bing 都失败时，应返回错误结构，不抛异常给上层。"""
         # mock provider 配置返回 searxng
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
@@ -326,6 +326,10 @@ class TestProviderSwitching:
         # mock _duckduckgo_search 抛出异常
         mock_ddg = AsyncMock(side_effect=ValueError("DDG also failed"))
         monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
+
+        # mock _bing_search 也抛出异常（Bing 降级也失败）
+        mock_bing = AsyncMock(side_effect=OSError("Bing also failed"))
+        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
 
         result = await web_search_tool_fixture._search({"query": "test", "max_results": 5})
 
@@ -1236,7 +1240,7 @@ class TestDuckDuckGoFailurePaths:
     async def test_search_returns_timeout_error_when_duckduckgo_times_out(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """DuckDuckGo 抛 asyncio.TimeoutError 时应返回搜索超时错误。"""
+        """DuckDuckGo 抛 asyncio.TimeoutError 且 Bing 降级也失败时，应返回搜索失败错误。"""
         import asyncio as _asyncio
 
         monkeypatch.setattr(
@@ -1252,17 +1256,21 @@ class TestDuckDuckGoFailurePaths:
         mock_ddg = AsyncMock(side_effect=_asyncio.TimeoutError())
         monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
 
+        # Bing 降级也超时，验证降级链路完整失败
+        mock_bing = AsyncMock(side_effect=_asyncio.TimeoutError())
+        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
+
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
         assert result["success"] is False
-        assert "超时" in result["error"]
+        assert "搜索失败" in result["error"]
 
     async def test_search_returns_network_error_when_duckduckgo_raises_oserror(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """DuckDuckGo 抛 OSError 时应返回网络错误。"""
+        """DuckDuckGo 抛 OSError 且 Bing 降级也失败时，应返回搜索失败错误。"""
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
             lambda: {
@@ -1276,17 +1284,21 @@ class TestDuckDuckGoFailurePaths:
         mock_ddg = AsyncMock(side_effect=OSError("DNS resolution failed"))
         monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
 
+        # Bing 降级也失败
+        mock_bing = AsyncMock(side_effect=OSError("Bing DNS failed"))
+        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
+
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
         assert result["success"] is False
-        assert "网络错误" in result["error"]
+        assert "搜索失败" in result["error"]
 
     async def test_search_returns_value_error_when_duckduckgo_raises_value_error(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """DuckDuckGo 抛 ValueError（SSRF/HTML 解析）时应返回搜索失败错误。"""
+        """DuckDuckGo 抛 ValueError（SSRF/HTML 解析）且 Bing 降级也失败时，应返回搜索失败错误。"""
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
             lambda: {
@@ -1300,6 +1312,10 @@ class TestDuckDuckGoFailurePaths:
         mock_ddg = AsyncMock(side_effect=ValueError("HTML parse error"))
         monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
 
+        # Bing 降级也失败
+        mock_bing = AsyncMock(side_effect=ValueError("Bing parse error"))
+        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
+
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
@@ -1310,7 +1326,7 @@ class TestDuckDuckGoFailurePaths:
     async def test_search_returns_unexpected_error_when_duckduckgo_raises_generic_exception(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """DuckDuckGo 抛未知异常时应返回搜索失败错误（安全网捕获）。"""
+        """DuckDuckGo 抛未知异常且 Bing 降级也失败时，应返回搜索失败错误（安全网捕获）。"""
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
             lambda: {
@@ -1324,6 +1340,10 @@ class TestDuckDuckGoFailurePaths:
         mock_ddg = AsyncMock(side_effect=RuntimeError("unexpected"))
         monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
 
+        # Bing 降级也失败
+        mock_bing = AsyncMock(side_effect=RuntimeError("Bing unexpected"))
+        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
+
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
@@ -1331,8 +1351,43 @@ class TestDuckDuckGoFailurePaths:
         assert result["success"] is False
         assert "搜索失败" in result["error"]
 
+    async def test_search_falls_back_to_bing_when_duckduckgo_fails(
+        self, web_search_tool_fixture, monkeypatch
+    ) -> None:
+        """DuckDuckGo 失败时应自动降级到 Bing 并返回成功结果。"""
+        import asyncio as _asyncio
 
-# ==================== SearXNG SSRF 模块缺失测试 ====================
+        monkeypatch.setattr(
+            "core.builtin_tools.web_search._load_provider_config",
+            lambda: {
+                "provider": "duckduckgo",
+                "base_url": None,
+                "api_key": None,
+                "extra_config": {},
+            },
+        )
+
+        # DuckDuckGo 超时
+        mock_ddg = AsyncMock(side_effect=_asyncio.TimeoutError())
+        monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
+
+        # Bing 返回有效结果
+        bing_results = [
+            {"title": "Bing Result", "url": "https://example.com/bing", "snippet": "snippet"},
+        ]
+        mock_bing = AsyncMock(return_value=bing_results)
+        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
+
+        result = await web_search_tool_fixture._search(
+            {"query": "test", "max_results": 5}
+        )
+
+        assert result["success"] is True
+        assert result["provider"] == "bing"
+        assert result["count"] == 1
+        assert result["results"][0]["title"] == "Bing Result"
+        mock_ddg.assert_awaited_once()
+        mock_bing.assert_awaited_once()
 
 
 class TestSearxngSsrfModuleMissing:
