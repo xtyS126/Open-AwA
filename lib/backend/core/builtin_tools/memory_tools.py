@@ -1,6 +1,7 @@
 """
 记忆管理内置工具。
-提供 memory_remember / memory_recall / memory_forget / memory_list / memory_stats 五个工具，
+提供 memory_remember / memory_recall / memory_forget / memory_list / memory_stats
+/ memory_search_short_term 六个工具，
 允许 AI Agent 在工具调用环节直接操作用户的长期记忆系统。
 """
 
@@ -10,8 +11,18 @@ from typing import Any, Dict
 
 from loguru import logger
 
-from db.models import SessionLocal
+import db.models as _db_models
 from memory.manager import MemoryManager
+
+
+def _get_session_local():
+    """
+    延迟从 db.models 命名空间查找 SessionLocal。
+
+    与 db.models.base.get_db 设计一致：便于测试通过 monkeypatch
+    替换 db.models.SessionLocal 切换测试数据库。
+    """
+    return _db_models.SessionLocal
 
 
 def _truncate(content: str, max_len: int) -> str:
@@ -25,14 +36,14 @@ class MemoryTools:
 
     def __init__(self):
         self.name = "memory_manager"
-        self.description = "AI 记忆管理工具，提供长期记忆的增删查和统计能力"
+        self.description = "AI 记忆管理工具，提供长期记忆与短期记忆的增删查和统计能力"
         self.version = "1.0.0"
 
     async def initialize(self) -> None:
         pass
 
     def get_tools(self) -> list:
-        return ["remember", "recall", "forget", "list", "stats"]
+        return ["remember", "recall", "forget", "list", "stats", "search_short_term"]
 
     async def execute(self, action: str, **params: Any) -> Dict[str, Any]:
         action_map = {
@@ -41,6 +52,7 @@ class MemoryTools:
             "forget": self._forget,
             "list": self._list,
             "stats": self._stats,
+            "search_short_term": self._search_short_term,
         }
         handler = action_map.get(action)
         if handler is None:
@@ -60,7 +72,7 @@ class MemoryTools:
         # 自动判断记忆层级
         if memory_layer == "auto":
             memory_layer = self._auto_detect_layer(content)
-        manager = MemoryManager(SessionLocal)
+        manager = MemoryManager(_get_session_local())
         memory = await manager.add_long_term_memory(
             content=content.strip(),
             importance=importance,
@@ -78,7 +90,7 @@ class MemoryTools:
         if not isinstance(query, str) or not query.strip():
             return {"success": False, "error": "缺少必填参数: query"}
         limit = max(1, min(20, int(limit or 5)))
-        manager = MemoryManager(SessionLocal)
+        manager = MemoryManager(_get_session_local())
         memories = await manager.search_memories(query=query.strip(), limit=limit)
         if not memories:
             return {"success": True, "memories": [], "message": "未找到相关记忆"}
@@ -95,20 +107,29 @@ class MemoryTools:
         return {"success": True, "memories": items, "count": len(items)}
 
     async def _forget(self, memory_id: int, **_kwargs: Any) -> Dict[str, Any]:
+        """Spec memory-quality-and-short-term-recovery Task 9：
+        软失效实现：设置 ``state="deprecated"`` 与 ``archive_status="deprecated"``，
+        记忆不再注入 LLM 上下文也不再被检索返回，但 DB 行与向量数据保留用于审计。
+        """
         try:
             memory_id = int(memory_id)
         except (TypeError, ValueError):
             return {"success": False, "error": "缺少必填参数: memory_id (需要整数)"}
-        manager = MemoryManager(SessionLocal)
-        # 标记为废弃而非删除，保留记忆数据用于后续分析
+        manager = MemoryManager(_get_session_local())
+        # Spec Task 9：archive_long_term_memory 内部会同步设置 state="deprecated"
+        # 记忆标记为 deprecated 后将不再注入 LLM 上下文也不再被检索返回
         archived = await manager.archive_long_term_memory(memory_id, archive_status="deprecated")
         if archived:
-            return {"success": True, "message": f"已遗忘记忆 #{memory_id}（已归档）"}
+            return {
+                "success": True,
+                "message": f"已遗忘记忆 #{memory_id}（软失效，数据保留用于审计）",
+                "state": "deprecated",
+            }
         return {"success": False, "error": f"记忆不存在: {memory_id}"}
 
     async def _list(self, limit: int = 10, include_archived: bool = False, **_kwargs: Any) -> Dict[str, Any]:
         limit = max(1, min(50, int(limit or 10)))
-        manager = MemoryManager(SessionLocal)
+        manager = MemoryManager(_get_session_local())
         memories = await manager.get_long_term_memories(
             min_importance=0.0,
             limit=limit,
@@ -129,7 +150,7 @@ class MemoryTools:
         return {"success": True, "memories": items, "count": len(items)}
 
     async def _stats(self, **_kwargs: Any) -> Dict[str, Any]:
-        manager = MemoryManager(SessionLocal)
+        manager = MemoryManager(_get_session_local())
         stats = await manager.get_memory_stats()
         return {
             "success": True,
@@ -140,6 +161,62 @@ class MemoryTools:
             "average_quality_score": stats["average_quality_score"],
             "total_access_count": stats["total_access_count"],
         }
+
+    async def _search_short_term(
+        self,
+        query: str,
+        session_id: str = "",
+        limit: int = 10,
+        **_kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Spec memory-quality-and-short-term-recovery Task 15：
+        按关键词检索短期记忆（当前会话历史）。
+
+        用于 AI 回顾最近对话内容、查找用户曾提到的具体细节。
+
+        Args:
+            query: 搜索关键词（必填，去除首尾空白后必须非空）
+            session_id: 可选，按会话 ID 过滤。空串视为不传
+            limit: 返回条数，默认 10，最大 50
+
+        Returns:
+            success: 是否成功
+            memories: 匹配的短期记忆列表，每项含
+                - id: 短期记忆 ID
+                - session_id: 会话 ID
+                - role: 消息角色（user/assistant/system）
+                - content: 内容预览（截断到 200 字符）
+                - timestamp: ISO 时间戳
+            count: 匹配数量
+        """
+        if not isinstance(query, str) or not query.strip():
+            return {"success": False, "error": "缺少必填参数: query"}
+        limit = max(1, min(50, int(limit or 10)))
+        manager = MemoryManager(_get_session_local())
+        # session_id 为空串时不传，让 manager 搜索全部短期记忆
+        session_id_param = session_id.strip() if isinstance(session_id, str) else ""
+        kwargs: Dict[str, Any] = {"query": query.strip(), "limit": limit}
+        if session_id_param:
+            kwargs["session_id"] = session_id_param
+        memories = await manager.search_short_term_memories(**kwargs)
+        if not memories:
+            return {
+                "success": True,
+                "memories": [],
+                "count": 0,
+                "message": "未找到匹配的短期记忆",
+            }
+        items = [
+            {
+                "id": m.id,
+                "session_id": m.session_id,
+                "role": m.role,
+                "content": _truncate(m.content or "", 200),
+                "timestamp": m.timestamp.isoformat() if m.timestamp else "",
+            }
+            for m in memories
+        ]
+        return {"success": True, "memories": items, "count": len(items)}
 
     @staticmethod
     def _auto_detect_layer(content: str) -> str:

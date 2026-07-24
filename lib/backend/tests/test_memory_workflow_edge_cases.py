@@ -514,8 +514,16 @@ async def test_memory_manager_preserves_layer_and_limits_oversized_search_query(
     oversized_query = "开头上下文 " + ("中间代理转录 " * 8000) + " 结尾结论"
     await manager.search_memories(oversized_query, user_id="user-1")
 
+    # add_long_term_memory 也会调用 vector_store.search 做去重查询，
+    # 因此 search_calls 中可能有多条；查找 oversized_query 对应的那次调用。
     assert fake_vector_store.search_calls
-    normalized_query = fake_vector_store.search_calls[0][0][0]
+    normalized_query = None
+    for call_args, _ in fake_vector_store.search_calls:
+        candidate = call_args[0] if call_args else ""
+        if candidate.startswith("开头上下文"):
+            normalized_query = candidate
+            break
+    assert normalized_query is not None, "未找到 oversized_query 对应的 search 调用"
     assert len(normalized_query) <= MemoryManager._MAX_SEARCH_QUERY_CHARS + 5
     assert normalized_query.startswith("开头上下文")
     assert normalized_query.endswith("结尾结论")

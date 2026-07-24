@@ -1,4 +1,4 @@
-﻿[
+[
     {
         "date":  "2026-07-20",
         "mode":  "Health Dashboard",
@@ -20,5 +20,16 @@
         "score":  10,
         "scope":  "Entire project (lib/backend, lib/frontend, lib/desktop, lib/Android/Open-AwA-Android, plugins). Excluded via project rules: 参考用文件夹/ (gitignored reference material), openbiliclaw_builtin counted as one consolidated finding.",
         "mode":  "Tech Debt Assessment"
+    },
+    {
+        "date":  "2026-07-24",
+        "mode":  "Health Dashboard",
+        "score":  53,
+        "findings":  {
+                         "critical":  4,
+                         "warning":  17,
+                         "suggestion":  2
+                     },
+        "scope":  "memory-quality-and-short-term-recovery spec implementation (backend/memory/{manager,pii_guard,consolidation_runner}.py + core/builtin_tools/memory_tools.py + api/routes/memory.py + db/models/conversation.py + core/{feedback,agent,executor}.py integration + frontend features/memory/* + features/chat/hooks/useChatStream.ts memory additions + 8 new test files). PR dimension skipped (spec is feature-complete cycle, not focused diff); weights redistributed to Architecture 0.40 / Debt 0.33 / Test 0.27."
     }
 ]

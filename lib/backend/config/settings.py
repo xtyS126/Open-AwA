@@ -191,6 +191,18 @@ class Settings(BaseSettings):
     TOOL_EXECUTION_CACHE_SIZE: int = 256  # 工具执行幂等缓存上限
     RECORD_SEMAPHORE_SIZE: int = 20       # 并发记录任务信号量上限
 
+    # 记忆巩固运行器配置（Spec memory-quality-and-short-term-recovery）
+    # 每 N 轮对话触发一次巩固，从短期记忆中提炼高价值信息写入长期记忆
+    CONSOLIDATION_CONVERSATION_THRESHOLD: int = 10
+    # 单次巩固批量大小：限制单次处理的短期记忆数量，避免 LLM 上下文过长
+    CONSOLIDATION_BATCH_SIZE: int = 50
+    # 巩固 LLM 提炼模型（优先级：DB 默认配置 > 此处显式配置 > 空）
+    # 留空时使用 PricingManager.get_default_configuration 解析的 DB 默认模型
+    CONSOLIDATION_EXTRACT_PROVIDER: str = ""
+    CONSOLIDATION_EXTRACT_MODEL: str = ""
+    # 巩固 LLM 单次调用最大 token 数
+    CONSOLIDATION_EXTRACT_MAX_TOKENS: int = 2048
+
     # 受信代理 IP/CIDR 列表，用逗号分隔。仅来自这些代理的 X-Forwarded-For / X-Real-IP 头会被信任。
     # 默认信任本地回环和私有地址段（适用于单机部署和 Docker 网络）。
     TRUSTED_PROXIES: str = "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"

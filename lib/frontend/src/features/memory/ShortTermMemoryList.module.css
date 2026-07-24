@@ -1,0 +1,318 @@
+/* 短期记忆列表组件样式 —— Spec memory-quality-and-short-term-recovery Task 17 */
+/* 所有取值使用 var() 引用 tokens.css 设计令牌，禁止硬编码值 */
+
+.container {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* ========== 顶部头部区域 ========== */
+
+.header {
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+  margin: 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.countBadge {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  padding: var(--space-1) var(--space-2-5);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+}
+
+.refreshBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-base), border-color var(--transition-base);
+}
+
+.refreshBtn:hover:not(:disabled) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.refreshBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 搜索框 */
+
+.searchWrap {
+  position: relative;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 10px var(--space-4) 10px 40px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  outline: none;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+  box-sizing: border-box;
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.searchInput:focus {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+/* ========== 会话分组列表 ========== */
+
+.sessionList {
+  padding: var(--space-3) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sessionGroup {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.sessionGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: var(--color-text);
+  transition: background var(--transition-base);
+}
+
+.sessionGroupHeader:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.sessionIdText {
+  flex: 1;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionCountBadge {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sessionLatestTime {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ========== 消息列表 ========== */
+
+.messageList {
+  border-top: 1px solid var(--color-border-subtle);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+}
+
+.messageItem {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.messageItem:last-child {
+  border-bottom: none;
+}
+
+.messageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-1-5);
+}
+
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.roleBadgeUser {
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+}
+
+.roleBadgeAssistant {
+  background: var(--color-success-soft-bg);
+  color: var(--color-success-strong);
+}
+
+.roleBadgeSystem {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.messageTime {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.messageContent {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: var(--leading-snug);
+  margin: 0;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* ========== 加载状态 ========== */
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 60px var(--space-5);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ========== 空状态 ========== */
+
+.emptyState {
+  text-align: center;
+  padding: 60px var(--space-5);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* ========== 错误状态 ========== */
+
+.errorState {
+  margin: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  font-size: var(--text-sm);
+}
+
+/* ========== 响应式适配 ========== */
+
+@media (max-width: 768px) {
+  .header {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .title {
+    font-size: var(--text-sm);
+  }
+
+  .searchInput {
+    padding: var(--space-2) var(--space-3) var(--space-2) 32px;
+    min-height: var(--touch-target-min);
+    font-size: var(--text-xs);
+  }
+
+  .sessionList {
+    padding: var(--space-2);
+  }
+
+  .sessionGroupHeader {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .sessionIdText {
+    font-size: var(--text-xs);
+  }
+
+  .messageItem {
+    padding: var(--space-2) 0;
+  }
+
+  .messageContent {
+    font-size: var(--text-xs);
+  }
+}

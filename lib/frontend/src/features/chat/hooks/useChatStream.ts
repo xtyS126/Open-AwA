@@ -1,5 +1,5 @@
-import { useRef, useCallback } from 'react'
-import { chatAPI } from '@/shared/api/api'
+import { useRef, useCallback, useState } from 'react'
+import { chatAPI, memoryAPI } from '@/shared/api/api'
 import type { ChatContinuationPayload } from '@/shared/api/api'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { useToolCallStore } from '@/features/chat/store/toolCallStore'
@@ -11,12 +11,15 @@ import {
 } from '@/features/chat/utils/assistantSegments'
 import { appLogger } from '@/shared/utils/logger'
 import { dispatchBillingUsageUpdated } from '@/shared/events/billingEvents'
-import { asRecord } from '@/shared/types/api'
+import { asRecord, type ShortTermMemory } from '@/shared/types/api'
 import type { AssistantExecutionMeta, AssistantMessageSegment, AskUserRequest } from '@/features/chat/types'
 import type { FileAttachment } from '@/features/chat/components/ChatInput'
 import type { TodoItem } from '@/features/chat/components/TodoPanel'
 
 const MAX_STREAM_RETRY_COUNT = 1
+
+/** Spec memory-quality-and-short-term-recovery Task 18：加载最近短期记忆的条数 */
+const RECENT_SHORT_TERM_MEMORY_LIMIT = 20
 
 /** 后端返回的密钥失效错误码，需引导用户跳转设置页重新录入 */
 const LLM_API_KEY_STALE_CODE = 'llm_api_key_stale'
@@ -268,6 +271,13 @@ export interface UseChatStreamReturn {
   ) => Promise<void>
   /** 获取当前活跃任务 ID（供 ChatPage 在用户主动 abort 时取消后端任务） */
   getActiveTaskId: () => string | null
+  /**
+   * Spec memory-quality-and-short-term-recovery Task 18：
+   * 最近一次新对话加载的短期记忆（用于上下文恢复）。
+   * 后端在 system prompt 自动注入，前端仅缓存用于本地展示/调试。
+   * 加载失败时为空数组，不影响对话流程。
+   */
+  recentShortTermMemories: ShortTermMemory[]
 }
 
 /**
@@ -317,6 +327,37 @@ export function useChatStream({
   // 当前活跃任务已处理到的最大 seq（用于断连重连时定位 from_seq）
   const activeTaskLastSeqRef = useRef<number>(-1)
 
+  // Spec memory-quality-and-short-term-recovery Task 18：
+  // 缓存最近短期记忆用于上下文恢复。
+  // 后端在 system prompt 注入（前端无需处理注入逻辑），
+  // 此 state 主要用于本地展示/调试，不直接渲染到消息列表。
+  const [recentShortTermMemories, setRecentShortTermMemories] = useState<ShortTermMemory[]>([])
+
+  /**
+   * Spec Task 18：异步加载最近短期记忆到本地 state。
+   *
+   * 在 handleSendMessage 触发时调用，失败时静默忽略（不阻塞对话）。
+   * 后端会自动在 system prompt 注入这些短期记忆，前端不需要传递给后端。
+   */
+  const loadRecentShortTermMemories = useCallback(async () => {
+    try {
+      const response = await memoryAPI.getRecentShortTerm(RECENT_SHORT_TERM_MEMORY_LIMIT)
+      if (response.data && Array.isArray(response.data)) {
+        setRecentShortTermMemories(response.data)
+      }
+    } catch (error) {
+      // 静默忽略，仅记录 warning 日志，不阻塞对话
+      appLogger.warning({
+        event: 'load_recent_short_term_memories_failed',
+        module: 'chat_stream',
+        action: 'load_recent_short_term',
+        status: 'failure',
+        message: '加载最近短期记忆失败，静默忽略',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+  }, [])
+
   const addMessage = useSessionStore((s) => s.addMessage)
   const addActiveToolCall = useToolCallStore((s) => s.addActiveToolCall)
   const removeActiveToolCall = useToolCallStore((s) => s.removeActiveToolCall)
@@ -360,6 +401,14 @@ export function useChatStream({
       const safeAttachments = uploadedAttachments || []
       if (!messageText && safeAttachments.length === 0 && !options?.continuation) return
       if (useSessionStore.getState().isLoading && !options?.continuation) return
+
+      // Spec memory-quality-and-short-term-recovery Task 18：
+      // 新对话开始时异步加载最近短期记忆到本地 state。
+      // 不 await，不阻塞主流程；后端在 system prompt 注入，前端仅做本地缓存。
+      // continuation 模式（重连已存在任务）跳过加载，避免重复请求。
+      if (!options?.continuation) {
+        void loadRecentShortTermMemories()
+      }
 
       const hiddenUserMessage = Boolean(options?.hiddenUserMessage)
 
@@ -793,9 +842,9 @@ export function useChatStream({
       setMessageMeta,
       onApiKeyStale,
       onTaskStarted,
-      onTaskSeq,
       onTaskFinished,
       trackEventSeq,
+      loadRecentShortTermMemories,
     ]
   )
 
@@ -1017,5 +1066,6 @@ export function useChatStream({
     abortStream,
     resubscribeToTask,
     getActiveTaskId,
+    recentShortTermMemories,
   }
 }

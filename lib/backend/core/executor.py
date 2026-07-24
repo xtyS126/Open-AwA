@@ -311,6 +311,72 @@ def _build_profile_facts_context(
     return "\n".join(parts)
 
 
+def build_recent_short_term_memories_prompt(
+    memory_manager,
+    context: Dict[str, Any],
+) -> str:
+    """
+    构建近期短期记忆 system prompt 片段（Spec memory-quality-and-short-term-recovery Task 12）。
+
+    提取为模块级纯函数，便于 ExecutionLayer 与单元测试共用同一份实现，
+    避免测试中复制粘贴生产代码导致的 stub 漂移（详见 brooks-lint T4 Mock Abuse）。
+
+    设计要点：
+    1. 通过 MemoryManager._get_recent_short_term_memories_sync(user_id, limit=20) 加载
+    2. 渲染为 markdown 区块 [近期对话记忆]，每条 [{session_id}] {role}: {content_preview[:100]}
+    3. 无短期记忆时不注入区块（返回空串）
+    4. content_preview 截断到 100 字符，避免上下文过长
+    5. 按时间正序排列（最早在前），符合自然阅读习惯
+    6. 跳过 system 角色消息，只注入 user/assistant 消息
+    7. 失败时静默返回空串（不阻塞对话主流程）
+
+    Args:
+        memory_manager: MemoryManager 实例，None 时返回空串
+        context: 含 user_id / workspace_id 的上下文字典
+    """
+    if memory_manager is None:
+        return ""
+
+    user_id = context.get("user_id")
+    if not user_id:
+        return ""
+
+    workspace_id = context.get("workspace_id", "default")
+    try:
+        memories = memory_manager._get_recent_short_term_memories_sync(
+            user_id, limit=20, workspace_id=workspace_id
+        )
+    except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"加载近期短期记忆失败（不影响主流程）: {exc}"
+        )
+        return ""
+
+    if not memories:
+        return ""
+
+    ordered_memories = list(reversed(memories))
+    lines = ["[近期对话记忆]"]
+    for memory in ordered_memories:
+        role = getattr(memory, "role", "user") or "user"
+        if role not in ("user", "assistant"):
+            continue
+        session_id = getattr(memory, "session_id", "") or ""
+        content = str(getattr(memory, "content", "") or "").strip()
+        if not content:
+            continue
+        content_preview = content[:100]
+        if len(content) > 100:
+            content_preview += "..."
+        session_short = session_id[:8] if session_id else "unknown"
+        lines.append(f"[{session_short}] {role}: {content_preview}")
+
+    if len(lines) <= 1:
+        return ""
+
+    return "\n".join(lines)
+
+
 class ExecutionLayer:
     """
     封装与ExecutionLayer相关的核心逻辑与运行状态。
@@ -1326,6 +1392,24 @@ class ExecutionLayer:
 
         return "\n".join(lines)
 
+    def _build_recent_short_term_memories_system_prompt(
+        self, context: Dict[str, Any]
+    ) -> str:
+        """
+        构建近期短期记忆 system prompt 片段（Spec memory-quality-and-short-term-recovery Task 12）。
+
+        在新对话开始时（或当前对话上下文不足以让 AI 理解用户意图时），
+        从短期记忆表中加载用户最近 N 条对话记录，让 AI 能"记得"用户最近的对话内容。
+
+        实现已提取为模块级纯函数 :func:`build_recent_short_term_memories_prompt`，
+        本方法仅作为薄包装，便于在 ExecutionLayer 外部（如单元测试）直接调用纯函数，
+        避免 stub 复制生产代码导致的测试漂移（brooks-lint T4 Mock Abuse）。
+        """
+        return build_recent_short_term_memories_prompt(
+            getattr(self, "memory_manager", None),
+            context,
+        )
+
     def _build_messages_with_history(self, prompt: str, context: Dict[str, Any]) -> list:
         """
         从上下文中提取对话历史，构建包含历史消息的 messages 列表。
@@ -1361,6 +1445,13 @@ class ExecutionLayer:
         memories_prompt = self._build_relevant_memories_system_prompt(context)
         if memories_prompt:
             messages.append({"role": "system", "content": memories_prompt})
+
+        # Spec memory-quality-and-short-term-recovery Task 12：
+        # 注入用户最近 N 条短期记忆，让 AI 在新对话开始时能"记得"用户最近的对话内容
+        # 放在长期记忆之后：短期记忆是上下文恢复，长期记忆是知识检索，优先级低于知识检索
+        short_term_prompt = self._build_recent_short_term_memories_system_prompt(context)
+        if short_term_prompt:
+            messages.append({"role": "system", "content": short_term_prompt})
 
         auto_execution_results = context.get("auto_execution_results")
         if auto_execution_results:

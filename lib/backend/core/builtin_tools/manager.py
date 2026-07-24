@@ -33,6 +33,7 @@ BUILTIN_TOOL_ACTION_MAP: Dict[str, tuple[str, str]] = {
     "memory_forget": ("memory_manager", "forget"),
     "memory_list": ("memory_manager", "list"),
     "memory_stats": ("memory_manager", "stats"),
+    "memory_search_short_term": ("memory_manager", "search_short_term"),
     "list_checkpoints": ("checkpoint", "list_checkpoints"),
     "restore_checkpoint": ("checkpoint", "restore_checkpoint"),
     "todo_write": ("todo_manager", "todo_write"),
@@ -239,7 +240,12 @@ BUILTIN_TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "builtin_memory_remember",
-            "description": "将一段重要信息存入长期记忆，下次对话时可通过 memory_recall 检索。适合存储用户偏好、决策结果、重要上下文等",
+            "description": (
+                "将一段已提炼的事实/偏好/知识存入长期记忆，下次对话时可通过 memory_recall 检索。"
+                "必须传入已提炼的内容（≤200 字，不接受原文对话片段），后端会做长度校验、"
+                "PII 脱敏（API key/私钥/身份证等自动替换为 [REDACTED]）、向量去重（相似度 > 0.85 时合并到已有记忆而非新增）。"
+                "适合存储用户偏好、决策结果、重要上下文等。返回 deduplicated 字段标识是否命中去重。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -258,7 +264,13 @@ BUILTIN_TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "builtin_memory_recall",
-            "description": "根据关键词检索长期记忆（混合搜索：向量 + 关键词），返回匹配的记忆列表",
+            "description": (
+                "根据关键词检索长期记忆（混合搜索：向量 + 关键词），返回匹配的记忆列表。"
+                "返回的 confidence 字段基于五因子加权真实计算（来源权重 0.3 + 内容完整度 0.25 + "
+                "时效性 0.2 + 去重命中减分 0.15 + access_count 强化 0.1），非写入时的固定初值。"
+                "每次检索命中会触发懒评估：access_count +1、last_access 更新、confidence 重新计算并持久化。"
+                "默认不返回 archived 与 deprecated 状态的记忆。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -277,7 +289,11 @@ BUILTIN_TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "builtin_memory_forget",
-            "description": "删除指定 ID 的长期记忆",
+            "description": (
+                "将指定 ID 的长期记忆标记为 deprecated（软失效）。"
+                "记忆不再注入 LLM 上下文也不再被检索返回，但 DB 行与向量数据保留用于审计。"
+                "如需物理删除请联系管理员。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -315,6 +331,38 @@ BUILTIN_TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             "name": "builtin_memory_stats",
             "description": "查看当前记忆系统的整体统计信息（总量、活跃数、归档数、平均置信度等）",
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_memory_search_short_term",
+            "description": (
+                "按关键词检索短期记忆（当前用户的所有会话历史），返回匹配的消息列表。"
+                "用于回顾最近对话内容、查找用户曾提到的具体细节。"
+                "新对话开始时后端会自动加载最近 20 条短期记忆注入 system prompt（无需 AI 主动调用），"
+                "本工具适用于在对话过程中主动检索更早或特定的对话内容。"
+                "结果按 timestamp 倒序返回，content 截断到 200 字符。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索关键词，会在消息内容上做模糊匹配",
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "可选，按会话 ID 过滤。不传时搜索全部短期记忆",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回条数，默认 10，最大 50",
+                        "default": 10,
+                    },
+                },
+                "required": ["query"],
+            },
         },
     },
     {

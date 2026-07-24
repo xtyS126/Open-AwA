@@ -48,6 +48,8 @@ from db.models.user import (
 
 # ---- 会话域 ----
 from db.models.conversation import (
+    ConsolidationFingerprint,
+    ConsolidationState,
     Conversation,
     ConversationData,
     ConversationRecord,
@@ -182,6 +184,8 @@ __all__ = [
     "Conversation",
     "ShortTermMemory",
     "LongTermMemory",
+    "ConsolidationState",
+    "ConsolidationFingerprint",
     "ConversationRecord",
     "ConversationData",
     "ToolCallData",

@@ -1094,6 +1094,14 @@ export const memoryAPI = {
   deleteLongTerm: (id: number) =>
     api.delete<{ ok: boolean; message?: string }>(`/memory/long-term/${id}`),
   search: (query: string) => api.get<MemorySearchResponse>('/memory/search', { params: { query } }),
+  // Spec memory-quality-and-short-term-recovery Task 13：按 session 分组返回当前用户的全部短期记忆
+  // 支持 limit / session_id / query 查询参数
+  listShortTerm: (params: { limit?: number; session_id?: string; query?: string } = {}) =>
+    api.get<ShortTermMemoryListResponse>('/memory/short-term', { params }),
+  // Spec memory-quality-and-short-term-recovery Task 14：返回当前用户最近 N 条短期记忆
+  // 用于新对话上下文恢复
+  getRecentShortTerm: (limit: number = 20) =>
+    api.get<ShortTermMemoryListResponse>('/memory/short-term/recent', { params: { limit } }),
 }
 
 export const promptsAPI = {

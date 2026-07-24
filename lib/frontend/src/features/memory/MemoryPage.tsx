@@ -2,6 +2,10 @@
  * 记忆管理页面 —— 对齐 Canvas 设计参考 (open-awa-canvas/pages/memory.html)。
  * 结构：页面标题 / 统计卡片 / 左侧记忆列表 + 右侧系统状态侧栏。
  * 数据获取通过 TanStack Query 管理服务端状态（短期/长期记忆独立查询）。
+ *
+ * Spec memory-quality-and-short-term-recovery Task 16：
+ * 页面顶部新增 tab 切换器（长期记忆 / 短期记忆），默认展示长期记忆。
+ * 切换到短期记忆 tab 时渲染 ShortTermMemoryList 组件。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -12,6 +16,7 @@ import { appLogger } from '@/shared/utils/logger'
 import { getErrorMessage } from '@/shared/utils/errorMessages'
 import { Toggle } from '@/shared/components/ui'
 import { useI18nStore } from '@/i18n'
+import ShortTermMemoryList from './ShortTermMemoryList'
 import styles from './MemoryPage.module.css'
 
 /* ============================================================
@@ -220,6 +225,8 @@ function MemoryPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   /* 当前展示的会话 ID（由短期记忆 queryFn 内部决定） */
   const [selectedSessionId, setSelectedSessionId] = useState('')
+  /* Spec Task 16：tab 切换器 —— 'long-term' 默认保持现有行为 */
+  const [activeTab, setActiveTab] = useState<'long-term' | 'short-term'>('long-term')
 
   const chatSessionId = useSessionStore((state) => state.sessionId)
 
@@ -284,7 +291,11 @@ function MemoryPage() {
   })
 
   const shortTermMemories = shortTermQuery.data?.memories ?? []
-  const longTermMemories = longTermQuery.data ?? []
+  /* useMemo 包装避免每次渲染产生新引用（react-hooks/exhaustive-deps 警告） */
+  const longTermMemories = useMemo<LongTermMemory[]>(
+    () => longTermQuery.data ?? [],
+    [longTermQuery.data]
+  )
 
   // 同步短期记忆查询返回的 selectedSessionId 到本地状态（用于 UI 展示）
   useEffect(() => {
@@ -335,7 +346,7 @@ function MemoryPage() {
   }, [shortTermQuery, longTermQuery])
 
   /* 删除长期记忆 —— 失效长期记忆查询，触发后台刷新 */
-  const handleDeleteLongTerm = async (id: number) => {
+  const handleDeleteLongTerm = useCallback(async (id: number) => {
     setActionError(null)
     try {
       await memoryAPI.deleteLongTerm(id)
@@ -352,7 +363,7 @@ function MemoryPage() {
       })
       setActionError(getErrorMessage(error, '删除长期记忆失败，请稍后重试'))
     }
-  }
+  }, [longTermQuery])
 
   /* 构建记忆列表 —— 仅长期记忆，按时间倒序 */
   const unifiedList = useMemo<MemoryListItem[]>(() => {
@@ -377,8 +388,7 @@ function MemoryPage() {
     })
 
     return items
-    // handleDeleteLongTerm 不作为依赖 —— 它是组件内函数，每次渲染都重新创建
-  }, [longTermMemories])
+  }, [longTermMemories, handleDeleteLongTerm])
 
   /* 搜索过滤 —— 按内容模糊匹配 */
   const filteredList = useMemo<MemoryListItem[]>(() => {
@@ -463,88 +473,123 @@ function MemoryPage() {
       <div className={styles.mainLayout}>
         {/* 左侧：记忆条目列表 */}
         <div className={styles.memoryListColumn}>
-          {/* 会话提示 —— 保持原有功能 */}
-          {selectedSessionId && (
-            <div className={styles.sessionHint}>
-              当前查看会话：{selectedSessionId}
-            </div>
-          )}
-          <div className={styles.listCard}>
-            {/* 标题 + 搜索 */}
-            <div className={styles.listHeader}>
-              <div className={styles.listHeaderTop}>
-                <h2 className={styles.listTitle}>记忆条目</h2>
-                <span className={styles.countBadge}>共 {filteredList.length} 条</span>
-              </div>
-              <div className={styles.searchWrap}>
-                <span className={styles.searchIcon}><SearchIcon /></span>
-                <input
-                  type="text"
-                  placeholder="搜索记忆内容..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={styles.searchInput}
-                />
-              </div>
-            </div>
-
-            {/* 记忆条目列表 */}
-            {filteredList.length === 0 ? (
-              <div className={styles.emptyState}>
-                <p>{searchQuery.trim() ? '未找到匹配的记忆' : '暂无记忆数据'}</p>
-              </div>
-            ) : (
-              <div className={styles.listItems}>
-                {filteredList.map((item) => (
-                  <div key={item.key} className={styles.memoryItem}>
-                    <div className={styles.memoryItemTop}>
-                      <p className={styles.memoryItemTitle}>{item.content}</p>
-                      <span className={styles.typeBadgeLongTerm}>
-                        长期记忆
-                      </span>
-                    </div>
-                    <div className={styles.memoryItemBottom}>
-                      <span className={styles.memoryTime}>
-                        {formatRelativeTime(item.time)}
-                      </span>
-                      <div className={styles.confidenceWrap}>
-                        <span className={styles.confidenceLabel}>置信度</span>
-                        <div className={styles.confidenceTrack}>
-                          <div
-                            className={styles.confidenceFill}
-                            style={{
-                              width: `${Math.round(item.confidence * 100)}%`,
-                              background: 'var(--color-primary)',
-                            }}
-                          />
-                        </div>
-                        <span
-                          className={styles.confidenceValue}
-                          style={{
-                            color: 'var(--color-primary)',
-                          }}
-                        >
-                          {item.confidence.toFixed(2)}
-                        </span>
-                      </div>
-                      {item.onDelete && (
-                        <button
-                          className={styles.deleteBtn}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            item.onDelete?.()
-                          }}
-                          aria-label="删除"
-                        >
-                          <TrashIcon />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* Spec Task 16：tab 切换器 —— 长期记忆 / 短期记忆 */}
+          <div className={styles.tabBar} role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'long-term'}
+              className={`${styles.tabButton} ${activeTab === 'long-term' ? styles.tabButtonActive : ''}`}
+              onClick={() => setActiveTab('long-term')}
+            >
+              长期记忆
+              <span className={`${styles.tabCountBadge} ${activeTab === 'long-term' ? styles.tabCountBadgeActive : ''}`}>
+                {longTermCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'short-term'}
+              className={`${styles.tabButton} ${activeTab === 'short-term' ? styles.tabButtonActive : ''}`}
+              onClick={() => setActiveTab('short-term')}
+            >
+              短期记忆
+              <span className={`${styles.tabCountBadge} ${activeTab === 'short-term' ? styles.tabCountBadgeActive : ''}`}>
+                {shortTermCount}
+              </span>
+            </button>
           </div>
+
+          {/* Spec Task 16：tab 切换内容 */}
+          {activeTab === 'short-term' ? (
+            <ShortTermMemoryList initialLimit={50} />
+          ) : (
+            <>
+              {/* 会话提示 —— 保持原有功能 */}
+              {selectedSessionId && (
+                <div className={styles.sessionHint}>
+                  当前查看会话：{selectedSessionId}
+                </div>
+              )}
+              <div className={styles.listCard}>
+                {/* 标题 + 搜索 */}
+                <div className={styles.listHeader}>
+                  <div className={styles.listHeaderTop}>
+                    <h2 className={styles.listTitle}>记忆条目</h2>
+                    <span className={styles.countBadge}>共 {filteredList.length} 条</span>
+                  </div>
+                  <div className={styles.searchWrap}>
+                    <span className={styles.searchIcon}><SearchIcon /></span>
+                    <input
+                      type="text"
+                      placeholder="搜索记忆内容..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className={styles.searchInput}
+                    />
+                  </div>
+                </div>
+
+                {/* 记忆条目列表 */}
+                {filteredList.length === 0 ? (
+                  <div className={styles.emptyState}>
+                    <p>{searchQuery.trim() ? '未找到匹配的记忆' : '暂无记忆数据'}</p>
+                  </div>
+                ) : (
+                  <div className={styles.listItems}>
+                    {filteredList.map((item) => (
+                      <div key={item.key} className={styles.memoryItem}>
+                        <div className={styles.memoryItemTop}>
+                          <p className={styles.memoryItemTitle}>{item.content}</p>
+                          <span className={styles.typeBadgeLongTerm}>
+                            长期记忆
+                          </span>
+                        </div>
+                        <div className={styles.memoryItemBottom}>
+                          <span className={styles.memoryTime}>
+                            {formatRelativeTime(item.time)}
+                          </span>
+                          <div className={styles.confidenceWrap}>
+                            <span className={styles.confidenceLabel}>置信度</span>
+                            <div className={styles.confidenceTrack}>
+                              <div
+                                className={styles.confidenceFill}
+                                style={{
+                                  width: `${Math.round(item.confidence * 100)}%`,
+                                  background: 'var(--color-primary)',
+                                }}
+                              />
+                            </div>
+                            <span
+                              className={styles.confidenceValue}
+                              style={{
+                                color: 'var(--color-primary)',
+                              }}
+                            >
+                              {item.confidence.toFixed(2)}
+                            </span>
+                          </div>
+                          {item.onDelete && (
+                            <button
+                              className={styles.deleteBtn}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                item.onDelete?.()
+                              }}
+                              aria-label="删除"
+                            >
+                              <TrashIcon />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* 右侧：系统状态侧栏 */}

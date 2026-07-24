@@ -68,6 +68,15 @@ class LongTermMemory(Base):
     长期记忆模型，存储用户的持久化学习记忆。
     每条记忆归属于特定用户（user_id），支持多租户隔离。
     支持多层记忆架构：core（核心事实）/episodic（情景记忆）/semantic（语义知识）/working（工作记忆）。
+
+    Spec memory-quality-and-short-term-recovery：
+    - state: 四状态机 active/validated/archived/deprecated
+      - active: 新写入的初始状态，可被定期归档评估降级
+      - validated: 用户通过探针确认后晋升，confidence 提升至 0.9，不再被定期归档
+      - archived: 长期未访问或低质量，不再注入 LLM 上下文但仍可检索（include_archived=true）
+      - deprecated: 用户主动遗忘，不再注入 LLM 上下文也不再被检索返回，数据保留用于审计
+    - similarity_hash: 内容去重指纹（SHA-256 截断 32 字符），用于快速判断完全相同内容是否已写入
+    - extracted_from: 来源短期记忆 ID 列表，供 consolidation_runner 追溯来源链路
     """
     __tablename__ = "long_term_memory"
 
@@ -86,10 +95,87 @@ class LongTermMemory(Base):
     memory_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     # 记忆层级：core（核心事实，永久保留）/episodic（情景记忆，时间衰减）/semantic（语义知识，关联强化）/working（工作记忆，会话级）
     memory_layer: Mapped[str] = mapped_column(String(20), default="semantic", index=True, comment="记忆层级：core/episodic/semantic/working")
+    # Spec memory-quality-and-short-term-recovery：四状态机
+    # active/validated/archived/deprecated，与 archive_status 并行存在（archive_status 保留向后兼容）
+    state: Mapped[str] = mapped_column(
+        String(20),
+        default="active",
+        index=True,
+        comment="状态机：active/validated/archived/deprecated",
+    )
+    # Spec memory-quality-and-short-term-recovery：去重指纹（SHA-256 截断 32 字符）
+    # 用于快速判断完全相同内容是否已写入，避免重复嵌入计算
+    similarity_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), index=True, nullable=True, comment="内容去重指纹"
+    )
+    # Spec memory-quality-and-short-term-recovery：来源短期记忆 ID 列表
+    # consolidation_runner 从短期记忆提炼高价值信息时，记录来源 ID 便于追溯
+    extracted_from: Mapped[Optional[List[int]]] = mapped_column(JSON, nullable=True, comment="来源短期记忆 ID 列表")
 
     __table_args__ = (
         Index("ix_ltm_ws_archive", "workspace_id", "archive_status"),
         Index("ix_ltm_user_layer", "user_id", "memory_layer"),
+        Index("ix_ltm_state", "state"),
+    )
+
+
+class ConsolidationState(Base):
+    """
+    记忆巩固运行器的水位线状态（Spec memory-quality-and-short-term-recovery）。
+
+    每个用户一行，记录上次巩固的短期记忆 ID 水位线、上次运行时间与累计对话轮次。
+    consolidation_runner.run_if_due 通过该表实现增量读取与触发判定：
+    - conversation_count_since_run >= N 时触发巩固
+    - last_short_term_memory_id 作为 watermark，仅读取 id 大于该值的新短期记忆
+    - 巩固成功后更新 watermark / last_run_at / 重置 conversation_count_since_run=0
+    - 巩固失败时 watermark 不更新，下次重试
+    """
+    __tablename__ = "consolidation_state"
+
+    user_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    workspace_id: Mapped[Optional[str]] = mapped_column(
+        String(50), index=True, nullable=True, default="default"
+    )
+    last_short_term_memory_id: Mapped[int] = mapped_column(Integer, default=0)
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    conversation_count_since_run: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class ConsolidationFingerprint(Base):
+    """
+    巩固指纹记录（Spec memory-quality-and-short-term-recovery）。
+
+    借鉴 openhanako 的 fingerprint 跳过机制：每条短期记忆在巩固中被处理后，
+    将其内容指纹持久化到本表，下次巩固时通过指纹比对跳过已处理项，
+    避免重复调用 LLM 提炼。
+
+    - fingerprint: 短期记忆内容的 SHA-256 截断哈希（与 LongTermMemory.similarity_hash 算法一致）
+    - short_term_memory_id: 关联的短期记忆 ID（便于追溯）
+    - consolidated_memory_id: 巩固后生成的长期记忆 ID（可为空，表示提炼失败或无价值）
+    """
+    __tablename__ = "consolidation_fingerprints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(100), index=True)
+    workspace_id: Mapped[Optional[str]] = mapped_column(
+        String(50), index=True, nullable=True, default="default"
+    )
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    short_term_memory_id: Mapped[int] = mapped_column(Integer, index=True)
+    consolidated_memory_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+    __table_args__ = (
+        Index("ix_cf_user_fp", "user_id", "fingerprint"),
+        Index("ix_cf_user_stm", "user_id", "short_term_memory_id"),
     )
 
 

@@ -210,10 +210,36 @@ class AIAgent:
         self.workflow_engine = None
         if self._db_session:
             from memory.manager import MemoryManager
+            from memory.consolidation_runner import ConsolidationRunner
+            from memory.extractor import make_default_extract_callback
             from db.models import SessionLocal
+            from config.settings import settings as _mem_settings
             # 传入会话工厂而非请求级 Session，确保线程池中的 DB 操作各自持有独立会话
             self.memory_manager = MemoryManager(SessionLocal)
             self.feedback.set_memory_manager(self.memory_manager)
+            # Spec memory-quality-and-short-term-recovery Task 12：注入到 executor
+            # executor 在 _build_messages_with_history 中调用 _get_recent_short_term_memories_sync
+            # 注入用户最近 N 条短期记忆到 system prompt，实现新对话上下文恢复
+            self.executor.memory_manager = self.memory_manager
+            # Spec memory-quality-and-short-term-recovery Task 6：注入巩固运行器
+            # feedback 在每轮对话完成时递增计数器，达到阈值时异步触发 run_if_due
+            # 配置项从 settings 读取，运维可通过环境变量调整阈值与批量大小
+            self.consolidation_runner = ConsolidationRunner(
+                self.memory_manager,
+                SessionLocal,
+                conversation_threshold=_mem_settings.CONSOLIDATION_CONVERSATION_THRESHOLD,
+                batch_size=_mem_settings.CONSOLIDATION_BATCH_SIZE,
+            )
+            # Spec memory-quality-and-short-term-recovery：注入 LLM 提炼回调
+            # 生产环境从 DB 默认配置或 settings.CONSOLIDATION_EXTRACT_PROVIDER/MODEL 解析模型
+            # 失败时 callback 返回空列表，watermark 仍推进（spec 回退策略）
+            _extract_callback = make_default_extract_callback(
+                SessionLocal,
+                provider=_mem_settings.CONSOLIDATION_EXTRACT_PROVIDER or None,
+                model=_mem_settings.CONSOLIDATION_EXTRACT_MODEL or None,
+            )
+            self.consolidation_runner.set_extract_callback(_extract_callback)
+            self.feedback.set_consolidation_runner(self.consolidation_runner)
             self.workflow_engine = WorkflowEngine(db_session=self._db_session, skill_engine=self.skill_engine)
         _memory_engine_ms = round((time.time() - _mem_t0) * 1000, 2)
 

@@ -145,6 +145,64 @@
   align-items: flex-start;
 }
 
+/* ========== Tab 切换器（长期记忆 / 短期记忆） ========== */
+
+.tabBar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+}
+
+.tabButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-base), color var(--transition-base);
+  font-family: inherit;
+}
+
+.tabButton:hover {
+  color: var(--color-text);
+}
+
+.tabButtonActive {
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+
+.tabCountBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-1-5);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+}
+
+.tabCountBadgeActive {
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+}
+
 /* 左侧列表列 —— 弹性填充 */
 .memoryListColumn {
   flex: 1;

@@ -37,7 +37,7 @@ class TestMemoryTools:
         assert result == {"success": False, "error": "未知记忆管理操作: unknown_action"}
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_remember_success(self, mock_session_local, mock_memory_manager_cls, tools):
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
@@ -51,14 +51,14 @@ class TestMemoryTools:
         assert result["memory_id"] == 42
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_remember_missing_content(self, mock_session_local, mock_memory_manager_cls, tools):
         result = await tools._remember(content="")
         assert result["success"] is False
         assert "content" in result["error"]
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_remember_importance_clamped(self, mock_session_local, mock_memory_manager_cls, tools):
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
@@ -73,7 +73,7 @@ class TestMemoryTools:
         assert result["success"] is True
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_recall_success(self, mock_session_local, mock_memory_manager_cls, tools):
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
@@ -92,7 +92,7 @@ class TestMemoryTools:
         assert result["memories"][0]["id"] == 1
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_recall_empty_result(self, mock_session_local, mock_memory_manager_cls, tools):
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
@@ -106,14 +106,14 @@ class TestMemoryTools:
         assert "未找到" in result["message"]
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_recall_missing_query(self, mock_session_local, mock_memory_manager_cls, tools):
         result = await tools._recall(query="")
         assert result["success"] is False
         assert "query" in result["error"]
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_forget_success(self, mock_session_local, mock_memory_manager_cls, tools):
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
@@ -126,7 +126,7 @@ class TestMemoryTools:
         assert "42" in result["message"]
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_forget_not_found(self, mock_session_local, mock_memory_manager_cls, tools):
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
@@ -144,7 +144,7 @@ class TestMemoryTools:
         assert "memory_id" in result["error"]
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_list_success(self, mock_session_local, mock_memory_manager_cls, tools):
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
@@ -165,7 +165,7 @@ class TestMemoryTools:
         assert result["memories"][0]["id"] == 1
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_list_empty(self, mock_session_local, mock_memory_manager_cls, tools):
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db
@@ -178,7 +178,7 @@ class TestMemoryTools:
         assert result["memories"] == []
 
     @patch("core.builtin_tools.memory_tools.MemoryManager")
-    @patch("core.builtin_tools.memory_tools.SessionLocal")
+    @patch("db.models.SessionLocal")
     async def test_stats_success(self, mock_session_local, mock_memory_manager_cls, tools):
         mock_db = MagicMock()
         mock_session_local.return_value = mock_db

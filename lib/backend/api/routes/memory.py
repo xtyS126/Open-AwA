@@ -55,6 +55,97 @@ def _verify_session_ownership(db: Session, session_id: str, user_id: str, allow_
     return True
 
 
+@router.get(
+    "/short-term/recent",
+    response_model=List[ShortTermMemoryResponse],
+    summary="获取最近 N 条短期记忆（Spec memory-quality-and-short-term-recovery Task 14）",
+    description="返回当前用户最近的短期记忆，用于新对话上下文恢复。"
+)
+async def get_recent_short_term_memories_endpoint(
+    limit: int = Query(20, ge=1, le=100, description="返回数量上限，默认 20"),
+    manager: MemoryManager = Depends(get_memory_manager),
+    current_user: User = Depends(get_current_user),
+    workspace_id: str = "default",
+) -> List[Dict[str, Any]]:
+    """
+    Spec memory-quality-and-short-term-recovery Task 14：
+    GET /api/memory/short-term/recent - 返回最近 N 条短期记忆。
+
+    用于前端 useChatStream 在新对话开始时加载，注入上下文恢复。
+    通过 JOIN ConversationRecord 实现按 user_id 过滤（ShortTermMemory 本身无 user_id）。
+
+    注意：本路由必须在 /short-term/{session_id} 之前声明，
+    否则 'recent' 会被当作 session_id 捕获。
+    """
+    return await manager.get_recent_short_term_memories(
+        user_id=str(current_user.id),
+        limit=limit,
+        workspace_id=workspace_id,
+    )
+
+
+@router.get(
+    "/short-term",
+    response_model=List[ShortTermMemoryResponse],
+    summary="按 session 分组返回短期记忆（Spec memory-quality-and-short-term-recovery Task 13）",
+    description="返回当前用户的所有短期记忆，支持 session_id 过滤和关键词搜索。"
+)
+async def list_short_term_memories(
+    limit: int = Query(50, ge=1, le=500, description="返回数量上限，默认 50"),
+    session_id: Optional[str] = Query(None, description="按会话 ID 过滤"),
+    query: Optional[str] = Query(None, description="按内容关键词模糊匹配"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    workspace_id: str = "default",
+) -> List[Dict[str, Any]]:
+    """
+    Spec memory-quality-and-short-term-recovery Task 13：
+    GET /api/memory/short-term - 按 session 分组返回短期记忆。
+
+    实现策略：
+    1. 通过 ConversationRecord JOIN 查询当前用户的所有短期记忆
+       （ShortTermMemory 本身无 user_id 字段，需通过 session_id 关联）
+    2. 支持按 session_id 过滤（验证所有权）
+    3. 支持按 query 在 content 上做 LIKE 模糊匹配
+    4. 按 timestamp 倒序返回
+
+    前端拿到扁平列表后按 session_id 字段做分组展示。
+    """
+    # 子查询：当前用户的所有 session_id（去重）
+    session_ids_subq = (
+        db.query(ConversationRecord.session_id)
+        .filter(ConversationRecord.user_id == str(current_user.id))
+        .distinct()
+        .subquery()
+    )
+    base_query = (
+        db.query(ShortTermMemory)
+        .join(
+            session_ids_subq,
+            ShortTermMemory.session_id == session_ids_subq.c.session_id,
+        )
+        .filter(ShortTermMemory.workspace_id == workspace_id)
+    )
+    if session_id:
+        base_query = base_query.filter(ShortTermMemory.session_id == session_id)
+    if query:
+        # 使用 contains + autoescape 让 SQLAlchemy 自动转义 LIKE 特殊字符（%、_、\），
+        # 避免关键词中包含通配符时破坏查询语义。
+        # autoescape=True 会自动转义并设置 ESCAPE '\'，跨 SQLite/PostgreSQL 兼容。
+        base_query = base_query.filter(
+            ShortTermMemory.content.contains(query, autoescape=True)
+        )
+    memories = (
+        base_query.order_by(
+            ShortTermMemory.timestamp.desc(),
+            ShortTermMemory.id.desc(),
+        )
+        .limit(limit)
+        .all()
+    )
+    return memories
+
+
 @router.get("/short-term/{session_id}", response_model=List[ShortTermMemoryResponse])
 async def get_short_term_memory(
     session_id: str,

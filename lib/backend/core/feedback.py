@@ -21,11 +21,23 @@ class FeedbackLayer:
     def __init__(self):
         """初始化反馈层,memory_manager 需通过 set_memory_manager 注入."""
         self.memory_manager = None
+        # Spec memory-quality-and-short-term-recovery Task 6：记忆巩固运行器
+        # 由 agent.py 注入；未注入时跳过自动巩固触发（测试或离线场景）
+        self.consolidation_runner = None
         logger.info("FeedbackLayer initialized")
 
     def set_memory_manager(self, memory_manager):
         """注入 MemoryManager 实例,供后续反馈收集时写入记忆和对话记录."""
         self.memory_manager = memory_manager
+
+    def set_consolidation_runner(self, runner):
+        """
+        注入 ConsolidationRunner 实例（Spec memory-quality-and-short-term-recovery Task 6）。
+
+        由 agent.py 在初始化时注入；若不注入则 feedback 不会自动触发巩固，
+        仍可正常执行短期记忆写入与画像提取。
+        """
+        self.consolidation_runner = runner
     
     async def evaluate_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """评估工具执行结果,判断是否需要重试,提供建议或标记为失败."""
@@ -215,9 +227,68 @@ class FeedbackLayer:
                 # maybe_extract 内部有锁去重，与 chat 路由的 N 轮兜底不会重复执行
                 self._trigger_profile_extract_async(user_id)
 
+            # Spec memory-quality-and-short-term-recovery Task 6：
+            # 每轮对话完成后递增 consolidation_state.conversation_count_since_run，
+            # 达到阈值（默认 10）时异步触发 consolidation_runner.run_if_due。
+            # 后台执行不阻塞 chat 响应；异常静默记录日志，不影响主流程。
+            self._trigger_consolidation_check_async(
+                user_id=user_id,
+                workspace_id=context.get("workspace_id", "default"),
+            )
+
         except Exception as exc:
             logger.opt(exception=True).error("记忆持久化失败")
             raise MemoryPersistenceError("记忆持久化失败") from exc
+
+    def _trigger_consolidation_check_async(
+        self,
+        user_id: Optional[str],
+        workspace_id: str = "default",
+    ) -> None:
+        """
+        异步触发记忆巩固检查（Spec memory-quality-and-short-term-recovery Task 6）。
+
+        在每轮对话完成 + 短期记忆写入后递增计数器，达到阈值时触发 run_if_due。
+        借鉴 OpenBiliClaw CognitionCycle 的 turn-based 调度与 openhanako 的
+        turn-based ticker 设计。
+
+        关键设计：
+        1. 使用 asyncio.create_task 启动，不 await，确保不阻塞 chat 响应
+        2. increment_conversation_count 是同步 DB 操作（短耗时），仍放到后台避免阻塞
+        3. 计数 >= 阈值时调用 run_if_due（异步 LLM 提炼在后台执行）
+        4. 异常全部捕获并记录 WARNING 日志，不影响主流程
+        5. 延迟导入 ConsolidationRunner，避免循环依赖与模块加载顺序问题
+
+        Args:
+            user_id: 用户 ID（隔离维度）
+            workspace_id: 工作区隔离
+        """
+        if not user_id or not self.consolidation_runner:
+            return
+        try:
+            runner = self.consolidation_runner
+            threshold = runner._conversation_threshold
+
+            async def _check_task() -> None:
+                """后台巩固检查任务：递增计数 + 阈值触发 run_if_due。"""
+                try:
+                    count = runner.increment_conversation_count(
+                        user_id, workspace_id=workspace_id
+                    )
+                    if count >= threshold:
+                        await runner.run_if_due(
+                            user_id, workspace_id=workspace_id
+                        )
+                except Exception as exc:
+                    logger.opt(exception=True).warning(
+                        f"记忆巩固后台任务异常（不影响主流程）: {exc}"
+                    )
+
+            asyncio.create_task(_check_task())
+        except Exception as exc:
+            logger.opt(exception=True).warning(
+                f"触发记忆巩固检查失败（不影响主流程）: {exc}"
+            )
 
     def _trigger_profile_extract_async(self, user_id: str) -> None:
         """
