@@ -218,11 +218,23 @@ class FeedbackLayer:
                     persist_content = user_input
                 else:
                     persist_content = f"User asked: {user_input}\nAssistant responded: {response}"
-                await self.memory_manager.add_long_term_memory(
-                    content=persist_content,
-                    importance=0.7,
-                    user_id=user_id,
-                )
+                # Spec memory-quality-and-short-term-recovery：
+                # 长期记忆内容必须 ≤500 字（MemoryManager._scrub_and_embed 的硬限制）。
+                # 超长内容（如完整对话原文）只写短期记忆，由 consolidation_runner 后台用 LLM
+                # 提炼为 ≤200 字的高价值片段再写入长期记忆，避免直接抛 ValueError 中断 chat 流。
+                # 截断到 500 字以内作为兜底，确保即使 _should_persist 命中也能成功写入。
+                max_chars = getattr(self.memory_manager, '_MAX_LONG_TERM_CONTENT_CHARS', 500)
+                if len(persist_content) > max_chars:
+                    persist_content = persist_content[:max_chars]
+                try:
+                    await self.memory_manager.add_long_term_memory(
+                        content=persist_content,
+                        importance=0.7,
+                        user_id=user_id,
+                    )
+                except ValueError as ve:
+                    # 内容校验失败（如 PII 脱敏后为空）：仅记录日志不中断 chat
+                    logger.warning(f"长期记忆写入被拒绝（不影响 chat 主流程）: {ve}")
                 # 命中持久化决策后，异步触发画像提取（复用 _should_persist 信号）
                 # maybe_extract 内部有锁去重，与 chat 路由的 N 轮兜底不会重复执行
                 self._trigger_profile_extract_async(user_id)

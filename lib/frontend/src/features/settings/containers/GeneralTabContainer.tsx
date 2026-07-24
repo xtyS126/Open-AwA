@@ -114,6 +114,53 @@ export function GeneralTabContainer() {
     }
   }, [])
 
+  /** 从后端拉取用户偏好覆盖本地（实现多端同步）
+   *  触发场景：localStorage 加载完成后，异步从后端 /user/preferences 拉取最新偏好。
+   *  优先级：后端 > localStorage > 默认值
+   *  设计权衡：
+   *  - 本地优先快速显示，避免阻塞 UI
+   *  - 后端覆盖以最新为准，解决多端同步与数据库重置后 localStorage 残留旧值问题
+   *  - 失败静默（保留本地值），不中断 UI
+   */
+  const syncSettingsFromServer = useCallback(async () => {
+    try {
+      const response = await userAPI.getPreferences()
+      const prefs = response.data?.preferences
+      if (!prefs || typeof prefs !== 'object') {
+        return
+      }
+      // 仅覆盖后端实际存在的字段，保留本地未同步的字段
+      const serverOverride: Partial<typeof settings> = {}
+      if (typeof prefs.theme === 'string') serverOverride.theme = prefs.theme
+      if (typeof prefs.language === 'string') serverOverride.language = prefs.language
+      if (typeof prefs.apiProvider === 'string') serverOverride.apiProvider = prefs.apiProvider
+      if (typeof prefs.requireConfirm === 'boolean') serverOverride.requireConfirm = prefs.requireConfirm
+      if (typeof prefs.enableAudit === 'boolean') serverOverride.enableAudit = prefs.enableAudit
+      if (typeof prefs.maxToolCallRounds === 'number') {
+        serverOverride.maxToolCallRounds = Math.max(1, Math.min(50000, Math.trunc(prefs.maxToolCallRounds)))
+      }
+      if (Object.keys(serverOverride).length > 0) {
+        setSettings((prev) => ({ ...prev, ...serverOverride }))
+        // 同步回写 localStorage，确保下次启动时本地与后端一致
+        safeSetJsonItem('app_settings', buildPersistedSettings({
+          theme: serverOverride.theme ?? settings.theme,
+          language: serverOverride.language ?? settings.language,
+          apiProvider: serverOverride.apiProvider ?? settings.apiProvider,
+          requireConfirm: serverOverride.requireConfirm ?? settings.requireConfirm,
+          enableAudit: serverOverride.enableAudit ?? settings.enableAudit,
+          maxToolCallRounds: serverOverride.maxToolCallRounds ?? settings.maxToolCallRounds,
+        }))
+      }
+    } catch (error) {
+      appLogger.warning({
+        event: 'preferences_fetch_failed',
+        module: 'settings',
+        message: '从后端同步偏好失败，保留本地值',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+  }, [settings])
+
   /** 加载提示词 */
   const loadPrompts = useCallback(async () => {
     try {
@@ -413,7 +460,9 @@ export function GeneralTabContainer() {
     loadPrompts()
     loadModelsData()
     loadBillingData()
-  }, [loadSettings, loadPrompts, loadModelsData, loadBillingData])
+    // 异步从后端同步偏好（不 await，本地优先快速显示，后端覆盖在后）
+    void syncSettingsFromServer()
+  }, [loadSettings, loadPrompts, loadModelsData, loadBillingData, syncSettingsFromServer])
 
   // 自动选择默认模型配置
   useEffect(() => {

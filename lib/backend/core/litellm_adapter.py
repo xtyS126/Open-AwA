@@ -666,12 +666,24 @@ def build_litellm_model_name(provider: str, model: str) -> str:
 
     LiteLLM 使用 "provider/model" 格式来路由请求到正确的 API。
     如果模型名已包含前缀则不再重复添加。
+
+    DeepSeek 模型名规范化：DeepSeek API 自 2026-07 起仅接受 `deepseek-v4-pro` 与
+    `deepseek-v4-flash`，旧名（deepseek-v3 / deepseek-chat / deepseek-reasoner /
+    deepseek-r1 / deepseek-v3.x / *-official）会触发 BadRequestError。
+    此映射在前端 localStorage 仍存旧名或 DB model_configurations 表残留旧记录时兜底，
+    将旧名自动映射为当前 API 接受的等价名：
+    - 推理类（reasoner/r1）→ deepseek-v4-pro（推理增强模型）
+    - 通用类（chat/v3/v3.x/official）→ deepseek-v4-flash（默认通用模型）
     """
     normalized_provider = str(provider or "").strip().lower()
     normalized_model = str(model or "").strip()
 
     if not normalized_model:
         return ""
+
+    # DeepSeek 旧模型名规范化映射（spec memory-quality-and-short-term-recovery 阶段后）
+    if normalized_provider == "deepseek":
+        normalized_model = _normalize_deepseek_model(normalized_model)
 
     prefix = PROVIDER_MODEL_PREFIX_MAP.get(normalized_provider, "openai/")
 
@@ -688,6 +700,41 @@ def build_litellm_model_name(provider: str, model: str) -> str:
             normalized_model = normalized_model[colon_idx + 1:]
 
     return f"{prefix}{normalized_model}"
+
+
+# DeepSeek 旧模型名 → 当前 API 接受的模型名映射
+# 背景：DeepSeek API 2026-07 改造后仅接受 deepseek-v4-pro / deepseek-v4-flash
+_DEEPSEEK_MODEL_ALIASES: Dict[str, str] = {
+    # 通用类（chat / v3 系列）→ flash
+    "deepseek-chat": "deepseek-v4-flash",
+    "deepseek-v3": "deepseek-v4-flash",
+    "deepseek-v3-official": "deepseek-v4-flash",
+    "deepseek-v3.1": "deepseek-v4-flash",
+    "deepseek-v3.2": "deepseek-v4-flash",
+    # 推理类（reasoner / r1）→ pro
+    "deepseek-reasoner": "deepseek-v4-pro",
+    "deepseek-r1": "deepseek-v4-pro",
+    "deepseek-r1-official": "deepseek-v4-pro",
+}
+
+
+def _normalize_deepseek_model(model: str) -> str:
+    """
+    将 DeepSeek 旧模型名规范化为当前 API 接受的模型名。
+
+    已是 v4 系列或不在映射表中的模型名原样返回。
+    """
+    if not model:
+        return model
+    normalized = model.strip().lower()
+    # 已是当前 API 接受的模型名，直接返回
+    if normalized in ("deepseek-v4-pro", "deepseek-v4-flash"):
+        return normalized
+    # 命中映射表的旧名，返回规范化后的名
+    if normalized in _DEEPSEEK_MODEL_ALIASES:
+        return _DEEPSEEK_MODEL_ALIASES[normalized]
+    # 未知模型名原样返回（让上游 API 报错暴露真实问题，而非静默替换）
+    return model
 
 
 def _build_litellm_optional_params(
