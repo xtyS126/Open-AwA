@@ -7,15 +7,13 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from config.settings import settings
-from db.models import SessionLocal, TaskAgentSession
+from db.models import SessionLocal
 
 from .definitions import AgentDefinition, get_agent_definition
 from .sessions import create_session, update_session_state, get_session
@@ -307,7 +305,10 @@ def _create_subagent_execution_bundle(
             ).warning(f"代理记忆加载失败，已跳过: {agent_id}")
 
     try:
-        sub_agent = AIAgent(db_session=subagent_db)
+        sub_agent = AIAgent(
+            db_session=subagent_db,
+            memory_session_factory=SessionLocal,
+        )
     except Exception:
         subagent_db.close()
         raise

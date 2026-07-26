@@ -14,8 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
-from db.models import User, get_db, Conversation, ConversationRecord, ScheduledTask
-from config.settings import settings
+from db.models import User, get_db, ScheduledTask
 
 router = APIRouter(prefix="/api/test-scenarios", tags=["Test Scenarios"])
 
@@ -160,7 +159,7 @@ def _run_diagnostics_full(db: Session, current_user: User) -> tuple:
 def _run_conversation_lifecycle(db: Session, current_user: User) -> tuple:
     """对话完整生命周期测试"""
     from core.conversation_sessions import (
-        ensure_conversation, get_conversation_or_404,
+        ensure_conversation,
         soft_delete_conversation, restore_conversation,
     )
 
@@ -216,7 +215,7 @@ def _run_chat_nonstream(db: Session, current_user: User) -> tuple:
 
     # 安全运行异步协程：如果当前处于异步上下文（FastAPI），在新线程中执行
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         result = asyncio.run(coro)
     else:
@@ -236,18 +235,28 @@ def _run_chat_nonstream(db: Session, current_user: User) -> tuple:
         thread = threading.Thread(target=_runner, daemon=True)
         thread.start()
         thread.join(timeout=120.0)
+        if thread.is_alive():
+            raise TimeoutError("非流式聊天场景执行超过 120 秒")
         if "error" in error_holder:
             raise error_holder["error"]
         result = result_holder.get("value")
 
+    if not isinstance(result, dict):
+        raise RuntimeError("非流式聊天未返回结构化结果")
     response_text = result.get("response", "")
+    status = str(result.get("status") or "")
+    if status not in {"completed", "success"}:
+        error_detail = result.get("error") or response_text or "未知错误"
+        raise RuntimeError(f"非流式聊天执行失败 (status={status}): {error_detail}")
     has_content = bool(response_text and len(response_text.strip()) > 0)
+    if not has_content:
+        raise RuntimeError("非流式聊天返回为空")
 
     return {
         "response_preview": response_text[:200],
         "response_length": len(response_text),
-        "status": result.get("status"),
-    }, f"聊天响应正常，返回 {len(response_text)} 字符" if has_content else "聊天返回为空"
+        "status": status,
+    }, f"聊天响应正常，返回 {len(response_text)} 字符"
 
 
 def _run_plugin_discovery(db: Session, current_user: User) -> tuple:

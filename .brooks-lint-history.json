@@ -1,35 +1,138 @@
-[
+{
+  "module": "core/agent.py",
+  "history": [
     {
-        "date":  "2026-07-20",
-        "mode":  "Health Dashboard",
-        "score":  68,
-        "findings":  {
-                         "critical":  5,
-                         "warning":  4,
-                         "suggestion":  0
-                     },
-        "scope":  "Entire project (lib/backend, lib/frontend, lib/desktop, lib/openawa, lib/Android, plugins). PR dimension skipped (working tree has mass restructure, not focused PR diff); weights redistributed to Architecture 0.40 / Debt 0.33 / Test 0.27."
+      "wave": "wave1",
+      "timestamp": "2026-07-20T00:00:00",
+      "composite_score": 53,
+      "critical_issues": [
+        "God Class: AIAgent 单类承载 640+ 行 process_stream / 320+ 行 process",
+        "Circular Dependency: core/agent.py 反向依赖 api/routes",
+        "Test Brittleness: 测试套件直接调用私有方法 / 断言私有属性"
+      ],
+      "fixes_applied": [
+        "提取 agent_helpers.py 8 个纯函数",
+        "提取 AskUserPort Protocol + AskUserPortAdapter",
+        "重写 bind_db 委托给 skill_engine / workflow_engine"
+      ]
     },
     {
-        "date":  "2026-07-22",
-        "findings":  {
-                         "critical":  3,
-                         "suggestion":  10,
-                         "warning":  7
-                     },
-        "score":  10,
-        "scope":  "Entire project (lib/backend, lib/frontend, lib/desktop, lib/Android/Open-AwA-Android, plugins). Excluded via project rules: 参考用文件夹/ (gitignored reference material), openbiliclaw_builtin counted as one consolidated finding.",
-        "mode":  "Tech Debt Assessment"
+      "wave": "wave2",
+      "timestamp": "2026-07-25T00:00:00",
+      "composite_score": 89,
+      "critical_issues": [
+        "Long Method: _run_tool_calls_loop 161 行 / _auto_execute_skills_and_plugins 154 行 / _dispatch_tool_call 138 行 / _execute_plan_steps 122 行",
+        "R3 Duplication: skill/plugin 执行流程对称重复，asyncio.gather 出现 2 次",
+        "Coverage Gap: 7 个 wave2 流式子方法无专门单测"
+      ],
+      "fixes_applied": [
+        "拆分 process_stream 主体 <=80 行（原 640 行）",
+        "拆分 process 主体 <=60 行（原 320 行）",
+        "提取 ttft_stage_logger / match_keywords_against 公共辅助"
+      ]
     },
     {
-        "date":  "2026-07-24",
-        "mode":  "Health Dashboard",
-        "score":  53,
-        "findings":  {
-                         "critical":  4,
-                         "warning":  17,
-                         "suggestion":  2
-                     },
-        "scope":  "memory-quality-and-short-term-recovery spec implementation (backend/memory/{manager,pii_guard,consolidation_runner}.py + core/builtin_tools/memory_tools.py + api/routes/memory.py + db/models/conversation.py + core/{feedback,agent,executor}.py integration + frontend features/memory/* + features/chat/hooks/useChatStream.ts memory additions + 8 new test files). PR dimension skipped (spec is feature-complete cycle, not focused diff); weights redistributed to Architecture 0.40 / Debt 0.33 / Test 0.27."
+      "wave": "wave3",
+      "timestamp": "2026-07-26T10:30:00",
+      "composite_score": 92,
+      "critical_issues_resolved": [
+        "_run_tool_calls_loop 主体 49 行（原 161 行），新增 _handle_tool_calls_in_round + _advance_state_machine_for_round 子方法",
+        "_auto_execute_skills_and_plugins 主体 27 行（原 154 行），新增 _parse_intent_and_entities + _build_skill_task + _build_plugin_tasks + _collect_and_execute_in_parallel 子方法",
+        "_dispatch_tool_call 主体 34 行（原 138 行），新增 _dispatch_ask_user_tool + _dispatch_regular_tool 子方法",
+        "_execute_plan_steps 主体 20 行（原 122 行），新增 _execute_single_plan_step + _handle_step_feedback 子方法",
+        "R3 重复消除: _auto_execute_skills_and_plugins 中 asyncio.gather 调用从 2 处降至 1 处（在 _collect_and_execute_in_parallel 内部）",
+        "单测覆盖: tests/test_agent_stream_submethods.py 新增 9 个测试用例覆盖 7 个 wave2 流式子方法"
+      ],
+      "remaining_issues": [
+        "14 个 deprecated 兼容别名（待 fix-test-implementation-coupling spec 落地后移除）",
+        "test_agent_cache.py 等测试文件仍直接调用私有方法（待 fix-test-implementation-coupling spec 重写）"
+      ],
+      "parallel_subagent_execution": {
+        "task_2": "拆分 _run_tool_calls_loop",
+        "task_3": "拆分 _auto_execute_skills_and_plugins",
+        "task_4": "拆分 _dispatch_tool_call",
+        "task_5": "拆分 _execute_plan_steps",
+        "write_region_isolation": "4 个方法在 agent.py 中的行范围互不相交，4 个 subagent 在同一消息中并行派发",
+        "post_integration_verification": "git diff 确认 4 处修改互不重叠，综合测试无回归"
+      },
+      "test_results": {
+        "targeted_tests": "73 passed (tests/test_agent_core.py + tests/test_agent_stream_submethods.py)",
+        "full_regression": "1714 passed + 12 pre-existing failures (MCPManager/SessionLocal/sandbox Windows/twitter-monitor/feedback MemoryPersistenceError, all in spec allowed list) + 5 skipped; 0 new regressions introduced by wave3"
+      }
+    },
+    {
+      "wave": "wave4_health_dashboard",
+      "timestamp": "2026-07-26T10:30:00",
+      "composite_score": 80,
+      "mode": "Health Dashboard",
+      "scope": "lib/backend/core/agent.py (2775 lines, AIAgent class with 80+ methods)",
+      "dimension_scores": {
+        "code_quality_pr": "skipped (no staged diff; whole-file evaluation)",
+        "architecture": 85,
+        "tech_debt": 75,
+        "test_quality": 80
+      },
+      "critical_findings": [
+        "R1 Long Method: _build_native_tools (118行) / __init__ (113行) / _execute_single_plan_step (100行) / _handle_tool_calls_in_round (86行) / _emit_tool_post_events (84行) 共 5 个方法超 80 行硬上限",
+        "R5 Dependency Disorder: core/agent.py 反向依赖 db.models.SessionLocal / Workflow (domain → persistence DIP 违反)",
+        "T2 Test Brittleness: 8 个测试文件通过 AIAgent.__new__ 跳过 __init__ 或直接断言 _tools_cache / _capabilities_cache_ts 等私有属性"
+      ],
+      "warning_findings": [
+        "R3 Knowledge Duplication: _execute_single_plan_step 中 skill/plugin/execution 三分支重复 execute→append→schedule_record→record_metric 模式",
+        "R4 Accidental Complexity: 14 个 deprecated 兼容别名 + _emit_tool_post_events 用 if 链按 tool_name 分发事件（Switch Statements smell）",
+        "T5 Coverage Illusion: _self_correction_loop / _execute_workflow_from_context / _extract_and_store_experience 等关键路径无专门单测"
+      ],
+      "trend_vs_wave3": "92 → 80 (-12): wave3 拆分了 4 个父方法但子方法 (_execute_single_plan_step / _handle_tool_calls_in_round / _emit_tool_post_events) 仍超阈值；__init__ 与 _build_native_tools 未拆分"
+    },
+    {
+      "wave": "wave5_full_remediation",
+      "timestamp": "2026-07-26T22:40:00+08:00",
+      "mode": "F1-F16 Remediation",
+      "scope": "lib/backend/core/agent.py and production collaborator wiring",
+      "metrics": {
+        "lines": 1457,
+        "methods": 48,
+        "longest_method_lines": 79,
+        "max_parameter_count": 7,
+        "nested_imports": 0,
+        "direct_project_module_fanout": 8,
+        "forbidden_db_or_api_route_imports": 0
+      },
+      "collaborators": [
+        "AgentRuntime",
+        "AgentTaskRegistry",
+        "PlanExecutor",
+        "StreamOrchestrator",
+        "ToolDispatcher",
+        "ToolEventEmitter",
+        "ToolCallContext",
+        "WorkflowRepositoryPort"
+      ],
+      "verification": {
+        "brooks_targeted": "147 passed",
+        "backend_full_grouped": "4554 passed, 7 skipped",
+        "architecture_final": "10 passed",
+        "frontend": "tests, lint, typecheck and build passed",
+        "isolated_runtime": "run-all 10 passed, 0 failed; nonstream, SSE, WebSocket and Chromium chat passed"
+      },
+      "resolved_findings": [
+        "F1",
+        "F2",
+        "F3",
+        "F4",
+        "F5",
+        "F6",
+        "F7",
+        "F8",
+        "F9",
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F14",
+        "F15",
+        "F16"
+      ]
     }
-]
+  ]
+}

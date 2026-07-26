@@ -495,7 +495,10 @@ class ScheduledTaskManager:
         """
         db = SessionLocal()
         try:
-            agent = AIAgent(db_session=db)
+            agent = AIAgent(
+                db_session=db,
+                memory_session_factory=SessionLocal,
+            )
             context = {
                 "user_id": scheduled_task["user_id"],
                 "provider": scheduled_task.get("provider"),

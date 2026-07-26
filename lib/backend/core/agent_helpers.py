@@ -10,6 +10,10 @@
 - build_effective_user_input: 为 continuation 请求拼接内部补充上下文
 - build_configured_model_hint: 为 task_spawn_agent 生成精简模型目录提示
 
+另含两个用于消除 agent.py 重复代码的工具：
+- match_keywords_against: 合并 _is_skill_relevant / _is_plugin_relevant 共同逻辑
+- ttft_stage_logger: 封装 process_stream 中重复的 TTFT 阶段计时日志
+
 core/agent.py 中对应的方法保留为类级别 backward compat 别名（@staticmethod 赋值），
 仅用于兼容既有测试 AIAgent._method_name(...) 调用，待 fix-test-implementation-coupling
 spec 落地后移除。
@@ -18,10 +22,19 @@ spec 落地后移除。
 from __future__ import annotations
 
 # 标准库
-from typing import Any, Dict, Optional
+import time
+from contextlib import contextmanager
+from typing import Any, Dict, List, Optional
+
+# 第三方库
+from loguru import logger
 
 # 项目内部
 from core.agent_state import AgentState
+
+
+COMPACTION_MESSAGE_THRESHOLD = 40
+MAX_HISTORY_MESSAGE_CHARS = 5_000
 
 
 def is_final_only_mode(context: Dict[str, Any]) -> bool:
@@ -200,3 +213,105 @@ def build_configured_model_hint(capabilities: Dict[str, Any], limit: int = 12) -
 
     suffix = " 等" if len(entries) > len(labels) else ""
     return f"当前可选的已配置模型: {'、'.join(labels)}{suffix}。"
+
+
+def match_keywords_against(
+    name: str,
+    description: str,
+    intent_keywords: str,
+    entities: List[Dict[str, Any]],
+) -> bool:
+    """判断给定名称与描述是否匹配意图关键词或实体类型。
+
+    合并自 AIAgent._is_skill_relevant 与 AIAgent._is_plugin_relevant 的共同逻辑：
+    - 名称（小写）或描述包含任一长度超过 3 字符的意图关键词即匹配
+    - 名称（小写）或描述包含任一非空实体 type（小写）即匹配
+    - intent_keywords 为空或 entities 为空时返回 False
+
+    严格保留原方法的匹配语义：
+    - intent_keywords 按空白字符分隔（split()），不是逗号分隔
+    - 仅匹配 len(keyword) > 3 的关键词
+    - 实体字段名为 'type'，不是 'value'
+    - 名称使用小写匹配，描述保留原大小写
+    - 实体 type 为空字符串时跳过
+
+    Args:
+        name: 技能/插件名称
+        description: 技能/插件描述
+        intent_keywords: 空白分隔的意图关键词字符串
+        entities: 实体列表，每项含 type 字段
+
+    Returns:
+        bool: 是否匹配
+    """
+    name_lower = name.lower()
+
+    # 关键词匹配：仅长度超过 3 字符的关键词参与匹配，避免短词误匹配
+    if any(
+        keyword in name_lower or keyword in description
+        for keyword in intent_keywords.split()
+        if len(keyword) > 3
+    ):
+        return True
+
+    # 实体类型匹配：实体 type 转小写后参与匹配，空字符串跳过
+    entity_types = [entity.get("type", "").lower() for entity in entities]
+    if any(
+        entity_type in name_lower or entity_type in description
+        for entity_type in entity_types
+        if entity_type
+    ):
+        return True
+
+    return False
+
+
+@contextmanager
+def ttft_stage_logger(
+    stage: str,
+    session_id: str,
+    t0: float,
+    *,
+    extra_fields: Optional[Dict[str, Any]] = None,
+    min_elapsed_ms: Optional[float] = None,
+):
+    """TTFT 阶段计时 contextmanager。
+
+    封装 process_stream 中重复的 logger.bind(event="ttft_stage", ...) 模式。
+    进入时记录阶段开始时间，退出时输出日志。
+
+    兼容原 8 处 TTFT 阶段计时日志：
+    - role_engine / inject_capabilities / build_history / auto_compress
+    - retrieve_memories / recognize_intent / extract_entities / create_plan
+
+    Args:
+        stage: 阶段名称（如 "role_engine" / "inject_capabilities"）
+        session_id: 会话 ID
+        t0: 整个 process_stream 的起始时间戳，用于计算 total_ms
+        extra_fields: 额外日志字段（如 {"memory_count": 3}）；
+            调用方可在 with 块内动态填充此 dict，退出时按最新值写入日志
+        min_elapsed_ms: 最小耗时阈值（毫秒），低于此值不输出日志；
+            用于 auto_compress 阶段保留 "仅超过 50ms 才记录" 的原行为
+
+    Yields:
+        None
+    """
+    stage_t0 = time.time()
+    try:
+        yield
+    finally:
+        elapsed_ms = round((time.time() - stage_t0) * 1000, 2)
+        # 保留 auto_compress 阶段 "仅超过 50ms 才记录" 的原行为
+        if min_elapsed_ms is not None and elapsed_ms < min_elapsed_ms:
+            return
+        log_payload: Dict[str, Any] = {
+            "event": "ttft_stage",
+            "module": "agent",
+            "stage": stage,
+            "session_id": session_id,
+            "elapsed_ms": elapsed_ms,
+            "total_ms": round((time.time() - t0) * 1000, 2),
+        }
+        if extra_fields:
+            log_payload.update(extra_fields)
+        logger.bind(**log_payload).info(f"阶段耗时: {stage}")

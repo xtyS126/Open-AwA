@@ -513,7 +513,7 @@ async def test_state_transition_deprecated_to_active_via_archive_active():
 
 
 @pytest.mark.asyncio
-async def test_memory_forget_tool_sets_state_deprecated():
+async def test_memory_forget_tool_sets_state_deprecated(monkeypatch):
     """
     场景：memory_forget 工具调用后，记忆 state 被设为 deprecated。
 
@@ -524,20 +524,15 @@ async def test_memory_forget_tool_sets_state_deprecated():
     from core.builtin_tools.memory_tools import MemoryTools
 
     # 构造独立 DB 与 manager，避免污染其他测试
-    manager, factory, _ = _build_manager()
+    _, factory, _ = _build_manager()
     memory_id = _insert_memory(factory, state="active", archive_status="active")
 
-    # MemoryTools 内部使用 SessionLocal，需 monkeypatch 让其使用本测试的 factory
-    import core.builtin_tools.memory_tools as mt_module
+    # MemoryTools 运行时从 db.models 动态查找工厂，测试必须替换权威命名空间
+    import db.models as db_models
 
-    original_session_local = mt_module.SessionLocal
-    mt_module.SessionLocal = factory
-
-    try:
-        tools = MemoryTools()
-        result = await tools.execute("forget", memory_id=memory_id)
-    finally:
-        mt_module.SessionLocal = original_session_local
+    monkeypatch.setattr(db_models, "SessionLocal", factory)
+    tools = MemoryTools()
+    result = await tools.execute("forget", memory_id=memory_id)
 
     assert result["success"] is True
     assert result["state"] == "deprecated"
@@ -548,7 +543,7 @@ async def test_memory_forget_tool_sets_state_deprecated():
 
 
 @pytest.mark.asyncio
-async def test_memory_forget_tool_returns_error_for_nonexistent():
+async def test_memory_forget_tool_returns_error_for_nonexistent(monkeypatch):
     """
     场景：memory_forget 工具调用不存在的记忆 ID。
 
@@ -557,17 +552,12 @@ async def test_memory_forget_tool_returns_error_for_nonexistent():
     """
     from core.builtin_tools.memory_tools import MemoryTools
 
-    manager, factory, _ = _build_manager()
-    import core.builtin_tools.memory_tools as mt_module
+    _, factory, _ = _build_manager()
+    import db.models as db_models
 
-    original_session_local = mt_module.SessionLocal
-    mt_module.SessionLocal = factory
-
-    try:
-        tools = MemoryTools()
-        result = await tools.execute("forget", memory_id=99999)
-    finally:
-        mt_module.SessionLocal = original_session_local
+    monkeypatch.setattr(db_models, "SessionLocal", factory)
+    tools = MemoryTools()
+    result = await tools.execute("forget", memory_id=99999)
 
     assert result["success"] is False
     assert "不存在" in result["error"]

@@ -29,6 +29,655 @@ git add .
 - Related Files: .gitignore, AGENTS.md
 
 ---
+## [ERR-20260727-025] powershell-inline-python-chinese-literal
+
+**Logged**: 2026-07-27T02:02:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+PowerShell 管道传递内联 Python 时，中文断言字面量发生控制台编码转换，导致正确文档被误判缺少标题。
+
+### Error
+```text
+AssertionError
+```
+
+### Context
+- `rg` 与 UTF-8 文件读取均确认标题存在。
+- 仅内联脚本中的中文字面量在 PowerShell 到 Python stdin 边界发生变化。
+
+### Suggested Fix
+跨 PowerShell stdin 的 Python 检查使用 ASCII 源码和 Unicode escape。
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/audit/core-agent-brooks-debt-2026-07-26.md
+
+### Resolution
+- **Resolved**: 2026-07-27T02:02:00+08:00
+- **Notes**: 已改用 Unicode escape，JSON、F1-F16 和 emoji 检查通过。
+
+---
+## [ERR-20260727-024] architecture-test-bom-parse
+
+**Logged**: 2026-07-27T01:52:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+架构测试扫描全测试目录时，既有 UTF-8 BOM 文件使 `ast.parse` 拒绝首字符。
+
+### Error
+```text
+SyntaxError: invalid non-printable character U+FEFF
+```
+
+### Context
+- 失败文件以 UTF-8 BOM 开头。
+- Python `Path.read_text(encoding='utf-8')` 保留 BOM，传给 `ast.parse` 后报错。
+
+### Suggested Fix
+扫描可能包含 BOM 的 Python 源码时使用 `utf-8-sig` 解码。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_agent_architecture.py
+
+### Resolution
+- **Resolved**: 2026-07-27T01:52:00+08:00
+- **Notes**: 架构扫描改用 `utf-8-sig`。
+
+---
+## [ERR-20260727-023] architecture-test-self-matched-new-pattern
+
+**Logged**: 2026-07-27T01:48:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+禁止 `AIAgent.__new__` 的架构测试使用相同字面量搜索，导致测试文件自身被误判。
+
+### Error
+```text
+AssertionError: assert ['test_agent_architecture.py'] == []
+```
+
+### Context
+- 两个真实绕过构造的测试已改为正式 `AIAgent(...)` 构造。
+- 新规则最初按源码字符串搜索，检测表达式本身包含被禁字符串。
+
+### Suggested Fix
+使用 AST 检查 `Attribute(Name('AIAgent'), '__new__')`，避免检测实现自引用。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_agent_architecture.py
+
+### Resolution
+- **Resolved**: 2026-07-27T01:48:00+08:00
+- **Notes**: 已改为 AST 节点检测。
+
+---
+## [ERR-20260727-022] playwright-chat-text-strict-locator
+
+**Logged**: 2026-07-27T01:27:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+聊天消息文本同时出现在历史摘要和消息流，Playwright 严格定位器因两个匹配而失败。
+
+### Error
+```text
+strict mode violation: get_by_text("Brooks browser E2E message", exact=True) resolved to 2 elements
+```
+
+### Context
+- 浏览器已认证并进入聊天页。
+- 发送动作成功，历史摘要和消息列表均渲染了同一文本。
+
+### Suggested Fix
+将验证范围限制到消息列表，或在已知页面结构中使用最后一个可见匹配。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tmp_brooks_e2e_codex/verify_chat_browser.py
+
+### Resolution
+- **Resolved**: 2026-07-27T01:27:00+08:00
+- **Notes**: 已使用最后一个可见匹配验证消息流。
+
+---
+## [ERR-20260727-021] playwright-python-add-init-script-arguments
+
+**Logged**: 2026-07-27T01:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+当前 Playwright Python 的 `Page.add_init_script` 不接受 JavaScript 参数作为第三个位置参数。
+
+### Error
+```text
+TypeError: Page.add_init_script() takes from 1 to 2 positional arguments but 3 were given
+```
+
+### Context
+- 隔离 Vite 已正常启动，失败发生在浏览器导航前。
+- 原脚本沿用了支持 `arg` 的其他 Playwright API 调用习惯。
+
+### Suggested Fix
+用 `json.dumps` 安全转义短期测试 token，并把字面量嵌入初始化脚本字符串。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tmp_brooks_e2e_codex/verify_chat_browser.py
+
+### Resolution
+- **Resolved**: 2026-07-27T01:20:00+08:00
+- **Notes**: 已改为单参数 `add_init_script(script)`。
+
+---
+## [ERR-20260727-020] isolated-backend-database-url-replace-pattern
+
+**Logged**: 2026-07-27T00:28:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+PowerShell 构造隔离 SQLite URL 时使用了无效的反斜杠正则，导致 `DATABASE_URL` 未赋值，服务回落到默认数据库。
+
+### Error
+```text
+The regular expression pattern \ is not valid.
+```
+
+### Context
+- 命令使用 `-replace` 把 Windows 路径转换为 SQLite URL。
+- 工具层最初只回传了拒绝访问；单独打印环境后才显示 PowerShell 正则错误。
+- `VECTOR_DB_PATH` 等后续变量成功覆盖，但 `DATABASE_URL` 保持为空，Pydantic 因此使用默认 `var/data/openawa.db`。
+- 误启动的 18000 进程已按 PID 19216 精确停止；现有 8765 用户服务未停止也未修改。
+
+### Suggested Fix
+使用字符串 `.Replace('\', '/')` 或 `Path.as_posix()`，不要依赖跨 JSON/PowerShell 边界的反斜杠正则。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend/tests/e2e/support/start_backend.py
+
+### Resolution
+- **Resolved**: 2026-07-27T00:45:00+08:00
+- **Notes**: 已确认环境打印结果，并改为不使用正则的路径转换方式。
+
+---
+## [ERR-20260727-019] changed-python-ruff-scope-too-broad
+
+**Logged**: 2026-07-27T00:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+最终 Ruff 命令把任务外未跟踪 Python 脚本和已知历史规则一并纳入，产生与本次修复无关的误报。
+
+### Error
+```text
+rename_files.py:1:1: E401 Multiple imports on one line
+main.py:1569:1: E402 Module level import not at top of file
+```
+
+### Context
+- 命令合并了所有 tracked diff 与所有 untracked Python 文件。
+- `rename_files.py` 已在任务交接中明确列为不可暂存的运行时辅助脚本。
+- `main.py` 与部分路由的文件尾注册导入属于既有结构，不是本次改动新增。
+
+### Suggested Fix
+最终 Ruff 应使用明确的任务文件清单，并排除运行时、备份与用户辅助脚本；对本次实际新增的未使用导入单独修复。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/rename_files.py, lib/backend/main.py
+
+### Resolution
+- **Resolved**: 2026-07-27T00:20:00+08:00
+- **Notes**: 已改用任务拥有的 Python 文件清单，并清理本次触碰测试中的未使用导入。
+
+---
+
+## [ERR-20260726-001] apply-patch-context-drift
+
+**Logged**: 2026-07-26T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+大块补丁同时修改多个区域时，导入区上下文与当前脏工作区不一致，补丁校验失败且未产生修改。
+
+### Error
+```text
+apply_patch verification failed: Failed to find expected lines in lib/backend/core/agent.py
+```
+
+### Context
+- 操作：迁移原生工具构建逻辑并同步删除 `AIAgent` 内旧方法。
+- 当前工作区已有多轮未提交重构，文件上下文变化较大。
+
+### Suggested Fix
+先读取目标区域的精确当前内容，再把新增实现、导入调整和旧代码删除拆成独立小补丁。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/core/agent.py, lib/backend/core/agent_capability_builder.py
+- Pattern-Key: apply_patch.context_drift
+- Recurrence-Count: 2
+- Last-Seen: 2026-07-26
+
+### Resolution
+- **Resolved**: 2026-07-26T00:00:00+08:00
+- **Notes**: 同日再次因跨多个区域的大补丁末尾上下文漂移而复发；后续强制每次只修改一个连续区域。
+
+---
+
+## [ERR-20260726-002] native-tool-builder-import-source
+
+**Logged**: 2026-07-26T10:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+迁移原生工具构建逻辑时误把 `build_configured_model_hint` 从上下文构建模块导入，导致 Agent 模块导入失败。
+
+### Error
+```text
+ImportError: cannot import name 'build_configured_model_hint' from 'core.agent_context_builder'
+```
+
+### Context
+- 操作：把 `_build_native_tools` 从 `AIAgent` 迁移到能力构建模块。
+- 原函数实际定义在 `core.agent_helpers`。
+
+### Suggested Fix
+迁移函数前先用 `rg` 定位每个依赖的真实定义模块，不根据相近模块名推断。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/core/agent_capability_builder.py, lib/backend/core/agent_helpers.py
+
+### Resolution
+- **Resolved**: 2026-07-26T10:20:00+08:00
+- **Notes**: 改为从 `core.agent_helpers` 导入并重新执行模块导入冒烟测试。
+
+---
+
+## [ERR-20260726-003] combined-agent-tests-timeout
+
+**Logged**: 2026-07-26T10:30:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+数据库会话工厂解耦后，四个 Agent 定向测试文件组合运行超过 120 秒且无断言输出。
+
+### Error
+```text
+command timed out after 124020 milliseconds
+```
+
+### Context
+- 命令：`pytest --no-cov -q tests/test_agent_core.py tests/test_agent_registry.py tests/test_workflow_repository_port.py tests/test_backend_protocol_features.py`
+- 单独的能力与缓存测试此前可在 15 秒内完成。
+
+### Suggested Fix
+按测试文件拆分运行并启用详细输出，定位具体挂起用例后检查新会话工厂或异步资源清理。
+
+### Metadata
+- Reproducible: unknown
+- Related Files: lib/backend/core/agent.py, lib/backend/core/agent_registry.py, lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-26T11:20:00+08:00
+- **Notes**: 测试替身补齐 `memory_session_factory` 构造参数，并新增工厂透传断言；注册表 10 项测试通过。
+
+---
+
+## [ERR-20260726-004] loguru-file-rotation-lock
+
+**Logged**: 2026-07-26T12:15:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+后端测试与既有服务同时写入同一 Loguru 文件时，Windows 文件锁阻止测试进程执行日志轮转。
+
+### Error
+```text
+PermissionError: [WinError 32] 另一个程序正在使用此文件
+```
+
+### Context
+- 目标文件：`var/logs/openawa_2026-07-26.log`。
+- `test_backend_protocol_features.py` 的 22 项断言全部通过，错误发生在异步日志 writer 的轮转路径。
+- 当前存在用户侧后端进程，不能为测试擅自关闭。
+
+### Suggested Fix
+测试环境为文件 sink 注入独立临时日志目录，避免与正在运行的服务共享轮转目标；不要通过关闭生产服务规避。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/config/logging.py, lib/backend/tests/conftest.py
+- See Also: ERR-20260714-036
+
+---
+
+## [ERR-20260726-005] role-engine-patch-target-after-import-move
+
+**Logged**: 2026-07-26T13:50:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+移除 `RoleEngine` 延迟导入后，测试仍 patch 定义模块，未替换 `core.agent` 已绑定的符号。
+
+### Error
+```text
+Expected 'RoleEngine' to be called once. Called 0 times.
+```
+
+### Context
+- 生产代码已从方法内导入改为模块级导入。
+- Python patch 必须作用于被测模块查找符号的位置。
+
+### Suggested Fix
+把测试替换点从 `core.role_engine.RoleEngine` 改为 `core.agent.RoleEngine`。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/core/agent.py, lib/backend/tests/test_agent_stream_submethods.py
+
+### Resolution
+- **Resolved**: 2026-07-26T13:50:00+08:00
+- **Notes**: 测试 patch 目标已同步到实际符号查找位置。
+
+---
+
+## [ERR-20260726-006] runtime-extraction-unused-imports
+
+**Logged**: 2026-07-26T14:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+运行时组合逻辑迁出后，`agent.py` 保留了 26 个已无调用的旧导入，Ruff F401 检查失败。
+
+### Error
+```text
+Found 26 errors.
+```
+
+### Context
+- `agent_runtime.py` 已接管层、技能、插件、记忆和协作对象初始化。
+- 旧导入没有行为影响，但会让模块扇出统计失真并违反静态检查。
+
+### Suggested Fix
+删除旧初始化专用导入，并把测试从 `core.agent` 的间接导出迁到真实定义模块。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/core/agent.py, lib/backend/core/agent_runtime.py
+- Pattern-Key: refactor.unused_imports
+- Recurrence-Count: 2
+
+### Resolution
+- **Resolved**: 2026-07-26T14:35:00+08:00
+- **Notes**: 第二次 Ruff 检查又发现组合模块残留 1 个未使用导入，现已一并删除。
+
+---
+
+## [ERR-20260726-007] behavior-recorder-test-patch-target
+
+**Logged**: 2026-07-26T14:50:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+行为记录器迁入运行时组合模块后，测试继续 patch `core.agent` 的旧模块全局导致属性不存在。
+
+### Error
+```text
+AttributeError: module 'core.agent' has no attribute 'behavior_logger'
+```
+
+### Context
+- `BehaviorRecorder` 已持有实际 logger 与 conversation recorder 协作者。
+- 隔离模式测试应替换协作对象，而不是依赖入口模块的间接导出。
+
+### Suggested Fix
+直接 patch `agent._behavior_recorder` 持有的两个记录器。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/core/agent_runtime.py, lib/backend/tests/test_backend_protocol_features.py
+
+### Resolution
+- **Resolved**: 2026-07-26T14:50:00+08:00
+- **Notes**: 测试替换点已迁到行为记录协作对象。
+
+---
+
+## [ERR-20260726-001] apply_patch_context_mismatch
+
+**Logged**: 2026-07-26T04:07:50+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+组合常量提取补丁引用了审计报告中的旧方法上下文，安全校验拒绝写入。
+
+### Error
+```text
+apply_patch verification failed: Failed to find expected lines in core/agent.py
+```
+
+### Context
+- 目标是在 `agent_helpers.py` 提取压缩消息数和单消息字符数常量。
+- 当前 `_build_conversation_history` 的局部结构与初始补丁上下文不一致。
+- 失败补丁未产生部分写入。
+
+### Suggested Fix
+先读取每个目标局部段，再以实际标识符为锚点拆成精确补丁。
+
+### Metadata
+- Reproducible: no
+- Related Files: lib/backend/core/agent.py, lib/backend/core/agent_helpers.py
+- See Also: ERR-20260722-002
+
+### Resolution
+- **Resolved**: 2026-07-26T04:07:50+08:00
+- **Notes**: 重新读取四个目标局部段后，使用精确小补丁完成常量提取。
+
+---
+
+## [ERR-20260726-002] deprecated-alias-test-coupling
+
+**Logged**: 2026-07-26T04:15:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+移除 AIAgent 兼容别名后，扩大回归发现 8 个状态机测试仍直接调用已删除的私有别名。
+
+### Error
+```text
+AttributeError: 'AIAgent' object has no attribute '_map_finish_reason_to_state'
+```
+
+### Context
+- 生产调用已直接使用 `agent_helpers.map_finish_reason_to_state`。
+- 首轮搜索遗漏了测试文件后半段的实例调用形式。
+- 128 项回归中 120 项通过，失败均属于同一测试耦合。
+
+### Suggested Fix
+删除兼容别名前同时搜索类调用和实例调用，并让纯函数测试直接导入真实 helper。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/core/agent.py, lib/backend/tests/test_agent_core.py
+- See Also: ERR-20260726-001
+
+### Resolution
+- **Resolved**: 2026-07-26T04:15:00+08:00
+- **Notes**: 8 个测试已改为直接调用 `map_finish_reason_to_state`，并清理重写后未使用导入。
+
+---
+
+## [ERR-20260726-003] pytest-target-path-mismatch
+
+**Logged**: 2026-07-26T05:38:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+仓储端口组合回归引用了不存在的聊天测试文件，pytest 在收集前退出。
+
+### Error
+```text
+ERROR: file or directory not found: tests/test_chat_api.py
+collected 0 items
+```
+
+### Context
+- 目标是验证工作流仓储、Agent 注册表和聊天路由。
+- 仓库实际聊天测试拆分为 `test_chat_streaming_status.py`、`test_chat_error_response.py` 等文件。
+
+### Suggested Fix
+组合测试前先用 `rg --files tests` 核对测试文件名。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-26T05:39:00+08:00
+- **Notes**: 已通过文件清单定位真实测试文件。
+
+---
+
+## [ERR-20260726-004] pytest-timeout-leftover-processes
+
+**Logged**: 2026-07-26T05:47:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: tests
+
+### Summary
+工作流仓储组合回归及其拆分回归连续超时，并在 Windows 上遗留 pytest/python 子进程。
+
+### Error
+```text
+command timed out after 64019 milliseconds
+command timed out after 64018 milliseconds
+```
+
+### Context
+- 第一次：工作流 API、聊天和注册表组合回归，60 秒内无完成输出。
+- 第二次：仅 `test_workflow_repository_port.py` 与 `test_agent_registry.py`，仍在 60 秒内超时。
+- 精确清理本轮启动的 PID 61760、67328、10980、31328，未触碰生产服务。
+- 同一验证步骤累计三次失败后按 AGENTS.md 自愈上限停止。
+
+### Suggested Fix
+下一轮先用单测试、`-vv -s` 和 faulthandler 定位停滞用例；检查新端口导入链是否触发应用 lifespan、数据库初始化或非守护线程。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_workflow_repository_port.py, lib/backend/tests/test_agent_registry.py
+- See Also: ERR-20260714-B91
+
+### Resolution
+- **Resolved**: 2026-07-26T06:19:00+08:00
+- **Notes**: 两个工作流仓储用例均独立通过。阻塞来自并发注册表测试的 `FakeAgent` 未接收新增 `workflow_repository` 参数，首个任务在设置同步事件前抛出 `TypeError`，测试主体因此永久等待。补齐测试替身签名后，工作流仓储与注册表组合回归 11 项通过。
+
+---
+
+## [ERR-20260726-005] code-audit-script-missing
+
+**Logged**: 2026-07-26T06:42:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: docs
+
+### Summary
+CLAUDE.md 强制要求的静态审计入口 `scripts/code-audit.ps1` 在当前仓库中不存在。
+
+### Error
+```text
+.\scripts\code-audit.ps1 : The term '.\scripts\code-audit.ps1' is not recognized
+```
+
+### Context
+- Command: `.\scripts\code-audit.ps1 -SkipTests`
+- CLAUDE.md 5.3 与 5.5 仍把该脚本列为提交前强制步骤。
+- 历史错误记录表明该脚本在旧布局中曾存在且可执行。
+
+### Suggested Fix
+先定位当前等价静态检查入口；若确认脚本已移除，应同步更新 CLAUDE.md 验证契约或恢复迁移后的脚本。
+
+### Metadata
+- Reproducible: yes
+- Related Files: CLAUDE.md, scripts
+- See Also: ERR-20260714-017, ERR-20260704-003
+
+---
+
+## [ERR-20260726-006] frontend-full-suite-chat-timeout
+
+**Logged**: 2026-07-26T08:27:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+前端全量 Vitest 在套件负载下有一项后台子代理 transcript 同步用例超过 5 秒。
+
+### Error
+```text
+ChatPage > 为后台子代理建立独立同步，并在全部结束后一次性拉取 transcript
+Test timed out in 5000ms
+```
+
+### Context
+- Command: `npm run test`
+- 本轮未修改前端代码，其他测试均通过。
+- 同一用例定向运行耗时 318ms。
+
+### Suggested Fix
+保留当前业务断言；若全量套件再次复现，应采集 Vitest 并发资源与 fake timer 状态，不以单次抖动为由放宽超时。
+
+### Metadata
+- Reproducible: no
+- Related Files: lib/frontend/src/__tests__/features/chat/ChatPage.test.tsx
+
+### Resolution
+- **Resolved**: 2026-07-26T08:27:00+08:00
+- **Notes**: 使用相同 Vitest 环境定向复跑通过，1 passed，耗时 318ms。
+
+---
 
 ## [ERR-20260714-B91] chromium-full-suite-sequential-flakes
 
@@ -2614,5 +3263,366 @@ TypeError: target?.parentElement?.parentElement?.click is not a function
 ### Resolution
 - **Resolved**: 2026-07-23T07:35:00+08:00
 - **Notes**: 改用标准鼠标事件继续验收，不修改应用代码。
+
+---
+## [ERR-20260726-008] rg-windows-wildcard-path
+
+**Logged**: 2026-07-26T23:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Windows PowerShell 下将未展开的通配路径直接传给 rg，导致结构审计命令退出。
+
+### Error
+```text
+rg: tests/test_*architecture*: 文件名、目录名或卷标语法不正确。 (os error 123)
+```
+
+### Context
+- 尝试在多个架构测试候选文件中搜索 AIAgent 约束。
+- PowerShell 没有把该模式展开为文件列表，rg 将其当成非法 Windows 路径。
+
+### Suggested Fix
+先使用 `rg --files tests | rg "architecture"` 获取显式文件名，或直接对 `tests` 目录搜索后用 `-g` 过滤。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-26T23:20:00+08:00
+- **Notes**: 后续结构审计改用目录搜索和显式 `-g` 过滤。
+
+---
+## [ERR-20260726-009] brooks-bundle-unused-imports
+
+**Logged**: 2026-07-26T23:24:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend
+
+### Summary
+Brooks 重构相关文件的扩展 Ruff 检查发现 17 个提取后遗留的未使用 import。
+
+### Error
+```text
+Found 17 errors.
+F401 imported but unused
+```
+
+### Context
+- 首次对全部 Brooks 相关生产与测试文件运行 `ruff --select F401,F821,E9`。
+- 遗留项分布在 chat、test_runner、task_runtime、main 和测试配置中。
+
+### Suggested Fix
+职责提取后立即对完整变更文件集合运行 Ruff，不只检查新建协作者文件。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/api/routes/chat.py, lib/backend/main.py
+- See Also: ERR-20260726-006
+
+### Resolution
+- **Resolved**: 2026-07-26T23:24:00+08:00
+- **Notes**: 已精确移除所有报告的未使用 import，等待同命令复验。
+
+---
+## [ERR-20260726-010] grouped-pytest-start-process-access-denied
+
+**Logged**: 2026-07-26T23:29:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+使用 Start-Process 并重定向输出并行启动后端分组 pytest 时被 Windows ACL 拒绝。
+
+### Error
+```text
+Io(Os { code: 5, kind: PermissionDenied, message: "拒绝访问。" })
+```
+
+### Context
+- 两个 pytest 子进程尚未开始执行，失败发生在进程启动或输出重定向阶段。
+- 工作目录为 `lib/backend`，输出目标位于系统临时目录。
+
+### Suggested Fix
+使用编排层并行发起两个独立 PowerShell pytest 命令，避免 Start-Process 输出重定向。
+
+### Metadata
+- Reproducible: unknown
+- Related Files: lib/backend/tests
+- See Also: ERR-20260714-017
+
+### Resolution
+- **Resolved**: 2026-07-26T23:29:00+08:00
+- **Notes**: 改用两个直接 pytest 命令并行执行，保留每次最多两组的约束。
+
+---
+## [ERR-20260726-011] grouped-regression-stale-test-doubles
+
+**Logged**: 2026-07-26T23:33:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+分组回归发现三个测试替身未完整表达当前生产契约。
+
+### Error
+```text
+TypeError: FakeAgent.__init__() got an unexpected keyword argument 'memory_session_factory'
+TypeError: '>' not supported between instances of 'int' and 'MagicMock'
+```
+
+### Context
+- 定时任务生产路径现已向 AIAgent 转发记忆会话工厂，两个 FakeAgent 构造器仍只接收 db_session。
+- Feedback 测试使用裸 MagicMock 作为 MemoryManager，使内容长度常量也变成 MagicMock。
+
+### Suggested Fix
+测试替身应显式接收新增构造契约，并为参与数值运算的常量设置真实值。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_scheduled_task_manager.py, lib/backend/tests/test_feedback_consolidation_trigger.py, lib/backend/tests/test_memory_injection_fix.py
+- See Also: ERR-20260726-003
+- Recurrence-Count: 2
+- Last-Seen: 2026-07-26
+
+### Resolution
+- **Resolved**: 2026-07-26T23:33:00+08:00
+- **Notes**: 已补齐 memory_session_factory 参数；两个 Feedback 测试替身均设置真实的 500 字长度常量。
+
+---
+## [ERR-20260726-012] memory-tools-stale-sessionlocal-patch
+
+**Logged**: 2026-07-26T23:36:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+两个记忆状态机测试仍 patch 已移除的 memory_tools.SessionLocal 别名。
+
+### Error
+```text
+AttributeError: module 'core.builtin_tools.memory_tools' has no attribute 'SessionLocal'
+```
+
+### Context
+- 生产实现已按项目硬约束通过 `_get_session_local()` 动态读取 `db.models.SessionLocal`。
+- 测试仍依赖旧的模块局部别名。
+
+### Suggested Fix
+使用 monkeypatch 替换 `db.models.SessionLocal`，不要恢复测试专用兼容别名。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_memory_state_machine.py
+- See Also: ERR-20260726-002
+
+### Resolution
+- **Resolved**: 2026-07-26T23:36:00+08:00
+- **Notes**: 两个用例已改为替换权威命名空间并使用 monkeypatch 自动恢复。
+
+---
+## [ERR-20260726-013] task-runtime-stale-agent-constructor-double
+
+**Logged**: 2026-07-26T23:40:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Task Runtime 两个 FakeAgent 未接收记忆会话工厂，导致构造失败及事件断言连锁失败。
+
+### Error
+```text
+TypeError: FakeAgent.__init__() got an unexpected keyword argument 'memory_session_factory'
+AssertionError: subagent_stop appeared before expected agent_message events
+```
+
+### Context
+- 第一项是直接根因。
+- 第二项是 run_foreground 捕获构造异常后发出停止和错误事件的连锁表现。
+
+### Suggested Fix
+所有替代 AIAgent 的构造测试替身都必须显式覆盖生产构造契约。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_task_runtime_phase1.py
+- See Also: ERR-20260726-011
+
+### Resolution
+- **Resolved**: 2026-07-26T23:40:00+08:00
+- **Notes**: 两个 FakeAgent 已接收并保存 memory_session_factory，第一个用例新增转发断言。
+
+---
+
+## [ERR-20260726-014] apply-patch-assertion-context-drift
+
+**Logged**: 2026-07-26T23:40:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+包含构造器和断言的组合补丁因断言原文不匹配而未应用。
+
+### Error
+```text
+apply_patch verification failed: Failed to find expected lines
+```
+
+### Context
+- 目标构造器位置正确，但预期断言使用了与当前文件不同的文本。
+- 补丁验证失败，没有产生部分写入。
+
+### Suggested Fix
+大文件先读取精确局部，再用最小上下文分块修改构造器和断言。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_task_runtime_phase1.py
+- See Also: ERR-20260726-001
+
+### Resolution
+- **Resolved**: 2026-07-26T23:40:00+08:00
+- **Notes**: 读取当前局部后，以精确小补丁成功应用。
+
+---
+## [ERR-20260726-015] grouped-regression-stale-tool-and-model-contracts
+
+**Logged**: 2026-07-26T23:52:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+分组回归发现插件工具入口和 DeepSeek 模型别名测试仍绑定旧生产契约。
+
+### Error
+```text
+'FakePluginManager' object has no attribute 'execute_registered_tool_async'
+expected deepseek/deepseek-chat, got deepseek/deepseek-v4-flash
+```
+
+### Context
+- ExecutionLayer 已通过注册工具入口执行插件工具，测试替身只实现旧的 execute_plugin_async。
+- DeepSeek 旧模型名已明确映射到当前通用模型 deepseek-v4-flash。
+
+### Suggested Fix
+测试替身应覆盖生产调用的公开入口；模型别名测试应断言规范化后的当前模型。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_executor_tool_calling.py, lib/backend/tests/test_litellm_adapter.py
+- See Also: ERR-20260726-011
+
+### Resolution
+- **Resolved**: 2026-07-26T23:52:00+08:00
+- **Notes**: FakePluginManager 新增注册工具入口并复用执行逻辑，旧 DeepSeek 模型断言更新为当前规范化结果。
+
+---
+## [ERR-20260726-016] sandbox-security-check-after-platform-resolution
+
+**Logged**: 2026-07-27T00:02:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+Sandbox 在平台命令解析失败后直接返回，导致危险命令未进入权限与白名单安全检查。
+
+### Error
+```text
+rm -rf / -> 命令未找到，而不是安全拒绝
+sudo ls -> 在宽松开发配置下返回 success
+check_permission -> 未调用
+```
+
+### Context
+- Windows 平台解析位于权限检查和 `_validate_command` 之前。
+- pytest 还会继承开发机的 `AGENT_WORKSPACE_UNRESTRICTED_COMMANDS` 配置。
+- 微信自动回复测试同时存在未覆盖 workflow_repository 的旧 FakeAgent。
+
+### Suggested Fix
+先用 shlex 解析原始命令并执行权限、白名单和危险模式检查，通过后才解析平台可执行文件；测试环境强制使用受限命令模式。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/security/sandbox.py, lib/backend/tests/conftest.py, lib/backend/tests/test_weixin_auto_reply.py
+- See Also: ERR-20260726-011
+
+### Resolution
+- **Resolved**: 2026-07-27T00:02:00+08:00
+- **Notes**: 已调整安全检查顺序、隔离 pytest 命令模式，并补齐微信测试替身构造契约。
+
+---
+## [ERR-20260727-017] powershell-rg-quote-terminator
+
+**Logged**: 2026-07-27T00:08:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+PowerShell 中嵌套双引号的 rg 模式缺少字符串终止符，读取命令未执行。
+
+### Error
+```text
+The string is missing the terminator: ".
+```
+
+### Context
+- 命令试图同时搜索双引号 JSON 片段并读取 Bilibili 工具定义。
+- 失败发生在 PowerShell 解析阶段，没有执行搜索或文件写入。
+
+### Suggested Fix
+PowerShell 的 rg 正则使用单引号包裹，复杂搜索与文件读取拆成独立命令。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/plugins/bilibili_toolkit_builtin/tools.py
+- See Also: ERR-20260726-008
+
+### Resolution
+- **Resolved**: 2026-07-27T00:08:00+08:00
+- **Notes**: 后续改用单引号模式并拆分读取操作。
+
+---
+## [ERR-20260727-018] bilibili-tool-count-contract-stale
+
+**Logged**: 2026-07-27T00:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Bilibili Toolkit 已正式注册第六个合集下载工具，但 Agent schema 测试和注释仍固定为五个。
+
+### Error
+```text
+assert len(BILIBILI_TOOLKIT_TOOLS) == 5
+actual: 6
+```
+
+### Context
+- 新工具 `bilibili_download_collection` 已在生产注册表、插件测试和导出列表中存在。
+- 旧 schema 测试未覆盖其 source/path/name 参数。
+
+### Suggested Fix
+同步工具总数、名称集合、参数 schema 与 handler 身份断言，不只修改数量。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/plugins/bilibili_toolkit_builtin/tools.py, lib/backend/tests/test_bilibili_toolkit_agent_tools.py
+
+### Resolution
+- **Resolved**: 2026-07-27T00:10:00+08:00
+- **Notes**: 工具契约更新为六项，并新增合集下载工具的完整 schema 与 handler 断言。
 
 ---

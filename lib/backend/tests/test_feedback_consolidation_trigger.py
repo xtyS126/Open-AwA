@@ -15,14 +15,10 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.feedback import FeedbackLayer
-from db.models import init_db
 
 
 def _build_feedback_with_mock_runner():
@@ -33,6 +29,7 @@ def _build_feedback_with_mock_runner():
     """
     feedback = FeedbackLayer()
     feedback.memory_manager = MagicMock()
+    feedback.memory_manager._MAX_LONG_TERM_CONTENT_CHARS = 500
     # 异步 add_short_term_memory / add_long_term_memory 不实际写入
     feedback.memory_manager.add_short_term_memory = AsyncMock()
     feedback.memory_manager.add_long_term_memory = AsyncMock()

@@ -1,9 +1,10 @@
 """bilibili-toolkit-builtin Agent 工具函数与 schema 定义测试。
 
-覆盖 SubTask 53.1：5 个 Agent 工具的参数 schema、返回格式与基本行为。
+覆盖 SubTask 53.1：6 个 Agent 工具的参数 schema、返回格式与基本行为。
 
 工具列表：
 - ``bilibili_add_subscription``：添加订阅源
+- ``bilibili_download_collection``：直接下载合集
 - ``bilibili_list_subscriptions``：列出订阅
 - ``bilibili_trigger_download``：手动触发下载
 - ``bilibili_get_download_status``：查询下载状态
@@ -20,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -43,6 +43,7 @@ from plugins.bilibili_toolkit_builtin.api import routes as bt_routes  # noqa: E4
 from plugins.bilibili_toolkit_builtin.tools import (  # noqa: E402
     BILIBILI_TOOLKIT_TOOLS,
     bilibili_add_subscription,
+    bilibili_download_collection,
     bilibili_get_download_status,
     bilibili_list_subscriptions,
     bilibili_list_videos,
@@ -183,9 +184,9 @@ def _seed_download_task(
 class TestBilibiliToolkitToolsSchema:
     """``BILIBILI_TOOLKIT_TOOLS`` 工具定义 schema 校验。"""
 
-    def test_tools_count_is_five(self) -> None:
-        """应有 5 个工具定义。"""
-        assert len(BILIBILI_TOOLKIT_TOOLS) == 5
+    def test_tools_count_is_six(self) -> None:
+        """应有 6 个工具定义。"""
+        assert len(BILIBILI_TOOLKIT_TOOLS) == 6
 
     def test_each_tool_has_required_fields(self) -> None:
         """每个工具定义应含 name / description / parameters / handler 字段。"""
@@ -205,6 +206,7 @@ class TestBilibiliToolkitToolsSchema:
         """工具名应与 spec 一致。"""
         names = [t["name"] for t in BILIBILI_TOOLKIT_TOOLS]
         assert "bilibili_add_subscription" in names
+        assert "bilibili_download_collection" in names
         assert "bilibili_list_subscriptions" in names
         assert "bilibili_trigger_download" in names
         assert "bilibili_get_download_status" in names
@@ -235,6 +237,20 @@ class TestBilibiliToolkitToolsSchema:
         assert set(enum_values) == {
             "favorite", "season", "series", "submission", "watchlater"
         }
+
+    def test_download_collection_parameters_schema(self) -> None:
+        """``bilibili_download_collection`` 应声明来源与下载目录。"""
+        tool = next(
+            t for t in BILIBILI_TOOLKIT_TOOLS
+            if t["name"] == "bilibili_download_collection"
+        )
+        params = tool["parameters"]
+        assert params["type"] == "object"
+        assert "source" in params["properties"]
+        assert "path" in params["properties"]
+        assert "name" in params["properties"]
+        assert set(params["required"]) == {"source", "path"}
+        assert tool["handler"] is bilibili_download_collection
 
     def test_trigger_download_parameters_schema(self) -> None:
         """``bilibili_trigger_download`` 应有 subscription_id 必填字段。"""

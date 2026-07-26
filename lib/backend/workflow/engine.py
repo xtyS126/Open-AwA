@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
+from sqlalchemy.orm import Session
 
 from db.models import WorkflowExecution, WorkflowStep
 from plugins import plugin_instance
@@ -563,3 +564,10 @@ class WorkflowEngine:
                 )
             )
         self.db_session.commit()
+
+    def bind_db(self, new_session: Session) -> None:
+        """绑定新的数据库会话。
+
+        用于 AIAgent.bind_db 调用，避免外部直接访问 workflow_engine._db_session 私有属性。
+        """
+        self.db_session = new_session

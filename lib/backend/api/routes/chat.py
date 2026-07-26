@@ -24,15 +24,13 @@ from api.schemas import ChatMessage, ChatResponse, ChatUndoOperationRequest, Con
 from api.security.ws_auth import extract_token_from_subprotocol, validate_ws_origin
 from api.services.chat_protocol import build_sse_response, handle_websocket_session
 from api.services.ws_manager import ws_manager
+from api.adapters.workflow_repository_adapter import WorkflowRepositoryAdapter
 from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_logging
 from core.litellm_adapter import CLIENT_VERSION_HEADER
 from config.security import decode_access_token
 from core.agent import AIAgent
 from core.agent_registry import get_registry
 from core.chat_task_manager import (
-    TASK_STATUS_CANCELLED,
-    TASK_STATUS_COMPLETED,
-    TASK_STATUS_FAILED,
     generate_task_id,
     get_chat_task_manager,
 )
@@ -434,7 +432,11 @@ async def confirm_operation(
         "idempotency_key": confirmation.step.get("idempotency_key") if isinstance(confirmation.step, dict) else None,
     }
 
-    agent = AIAgent(db_session=db)
+    agent = AIAgent(
+        db_session=db,
+        workflow_repository=WorkflowRepositoryAdapter(db),
+        memory_session_factory=SessionLocal,
+    )
 
     result = await agent.handle_confirmation(
         confirmed=confirmation.confirmed,
@@ -462,7 +464,7 @@ async def cancel_agent_task(
     current_user=Depends(get_current_user)
 ) -> Dict[str, Any]:
     """取消指定会话中正在执行的 Agent 任务。"""
-    from core.agent import get_agent_tasks
+    from core.agent_task_registry import get_agent_tasks
 
     tasks = get_agent_tasks(str(current_user.id), session_id)
     active_tasks = [task for task in tasks if not task.done()]
@@ -727,7 +729,11 @@ async def websocket_endpoint(
             user_id=user_id,
         ).info("websocket connected")
 
-        agent = AIAgent(db_session=db)
+        agent = AIAgent(
+            db_session=db,
+            workflow_repository=WorkflowRepositoryAdapter(db),
+            memory_session_factory=SessionLocal,
+        )
 
         await handle_websocket_session(
             websocket=websocket,

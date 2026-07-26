@@ -13,9 +13,12 @@ import threading
 import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, AsyncIterator, Dict, Tuple
+from typing import TYPE_CHECKING, AsyncIterator, Callable, Dict, Optional, Tuple
 
 from loguru import logger
+
+from core.ports.ask_user_port import AskUserPort
+from core.ports.workflow_repository_port import WorkflowRepositoryPort
 
 if TYPE_CHECKING:
     # 仅用于类型标注，运行时延迟导入以避免循环依赖
@@ -39,13 +42,57 @@ class AIAgentRegistry:
     _MAX_INSTANCES = 100
     _TTL_SECONDS = 600  # 10 分钟
 
-    def __init__(self) -> None:
-        """初始化缓存注册表，构建空缓存字典与互斥锁。"""
+    def __init__(
+        self,
+        ask_user_port: Optional[AskUserPort] = None,
+        workflow_repository_factory: Optional[
+            Callable[["Session"], WorkflowRepositoryPort]
+        ] = None,
+        memory_session_factory: Optional[Callable[[], "Session"]] = None,
+    ) -> None:
+        """初始化缓存注册表，构建空缓存字典与互斥锁。
+
+        Args:
+            ask_user_port: ask_user 端口实例，由 main.py 在 lifespan 启动时注入。
+                后续构造的 AIAgent 实例将持有此端口，用于解耦 core 对 api.routes.ask_user 的反向依赖。
+                None 时可通过 set_ask_user_port 后续注入；若 AIAgent process_stream 实际触发
+                ask_user 调用而端口仍为 None，将抛 RuntimeError。
+        """
         # user_id -> (AIAgent 实例, 最近访问时间戳)
         self._cache: "OrderedDict[int, Tuple[AIAgent, float]]" = OrderedDict()
         self._lock = threading.Lock()
         # AIAgent 持有请求级数据库会话和可变执行状态，同一用户必须串行使用缓存实例
         self._request_locks: Dict[int, asyncio.Lock] = {}
+        # ask_user 端口：在 AIAgent 实例化时透传，None 时调用 process_stream 的 ask_user 会抛 RuntimeError
+        self._ask_user_port: Optional[AskUserPort] = ask_user_port
+        self._workflow_repository_factory = workflow_repository_factory
+        self._memory_session_factory = memory_session_factory
+
+    def set_ask_user_port(self, ask_user_port: AskUserPort) -> None:
+        """延迟注入 ask_user 端口。
+
+        供 main.py lifespan 在模块级单例已构造后注入端口使用。
+        仅对后续新建的 AIAgent 实例生效；已缓存的实例不会回填端口，
+        生产环境应在 lifespan 启动阶段、首次请求前完成注入。
+
+        Args:
+            ask_user_port: AskUserPort 实例（通常为 AskUserPortAdapter）。
+        """
+        self._ask_user_port = ask_user_port
+
+    def set_workflow_repository_factory(
+        self,
+        factory: Callable[["Session"], WorkflowRepositoryPort],
+    ) -> None:
+        """注入工作流仓储工厂，供后续新建 Agent 使用。"""
+        self._workflow_repository_factory = factory
+
+    def set_memory_session_factory(
+        self,
+        factory: Callable[[], "Session"],
+    ) -> None:
+        """注入记忆组件使用的独立数据库会话工厂。"""
+        self._memory_session_factory = factory
 
     @asynccontextmanager
     async def acquire(
@@ -116,7 +163,17 @@ class AIAgentRegistry:
                     evicted_user_id=evicted_user_id,
                 ).warning("AIAgent 实例数超过上限，淘汰最旧实例")
 
-            agent = AIAgent(db_session=db_session)
+            workflow_repository = (
+                self._workflow_repository_factory(db_session)
+                if self._workflow_repository_factory is not None
+                else None
+            )
+            agent = AIAgent(
+                db_session=db_session,
+                ask_user_port=self._ask_user_port,
+                workflow_repository=workflow_repository,
+                memory_session_factory=self._memory_session_factory,
+            )
             self._cache[user_id] = (agent, now)
             # move_to_end 确保新插入的实例位于队尾（最新使用）
             self._cache.move_to_end(user_id)

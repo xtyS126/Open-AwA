@@ -47,8 +47,9 @@ async def test_run_agent_relies_on_unified_isolation_defaults(monkeypatch):
             return None
 
     class FakeAgent:
-        def __init__(self, db_session=None):
+        def __init__(self, db_session=None, memory_session_factory=None):
             captured["db_session"] = db_session
+            captured["memory_session_factory"] = memory_session_factory
 
         async def process(self, user_input, context):
             captured["user_input"] = user_input
@@ -76,6 +77,7 @@ async def test_run_agent_relies_on_unified_isolation_defaults(monkeypatch):
 
     assert result["status"] == "completed"
     assert captured["user_input"] == "请整理今天的待办"
+    assert captured["memory_session_factory"] is not None
 
     context = captured["context"]
     assert context["scheduled_execution_isolated"] is True
@@ -106,8 +108,9 @@ async def test_run_agent_closes_session_when_agent_raises(monkeypatch):
             session_state["closed"] = True
 
     class FakeAgent:
-        def __init__(self, db_session=None):
+        def __init__(self, db_session=None, memory_session_factory=None):
             self.db_session = db_session
+            self.memory_session_factory = memory_session_factory
 
         async def process(self, user_input, context):
             raise RuntimeError("agent failed")

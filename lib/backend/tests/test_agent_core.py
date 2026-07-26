@@ -7,10 +7,30 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 from api.routes.chat import cancel_agent_task
-from core.agent import AIAgent, AgentState, get_agent_tasks, register_agent_task
+from core.agent import AIAgent
+from core.agent_task_registry import get_agent_tasks, register_agent_task
+from core.agent_capability_builder import build_native_tools
+from core.agent_helpers import (
+    build_effective_user_input,
+    build_status_event,
+    get_stream_tool_kind,
+    is_final_only_mode,
+    map_finish_reason_to_state,
+    summarize_stream_tool_result,
+)
+from core.agent_context_builder import (
+    build_multimodal_context,
+    build_thinking_context,
+    strip_reasoning_content,
+)
+from core.agent_state import AgentState
+from core.agent_capability_builder import (
+    summarize_plugin_capabilities,
+    summarize_skill_capabilities,
+)
 
 
 # ==================== Agent 初始化测试 ====================
@@ -84,50 +104,47 @@ class TestOutputMode:
 
     def test_is_final_only_with_output_mode_final_only_returns_true(self):
         """output_mode=final_only 时返回 True。"""
-        assert AIAgent._is_final_only_mode({"output_mode": "final_only"}) is True
+        assert is_final_only_mode({"output_mode": "final_only"}) is True
 
     def test_is_final_only_with_suppress_reasoning_returns_true(self):
         """suppress_reasoning=True 时返回 True。"""
-        assert AIAgent._is_final_only_mode({"suppress_reasoning": True}) is True
+        assert is_final_only_mode({"suppress_reasoning": True}) is True
 
     def test_is_final_only_with_thinking_disabled_returns_true(self):
         """thinking_enabled=False 时返回 True。"""
-        assert AIAgent._is_final_only_mode({"thinking_enabled": False}) is True
+        assert is_final_only_mode({"thinking_enabled": False}) is True
 
     def test_is_final_only_with_default_context_returns_false(self):
         """无特殊标记时返回 False。"""
-        assert AIAgent._is_final_only_mode({}) is False
+        assert is_final_only_mode({}) is False
 
     def test_is_final_only_with_thinking_enabled_returns_false(self):
         """thinking_enabled=True 时返回 False。"""
-        assert AIAgent._is_final_only_mode({"thinking_enabled": True}) is False
+        assert is_final_only_mode({"thinking_enabled": True}) is False
 
     def test_strip_reasoning_content_removes_top_level_key(self):
         """顶层 reasoning_content 应被实例方法移除。"""
-        agent = AIAgent()
         payload = {"result": "ok", "reasoning_content": "思考..."}
-        result = agent._strip_reasoning_content(payload)
+        result = strip_reasoning_content(payload)
         assert "reasoning_content" not in result
         assert result["result"] == "ok"
 
     def test_strip_reasoning_content_removes_nested_key(self):
         """嵌套结构中的 reasoning_content 也应被递归移除。"""
-        agent = AIAgent()
         payload = {
             "data": {"nested": {"reasoning_content": "深入思考", "value": 42}},
         }
-        result = agent._strip_reasoning_content(payload)
+        result = strip_reasoning_content(payload)
         assert "reasoning_content" not in result["data"]["nested"]
         assert result["data"]["nested"]["value"] == 42
 
     def test_strip_reasoning_content_handles_list(self):
         """列表中的每个元素都应递归移除 reasoning_content。"""
-        agent = AIAgent()
         payload = [
             {"reasoning_content": "思考1", "text": "a"},
             {"reasoning_content": "思考2", "text": "b"},
         ]
-        result = agent._strip_reasoning_content(payload)
+        result = strip_reasoning_content(payload)
         assert "reasoning_content" not in result[0]
         assert "reasoning_content" not in result[1]
         assert result[0]["text"] == "a"
@@ -155,7 +172,7 @@ class TestContextBuilding:
 
     def test_build_effective_user_input_without_continuation_returns_original(self):
         """无 continuation 时原样返回用户输入。"""
-        result = AIAgent._build_effective_user_input("你好", {})
+        result = build_effective_user_input("你好", {})
         assert result == "你好"
 
     def test_build_effective_user_input_with_continuation_appends_context(self):
@@ -166,7 +183,7 @@ class TestContextBuilding:
                 "source": "subagent",
             }
         }
-        result = AIAgent._build_effective_user_input("你好", context)
+        result = build_effective_user_input("你好", context)
         assert "你好" in result
         assert "子代理已完成分析" in result
         assert "subagent" in result
@@ -179,20 +196,20 @@ class TestContextBuilding:
                 "source": "Explore",
             }
         }
-        result = AIAgent._build_effective_user_input("", context)
+        result = build_effective_user_input("", context)
         assert "子代理结果" in result
         assert "Explore" in result
 
     def test_build_status_event_returns_correct_format(self):
         """状态事件格式应包含 type/phase/message。"""
-        event = AIAgent._build_status_event("planning", "正在生成计划")
+        event = build_status_event("planning", "正在生成计划")
         assert event["type"] == "status"
         assert event["phase"] == "planning"
         assert event["message"] == "正在生成计划"
 
     def test_build_status_event_with_extra_kwargs(self):
         """额外参数应合并到事件中。"""
-        event = AIAgent._build_status_event(
+        event = build_status_event(
             "executing", "执行步骤", step=1, total=3
         )
         assert event["step"] == 1
@@ -249,7 +266,7 @@ class TestBuildNativeTools:
 
     def test_build_native_tools_with_empty_capabilities_returns_builtin_and_task_tools(self):
         """空能力摘要时应返回内置工具和任务运行时工具。"""
-        tools = AIAgent._build_native_tools({})
+        tools = build_native_tools({})
         # 至少应包含 task_ 前缀的运行工具
         task_tools = [t for t in tools if t.get("function", {}).get("name", "").startswith("task_")]
         assert len(task_tools) > 0
@@ -279,7 +296,7 @@ class TestBuildNativeTools:
                 }
             ]
         }
-        tools = AIAgent._build_native_tools(capabilities)
+        tools = build_native_tools(capabilities)
         plugin_tools = [
             t for t in tools
             if t.get("function", {}).get("name", "").startswith("plugin_")
@@ -301,7 +318,7 @@ class TestBuildNativeTools:
                 }
             ]
         }
-        tools = AIAgent._build_native_tools(capabilities)
+        tools = build_native_tools(capabilities)
         plugin_tools = [
             t for t in tools
             if t.get("function", {}).get("name", "").startswith("plugin_")
@@ -350,7 +367,7 @@ class TestProcessFlow:
         async def fake_update_memory(user_input, response, context, **kwargs):
             return None
 
-        async def fake_auto_execute_skills_and_plugins(intent, entities, context):
+        async def fake_auto_execute_skills_and_plugins(execution_context):
             return {"skills": [], "plugins": []}
 
         monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
@@ -362,7 +379,11 @@ class TestProcessFlow:
         monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
         monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
         monkeypatch.setattr(agent.feedback, "update_memory", fake_update_memory)
-        monkeypatch.setattr(agent, "_auto_execute_skills_and_plugins", fake_auto_execute_skills_and_plugins)
+        monkeypatch.setattr(
+            agent._plan_executor,
+            "auto_execute",
+            fake_auto_execute_skills_and_plugins,
+        )
         monkeypatch.setattr(agent, "_schedule_record", lambda **kwargs: None)
 
         result = await agent.process("你好", {"session_id": "test-session"})
@@ -403,7 +424,7 @@ class TestProcessFlow:
         async def fake_generate_response(results, context):
             return "抱歉，查询失败"
 
-        async def fake_auto_execute_skills_and_plugins(intent, entities, context):
+        async def fake_auto_execute_skills_and_plugins(execution_context):
             return {"skills": [], "plugins": []}
 
         monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
@@ -414,7 +435,11 @@ class TestProcessFlow:
         monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step_error)
         monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
         monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
-        monkeypatch.setattr(agent, "_auto_execute_skills_and_plugins", fake_auto_execute_skills_and_plugins)
+        monkeypatch.setattr(
+            agent._plan_executor,
+            "auto_execute",
+            fake_auto_execute_skills_and_plugins,
+        )
         monkeypatch.setattr(agent, "_schedule_record", lambda **kwargs: None)
 
         result = await agent.process("查询天气", {"session_id": "test-session"})
@@ -460,7 +485,7 @@ class TestProcessFlow:
         async def fake_update_memory(user_input, response, context, **kwargs):
             return None
 
-        async def fake_auto_execute(intent, entities, context):
+        async def fake_auto_execute(execution_context):
             captured_auto_context["called"] = True
             return {"skills": [{"skill_name": "demo", "result": "done"}], "plugins": []}
 
@@ -473,7 +498,7 @@ class TestProcessFlow:
         monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
         monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
         monkeypatch.setattr(agent.feedback, "update_memory", fake_update_memory)
-        monkeypatch.setattr(agent, "_auto_execute_skills_and_plugins", fake_auto_execute)
+        monkeypatch.setattr(agent._plan_executor, "auto_execute", fake_auto_execute)
         monkeypatch.setattr(agent, "_schedule_record", lambda **kwargs: None)
 
         result = await agent.process("执行任务", {
@@ -498,7 +523,7 @@ class TestSkillPluginSummary:
             {"name": "s2", "description": "技能2", "enabled": False},
             {"name": "s3", "description": "技能3", "enabled": True},
         ]
-        result = AIAgent._summarize_skill_capabilities(skills)
+        result = summarize_skill_capabilities(skills)
         assert len(result) == 2
         assert result[0]["name"] == "s1"
         assert result[1]["name"] == "s3"
@@ -510,7 +535,7 @@ class TestSkillPluginSummary:
             "invalid_string",
             None,
         ]
-        result = AIAgent._summarize_skill_capabilities(skills)
+        result = summarize_skill_capabilities(skills)
         assert len(result) == 1
 
     def test_summarize_plugin_capabilities_includes_tool_definitions(self):
@@ -525,7 +550,7 @@ class TestSkillPluginSummary:
                 ],
             }
         ]
-        result = AIAgent._summarize_plugin_capabilities(plugins)
+        result = summarize_plugin_capabilities(plugins)
         assert len(result) == 1
         assert result[0]["name"] == "demo"
         assert len(result[0]["tools"]) == 1
@@ -540,42 +565,42 @@ class TestStreamToolHelpers:
 
     def test_get_stream_tool_kind_plugin_prefix(self):
         """plugin_ 前缀应返回 'plugin' 类别。"""
-        assert AIAgent._get_stream_tool_kind("plugin_demo__run") == "plugin"
+        assert get_stream_tool_kind("plugin_demo__run") == "plugin"
 
     def test_get_stream_tool_kind_mcp_prefix(self):
         """mcp_ 前缀应返回 'mcp' 类别。"""
-        assert AIAgent._get_stream_tool_kind("mcp_server__tool") == "mcp"
+        assert get_stream_tool_kind("mcp_server__tool") == "mcp"
 
     def test_get_stream_tool_kind_task_prefix(self):
         """task_ 前缀应返回 'task' 类别。"""
-        assert AIAgent._get_stream_tool_kind("task_spawn_agent") == "task"
+        assert get_stream_tool_kind("task_spawn_agent") == "task"
 
     def test_get_stream_tool_kind_unknown_returns_tool(self):
         """未知前缀默认返回 'tool'。"""
-        assert AIAgent._get_stream_tool_kind("unknown_function") == "tool"
+        assert get_stream_tool_kind("unknown_function") == "tool"
 
     def test_summarize_stream_tool_result_ok_with_message(self):
         """成功结果有 message 字段时取 message 值。"""
         exec_result = {"ok": True, "result": {"message": "执行成功"}}
-        result = AIAgent._summarize_stream_tool_result(exec_result)
+        result = summarize_stream_tool_result(exec_result)
         assert result == "执行成功"
 
     def test_summarize_stream_tool_result_ok_with_response(self):
         """成功结果有 response 字段时取 response 值。"""
         exec_result = {"ok": True, "result": {"response": "查询结果"}}
-        result = AIAgent._summarize_stream_tool_result(exec_result)
+        result = summarize_stream_tool_result(exec_result)
         assert result == "查询结果"
 
     def test_summarize_stream_tool_result_error(self):
         """失败结果返回错误信息。"""
         exec_result = {"ok": False, "error": "工具调用异常"}
-        result = AIAgent._summarize_stream_tool_result(exec_result)
+        result = summarize_stream_tool_result(exec_result)
         assert result == "工具调用异常"
 
     def test_summarize_stream_tool_result_empty(self):
         """空结果返回默认文本。"""
         exec_result = {"ok": True, "result": {}}
-        result = AIAgent._summarize_stream_tool_result(exec_result)
+        result = summarize_stream_tool_result(exec_result)
         assert result == "工具调用完成"
 
 
@@ -587,33 +612,29 @@ class TestMultimodalAndThinking:
 
     def test_build_multimodal_context_without_attachments_does_nothing(self):
         """无附件时不应设置 _multimodal_content。"""
-        agent = AIAgent()
         ctx = {}
-        agent._build_multimodal_context("你好", ctx)
+        build_multimodal_context("你好", ctx)
         assert "_multimodal_content" not in ctx
 
     def test_build_multimodal_context_with_attachments_builds_content(self):
         """有附件时应调用 build_multimodal_message 构建多模态内容。"""
-        agent = AIAgent()
         attachments = [{"type": "image", "url": "https://example.com/img.png"}]
         ctx = {"attachments": attachments, "provider": "openai", "model": "gpt-4o"}
 
         with patch("core.litellm_adapter.build_multimodal_message") as mock_build:
             mock_build.return_value = [{"type": "text", "text": "你好"}, {"type": "image_url", "image_url": {"url": "..."}}]
-            agent._build_multimodal_context("你好", ctx)
+            build_multimodal_context("你好", ctx)
             mock_build.assert_called_once_with("你好", attachments, "openai")
             assert "_multimodal_content" in ctx
 
     def test_build_thinking_context_without_thinking_does_nothing(self):
         """未启用思考时不应设置任何参数。"""
-        agent = AIAgent()
         ctx = {}
-        agent._build_thinking_context(ctx)
+        build_thinking_context(ctx)
         assert "_thinking_params" not in ctx
 
     def test_build_thinking_context_with_thinking_enabled(self):
         """启用思考时应调用 build_thinking_params。"""
-        agent = AIAgent()
         ctx = {
             "thinking_enabled": True,
             "thinking_depth": 2,
@@ -623,13 +644,12 @@ class TestMultimodalAndThinking:
 
         with patch("core.litellm_adapter.build_thinking_params") as mock_build:
             mock_build.return_value = {"type": "enabled", "budget_tokens": 4000}
-            agent._build_thinking_context(ctx)
+            build_thinking_context(ctx)
             mock_build.assert_called_once_with("openai", "gpt-4o", 2, True)
             assert ctx["_thinking_params"] == {"type": "enabled", "budget_tokens": 4000}
 
     def test_build_thinking_context_with_thinking_enabled_but_none_params_does_nothing(self):
         """build_thinking_params 返回 None 时不设置 _thinking_params。"""
-        agent = AIAgent()
         ctx = {
             "thinking_enabled": True,
             "provider": "openai",
@@ -638,7 +658,7 @@ class TestMultimodalAndThinking:
 
         with patch("core.litellm_adapter.build_thinking_params") as mock_build:
             mock_build.return_value = None
-            agent._build_thinking_context(ctx)
+            build_thinking_context(ctx)
             assert "_thinking_params" not in ctx
 
 
@@ -705,64 +725,56 @@ class TestMapFinishReasonToState:
 
     def test_map_finish_reason_tool_calls_returns_continue_tool_calls(self):
         """finish_reason=tool_calls 且未达最大轮次时应返回 CONTINUE_TOOL_CALLS。"""
-        agent = AIAgent()
-        state = agent._map_finish_reason_to_state(
+        state = map_finish_reason_to_state(
             finish_reason="tool_calls", current_round=1, max_rounds=10
         )
         assert state is AgentState.CONTINUE_TOOL_CALLS
 
     def test_map_finish_reason_stop_returns_terminal_end_turn(self):
         """finish_reason=stop 时应返回 TERMINAL_END_TURN。"""
-        agent = AIAgent()
-        state = agent._map_finish_reason_to_state(
+        state = map_finish_reason_to_state(
             finish_reason="stop", current_round=1, max_rounds=10
         )
         assert state is AgentState.TERMINAL_END_TURN
 
     def test_map_finish_reason_length_returns_continue_compact(self):
         """finish_reason=length 时应返回 CONTINUE_COMPACT（上下文超限需压缩）。"""
-        agent = AIAgent()
-        state = agent._map_finish_reason_to_state(
+        state = map_finish_reason_to_state(
             finish_reason="length", current_round=1, max_rounds=10
         )
         assert state is AgentState.CONTINUE_COMPACT
 
     def test_map_finish_reason_content_filter_returns_terminal_refusal(self):
         """finish_reason=content_filter 时应返回 TERMINAL_REFUSAL。"""
-        agent = AIAgent()
-        state = agent._map_finish_reason_to_state(
+        state = map_finish_reason_to_state(
             finish_reason="content_filter", current_round=1, max_rounds=10
         )
         assert state is AgentState.TERMINAL_REFUSAL
 
     def test_map_finish_reason_max_rounds_returns_terminal_max_rounds(self):
         """current_round >= max_rounds 时无论 finish_reason 都应返回 TERMINAL_MAX_ROUNDS。"""
-        agent = AIAgent()
-        state = agent._map_finish_reason_to_state(
+        state = map_finish_reason_to_state(
             finish_reason="tool_calls", current_round=10, max_rounds=10
         )
         assert state is AgentState.TERMINAL_MAX_ROUNDS
 
     def test_map_finish_reason_max_rounds_exceeds_boundary(self):
         """current_round 超过 max_rounds 时也应返回 TERMINAL_MAX_ROUNDS。"""
-        agent = AIAgent()
-        state = agent._map_finish_reason_to_state(
+        state = map_finish_reason_to_state(
             finish_reason="stop", current_round=11, max_rounds=10
         )
         assert state is AgentState.TERMINAL_MAX_ROUNDS
 
     def test_map_finish_reason_unknown_returns_terminal_end_turn(self):
         """未知 finish_reason 应安全回退到 TERMINAL_END_TURN。"""
-        agent = AIAgent()
-        state = agent._map_finish_reason_to_state(
+        state = map_finish_reason_to_state(
             finish_reason="unknown_reason", current_round=1, max_rounds=10
         )
         assert state is AgentState.TERMINAL_END_TURN
 
     def test_map_finish_reason_empty_string_returns_terminal_end_turn(self):
         """空 finish_reason 应安全回退到 TERMINAL_END_TURN。"""
-        agent = AIAgent()
-        state = agent._map_finish_reason_to_state(
+        state = map_finish_reason_to_state(
             finish_reason="", current_round=1, max_rounds=10
         )
         assert state is AgentState.TERMINAL_END_TURN

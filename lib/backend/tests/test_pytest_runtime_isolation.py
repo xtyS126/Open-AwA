@@ -7,7 +7,7 @@ from api.dependencies import get_current_user
 from api.routes.acp import _acp_user_sessions
 from api.services.ws_manager import ws_manager
 from acp_host.service import _acp_services
-from core.agent import _active_agent_tasks
+from core.agent_task_registry import _active_agent_tasks
 from core.agent_registry import get_registry
 from main import app
 from plugins import plugin_instance
@@ -29,6 +29,7 @@ def test_00_process_environment_is_bound_to_test_resources() -> None:
     assert os.environ["DATABASE_URL"].startswith("sqlite:///")
     assert "openawa-pytest-" in os.environ["DATABASE_URL"]
     assert "openawa-pytest-qdrant-" in os.environ["VECTOR_DB_PATH"]
+    assert "openawa-pytest-logs-" in os.environ["LOG_DIR"]
     assert Path(os.environ["ACP_ALLOWED_WORKDIRS"]).resolve() == backend_root
 
 

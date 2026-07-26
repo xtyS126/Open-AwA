@@ -77,14 +77,10 @@ async def test_ai_agent_process_stream_emits_status_before_plan(monkeypatch):
             "requires_confirmation": False,
         }
 
-    async def fake_auto_execute_skills_and_plugins(intent, entities, context):
-        return {"skills": [], "plugins": []}
-
     monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
     monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
     monkeypatch.setattr(agent, "_retrieve_relevant_experiences", fake_retrieve_relevant_experiences)
     monkeypatch.setattr(agent, "_retrieve_relevant_memories", fake_retrieve_relevant_memories)
-    monkeypatch.setattr(agent, "_auto_execute_skills_and_plugins", fake_auto_execute_skills_and_plugins)
     monkeypatch.setattr(agent, "_schedule_record", lambda **kwargs: None)
     monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
     monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)

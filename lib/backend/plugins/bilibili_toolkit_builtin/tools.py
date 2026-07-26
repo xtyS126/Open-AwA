@@ -416,7 +416,7 @@ async def bilibili_list_videos(
 # ---------------------------------------------------------------------------
 
 
-# 5 个工具的 Open-AwA 工具定义（name / description / parameters / handler）
+# 6 个工具的 Open-AwA 工具定义（name / description / parameters / handler）
 # parameters 字段为 JSON Schema 格式，供 LLM 调用时参考
 BILIBILI_TOOLKIT_TOOLS: List[Dict[str, Any]] = [
     {

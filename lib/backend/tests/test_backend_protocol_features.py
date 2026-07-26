@@ -8,22 +8,50 @@ from types import MethodType, SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from api.routes import chat as chat_route
 from billing.pricing_manager import PricingManager
-import core.agent as agent_module
 from core.agent import AIAgent
-from core.agent import resolve_max_tool_call_rounds as resolve_agent_max_tool_call_rounds
+from core.agent_execution_context import PlanExecutionContext
 import core.executor as executor_module
-import core.litellm_adapter as litellm_adapter_module
 from core.executor import ExecutionLayer
 from core.executor import resolve_max_tool_call_rounds as resolve_executor_max_tool_call_rounds
 from core.feedback import FeedbackLayer
+from core.agent_helpers import is_final_only_mode
+from core.plan_executor import PlanExecutor
 from core.litellm_adapter import build_thinking_params
 from main import app
+
+
+def _plan_execution_context(
+    intent: dict,
+    entities: dict,
+    context: dict,
+) -> PlanExecutionContext:
+    """通过 PlanExecutor 的公开工厂构造一致的执行上下文。"""
+    return PlanExecutor.build_execution_context(
+        intent,
+        entities,
+        str(context.get("message", "")),
+        context,
+    )
+
+
+def _plan_executor_for_agent(agent: AIAgent) -> PlanExecutor:
+    """使用测试替换后的 Agent 协作者构造独立计划执行器。"""
+    return PlanExecutor(
+        agent.executor,
+        agent.planner,
+        agent.feedback,
+        agent.execute_skill,
+        agent.execute_plugin,
+        agent.get_available_skills,
+        agent.get_available_plugins,
+        MagicMock(),
+        lambda output, _: output,
+    )
 
 
 def test_ai_agent_is_final_only_mode_accepts_thinking_disabled():
@@ -31,10 +59,10 @@ def test_ai_agent_is_final_only_mode_accepts_thinking_disabled():
     显式关闭 thinking 时，也应按 final_only 语义处理对外输出。
     """
 
-    assert AIAgent._is_final_only_mode({"thinking_enabled": False}) is True
-    assert AIAgent._is_final_only_mode({"thinking_enabled": True}) is False
-    assert AIAgent._is_final_only_mode({"suppress_reasoning": True}) is True
-    assert AIAgent._is_final_only_mode({"output_mode": "final_only"}) is True
+    assert is_final_only_mode({"thinking_enabled": False}) is True
+    assert is_final_only_mode({"thinking_enabled": True}) is False
+    assert is_final_only_mode({"suppress_reasoning": True}) is True
+    assert is_final_only_mode({"output_mode": "final_only"}) is True
 
 
 def test_tool_call_round_settings_are_clamped_and_defaulted():
@@ -42,12 +70,9 @@ def test_tool_call_round_settings_are_clamped_and_defaulted():
     工具回环次数应允许从上下文覆盖，并对非法值回退到默认范围。
     """
 
-    assert resolve_agent_max_tool_call_rounds({}) == 12
     assert resolve_executor_max_tool_call_rounds({}) == 12
-    assert resolve_agent_max_tool_call_rounds({"max_tool_call_rounds": 18}) == 18
     assert resolve_executor_max_tool_call_rounds({"max_tool_call_rounds": "21"}) == 21
-    assert resolve_agent_max_tool_call_rounds({"max_tool_call_rounds": 999}) == 100  # 硬上限 100
-    assert resolve_agent_max_tool_call_rounds({"max_tool_call_rounds": 999999}) == 100  # 超过硬上限，钳制到 100
+    assert resolve_executor_max_tool_call_rounds({"max_tool_call_rounds": 999}) == 100
     assert resolve_executor_max_tool_call_rounds({"max_tool_call_rounds": 0}) == 1
 
 
@@ -385,8 +410,16 @@ async def test_ai_agent_schedule_record_skips_side_effects_when_isolated(monkeyp
     async def fake_conversation_record(**kwargs):
         conversation_calls.append(kwargs)
 
-    monkeypatch.setattr(agent_module.behavior_logger, "record", fake_behavior_record)
-    monkeypatch.setattr(agent_module.conversation_recorder, "record", fake_conversation_record)
+    monkeypatch.setattr(
+        agent._behavior_recorder._behavior_logger,
+        "record",
+        fake_behavior_record,
+    )
+    monkeypatch.setattr(
+        agent._behavior_recorder._conversation_recorder,
+        "record",
+        fake_conversation_record,
+    )
 
     agent._schedule_record(
         node_type="llm_call",
@@ -572,10 +605,12 @@ async def test_ai_agent_auto_execute_plugins_merges_default_params(monkeypatch):
     monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
     monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
 
-    result = await agent._auto_execute_skills_and_plugins(
-        intent={"type": "fetch", "action": "tweets"},
-        entities={},
-        context={"request_id": "plugin-auto-1"},
+    result = await _plan_executor_for_agent(agent).auto_execute(
+        _plan_execution_context(
+            {"type": "fetch", "action": "tweets"},
+            {},
+            {"request_id": "plugin-auto-1"},
+        )
     )
 
     assert captured["plugin_name"] == "twitter-monitor"
@@ -634,13 +669,15 @@ async def test_ai_agent_auto_execute_plugins_matches_user_message_keywords(monke
     monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
     monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
 
-    result = await agent._auto_execute_skills_and_plugins(
-        intent={"type": "summarize"},
-        entities={},
-        context={
-            "message": "帮我总结一下 OpenAI 最近推文",
-            "request_id": "plugin-auto-2",
-        },
+    result = await _plan_executor_for_agent(agent).auto_execute(
+        _plan_execution_context(
+            {"type": "summarize"},
+            {},
+            {
+                "message": "帮我总结一下 OpenAI 最近推文",
+                "request_id": "plugin-auto-2",
+            },
+        )
     )
 
     assert captured["plugin_name"] == "twitter-monitor"
@@ -685,13 +722,15 @@ async def test_ai_agent_auto_execute_plugins_skips_weak_chat_matches(monkeypatch
     monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
     monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
 
-    result = await agent._auto_execute_skills_and_plugins(
-        intent={"type": "summarize"},
-        entities={},
-        context={
-            "message": "我们来聊天吧",
-            "user_id": "alice",
-        },
+    result = await _plan_executor_for_agent(agent).auto_execute(
+        _plan_execution_context(
+            {"type": "summarize"},
+            {},
+            {
+                "message": "我们来聊天吧",
+                "user_id": "alice",
+            },
+        )
     )
 
     assert result["plugins"] == []
@@ -751,18 +790,20 @@ async def test_ai_agent_auto_execute_plugins_injects_required_messages(monkeypat
     monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
     monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
 
-    result = await agent._auto_execute_skills_and_plugins(
-        intent={"type": "analyze"},
-        entities={},
-        context={
-            "message": "请帮我分析一下我的画像",
-            "user_id": "alice",
-            "conversation_history": [
-                {"role": "user", "content": "我平时写 Python"},
-                {"role": "assistant", "content": "收到"},
-                {"role": "user", "content": "最近在研究 FastAPI"},
-            ],
-        },
+    result = await _plan_executor_for_agent(agent).auto_execute(
+        _plan_execution_context(
+            {"type": "analyze"},
+            {},
+            {
+                "message": "请帮我分析一下我的画像",
+                "user_id": "alice",
+                "conversation_history": [
+                    {"role": "user", "content": "我平时写 Python"},
+                    {"role": "assistant", "content": "收到"},
+                    {"role": "user", "content": "最近在研究 FastAPI"},
+                ],
+            },
+        )
     )
 
     assert captured["plugin_name"] == "user-profile-chat"
@@ -819,14 +860,16 @@ async def test_ai_agent_auto_execute_plugins_skips_when_required_params_missing(
     monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
     monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
 
-    result = await agent._auto_execute_skills_and_plugins(
-        intent={"type": "summarize"},
-        entities={},
-        context={
-            "message": "帮我查一下 Twitter 用户账号信息",
-            "username": "alice",
-            "user_id": "user-1",
-        },
+    result = await _plan_executor_for_agent(agent).auto_execute(
+        _plan_execution_context(
+            {"type": "summarize"},
+            {},
+            {
+                "message": "帮我查一下 Twitter 用户账号信息",
+                "username": "alice",
+                "user_id": "user-1",
+            },
+        )
     )
 
     assert result["plugins"] == []

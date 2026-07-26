@@ -62,6 +62,15 @@ class FakePluginManager:
             },
         }
 
+    async def execute_registered_tool_async(
+        self,
+        plugin_name: str,
+        tool_name: str,
+        **kwargs,
+    ):
+        """按注册工具入口执行，保持测试替身与生产契约一致。"""
+        return await self.execute_plugin_async(plugin_name, tool_name, **kwargs)
+
 
 def test_build_assistant_tool_call_message_validates_inputs():
     """构造 assistant tool_call 消息时应校验入参与兜底转换类型。"""
@@ -430,20 +439,6 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
     from plugins import plugin_instance
     monkeypatch.setattr(plugin_instance, "get", lambda: fake_manager)
 
-    from plugins.plugin_manager import PluginManager
-    original_execute = PluginManager.execute_plugin_async
-    async def fake_execute(self, plugin_name, method, **kwargs):
-        fake_manager.executions.append((plugin_name, method, kwargs))
-        return {
-            "status": "success",
-            "message": "调用成功",
-            "data": {
-                "user_name": kwargs.get("user_name"),
-                "followers": 123,
-            },
-        }
-    monkeypatch.setattr(PluginManager, "execute_plugin_async", fake_execute)
-
     def mock_resolve(self, context):
         return {
             "ok": True,
@@ -522,9 +517,13 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
 
     assert result["ok"] is True
     assert result["response"] == "OpenAI 的账号信息已经获取完成。"
-    assert fake_manager.executions == [
-        ("twitter-monitor", "get_twitter_user_info", {"user_name": "openai"})
-    ]
+    assert len(fake_manager.executions) == 1
+    plugin_name, tool_name, tool_kwargs = fake_manager.executions[0]
+    assert plugin_name == "twitter-monitor"
+    assert tool_name == "get_twitter_user_info"
+    assert tool_kwargs["user_name"] == "openai"
+    assert tool_kwargs["db"] is None
+    assert tool_kwargs["user_id"] is None
     assert result["tool_events"][0]["name"] == "plugin_twitter-monitor__get_twitter_user_info"
     assistant_index = next(
         index for index, message in enumerate(captured_messages["value"])
@@ -536,9 +535,6 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
     )
     assert assistant_index < tool_index
     assert captured_messages["value"][assistant_index]["reasoning_content"] == "需要先拿到实时账号信息再总结。"
-    monkeypatch.setattr(PluginManager, "execute_plugin_async", original_execute)
-
-
 @pytest.mark.asyncio
 async def test_call_llm_api_stream_handles_pseudo_json_tool_call(monkeypatch):
     """流式 _call_llm_api_stream 应透传 tool_calls 事件并正常返回内容。"""

@@ -8,10 +8,7 @@
 4. FeedbackLayer.update_memory 在用户输入含偏好关键词时的持久化行为
 """
 import asyncio
-from typing import Dict, Any, List
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 import pytest
 
@@ -234,6 +231,7 @@ class TestUpdateMemoryPersistence:
         self.feedback = FeedbackLayer()
         # 用 AsyncMock 替代 MemoryManager
         self.mock_memory_manager = MagicMock()
+        self.mock_memory_manager._MAX_LONG_TERM_CONTENT_CHARS = 500
         self.mock_memory_manager.add_short_term_memory = AsyncMock()
         self.mock_memory_manager.append_to_last_assistant_memory = AsyncMock()
         self.mock_memory_manager.add_long_term_memory = AsyncMock()

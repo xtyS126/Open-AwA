@@ -293,8 +293,9 @@ curl --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8000/api/sys
 # 使用 API Key 认证（从 lib/backend/.env.local 读取）
 API_KEY=$(grep OPENAWA_API_KEY lib/backend/.env.local | cut -d'=' -f2- | tr -d '"')
 
-# 列出所有可用场景（无需认证）
-curl -s http://localhost:8000/api/test-scenarios
+# 列出所有可用场景（需要 API Key 认证）
+curl -s http://localhost:8000/api/test-scenarios \
+  -H "Authorization: Bearer $API_KEY"
 
 # 运行全部 10 个场景（API Key 认证，返回 passed/failed/total 汇总）
 curl -s -X POST http://localhost:8000/api/test-scenarios/run-all \
@@ -791,6 +792,13 @@ git commit -m "[Type] 变更描述"
 - **记忆查询不得直接使用超长工具输出**：SQLite 的模糊搜索输入必须先统一清洗、压缩和截断；整段工具结果或大型 JSON 直接进入 `LIKE`/`GLOB` 会触发 `LIKE or GLOB pattern too complex`，进而使聊天流式请求失败。
 - **反馈层长期记忆调用保持显式契约**：`add_long_term_memory` 必须以 `memory_layer=` 显式传递记忆层，修改反馈链路时需用契约测试防止位置参数漂移导致 `MemoryPersistenceError`。
 - **真实运行库 ACL 必须同时覆盖旁车文件**：Windows 上修复 `var/data/openawa.db` 写权限时，要在提升权限终端检查数据库目录以及 `openawa.db`、`openawa.db-wal`、`openawa.db-shm` 的所有者和写权限；禁止通过删除真实库或旁车文件绕过 `attempt to write a readonly database`。
+- **chat-nonstream 场景必须校验成功终态**：`api/routes/test_runner.py` 不得仅凭 `response` 非空判定通过；`AIAgent.process()` 返回 `status=error` 时即使正文包含错误文本，也必须让 run-all 记录失败。
+- **AIAgent 架构指标必须由 AST 契约持续约束**：`core/agent.py` 的方法不得超过 80 行、参数不得超过 8 个、方法内不得使用 lazy import、直接项目模块扇出必须小于 15，并禁止反向依赖 `db.models` 与 `api.routes`；修改 Agent 核心后必须运行 `tests/test_agent_architecture.py`。
+- **AIAgent 测试不得恢复静态 helper 别名**：测试应直接覆盖 collaborator 或公共 helper，禁止为了兼容旧测试在 `AIAgent` 上重新挂载私有静态别名，也禁止通过 `AIAgent.__new__` 绕过生产构造契约。
+- **生产 AIAgent 构造必须注入持久化边界**：路由、定时任务、微信自动回复和子代理运行器创建 `AIAgent` 时，必须提供 `WorkflowRepositoryPort` adapter 与 memory session factory；新增构造路径需同步加入架构测试。
+- **pytest 文件日志必须隔离到临时目录**：测试收集前设置独立 `LOG_DIR`，避免测试写入真实 `var/logs`、持有用户日志句柄或因 Windows 文件锁导致回归不稳定。
+- **Sandbox 必须先校验原始命令再解析平台可执行文件**：权限、白名单和危险模式检查必须发生在 Windows/POSIX executable resolution 之前，禁止让危险命令借“command not found”绕过安全拒绝。
+- **旧 code-audit 脚本已移除**：`scripts/code-audit.ps1` 已由提交 `489446ee` 删除；当前 Agent 架构验证使用任务文件 Ruff、`git diff --check`、`tests/test_agent_architecture.py`、目标回归、完整分组 pytest 和隔离 E2E，不得把缺失旧脚本误判为产品失败。
 
 ## 20. API Path Prefix
 

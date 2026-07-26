@@ -20,7 +20,6 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api.dependencies import get_current_user, get_db
-from api.routes import weixin as weixin_routes
 from api.services.weixin_auto_reply import (
     WeixinAutoReplyService,
     build_weixin_reply_text,
@@ -220,14 +219,20 @@ async def test_auto_reply_rule_engine(tmp_path, monkeypatch):
     )
     
     # 将 AI 生成器替换，以便验证 fallback
-    original_default_generator = manager._default_ai_reply_generator
     async def mock_generator(db_session, binding, inbound):
         # 让默认生成器中用 mock AI Agent 替代真实 Agent 的过程有点麻烦，直接使用 manager._default_ai_reply_generator 并且 mock AIAgent
         pass
     
     class MockAIAgent:
-        def __init__(self, db_session=None):
-            pass
+        def __init__(
+            self,
+            db_session=None,
+            workflow_repository=None,
+            memory_session_factory=None,
+        ):
+            self.db_session = db_session
+            self.workflow_repository = workflow_repository
+            self.memory_session_factory = memory_session_factory
         async def process(self, text, context):
             return {"response": "AI生成的回复"}
 

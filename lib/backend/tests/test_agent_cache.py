@@ -12,7 +12,7 @@ AIAgent 工具定义实例级缓存单元测试。
 
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from typing import Any, Dict, List
 
 import pytest
@@ -46,29 +46,24 @@ def _stub_capabilities(
     agent.get_available_skills = AsyncMock(return_value=skills)
     agent.get_available_plugins = AsyncMock(return_value=plugins)
 
-    # _summarize_*_capabilities 是 staticmethod，绑到实例时需通过 patch.object 替换
-    # 这里直接覆盖实例属性即可（staticmethod 通过实例访问返回普通函数）
-    agent._summarize_skill_capabilities = lambda raw: raw  # 透传便于版本计算
-    agent._summarize_plugin_capabilities = lambda raw: raw
-
     mcp_payload = {
         "platform_supported": True,
         "chat_dispatch_enabled": chat_dispatch_enabled,
         "connected_servers": [],
         "tools": mcp_tools or [],
     }
-    agent._collect_mcp_capabilities = AsyncMock(return_value=mcp_payload)
-    agent._collect_configured_model_capabilities = MagicMock(
+    agent._capability_aggregator.collect_mcp = AsyncMock(return_value=mcp_payload)
+    agent._capability_aggregator.collect_configured_models = MagicMock(
         return_value={"count": 0, "entries": [], "providers": [], "summary": ""}
     )
 
-    # mock _build_native_tools：每次返回新列表对象，便于断言调用次数与缓存替换
+    # mock 原生工具构建器：每次返回新列表对象，便于断言调用次数与缓存替换
     # side_effect 每次调用返回独立 list，避免 _tools_cache is not first_cache 误判
     def _build_stub(_capabilities):
         return [{"type": "function", "function": {"name": "stub_tool"}}]
 
     mock_build = MagicMock(side_effect=_build_stub)
-    agent._build_native_tools = mock_build
+    agent.native_tool_builder = mock_build
     return mock_build
 
 
@@ -164,8 +159,6 @@ async def test_skill_changes_rebuild_after_explicit_invalidation() -> None:
     assert agent._tools_cache is not first_cache
     # _build_native_tools 应被再次调用
     assert mock_build.call_count == 2
-
-
 @pytest.mark.asyncio
 async def test_plugin_changes_rebuild_after_explicit_invalidation() -> None:
     """插件工具集合变化后显式失效缓存会触发重建。"""
@@ -198,40 +191,3 @@ async def test_plugin_changes_rebuild_after_explicit_invalidation() -> None:
     await agent._inject_runtime_capabilities(context2)
 
     assert mock_build.call_count == 2
-
-
-def test_compute_tools_version_empty_when_no_capabilities() -> None:
-    """context 中无 agent_capabilities 时版本为空字符串。"""
-    assert AIAgent._compute_tools_version({}) == ""
-    assert AIAgent._compute_tools_version({"agent_capabilities": "not-a-dict"}) == ""
-
-
-def test_compute_tools_version_changes_with_skill_set() -> None:
-    """技能集合变化时 _compute_tools_version 返回不同 md5。"""
-    capabilities_a = {
-        "skills": [{"name": "skill1"}],
-        "plugins": [],
-        "mcp": {"chat_dispatch_enabled": False, "tool_count": 0},
-    }
-    capabilities_b = {
-        "skills": [{"name": "skill1"}, {"name": "skill2"}],
-        "plugins": [],
-        "mcp": {"chat_dispatch_enabled": False, "tool_count": 0},
-    }
-    version_a = AIAgent._compute_tools_version({"agent_capabilities": capabilities_a})
-    version_b = AIAgent._compute_tools_version({"agent_capabilities": capabilities_b})
-    assert version_a != version_b
-    assert len(version_a) == 32  # md5 hex 长度
-
-
-def test_compute_tools_version_stable_for_same_capabilities() -> None:
-    """相同 agent_capabilities 多次调用版本一致（哈希稳定性）。"""
-    capabilities = {
-        "skills": [{"name": "skill1"}],
-        "plugins": [{"name": "plugin1", "loaded": True, "tool_names": ["tool1"]}],
-        "mcp": {"chat_dispatch_enabled": False, "tool_count": 0},
-    }
-    context = {"agent_capabilities": capabilities}
-    v1 = AIAgent._compute_tools_version(context)
-    v2 = AIAgent._compute_tools_version(context)
-    assert v1 == v2

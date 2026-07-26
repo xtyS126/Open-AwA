@@ -3,13 +3,13 @@
 这些测试专注于能力声明与提示词拼装，不依赖完整应用启动链路。
 """
 
-from types import MethodType, SimpleNamespace
+from types import MethodType
 
 import pytest
 
-import core.agent as agent_module
 import core.executor as executor_module
 from core.agent import AIAgent
+from core.agent_capability_builder import build_native_tools, collect_mcp_capabilities
 from core.executor import ExecutionLayer
 
 
@@ -374,8 +374,12 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
     monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
     monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
     monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
-    monkeypatch.setattr(agent, "_collect_configured_model_capabilities", fake_collect_configured_model_capabilities)
-    monkeypatch.setattr(agent_module, "MCPManager", lambda: FakeMCPManager())
+    monkeypatch.setattr(
+        agent._capability_aggregator,
+        "collect_configured_models",
+        fake_collect_configured_model_capabilities,
+    )
+    monkeypatch.setattr("mcp.manager.MCPManager", lambda: FakeMCPManager())
     monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step)
     monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
     monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
@@ -401,7 +405,7 @@ def test_build_native_tools_exposes_configured_models_for_subagent_selection():
     子代理工具定义应显式暴露已配置模型目录与 provider 参数，方便模型自行选型。
     """
 
-    tools = AIAgent._build_native_tools(
+    tools = build_native_tools(
         {
             "configured_models": {
                 "count": 2,
@@ -438,10 +442,9 @@ async def test_ai_agent_collect_mcp_capabilities_handles_unavailable_manager(mon
     MCP 管理器不可用时，能力采集应返回稳定降级结构，而不是直接抛异常。
     """
 
-    agent = AIAgent()
-    monkeypatch.setattr(agent_module, "MCPManager", lambda: None)
+    monkeypatch.setattr("mcp.manager.MCPManager", lambda: None)
 
-    result = await agent._collect_mcp_capabilities({})
+    result = await collect_mcp_capabilities({})
 
     assert result["platform_supported"] is True
     assert result["connected_servers"] == []

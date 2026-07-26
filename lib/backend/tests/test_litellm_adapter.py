@@ -15,9 +15,6 @@ from core.litellm_adapter import (
     litellm_chat_completion_stream,
     litellm_list_models,
     litellm_check_provider_connection,
-    PROVIDER_MODEL_PREFIX_MAP,
-    STATUS_CODE_ERROR_MAP,
-    RETRYABLE_STATUS_CODES,
 )
 
 
@@ -31,7 +28,10 @@ class TestBuildLitellmModelName:
         assert build_litellm_model_name("anthropic", "claude-3-5-sonnet") == "anthropic/claude-3-5-sonnet"
 
     def test_deepseek_model_gets_prefix(self):
-        assert build_litellm_model_name("deepseek", "deepseek-chat") == "deepseek/deepseek-chat"
+        assert (
+            build_litellm_model_name("deepseek", "deepseek-chat")
+            == "deepseek/deepseek-v4-flash"
+        )
 
     def test_google_model_gets_gemini_prefix(self):
         assert build_litellm_model_name("google", "gemini-pro") == "gemini/gemini-pro"

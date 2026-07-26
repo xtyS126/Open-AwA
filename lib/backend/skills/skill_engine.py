@@ -14,6 +14,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
+from sqlalchemy.orm import Session
 
 from .skill_registry import SkillRegistry
 from .skill_validator import SkillValidator, ValidationResult
@@ -740,3 +741,11 @@ class SkillEngine:
         self._performance_metrics.clear()
         logger.info(f"Cleared {count} performance metrics")
         return count
+
+    def bind_db(self, new_session: Session) -> None:
+        """绑定新的数据库会话，并委托给内部 registry。
+
+        用于 AIAgent.bind_db 调用，避免外部直接访问 registry._db / _db_session 等私有属性。
+        """
+        self.db_session = new_session
+        self.registry.bind_db(new_session)

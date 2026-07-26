@@ -11,8 +11,16 @@ from loguru import logger
 class CapabilityAggregator:
     """聚合会话能力，并在短 TTL 内复用可用工具定义。"""
 
-    def __init__(self, cache_ttl: float) -> None:
+    def __init__(
+        self,
+        cache_ttl: float,
+        *,
+        collect_configured_models: Callable[[Dict[str, Any]], Dict[str, Any]],
+        collect_mcp: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+    ) -> None:
         self.cache_ttl = cache_ttl
+        self.collect_configured_models = collect_configured_models
+        self.collect_mcp = collect_mcp
         self.capabilities_cache: Optional[Dict[str, Any]] = None
         self.capabilities_cache_ts = 0.0
         self.tools_cache: Optional[List[Dict[str, Any]]] = None
@@ -33,8 +41,6 @@ class CapabilityAggregator:
         get_available_plugins: Callable[[], Awaitable[List[Dict[str, Any]]]],
         summarize_skills: Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]],
         summarize_plugins: Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]],
-        collect_configured_models: Callable[[Dict[str, Any]], Dict[str, Any]],
-        collect_mcp: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
         build_native_tools: Callable[[Dict[str, Any]], List[Dict[str, Any]]],
     ) -> None:
         """将当前会话可用能力与原生工具定义写入上下文。"""
@@ -70,8 +76,8 @@ class CapabilityAggregator:
             "tool_dispatch_mode": "platform_managed",
             "skills": skills,
             "plugins": plugins,
-            "configured_models": collect_configured_models(context),
-            "mcp": await collect_mcp(context),
+            "configured_models": self.collect_configured_models(context),
+            "mcp": await self.collect_mcp(context),
         }
         context["agent_capabilities"] = capabilities
         self._apply_agent_type_hint(context)

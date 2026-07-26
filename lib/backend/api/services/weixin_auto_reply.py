@@ -21,6 +21,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from core.agent import AIAgent
+from api.adapters.workflow_repository_adapter import WorkflowRepositoryAdapter
 from config.security import encrypt_secret_value
 from db.models import SessionLocal, ShortTermMemory, WeixinBinding, WeixinAutoReplyRule, WeixinMediaAsset
 from skills.weixin_skill_adapter import (
@@ -1167,7 +1168,11 @@ class WeixinAutoReplyService:
             web_conversations, weixin_conversations, inbound_text
         )
 
-        agent = AIAgent(db_session=db)
+        agent = AIAgent(
+            db_session=db,
+            workflow_repository=WorkflowRepositoryAdapter(db),
+            memory_session_factory=self.session_factory,
+        )
         context = {
             "user_id": binding.user_id,
             "username": f"weixin:{binding.weixin_account_id or binding.weixin_user_id or binding.user_id}",

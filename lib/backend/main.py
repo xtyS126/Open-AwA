@@ -3,7 +3,6 @@
 阅读本文件时，建议优先关注启动顺序、生命周期管理、请求链路上下文以及全局异常处理方式。
 """
 
-from contextlib import asynccontextmanager
 import asyncio
 import errno
 import inspect
@@ -53,6 +52,8 @@ from api.routes.acp import router as acp_router
 from api.routes.pets import router as pets_router
 from api.routes.preview_proxy import router as preview_proxy_router
 from api.routes.notifications import router as notifications_router
+from api.adapters.ask_user_adapter import AskUserPortAdapter
+from api.adapters.workflow_repository_adapter import WorkflowRepositoryAdapter
 from plugins.bilibili_toolkit_builtin.api.routes import router as bilibili_toolkit_router
 
 from billing.routers import billing
@@ -77,9 +78,10 @@ from core.litellm_adapter import (
 from core.scheduled_task_manager import scheduled_task_manager
 from core.startup.profiler import StartupProfiler
 from core.task_runtime import task_runtime
-from config.security import generate_csrf_token, verify_csrf_token
+from core.agent_registry import get_registry
+from config.security import generate_csrf_token
 from config.settings import is_production_environment, settings
-from db.models import engine, init_db
+from db.models import SessionLocal, init_db
 from security.csrf_manager import (
     generate_csrf_token_pair,
     validate_csrf_request,
@@ -862,7 +864,7 @@ async def _startup_background_tasks(profiler: StartupProfiler) -> None:
 async def _startup_autonomous_mode(profiler: StartupProfiler) -> None:
     """初始化自主运行模式（仅通过 .env 配置）。"""
     try:
-        from core.autonomous import init_autonomous_mode, get_autonomous_manager
+        from core.autonomous import init_autonomous_mode
         manager = init_autonomous_mode()
         if manager:
             profiler.record("autonomous_mode")
@@ -1025,6 +1027,15 @@ async def lifespan(app: FastAPI):
     profiler.start()
 
     try:
+        # 注入 AskUserPortAdapter 到 AIAgentRegistry 单例，
+        # 解耦 core.agent 对 api.routes.ask_user 的反向依赖（fix-brooks-lint-wave2 Task 3）
+        # 必须在首次 AIAgent 实例化前完成，否则 process_stream 触发 ask_user 时会抛 RuntimeError
+        get_registry().set_ask_user_port(AskUserPortAdapter())
+        get_registry().set_workflow_repository_factory(WorkflowRepositoryAdapter)
+        get_registry().set_memory_session_factory(SessionLocal)
+        logger.bind(event="ask_user_port_injected", module="main").info(
+            "AskUserPortAdapter 与 WorkflowRepositoryAdapter 已注入 AIAgentRegistry"
+        )
         await _startup_infrastructure(profiler)
         await _startup_data_init(profiler)
         await _startup_owner_user_init(profiler)

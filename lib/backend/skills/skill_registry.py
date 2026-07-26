@@ -8,6 +8,7 @@ import threading
 import uuid
 from typing import Dict, List, Optional
 from loguru import logger
+from sqlalchemy.orm import Session
 
 from db.models import Skill
 
@@ -245,3 +246,15 @@ class SkillRegistry:
             self._cache[skill.name] = skill
         logger.info(f"Skill cache refreshed with {len(skills)} skills")
         return len(skills)
+
+    def bind_db(self, new_session: Session) -> None:
+        """绑定新的数据库会话并清空缓存。
+
+        用于 AIAgent.bind_db 调用，避免外部直接读写 registry._cache / _list_cache 私有属性。
+        更新 self.db 为新会话，清空 self._cache 字典，置 self._list_cache 为 None。
+        """
+        self.db = new_session
+        self._cache.clear()
+        # 同步失效 list_all 缓存，与 clear_cache / refresh_cache 保持一致的锁保护
+        with self._list_cache_lock:
+            self._list_cache = None

@@ -544,34 +544,36 @@ class Sandbox:
         exec_timeout = timeout if timeout is not None else self.timeout
         logger.info(f"Sandbox execute_command: {command[:100]!r}, timeout={exec_timeout}s")
 
-        # 解析命令字符串为参数列表（防止 shell 注入），并做 Windows 平台适配
-        # Windows 下 cmd.exe 内建命令（echo/dir 等）需通过 cmd.exe /c 包装，否则
-        # create_subprocess_exec 会抛 WinError 2
-        command_list, resolve_error = resolve_command_for_platform(command)
-        if resolve_error:
-            logger.warning(f"Command resolve failed: {resolve_error}")
-            return {"status": "error", "message": resolve_error}
-
-        if not command_list:
+        # 先解析原始命令并完成权限与安全校验，再解析平台可执行文件。
+        # 安全检查不得依赖目标命令在当前系统是否存在，否则 Windows 会把
+        # rm/sudo/注入字符串误报为“命令未找到”，绕过明确的拒绝语义。
+        try:
+            raw_command_list = shlex.split(command)
+        except ValueError:
+            return {
+                "status": "error",
+                "message": f"命令解析失败（可能包含未闭合的引号）: {command}",
+            }
+        if not raw_command_list:
             return {"status": "error", "message": "命令不能为空"}
 
-        # 权限检查：取原始命令名（cmd.exe /c 包装后第一个元素可能是 cmd.exe）
-        # 对 cmd.exe /c 包装的命令，校验原始命令名（args[1]）的权限
-        perm_target = command_list[0]
-        if os.name == 'nt' and len(command_list) >= 2 and \
-                os.path.basename(command_list[0]).lower() == 'cmd.exe' and command_list[1] == '/c':
-            perm_target = command_list[2] if len(command_list) > 2 else command_list[0]
-
+        perm_target = os.path.basename(raw_command_list[0]).lower()
         allowed = settings.AGENT_WORKSPACE_UNRESTRICTED_COMMANDS or await self.check_permission("execute", perm_target)
         if not allowed:
             return {"status": "error", "message": f"权限拒绝: 不允许执行命令 '{perm_target}'"}
 
-        # 命令白名单校验：传入原始命令字符串，让验证器基于原始命令判断
+        # 基于未解析为绝对路径的原始参数校验白名单和危险模式。
         try:
-            self._validate_command(command_list, command)
+            self._validate_command(raw_command_list, command)
         except SandboxPermissionError as e:
             logger.warning(f"Command validation failed: {e}")
             return {"status": "error", "message": str(e)}
+
+        # 安全边界通过后再做 Windows 内建命令与可执行文件解析。
+        command_list, resolve_error = resolve_command_for_platform(command)
+        if resolve_error:
+            logger.warning(f"Command resolve failed: {resolve_error}")
+            return {"status": "error", "message": resolve_error}
 
         # 校验工作目录
         exec_cwd: Optional[str] = None

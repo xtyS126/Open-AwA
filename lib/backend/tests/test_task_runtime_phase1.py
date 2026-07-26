@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 
 import pytest
 from sqlalchemy import create_engine
@@ -384,8 +383,9 @@ class TestSubagentRunnerContext:
         captured: dict[str, object] = {}
 
         class FakeAgent:
-            def __init__(self, db_session=None):
+            def __init__(self, db_session=None, memory_session_factory=None):
                 captured["db_session"] = db_session
+                captured["memory_session_factory"] = memory_session_factory
 
         monkeypatch.setattr(runners_module, "SessionLocal", lambda: fake_session)
         monkeypatch.setattr(agent_module, "AIAgent", FakeAgent)
@@ -414,6 +414,7 @@ class TestSubagentRunnerContext:
         assert isinstance(sub_agent, FakeAgent)
         assert subagent_db is fake_session
         assert captured["db_session"] is fake_session
+        assert captured["memory_session_factory"] is not None
         assert sub_context["db"] is fake_session
         assert sub_context["provider"] == "deepseek"
         assert sub_context["model"] == "deepseek-chat"
@@ -423,8 +424,9 @@ class TestSubagentRunnerContext:
         transcript_entries: list[dict[str, object]] = []
 
         class FakeAgent:
-            def __init__(self, db_session=None):
+            def __init__(self, db_session=None, memory_session_factory=None):
                 self.db_session = db_session
+                self.memory_session_factory = memory_session_factory
 
             async def process_stream(self, prompt, context):
                 yield {"type": "chunk", "reasoning_content": "我", "content": ""}

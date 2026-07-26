@@ -49,18 +49,14 @@ def _stub_capabilities(
     agent.get_available_skills = AsyncMock(return_value=skills)
     agent.get_available_plugins = AsyncMock(return_value=plugins)
 
-    # _summarize_*_capabilities 是 staticmethod，绑到实例时直接覆盖实例属性即可
-    agent._summarize_skill_capabilities = lambda raw: raw  # 透传便于版本计算
-    agent._summarize_plugin_capabilities = lambda raw: raw
-
     mcp_payload = {
         "platform_supported": True,
         "chat_dispatch_enabled": chat_dispatch_enabled,
         "connected_servers": [],
         "tools": mcp_tools or [],
     }
-    agent._collect_mcp_capabilities = AsyncMock(return_value=mcp_payload)
-    agent._collect_configured_model_capabilities = MagicMock(
+    agent._capability_aggregator.collect_mcp = AsyncMock(return_value=mcp_payload)
+    agent._capability_aggregator.collect_configured_models = MagicMock(
         return_value={"count": 0, "entries": [], "providers": [], "summary": ""}
     )
 
@@ -69,7 +65,7 @@ def _stub_capabilities(
         return [{"type": "function", "function": {"name": "stub_tool"}}]
 
     mock_build = MagicMock(side_effect=_build_stub)
-    agent._build_native_tools = mock_build
+    agent.native_tool_builder = mock_build
     return mock_build
 
 
@@ -104,7 +100,7 @@ async def test_first_call_builds_capabilities() -> None:
     # skills/plugins/mcp 查询应各被调用一次
     assert agent.get_available_skills.call_count == 1
     assert agent.get_available_plugins.call_count == 1
-    assert agent._collect_mcp_capabilities.call_count == 1
+    assert agent._capability_aggregator.collect_mcp.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -134,7 +130,7 @@ async def test_second_call_with_same_context_hits_cache() -> None:
     assert mock_build.call_count == 1
     assert agent.get_available_skills.call_count == 1
     assert agent.get_available_plugins.call_count == 1
-    assert agent._collect_mcp_capabilities.call_count == 1
+    assert agent._capability_aggregator.collect_mcp.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -172,7 +168,7 @@ async def test_instance_cache_hit_on_fresh_context_within_ttl() -> None:
     # skills/plugins/mcp 查询不应被再次调用
     assert agent.get_available_skills.call_count == 1
     assert agent.get_available_plugins.call_count == 1
-    assert agent._collect_mcp_capabilities.call_count == 1
+    assert agent._capability_aggregator.collect_mcp.call_count == 1
     # _build_native_tools 不应再次被调用
     assert mock_build.call_count == 1
     # 新 context 应被写入复用的 capabilities 与 tools
@@ -213,7 +209,7 @@ async def test_ttl_expiry_rebuilds_capabilities() -> None:
     # skills/plugins/mcp 查询应被再次调用
     assert agent.get_available_skills.call_count == 2
     assert agent.get_available_plugins.call_count == 2
-    assert agent._collect_mcp_capabilities.call_count == 2
+    assert agent._capability_aggregator.collect_mcp.call_count == 2
     # _build_native_tools 应被再次调用
     assert mock_build.call_count == 2
 
@@ -295,7 +291,7 @@ async def test_skill_plugin_disabled_skips_queries() -> None:
     assert agent.get_available_skills.call_count == 0
     assert agent.get_available_plugins.call_count == 0
     # mcp 查询仍应被调用（不受 enable_skill_plugin 控制）
-    assert agent._collect_mcp_capabilities.call_count == 1
+    assert agent._capability_aggregator.collect_mcp.call_count == 1
     # _build_native_tools 应被调用（基于空 skills/plugins 构建）
     assert mock_build.call_count == 1
     # capabilities 中 skills_enabled 应为 False

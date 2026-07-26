@@ -6,22 +6,21 @@
 - collect_mcp_capabilities: 采集 MCP 连接态信息（异步）
 - collect_configured_model_capabilities: 汇总会话可见的已配置模型目录
 
-core/agent.py 中对应的方法保留为薄包装 / 类级别名，仅用于兼容既有测试
-AIAgent._xxx(...) 调用，待 fix-test-implementation-coupling spec 落地后移除。
+`CapabilityAggregator` 直接接收采集函数，避免在 `AIAgent` 上保留测试专用别名。
 """
 
 from __future__ import annotations
 
 # 标准库
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 # 第三方库
 from sqlalchemy.orm import Session
 from loguru import logger
 
 # 项目内部
-# 注意：MCPManager 在 collect_mcp_capabilities 函数体内延迟导入，
-# 通过 core.agent 模块引用，确保测试 monkeypatch.setattr(agent_module, "MCPManager", ...) 生效
+from core.agent_helpers import build_configured_model_hint
+from core.task_runtime.tool_definitions import build_task_runtime_tool_definitions
 
 
 def summarize_skill_capabilities(skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -89,10 +88,9 @@ async def collect_mcp_capabilities(context: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     try:
-        # 延迟通过 core.agent 模块引用 MCPManager，确保测试 monkeypatch.setattr(agent_module, "MCPManager", ...) 生效
-        # 详见 extract-agent-capability-builder spec 的 wrapper 委托链问题
-        import core.agent as agent_module
-        manager = agent_module.MCPManager()
+        # 延迟导入避免在不启用 MCP 的部署中扩大 Agent 启动依赖。
+        from mcp.manager import MCPManager
+        manager = MCPManager()
         if manager is None:
             return default_payload
         servers = manager.get_all_servers()
@@ -220,3 +218,132 @@ def collect_configured_model_capabilities(
             error_type=type(e).__name__,
         ).warning(f"获取已配置模型目录失败: {e}")
         return default_payload
+
+
+def build_native_tools(capabilities: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """把插件、MCP、内置和任务运行时工具汇总为原生工具定义。"""
+    tools: List[Dict[str, Any]] = []
+    seen_names: Set[str] = set()
+    _append_plugin_tools(capabilities, tools, seen_names)
+    _append_mcp_tools(capabilities, tools, seen_names)
+    _append_builtin_tools(tools, seen_names)
+    _append_task_runtime_tools(capabilities, tools, seen_names)
+    if tools:
+        logger.bind(
+            event="native_tools_built",
+            module="agent_capability_builder",
+            tool_count=len(tools),
+        ).debug(f"已构建 {len(tools)} 个原生工具定义")
+    return tools
+
+
+def _append_plugin_tools(
+    capabilities: Dict[str, Any],
+    tools: List[Dict[str, Any]],
+    seen_names: Set[str],
+) -> None:
+    """追加插件工具定义。"""
+    plugins = capabilities.get("plugins")
+    for plugin in plugins if isinstance(plugins, list) else []:
+        if not isinstance(plugin, dict):
+            continue
+        plugin_name = str(plugin.get("name", "")).strip()
+        plugin_tools = plugin.get("tools")
+        if not plugin_name or not isinstance(plugin_tools, list):
+            continue
+        for tool_definition in plugin_tools:
+            if not isinstance(tool_definition, dict):
+                continue
+            tool_name = str(tool_definition.get("name", "")).strip()
+            function_name = f"plugin_{plugin_name}__{tool_name}"
+            if not tool_name or function_name in seen_names:
+                continue
+            seen_names.add(function_name)
+            parameters = tool_definition.get("parameters")
+            if not isinstance(parameters, dict) or not parameters:
+                parameters = {"type": "object", "properties": {}}
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": function_name,
+                    "description": str(tool_definition.get("description", "")),
+                    "parameters": parameters,
+                },
+            })
+
+
+def _append_mcp_tools(
+    capabilities: Dict[str, Any],
+    tools: List[Dict[str, Any]],
+    seen_names: Set[str],
+) -> None:
+    """追加已启用聊天分发的 MCP 工具定义。"""
+    mcp = capabilities.get("mcp")
+    if not isinstance(mcp, dict) or not mcp.get("chat_dispatch_enabled", False):
+        return
+    mcp_tools = mcp.get("tools")
+    for tool_definition in mcp_tools if isinstance(mcp_tools, list) else []:
+        if not isinstance(tool_definition, dict):
+            continue
+        server_name = str(
+            tool_definition.get("server_name", tool_definition.get("server_id", ""))
+        ).strip()
+        tool_name = str(tool_definition.get("name", "")).strip()
+        function_name = f"mcp_{server_name}__{tool_name}"
+        if not server_name or not tool_name or function_name in seen_names:
+            continue
+        seen_names.add(function_name)
+        parameters = tool_definition.get("parameters")
+        if not isinstance(parameters, dict) or not parameters:
+            parameters = {"type": "object", "properties": {}}
+        tools.append({
+            "type": "function",
+            "function": {
+                "name": function_name,
+                "description": str(tool_definition.get("description", "")),
+                "parameters": parameters,
+            },
+        })
+
+
+def _append_builtin_tools(
+    tools: List[Dict[str, Any]],
+    seen_names: Set[str],
+) -> None:
+    """追加内置工具；可选运行时不可用时保持降级。"""
+    try:
+        from core.builtin_tools.manager import builtin_tool_manager
+
+        for tool_definition in builtin_tool_manager.get_tool_definitions():
+            function_name = tool_definition.get("function", {}).get("name", "")
+            if function_name and function_name not in seen_names:
+                seen_names.add(function_name)
+                tools.append(tool_definition)
+    except Exception:
+        logger.bind(
+            module="agent_capability_builder",
+            event="builtin_tools_load_error",
+        ).warning("加载内置工具定义失败，跳过内置工具")
+
+
+def _append_task_runtime_tools(
+    capabilities: Dict[str, Any],
+    tools: List[Dict[str, Any]],
+    seen_names: Set[str],
+) -> None:
+    """追加任务运行时工具；可选运行时不可用时保持降级。"""
+    try:
+        from core.task_runtime.definitions import list_agent_types
+
+        list_agent_types()
+        model_hint = build_configured_model_hint(capabilities)
+        for tool_definition in build_task_runtime_tool_definitions(model_hint):
+            function_name = tool_definition.get("function", {}).get("name", "")
+            if function_name and function_name not in seen_names:
+                seen_names.add(function_name)
+                tools.append(tool_definition)
+    except Exception:
+        logger.bind(
+            module="agent_capability_builder",
+            event="task_tools_load_error",
+        ).warning("加载任务运行时工具定义失败，跳过任务工具")

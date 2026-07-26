@@ -9,8 +9,8 @@ AIAgentRegistry 实例级缓存注册表单元测试。
 - clear_all() 后所有 user_id 都返回新实例
 - TTL 过期后返回新实例
 
-通过预置 MemoryManager._shared_vector_store 避免 AIAgent 构造时触发
-真实的 VectorStoreManager/Qdrant 初始化，其余依赖保持真实调用。
+默认不注入记忆会话工厂，因此注册表单元测试不会初始化真实向量库；
+另有专门用例验证生产注入的会话工厂会透传给 AIAgent。
 """
 
 import asyncio
@@ -80,7 +80,13 @@ async def test_acquire_serializes_same_user_and_keeps_db_binding(monkeypatch) ->
     """同一用户的并发请求不得在执行期间互相覆盖数据库会话。"""
 
     class FakeAgent:
-        def __init__(self, db_session) -> None:
+        def __init__(
+            self,
+            db_session,
+            ask_user_port=None,
+            workflow_repository=None,
+            memory_session_factory=None,
+        ) -> None:
             self.db_session = db_session
 
         def bind_db(self, db_session) -> None:
@@ -113,6 +119,24 @@ async def test_acquire_serializes_same_user_and_keeps_db_binding(monkeypatch) ->
     release_first.set()
     await asyncio.gather(first_task, second_task)
     assert second_entered.is_set() is True
+
+
+def test_memory_session_factory_is_forwarded_to_new_agent(monkeypatch) -> None:
+    """注册表必须把生产注入的记忆会话工厂透传给新建 Agent。"""
+    captured = {}
+    session_factory = MagicMock(name="memory_session_factory")
+
+    class FakeAgent:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(agent_module, "AIAgent", FakeAgent)
+    registry = AIAgentRegistry(memory_session_factory=session_factory)
+
+    registry.get_or_create(user_id=1, db_session="request-db")
+
+    assert captured["db_session"] == "request-db"
+    assert captured["memory_session_factory"] is session_factory
 
 
 def test_bind_db_updates_request_db() -> None:
@@ -228,11 +252,11 @@ def test_lru_eviction_when_exceeding_max_instances() -> None:
         db = MagicMock()
 
         agent1 = registry.get_or_create(user_id=1, db_session=db)
-        agent2 = registry.get_or_create(user_id=2, db_session=db)
+        registry.get_or_create(user_id=2, db_session=db)
         assert len(registry._cache) == 2
 
         # 插入第三个，应淘汰最旧的 user_id=1
-        agent3 = registry.get_or_create(user_id=3, db_session=db)
+        registry.get_or_create(user_id=3, db_session=db)
         assert len(registry._cache) == 2
         assert 1 not in registry._cache  # 最旧的被淘汰
         assert 2 in registry._cache
