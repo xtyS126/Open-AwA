@@ -283,7 +283,7 @@ wave6 (within quarter, 收尾)
 ### 自动化验证
 
 - Brooks 定向回归：147 passed。
-- 最终架构专项：10 passed，覆盖方法长度、参数数、嵌套 import、扇出、依赖方向、生产 collaborator 注入、计划执行、流编排、Workflow Repository Port 和 chat 场景终态。
+- 最终架构专项：11 passed，覆盖方法长度、参数数、嵌套 import、扇出、依赖方向、生产 collaborator 注入、禁止测试绕过构造、计划执行、流编排、Workflow Repository Port 和 chat 场景终态。
 - 后端完整分组回归：4554 passed，7 skipped。
 - 前端：`npm run test -- --run`、`npm run lint`、`npm run typecheck`、`npm run build` 全部通过；lint 为 0 error、54 个既有 warning。
 - 静态检查：任务 Python 文件 Ruff 通过，`git diff --check` 通过；结构指标为 1457 行、48 方法、最长方法 79 行、最大参数数 7、嵌套 import 0、直接项目模块扇出 8。
