@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from db.models import SessionLocal
 
 from .definitions import AgentDefinition, get_agent_definition
-from .sessions import create_session, update_session_state, get_session
+from .sessions import create_session, update_session_state, get_session, claim_session
 from .serializers import (
     save_transcript_entry,
     build_summary,
@@ -43,6 +43,60 @@ _running_background_tasks: Dict[str, asyncio.Task] = {}
 
 # 子代理流式消息达到该阈值后再刷出，避免按 token 级别污染思维链。
 SUBAGENT_STREAM_MESSAGE_FLUSH_THRESHOLD = 96
+
+
+async def _create_session_record(
+    *,
+    parent_session_id: Optional[str],
+    root_chat_session_id: Optional[str],
+    agent_type: str,
+    run_mode: str,
+    isolation_mode: str,
+) -> str:
+    """在线程中创建短生命周期数据库会话，避免阻塞事件循环。"""
+    def _create() -> str:
+        db = SessionLocal()
+        try:
+            return create_session(
+                db,
+                parent_session_id=parent_session_id,
+                root_chat_session_id=root_chat_session_id,
+                agent_type=agent_type,
+                run_mode=run_mode,
+                isolation_mode=isolation_mode,
+            ).agent_id
+        finally:
+            db.close()
+
+    return await asyncio.to_thread(_create)
+
+
+async def _update_session_record(
+    agent_id: str,
+    state: str,
+    **kwargs: Any,
+) -> None:
+    """在线程中更新短生命周期数据库会话状态，并在操作后关闭会话。"""
+    def _update() -> None:
+        db = SessionLocal()
+        try:
+            update_session_state(db, agent_id, state, **kwargs)
+        finally:
+            db.close()
+
+    await asyncio.to_thread(_update)
+
+
+async def _renew_session_lease(agent_id: str, lease_owner: str) -> bool:
+    """在线程中续租会话，避免心跳循环因同步数据库操作阻塞。"""
+    def _renew() -> bool:
+        db = SessionLocal()
+        try:
+            return claim_session(db, agent_id, lease_owner, lease_duration_seconds=300) is not None
+        finally:
+            db.close()
+
+    return await asyncio.to_thread(_renew)
 
 
 class MaxTurnsExceededError(Exception):
@@ -447,25 +501,14 @@ async def run_foreground(
         yield {"type": "error", "error": f"未知代理类型: {agent_type}"}
         return
 
-    db: Session = SessionLocal()
-    try:
-        session = create_session(
-            db,
-            parent_session_id=parent_session_id,
-            root_chat_session_id=root_chat_session_id,
-            agent_type=agent_type,
-            run_mode="foreground",
-            isolation_mode=agent_def.isolation_mode,
-        )
-        agent_id = session.agent_id
-    finally:
-        db.close()
-
-    db = SessionLocal()
-    try:
-        update_session_state(db, agent_id, "queued")
-    finally:
-        db.close()
+    agent_id = await _create_session_record(
+        parent_session_id=parent_session_id,
+        root_chat_session_id=root_chat_session_id,
+        agent_type=agent_type,
+        run_mode="foreground",
+        isolation_mode=agent_def.isolation_mode,
+    )
+    await _update_session_record(agent_id, "queued")
 
     # Task 13: Fork 模式 - 克隆父上下文并异步启动子 Agent，不阻塞主 Agent
     if fork_mode:
@@ -500,11 +543,7 @@ async def run_foreground(
         })
 
         # 更新状态为 running
-        db = SessionLocal()
-        try:
-            update_session_state(db, agent_id, "running")
-        finally:
-            db.close()
+        await _update_session_record(agent_id, "running")
 
         # 异步启动子 Agent 执行，不阻塞当前协程
         # 子 Agent 完成后通过 _background_execute 内的 task-notification 机制推送结果
@@ -552,11 +591,7 @@ async def run_foreground(
     })
 
     # 更新状态为 running
-    db = SessionLocal()
-    try:
-        update_session_state(db, agent_id, "running")
-    finally:
-        db.close()
+    await _update_session_record(agent_id, "running")
 
     # SubagentStart 钩子：子代理启动时注入附加上下文
     await hook_dispatcher.dispatch(HOOK_SUBAGENT_START, {
@@ -663,18 +698,12 @@ async def run_foreground(
         )
 
         # 更新为完成状态
-        db = SessionLocal()
-        try:
-            transcript_path = get_transcript_path(agent_id)
-            update_session_state(
-                db,
-                agent_id,
-                "completed",
-                summary=summary,
-                transcript_path=transcript_path,
-            )
-        finally:
-            db.close()
+        await _update_session_record(
+            agent_id,
+            "completed",
+            summary=summary,
+            transcript_path=get_transcript_path(agent_id),
+        )
 
         save_transcript_entry(agent_id, {
             "event": "subagent_stop",
@@ -703,19 +732,13 @@ async def run_foreground(
             max_turns=exc.max_turns,
         ).warning(f"Agent {agent_id} 达到最大轮次限制 {exc.max_turns}")
 
-        db = SessionLocal()
-        try:
-            transcript_path = get_transcript_path(agent_id)
-            update_session_state(
-                db,
-                agent_id,
-                "completed",
-                summary=max_turns_summary,
-                transcript_path=transcript_path,
-                last_error=f"MaxTurnsExceeded: {exc.max_turns}",
-            )
-        finally:
-            db.close()
+        await _update_session_record(
+            agent_id,
+            "completed",
+            summary=max_turns_summary,
+            transcript_path=get_transcript_path(agent_id),
+            last_error=f"MaxTurnsExceeded: {exc.max_turns}",
+        )
 
         save_transcript_entry(agent_id, {
             "event": "subagent_stop",
@@ -744,11 +767,7 @@ async def run_foreground(
             error=error_msg,
         ).error(f"子代理执行失败: {agent_id}")
 
-        db = SessionLocal()
-        try:
-            update_session_state(db, agent_id, "failed", last_error=error_msg)
-        finally:
-            db.close()
+        await _update_session_record(agent_id, "failed", last_error=error_msg)
 
         save_transcript_entry(agent_id, {
             "event": "subagent_stop",
@@ -794,25 +813,14 @@ async def run_background(
     if not agent_def:
         return {"ok": False, "error": f"未知代理类型: {agent_type}"}
 
-    db: Session = SessionLocal()
-    try:
-        session = create_session(
-            db,
-            parent_session_id=parent_session_id,
-            root_chat_session_id=root_chat_session_id,
-            agent_type=agent_type,
-            run_mode="background",
-            isolation_mode=agent_def.isolation_mode,
-        )
-        agent_id = session.agent_id
-    finally:
-        db.close()
-
-    db = SessionLocal()
-    try:
-        update_session_state(db, agent_id, "queued")
-    finally:
-        db.close()
+    agent_id = await _create_session_record(
+        parent_session_id=parent_session_id,
+        root_chat_session_id=root_chat_session_id,
+        agent_type=agent_type,
+        run_mode="background",
+        isolation_mode=agent_def.isolation_mode,
+    )
+    await _update_session_record(agent_id, "queued")
 
     save_transcript_entry(agent_id, {
         "event": "subagent_start",
@@ -848,13 +856,10 @@ async def run_background(
 
 async def _heartbeat_loop(agent_id: str, lease_owner: str, interval_seconds: int = 60) -> None:
     """周期性续租后台代理的 lease，防止长时间运行超时。"""
-    from .sessions import claim_session
     while True:
         await asyncio.sleep(interval_seconds)
-        db = SessionLocal()
         try:
-            session = claim_session(db, agent_id, lease_owner, lease_duration_seconds=300)
-            if not session:
+            if not await _renew_session_lease(agent_id, lease_owner):
                 logger.bind(
                     module="task_runtime",
                     agent_id=agent_id,
@@ -866,8 +871,6 @@ async def _heartbeat_loop(agent_id: str, lease_owner: str, interval_seconds: int
                 agent_id=agent_id,
                 error=str(exc),
             ).warning(f"心跳续租异常: {agent_id}")
-        finally:
-            db.close()
 
 
 async def _push_event_to_parent_session(
@@ -904,11 +907,7 @@ async def _background_execute(
     agent_def: Optional[AgentDefinition] = None,
 ) -> None:
     """后台执行子代理的实际逻辑，使用 process_stream() 支持多轮工具调用，并通过 WebSocket 推送事件给父会话。"""
-    db = SessionLocal()
-    try:
-        update_session_state(db, agent_id, "running")
-    finally:
-        db.close()
+    await _update_session_record(agent_id, "running")
 
     # SubagentStart 钩子
     await hook_dispatcher.dispatch(HOOK_SUBAGENT_START, {
@@ -1005,18 +1004,12 @@ async def _background_execute(
             max_length=2000,
         )
 
-        db = SessionLocal()
-        try:
-            transcript_path = get_transcript_path(agent_id)
-            update_session_state(
-                db,
-                agent_id,
-                "completed",
-                summary=summary,
-                transcript_path=transcript_path,
-            )
-        finally:
-            db.close()
+        await _update_session_record(
+            agent_id,
+            "completed",
+            summary=summary,
+            transcript_path=get_transcript_path(agent_id),
+        )
 
         save_transcript_entry(agent_id, {
             "event": "subagent_stop",
@@ -1052,19 +1045,13 @@ async def _background_execute(
             max_turns=exc.max_turns,
         ).warning(f"Agent {agent_id} 达到最大轮次限制 {exc.max_turns}")
 
-        db = SessionLocal()
-        try:
-            transcript_path = get_transcript_path(agent_id)
-            update_session_state(
-                db,
-                agent_id,
-                "completed",
-                summary=max_turns_summary,
-                transcript_path=transcript_path,
-                last_error=f"MaxTurnsExceeded: {exc.max_turns}",
-            )
-        finally:
-            db.close()
+        await _update_session_record(
+            agent_id,
+            "completed",
+            summary=max_turns_summary,
+            transcript_path=get_transcript_path(agent_id),
+            last_error=f"MaxTurnsExceeded: {exc.max_turns}",
+        )
 
         save_transcript_entry(agent_id, {
             "event": "subagent_stop",
@@ -1095,11 +1082,7 @@ async def _background_execute(
             error=error_msg,
         ).error(f"后台代理执行失败: {agent_id}")
 
-        db = SessionLocal()
-        try:
-            update_session_state(db, agent_id, "failed", last_error=error_msg)
-        finally:
-            db.close()
+        await _update_session_record(agent_id, "failed", last_error=error_msg)
 
         save_transcript_entry(agent_id, {
             "event": "subagent_stop",
@@ -1123,7 +1106,7 @@ async def _background_execute(
 
 async def stop_run(agent_id: str) -> Dict[str, Any]:
     """停止运行中的后台代理。"""
-    session = get_session(agent_id)
+    session = await asyncio.to_thread(get_session, agent_id)
     if not session:
         return {"ok": False, "error": f"代理不存在: {agent_id}"}
 
@@ -1136,11 +1119,7 @@ async def stop_run(agent_id: str) -> Dict[str, Any]:
         bg_task.cancel()
         logger.bind(module="task_runtime", agent_id=agent_id).info(f"后台代理任务已取消: {agent_id}")
 
-    db = SessionLocal()
-    try:
-        update_session_state(db, agent_id, "stopped", last_error="被用户手动停止")
-    finally:
-        db.close()
+    await _update_session_record(agent_id, "stopped", last_error="被用户手动停止")
 
     save_transcript_entry(agent_id, {
         "event": "subagent_stop",

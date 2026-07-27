@@ -32,6 +32,35 @@ const BASE_RECONNECT_DELAY_MS = 1000
 /** WebSocket session_id 固定为 inbox，后端不强制校验 */
 const INBOX_SESSION_ID = 'inbox'
 
+/** 跨标签页协调通道名称。 */
+const INBOX_COORDINATION_CHANNEL = 'openawa_inbox_stream'
+/** 广播通道不可用时的降级存储键。 */
+const INBOX_COORDINATION_STORAGE_KEY = 'openawa_inbox_stream_event'
+/** 活跃标签心跳间隔。 */
+const PRESENCE_HEARTBEAT_MS = 5000
+/** 无心跳标签的失效时间。 */
+const PRESENCE_TTL_MS = PRESENCE_HEARTBEAT_MS * 3
+
+type InboxStreamStatus = ReturnType<typeof useInboxStore.getState>['streamStatus']
+
+type InboxCoordinationEvent =
+  | { type: 'presence'; tabId: string; active: boolean; timestamp: number }
+  | { type: 'status'; tabId: string; status: InboxStreamStatus }
+  | { type: 'message'; tabId: string; raw: string }
+  | { type: 'logout'; tabId: string }
+
+interface InboxStoragePayload {
+  event: InboxCoordinationEvent
+  senderTabId: string
+}
+
+function generateTabId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `inbox-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 /** 单例状态 */
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -39,9 +68,167 @@ let reconnectAttempts = 0
 let manualClose = false
 /** 引用计数：多个页面调用 connect 时累加，最后一个 disconnect 才真正关闭 */
 let connectCount = 0
+let coordinationChannel: BroadcastChannel | null = null
+let coordinationStorageHandler: ((event: StorageEvent) => void) | null = null
+let presenceTimer: ReturnType<typeof setInterval> | null = null
+let localTabActive = false
+let leaderTabId: string | null = null
+const localTabId = generateTabId()
+const activeTabs = new Map<string, number>()
 
 /** 订阅者集合：收到消息时通知所有订阅者 */
 const subscribers = new Set<InboxMessageHandler>()
+
+function isLocalLeader(): boolean {
+  return localTabActive && leaderTabId === localTabId
+}
+
+function setStreamStatus(status: InboxStreamStatus, broadcast = false): void {
+  useInboxStore.getState().setStreamStatus(status)
+  if (broadcast && isLocalLeader()) {
+    postCoordinationEvent({ type: 'status', tabId: localTabId, status })
+  }
+}
+
+function postCoordinationEvent(event: InboxCoordinationEvent): void {
+  if (coordinationChannel) {
+    try {
+      coordinationChannel.postMessage(event)
+      return
+    } catch (error) {
+      appLogger.warning({
+        event: 'inbox_stream_coordination_post_failed',
+        module: 'inbox',
+        message: 'inbox 跨标签广播失败，已降级到 storage',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+  }
+  try {
+    const payload: InboxStoragePayload = { event, senderTabId: localTabId }
+    localStorage.setItem(INBOX_COORDINATION_STORAGE_KEY, JSON.stringify(payload))
+    localStorage.removeItem(INBOX_COORDINATION_STORAGE_KEY)
+  } catch {
+    // storage 不可用时保留当前标签的连接能力。
+  }
+}
+
+function stopPresenceTimer(): void {
+  if (presenceTimer !== null) {
+    clearInterval(presenceTimer)
+    presenceTimer = null
+  }
+}
+
+function refreshLeadership(): void {
+  const now = Date.now()
+  for (const [tabId, lastSeen] of activeTabs) {
+    if (now - lastSeen > PRESENCE_TTL_MS) {
+      activeTabs.delete(tabId)
+    }
+  }
+
+  const nextLeader = [...activeTabs.keys()].sort()[0] ?? null
+  const changed = leaderTabId !== nextLeader
+  leaderTabId = nextLeader
+  if (!localTabActive) {
+    return
+  }
+  if (isLocalLeader()) {
+    connectInternal()
+  } else if (changed) {
+    disconnectInternal(false)
+    setStreamStatus('connecting')
+  }
+}
+
+function announcePresence(active: boolean): void {
+  const timestamp = Date.now()
+  if (active) {
+    activeTabs.set(localTabId, timestamp)
+  } else {
+    activeTabs.delete(localTabId)
+  }
+  postCoordinationEvent({ type: 'presence', tabId: localTabId, active, timestamp })
+  refreshLeadership()
+}
+
+function activateLocalTab(): void {
+  localTabActive = true
+  announcePresence(true)
+  if (presenceTimer === null) {
+    presenceTimer = setInterval(() => announcePresence(true), PRESENCE_HEARTBEAT_MS)
+  }
+}
+
+function deactivateLocalTab(): void {
+  localTabActive = false
+  stopPresenceTimer()
+  announcePresence(false)
+  disconnectInternal()
+}
+
+function handleCoordinationEvent(event: InboxCoordinationEvent): void {
+  if (event.tabId === localTabId) {
+    return
+  }
+  if (event.type === 'presence') {
+    if (event.active) {
+      activeTabs.set(event.tabId, event.timestamp)
+    } else {
+      activeTabs.delete(event.tabId)
+    }
+    refreshLeadership()
+    return
+  }
+  if (event.type === 'status') {
+    if (!isLocalLeader()) {
+      setStreamStatus(event.status)
+    }
+    return
+  }
+  if (event.type === 'message') {
+    handleMessage(event.raw)
+    return
+  }
+  resetInboxStream(false)
+}
+
+function ensureCoordination(): void {
+  if (typeof window === 'undefined' || coordinationChannel || coordinationStorageHandler) {
+    return
+  }
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      coordinationChannel = new BroadcastChannel(INBOX_COORDINATION_CHANNEL)
+      coordinationChannel.onmessage = (messageEvent: MessageEvent<InboxCoordinationEvent>) => {
+        handleCoordinationEvent(messageEvent.data)
+      }
+      return
+    } catch (error) {
+      appLogger.warning({
+        event: 'inbox_stream_coordination_init_failed',
+        module: 'inbox',
+        message: 'inbox 跨标签广播初始化失败，已降级到 storage',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+  }
+  coordinationStorageHandler = (storageEvent: StorageEvent) => {
+    if (storageEvent.key !== INBOX_COORDINATION_STORAGE_KEY || !storageEvent.newValue) {
+      return
+    }
+    try {
+      const payload = JSON.parse(storageEvent.newValue) as InboxStoragePayload
+      if (payload.senderTabId !== localTabId) {
+        handleCoordinationEvent(payload.event)
+      }
+    } catch {
+      // 忽略无效的跨标签页数据。
+    }
+  }
+  window.addEventListener('storage', coordinationStorageHandler)
+}
 
 /**
  * 推导 WebSocket URL。
@@ -135,8 +322,9 @@ function handleMessage(raw: string): void {
 
 /** 调度下一次重连 */
 function scheduleReconnect(): void {
-  if (manualClose) return
+  if (manualClose || !isLocalLeader()) return
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    setStreamStatus('unavailable', true)
     appLogger.warning({
       event: 'inbox_stream_max_reconnect',
       module: 'inbox',
@@ -160,10 +348,12 @@ function scheduleReconnect(): void {
 /** 内部连接实现 */
 function connectInternal(): void {
   if (typeof window === 'undefined') return
+  if (!isLocalLeader()) return
   if (ws !== null) return
 
   const token = getCachedApiKey()
   if (!token) {
+    setStreamStatus('unavailable', true)
     appLogger.warning({
       event: 'inbox_stream_no_token',
       module: 'inbox',
@@ -173,6 +363,7 @@ function connectInternal(): void {
   }
 
   manualClose = false
+  setStreamStatus('connecting', true)
   const url = deriveWebSocketUrl()
 
   try {
@@ -182,6 +373,7 @@ function connectInternal(): void {
 
     socket.onopen = () => {
       reconnectAttempts = 0
+      setStreamStatus('connected', true)
       appLogger.info({
         event: 'inbox_stream_connected',
         module: 'inbox',
@@ -192,6 +384,7 @@ function connectInternal(): void {
     socket.onmessage = (event) => {
       if (typeof event.data === 'string') {
         handleMessage(event.data)
+        postCoordinationEvent({ type: 'message', tabId: localTabId, raw: event.data })
       }
     }
 
@@ -222,8 +415,11 @@ function connectInternal(): void {
 }
 
 /** 内部断开实现 */
-function disconnectInternal(): void {
+function disconnectInternal(updateStatus = true): void {
   manualClose = true
+  if (updateStatus) {
+    setStreamStatus('disconnected')
+  }
   clearReconnectTimer()
   reconnectAttempts = 0
   if (ws !== null) {
@@ -243,7 +439,8 @@ function disconnectInternal(): void {
 export function connectInboxStream(): void {
   connectCount++
   if (connectCount === 1) {
-    connectInternal()
+    ensureCoordination()
+    activateLocalTab()
   }
 }
 
@@ -254,8 +451,27 @@ export function connectInboxStream(): void {
 export function disconnectInboxStream(): void {
   connectCount = Math.max(0, connectCount - 1)
   if (connectCount === 0) {
-    disconnectInternal()
+    deactivateLocalTab()
   }
+}
+
+/** 认证切换时强制关闭连接并清空订阅，避免旧账号事件进入新账号界面。 */
+function resetInboxStream(broadcast: boolean): void {
+  connectCount = 0
+  subscribers.clear()
+  localTabActive = false
+  stopPresenceTimer()
+  activeTabs.clear()
+  leaderTabId = null
+  disconnectInternal()
+  if (broadcast) {
+    postCoordinationEvent({ type: 'logout', tabId: localTabId })
+  }
+}
+
+export function resetInboxStreamForLogout(): void {
+  ensureCoordination()
+  resetInboxStream(true)
 }
 
 /**

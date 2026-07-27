@@ -53,6 +53,8 @@ vi.mock('@/shared/utils/logger', () => ({
 vi.mock('@/shared/api/client', () => ({
   api: fakeApiInstance,
   getCachedApiKey: vi.fn(),
+  getCachedCsrfToken: vi.fn(() => null),
+  refreshCsrfToken: vi.fn(),
   setTempApiKey: vi.fn(),
   persistApiKey: vi.fn(),
   clearCachedApiKey: vi.fn(),
@@ -84,6 +86,52 @@ describe('api', () => {
     // 拦截器在模块加载时已配置，但 mock 可能未正确追踪
     // 这里只验证模块加载成功
     expect(fakeApiInstance.interceptors).toBeDefined()
+  })
+})
+
+describe('chatAPI stream resource cleanup', () => {
+  it('正常读取结束后释放 reader 锁', async () => {
+    const releaseLock = vi.fn()
+    const reader = {
+      read: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+      releaseLock,
+    }
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: { getReader: () => reader },
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await module.chatAPI.sendMessageStream('测试', 'session-reader-cleanup')
+      expect(releaseLock).toHaveBeenCalledOnce()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('读取异常后仍释放 reader 锁', async () => {
+    const releaseLock = vi.fn()
+    const reader = {
+      read: vi.fn().mockRejectedValue(new Error('读取失败')),
+      releaseLock,
+    }
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: { getReader: () => reader },
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await expect(module.chatAPI.sendMessageStream('测试', 'session-reader-error')).rejects.toThrow('读取失败')
+      expect(releaseLock).toHaveBeenCalledOnce()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

@@ -14,6 +14,10 @@ from core.ports.ask_user_port import AskUserPort
 from core.streaming_events import emit_ask_user_event, emit_tool_event
 
 
+DEFAULT_TOOL_CALL_TIMEOUT_SECONDS = 120.0
+MAX_TOOL_CALL_TIMEOUT_SECONDS = 600.0
+
+
 class ToolNames:
     """Agent 特殊工具名的单一事实来源。"""
 
@@ -160,7 +164,9 @@ class ToolDispatcher:
             "timeout": ask_args.get("timeout", 300),
         })
         try:
-            answer_payload = await ask_future
+            timeout_seconds = float(ask_args.get("timeout", 300))
+            timeout_seconds = min(max(timeout_seconds, 1.0), 300.0)
+            answer_payload = await asyncio.wait_for(ask_future, timeout=timeout_seconds)
         except asyncio.TimeoutError:
             call_context.set_result({
                 "ok": False,
@@ -204,9 +210,55 @@ class ToolDispatcher:
                     continue
             call_context.set_result(await execution_task)
             return
+
+        timeout_seconds = self._resolve_tool_timeout(call_context.func_args)
+        execution_task = asyncio.create_task(
+            self._executor._execute_tool_call(tool_call, context)
+        )
         try:
-            call_context.set_result(await self._executor._execute_tool_call(tool_call, context))
+            done, _ = await asyncio.wait({execution_task}, timeout=timeout_seconds)
+            if not done:
+                execution_task.cancel()
+                self._consume_background_task_result(execution_task, session_id)
+                call_context.set_result({
+                    "ok": False,
+                    "error": "工具调用超时",
+                    "error_code": "tool_call_timeout",
+                    "tool_name": call_context.tool_name,
+                })
+                return
+            call_context.set_result(execution_task.result())
         except asyncio.CancelledError:
+            execution_task.cancel()
+            self._consume_background_task_result(execution_task, session_id)
             logger.info(f"Agent task cancelled for session {session_id}")
             yield {"type": "cancelled", "content": "任务已被用户取消", "reasoning_content": ""}
             raise self._early_exit_type()
+
+    @staticmethod
+    def _resolve_tool_timeout(func_args: Dict[str, Any]) -> float:
+        """读取并限制单工具执行超时，避免模型参数造成无限等待。"""
+        raw_timeout = func_args.get("timeout", DEFAULT_TOOL_CALL_TIMEOUT_SECONDS)
+        try:
+            timeout_seconds = float(raw_timeout)
+        except (TypeError, ValueError):
+            timeout_seconds = DEFAULT_TOOL_CALL_TIMEOUT_SECONDS
+        return min(max(timeout_seconds, 1.0), MAX_TOOL_CALL_TIMEOUT_SECONDS)
+
+    @staticmethod
+    def _consume_background_task_result(task: asyncio.Task[Any], session_id: str) -> None:
+        """回收超时或取消后仍在结束中的任务，避免未观察异常。"""
+        def consume_result(completed_task: asyncio.Task[Any]) -> None:
+            try:
+                completed_task.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                logger.bind(
+                    event="tool_task_cleanup_error",
+                    module="tool_dispatcher",
+                    session_id=session_id,
+                    error_type=type(exc).__name__,
+                ).opt(exception=True).warning("超时工具任务退出时发生异常")
+
+        task.add_done_callback(consume_result)

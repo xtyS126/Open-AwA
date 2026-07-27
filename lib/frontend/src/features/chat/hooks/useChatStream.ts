@@ -16,7 +16,7 @@ import type { AssistantExecutionMeta, AssistantMessageSegment, AskUserRequest } 
 import type { FileAttachment } from '@/features/chat/components/ChatInput'
 import type { TodoItem } from '@/features/chat/components/TodoPanel'
 
-const MAX_STREAM_RETRY_COUNT = 1
+const MAX_STREAM_RETRY_COUNT = 3
 
 /** Spec memory-quality-and-short-term-recovery Task 18：加载最近短期记忆的条数 */
 const RECENT_SHORT_TERM_MEMORY_LIMIT = 20
@@ -147,9 +147,15 @@ function parseSelectedModel(value: string): { provider?: string; model?: string 
 }
 
 function getConfiguredMaxToolCallRounds(): number {
-  const appSettings = JSON.parse(
-    typeof window !== 'undefined' ? localStorage.getItem('app_settings') || 'null' : 'null'
-  ) as { maxToolCallRounds?: number } | null
+  let appSettings: { maxToolCallRounds?: number } | null
+  try {
+    appSettings = JSON.parse(
+      typeof window !== 'undefined' ? localStorage.getItem('app_settings') || 'null' : 'null'
+    ) as { maxToolCallRounds?: number } | null
+  } catch {
+    // 本地设置损坏时回退默认值，不能阻断消息发送。
+    return 12
+  }
   const rawValue = appSettings?.maxToolCallRounds
   if (typeof rawValue !== 'number' || Number.isNaN(rawValue)) {
     return 12

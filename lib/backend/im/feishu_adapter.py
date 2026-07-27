@@ -39,7 +39,11 @@ class FeishuAdapter(IMAdapter):
                 event="feishu_auth_success",
                 module="im_feishu",
             ).info("飞书适配器认证成功")
-        except Exception as e:
+        except Exception:
+            # 认证失败时调用方通常不会再进入 stop，必须在此释放客户端。
+            if self._client is not None:
+                await self._client.aclose()
+                self._client = None
             self._running = False
             raise
 
@@ -50,6 +54,7 @@ class FeishuAdapter(IMAdapter):
         self._running = False
         if self._client:
             await self._client.aclose()
+            self._client = None
         logger.bind(event="feishu_stopped", module="im_feishu").info("飞书适配器已停止")
 
     async def send_message(self, chat_id: str, text: str) -> bool:

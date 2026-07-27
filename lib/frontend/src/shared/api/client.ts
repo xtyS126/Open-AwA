@@ -131,6 +131,7 @@ export const setTempApiKey = (key: string): void => {
 /** 清除所有存储中的 API Key */
 export const clearCachedApiKey = (): void => {
   _inMemoryApiKey = ''
+  _csrfToken = null
   safeSessionSetItem(API_KEY_STORAGE_KEY, '')
   safeSetItem(API_KEY_STORAGE_KEY, '')
 }
@@ -139,6 +140,15 @@ export const clearCachedApiKey = (): void => {
 // 仅在内存中保存，不持久化到 localStorage，避免跨标签页复用过期 token。
 // 由 refreshCsrfToken() 在应用启动或登录成功后从后端拉取。
 let _csrfToken: string | null = null
+
+type UnauthorizedHandler = () => void
+
+let unauthorizedHandler: UnauthorizedHandler | null = null
+
+/** 注册认证失效后的 UI 清理回调，避免 API 层直接依赖业务 store。 */
+export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null): void => {
+  unauthorizedHandler = handler
+}
 
 /**
  * 从后端拉取并缓存 per-session CSRF token。
@@ -236,6 +246,7 @@ function sanitizeHeaders(headers: Record<string, unknown>): void {
 /** Axios 实例，所有 API 调用通过此实例发起 */
 export const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 30_000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -310,6 +321,22 @@ api.interceptors.response.use(
       setCurrentRequestId(responseRequestId)
     }
 
+    if (error?.response?.status === 401) {
+      // 认证已经失效时立即清除内存与持久化凭据，防止后续请求无限显示 401。
+      clearCachedApiKey()
+      try {
+        unauthorizedHandler?.()
+      } catch (handlerError) {
+        appLogger.warning({
+          event: 'unauthorized_cleanup_failed',
+          module: 'api',
+          status: 'warning',
+          message: '认证失效后的界面清理失败',
+          extra: { error: handlerError instanceof Error ? handlerError.message : String(handlerError) },
+        })
+      }
+    }
+
     const isExpectedAuthError = (
       (error?.config?.url === '/auth/me' && error?.response?.status === 401)
     )
@@ -377,7 +404,10 @@ api.interceptors.response.use(
 )
 
 export const getApiErrorDetail = (error: unknown): string => {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  const data = (error as {
+    response?: { data?: { detail?: unknown; error?: unknown; message?: unknown } }
+  })?.response?.data
+  const detail = data?.detail
   if (typeof detail === 'string' && detail.trim()) {
     return detail
   }
@@ -396,6 +426,18 @@ export const getApiErrorDetail = (error: unknown): string => {
     if (messages.length > 0) {
       return messages.join('；')
     }
+  }
+  if (data?.error && typeof data.error === 'object') {
+    const message = (data.error as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim()) {
+      return message
+    }
+  }
+  if (typeof data?.message === 'string' && data.message.trim()) {
+    return data.message
+  }
+  if (typeof data?.error === 'string' && data.error.trim()) {
+    return data.error
   }
   if (error instanceof Error && error.message.trim()) {
     return error.message

@@ -1,12 +1,13 @@
 """StreamOrchestrator 的工具轮次编排测试。"""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from core.agent_execution_context import RoundState
 from core.stream_orchestrator import StreamOrchestrator
-from core.tool_dispatcher import ToolDispatcher
+from core.tool_dispatcher import ToolCallContext, ToolDispatcher
 from core.tool_event_emitter import ToolEventEmitter
 
 
@@ -66,3 +67,32 @@ async def test_stream_orchestrator_executes_tool_and_persists_messages():
     assert context["_tool_messages"] == [{"role": "assistant"}, {"role": "tool"}]
     assert state["accumulated_tool_events"][0]["name"] == "builtin_demo"
     feedback.update_memory.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_regular_tool_timeout_does_not_block_agent_loop():
+    """常规工具超时后必须返回结构化失败结果，不能阻塞整轮 Agent 执行。"""
+    executor = MagicMock()
+    blocker = asyncio.Event()
+
+    async def never_finishes(*_args, **_kwargs):
+        await blocker.wait()
+        return {"ok": True}
+
+    executor._execute_tool_call = never_finishes
+    dispatcher = ToolDispatcher(executor, None, EarlyExit)
+    call_context = ToolCallContext()
+    tool_call = {
+        "id": "call-timeout",
+        "function": {"name": "builtin_demo", "arguments": '{"timeout": 0.01}'},
+    }
+
+    async for _ in dispatcher.dispatch(tool_call, {}, "session-timeout", call_context):
+        pass
+
+    assert call_context.result == {
+        "ok": False,
+        "error": "工具调用超时",
+        "error_code": "tool_call_timeout",
+        "tool_name": "builtin_demo",
+    }

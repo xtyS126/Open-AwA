@@ -9,23 +9,14 @@ import { useThemeStore } from '@/shared/store/themeStore'
 import { useModelStore } from '@/features/chat/store/modelStore'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 import { preloadModelOptions } from '@/features/chat/utils/preloadModelOptions'
-
-interface UserProfile {
-  username: string
-  nickname?: string | null
-  avatar_url?: string | null
-  email?: string | null
-  phone?: string | null
-  role?: string
-}
-
-interface AppInitializationResult {
-  isAuthenticated: boolean
-  user?: UserProfile
-}
-
-let initializationPromise: Promise<AppInitializationResult> | null = null
-let cachedInitializationResult: AppInitializationResult | null = null
+import {
+  getCachedInitializationResult,
+  getInitializationPromise,
+  resetAppInitializationCache,
+  setCachedInitializationResult,
+  setInitializationPromise,
+  type AppInitializationResult,
+} from './appInitializationCache'
 
 /**
  * 将本地缓存中的用户偏好回填到各个共享 store，确保首屏渲染与用户历史选择一致。
@@ -61,10 +52,12 @@ function rehydrateStores() {
 }
 
 async function initializeApplicationState(): Promise<AppInitializationResult> {
+  const cachedInitializationResult = getCachedInitializationResult()
   if (cachedInitializationResult) {
     return cachedInitializationResult
   }
 
+  let initializationPromise = getInitializationPromise()
   if (!initializationPromise) {
     initializationPromise = (async () => {
       appLogger.info({
@@ -85,8 +78,9 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
           status: 'failure',
           message: 'no cached API Key, showing config page',
         })
-        cachedInitializationResult = { isAuthenticated: false }
-        return cachedInitializationResult
+        const result = { isAuthenticated: false }
+        setCachedInitializationResult(result)
+        return result
       }
 
       try {
@@ -129,7 +123,7 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
         await preloadModelOptions()
 
         const data = meResponse.data || {}
-        cachedInitializationResult = {
+        const result: AppInitializationResult = {
           isAuthenticated: true,
           user: {
             username: data.username || 'admin',
@@ -140,7 +134,8 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
             role: data.role,
           },
         }
-        return cachedInitializationResult
+        setCachedInitializationResult(result)
+        return result
       } catch (error) {
         const status = (error as { response?: { status?: number } })?.response?.status
         appLogger.warning({
@@ -152,12 +147,14 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
           extra: { error: error instanceof Error ? error.message : String(error), status_code: status },
         })
 
-        cachedInitializationResult = { isAuthenticated: false }
-        return cachedInitializationResult
+        const result = { isAuthenticated: false }
+        setCachedInitializationResult(result)
+        return result
       } finally {
-        initializationPromise = null
+        setInitializationPromise(null)
       }
     })()
+    setInitializationPromise(initializationPromise)
   }
 
   return initializationPromise
@@ -167,8 +164,7 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
  * 仅供测试重置模块级初始化缓存，避免跨用例污染。
  */
 export function resetAppInitializationStateForTests() {
-  initializationPromise = null
-  cachedInitializationResult = null
+  resetAppInitializationCache()
 }
 
 /**
@@ -232,16 +228,18 @@ export function useAppInitialization() {
         }
       } catch (err) {
         if (!isActive) return
-        // init-status 接口失败时假定已初始化，走原流程避免阻塞用户
+        // 不能在无法确认初始化状态时引导用户进入登录或部署流程，避免错误写入。
         appLogger.warning({
           event: 'app_initialize',
           module: 'app',
           action: 'system_init_check',
           status: 'failure',
-          message: 'init-status check failed, assuming initialized',
+          message: 'init-status check failed, waiting for a retry',
           extra: { error: err instanceof Error ? err.message : String(err) },
         })
-        setSystemInitialized(true)
+        setSystemInitialized(null)
+        setInitialized(true)
+        return
       }
 
       // 步骤 2：系统已初始化，继续原 API Key 校验流程

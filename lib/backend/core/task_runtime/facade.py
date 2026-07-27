@@ -5,6 +5,7 @@ Task Runtime 外观层，对主 Agent 暴露统一的子代理操作入口。
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from loguru import logger
@@ -45,16 +46,20 @@ class TaskRuntimeFacade:
         if self._initialized:
             return
 
-        from db.models import SessionLocal
-        db = SessionLocal()
-        try:
-            defined_count = agent_registry.load_from_db(db)
-            if defined_count:
-                logger.bind(module="task_runtime").info(f"数据库代理定义已加载: {defined_count} 个")
-        finally:
-            db.close()
+        def load_agent_definitions() -> int:
+            from db.models import SessionLocal
 
-        count = recover_orphaned_sessions()
+            db = SessionLocal()
+            try:
+                return agent_registry.load_from_db(db)
+            finally:
+                db.close()
+
+        defined_count = await asyncio.to_thread(load_agent_definitions)
+        if defined_count:
+            logger.bind(module="task_runtime").info(f"数据库代理定义已加载: {defined_count} 个")
+
+        count = await asyncio.to_thread(recover_orphaned_sessions)
         if count:
             logger.bind(module="task_runtime").info(f"回收悬挂会话: {count} 个")
         self._initialized = True
@@ -131,7 +136,7 @@ class TaskRuntimeFacade:
 
     async def send_message(self, to: str, message: str) -> Dict[str, Any]:
         """向代理发送消息（恢复/继续）。"""
-        return send_message(to, message)
+        return await asyncio.to_thread(send_message, to, message)
 
     # ── TaskStop 能力 ────────────────────────────────────────────
 
@@ -148,7 +153,9 @@ class TaskRuntimeFacade:
         state: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """列出代理会话。"""
-        sessions = list_sessions(parent_session_id=parent_session_id, state=state)
+        sessions = await asyncio.to_thread(
+            list_sessions, parent_session_id=parent_session_id, state=state
+        )
         return [
             {
                 "agent_id": s.agent_id,
@@ -166,7 +173,7 @@ class TaskRuntimeFacade:
 
     async def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
         """获取单个代理详情。"""
-        s = get_session(agent_id)
+        s = await asyncio.to_thread(get_session, agent_id)
         if not s:
             return None
         return {
@@ -187,7 +194,7 @@ class TaskRuntimeFacade:
 
     async def get_transcript(self, agent_id: str) -> list:
         """获取代理的 transcript 记录。"""
-        return read_transcript(agent_id)
+        return await asyncio.to_thread(read_transcript, agent_id)
 
     async def list_agent_types(self) -> List[Dict[str, Any]]:
         """列出可用代理类型。"""
@@ -220,22 +227,28 @@ class TaskRuntimeFacade:
             metadata=definition.get("metadata", {}),
         )
 
-        db = SessionLocal()
-        try:
-            ok = agent_registry.save_to_db(db, agent_def)
-            return {"ok": ok, "name": agent_def.name}
-        finally:
-            db.close()
+        def save_definition() -> bool:
+            db = SessionLocal()
+            try:
+                return agent_registry.save_to_db(db, agent_def)
+            finally:
+                db.close()
+
+        ok = await asyncio.to_thread(save_definition)
+        return {"ok": ok, "name": agent_def.name}
 
     async def delete_agent_definition(self, name: str) -> Dict[str, Any]:
         """删除用户自定义代理定义。"""
         from db.models import SessionLocal
-        db = SessionLocal()
-        try:
-            ok = agent_registry.delete_from_db(db, name)
-            return {"ok": ok, "name": name}
-        finally:
-            db.close()
+        def delete_definition() -> bool:
+            db = SessionLocal()
+            try:
+                return agent_registry.delete_from_db(db, name)
+            finally:
+                db.close()
+
+        ok = await asyncio.to_thread(delete_definition)
+        return {"ok": ok, "name": name}
 
     # ── 任务清单能力（Phase 1 基础 CRUD）────────────────────────
 
@@ -250,38 +263,40 @@ class TaskRuntimeFacade:
     ) -> Dict[str, Any]:
         """创建任务清单项。"""
         from db.models import SessionLocal
-        db = SessionLocal()
-        try:
-            task = create_task(
-                db,
-                list_id=list_id,
-                subject=subject,
-                description=description,
-                dependencies=dependencies,
-                owner_agent_id=owner_agent_id,
-            )
+        def create_task_record() -> Dict[str, Any]:
+            db = SessionLocal()
+            try:
+                task = create_task(
+                    db,
+                    list_id=list_id,
+                    subject=subject,
+                    description=description,
+                    dependencies=dependencies,
+                    owner_agent_id=owner_agent_id,
+                )
+                return {
+                    "ok": True,
+                    "task_id": task.task_id,
+                    "subject": task.subject,
+                    "status": task.status,
+                }
+            finally:
+                db.close()
 
-            # TaskCreated 钩子：任务创建时校验命名/描述/依赖合法性
-            await hook_dispatcher.dispatch(HOOK_TASK_CREATED, {
-                "task_id": task.task_id,
-                "subject": subject,
-                "description": description,
-                "list_id": list_id,
-                "dependencies": dependencies or [],
-            })
-
-            return {
-                "ok": True,
-                "task_id": task.task_id,
-                "subject": task.subject,
-                "status": task.status,
-            }
-        finally:
-            db.close()
+        result = await asyncio.to_thread(create_task_record)
+        # TaskCreated 钩子：任务创建时校验命名/描述/依赖合法性
+        await hook_dispatcher.dispatch(HOOK_TASK_CREATED, {
+            "task_id": result["task_id"],
+            "subject": subject,
+            "description": description,
+            "list_id": list_id,
+            "dependencies": dependencies or [],
+        })
+        return result
 
     async def get_task_item(self, task_id: str) -> Optional[Dict[str, Any]]:
         """获取任务项。"""
-        t = get_task(task_id)
+        t = await asyncio.to_thread(get_task, task_id)
         if not t:
             return None
         return {
@@ -305,7 +320,7 @@ class TaskRuntimeFacade:
         status: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """列出任务项。"""
-        tasks = list_tasks(list_id=list_id, status=status)
+        tasks = await asyncio.to_thread(list_tasks, list_id=list_id, status=status)
         return [
             {
                 "task_id": t.task_id,
@@ -328,40 +343,47 @@ class TaskRuntimeFacade:
     ) -> Dict[str, Any]:
         """更新任务项。"""
         from db.models import SessionLocal
-        db = SessionLocal()
-        try:
-            t = update_task(
-                db,
-                task_id,
-                status=status,
-                subject=subject,
-                owner_agent_id=owner_agent_id,
-                result_summary=result_summary,
-            )
-            if not t:
-                return {"ok": False, "error": f"任务不存在: {task_id}"}
-            return {"ok": True, "task_id": t.task_id, "status": t.status}
-        finally:
-            db.close()
+        def update_task_record() -> Dict[str, Any]:
+            db = SessionLocal()
+            try:
+                task = update_task(
+                    db,
+                    task_id,
+                    status=status,
+                    subject=subject,
+                    owner_agent_id=owner_agent_id,
+                    result_summary=result_summary,
+                )
+                if not task:
+                    return {"ok": False, "error": f"任务不存在: {task_id}"}
+                return {"ok": True, "task_id": task.task_id, "status": task.status}
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(update_task_record)
 
     # ── 任务领取能力 ─────────────────────────────────────────────
 
     async def claim_task_item(self, task_id: str, agent_id: str) -> Dict[str, Any]:
         """事务性领取一个待执行任务。"""
         from db.models import SessionLocal
-        db = SessionLocal()
-        try:
-            task = claim_task(db, task_id, agent_id)
-            if not task:
-                return {"ok": False, "error": f"任务 {task_id} 无法领取（可能已被领取或依赖未满足）"}
-            return {
-                "ok": True,
-                "task_id": task.task_id,
-                "status": task.status,
-                "owner_agent_id": task.owner_agent_id,
-            }
-        finally:
-            db.close()
+
+        def claim_task_record() -> Dict[str, Any]:
+            db = SessionLocal()
+            try:
+                task = claim_task(db, task_id, agent_id)
+                if not task:
+                    return {"ok": False, "error": f"任务 {task_id} 无法领取（可能已被领取或依赖未满足）"}
+                return {
+                    "ok": True,
+                    "task_id": task.task_id,
+                    "status": task.status,
+                    "owner_agent_id": task.owner_agent_id,
+                }
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(claim_task_record)
 
     async def sync_todo_snapshot(
         self,
@@ -371,12 +393,15 @@ class TaskRuntimeFacade:
     ) -> Dict[str, Any]:
         """同步 todo 快照（非交互模式简化入口）。"""
         from db.models import SessionLocal
-        db = SessionLocal()
-        try:
-            result = sync_todo_snapshot(db, list_id=list_id, todos=todos)
-            return result
-        finally:
-            db.close()
+
+        def sync_snapshot() -> Dict[str, Any]:
+            db = SessionLocal()
+            try:
+                return sync_todo_snapshot(db, list_id=list_id, todos=todos)
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(sync_snapshot)
 
     # ── 会话租约能力 ─────────────────────────────────────────────
 
@@ -388,24 +413,32 @@ class TaskRuntimeFacade:
     ) -> Dict[str, Any]:
         """领取代理会话租约。"""
         from db.models import SessionLocal
-        db = SessionLocal()
-        try:
-            session = claim_session(db, agent_id, lease_owner, lease_duration_seconds)
-            if not session:
-                return {"ok": False, "error": f"无法领取租约: {agent_id}"}
-            return {"ok": True, "agent_id": agent_id, "lease_owner": lease_owner}
-        finally:
-            db.close()
+
+        def claim_lease() -> Dict[str, Any]:
+            db = SessionLocal()
+            try:
+                session = claim_session(db, agent_id, lease_owner, lease_duration_seconds)
+                if not session:
+                    return {"ok": False, "error": f"无法领取租约: {agent_id}"}
+                return {"ok": True, "agent_id": agent_id, "lease_owner": lease_owner}
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(claim_lease)
 
     async def release_session_lease(self, agent_id: str, lease_owner: str) -> Dict[str, Any]:
         """释放代理会话租约。"""
         from db.models import SessionLocal
-        db = SessionLocal()
-        try:
-            success = release_session(db, agent_id, lease_owner)
-            return {"ok": success, "agent_id": agent_id}
-        finally:
-            db.close()
+
+        def release_lease() -> Dict[str, Any]:
+            db = SessionLocal()
+            try:
+                success = release_session(db, agent_id, lease_owner)
+                return {"ok": success, "agent_id": agent_id}
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(release_lease)
 
     # ── 钩子注册能力 ─────────────────────────────────────────────
 
@@ -424,7 +457,8 @@ class TaskRuntimeFacade:
         task_list_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """创建代理团队，lead 作为团队负责人。"""
-        return _create_team(
+        return await asyncio.to_thread(
+            _create_team,
             lead_agent_id=lead_agent_id,
             name=name,
             teammate_agent_ids=teammate_agent_ids,
@@ -433,15 +467,15 @@ class TaskRuntimeFacade:
 
     async def delete_team(self, team_id: str) -> Dict[str, Any]:
         """删除团队并清理成员与消息。"""
-        return _delete_team(team_id)
+        return await asyncio.to_thread(_delete_team, team_id)
 
     async def add_teammate(self, team_id: str, agent_id: str, name: str = "") -> Dict[str, Any]:
         """向团队添加成员。"""
-        return _add_teammate(team_id, agent_id, name)
+        return await asyncio.to_thread(_add_teammate, team_id, agent_id, name)
 
     async def remove_teammate(self, team_id: str, agent_id: str) -> Dict[str, Any]:
         """从团队移除成员。"""
-        return _remove_teammate(team_id, agent_id)
+        return await asyncio.to_thread(_remove_teammate, team_id, agent_id)
 
     async def send_teammate_message(
         self,
@@ -451,27 +485,29 @@ class TaskRuntimeFacade:
         team_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """向队友发送消息。"""
-        return send_teammate_msg(from_agent_id, to_agent_id, message, team_id)
+        return await asyncio.to_thread(
+            send_teammate_msg, from_agent_id, to_agent_id, message, team_id
+        )
 
     async def list_teams(self, state: Optional[str] = None) -> List[Dict[str, Any]]:
         """列出团队列表。"""
-        return _list_teams(state=state)
+        return await asyncio.to_thread(_list_teams, state=state)
 
     async def get_team(self, team_id: str) -> Optional[Dict[str, Any]]:
         """获取单个团队详情。"""
-        return _get_team(team_id)
+        return await asyncio.to_thread(_get_team, team_id)
 
     async def get_mailbox(self, agent_id: str, unread_only: bool = False) -> List[Dict[str, Any]]:
         """获取代理的邮箱消息。"""
-        return get_mailbox(agent_id, unread_only=unread_only)
+        return await asyncio.to_thread(get_mailbox, agent_id, unread_only=unread_only)
 
     async def read_message(self, message_id: str) -> Dict[str, Any]:
         """标记消息为已读。"""
-        return mark_message_read(message_id)
+        return await asyncio.to_thread(mark_message_read, message_id)
 
     async def update_teammate_state(self, team_id: str, agent_id: str, new_state: str) -> Dict[str, Any]:
         """更新团队成员状态。"""
-        return update_teammate_state(team_id, agent_id, new_state)
+        return await asyncio.to_thread(update_teammate_state, team_id, agent_id, new_state)
 
 
 # 模块级单例

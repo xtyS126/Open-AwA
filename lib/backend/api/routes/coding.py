@@ -818,7 +818,10 @@ def _render_office_file(abs_path: str, original_path: str) -> dict:
                 result = mammoth.convert_to_html(fh)
             return {"type": "markdown", "html": result.value}
         except Exception as exc:
-            return _download_link_response(original_path, error=str(exc))
+            logger.bind(error_type=type(exc).__name__).opt(exception=True).warning(
+                "Word 文件预览转换失败"
+            )
+            return _download_link_response(original_path, error="文档预览失败，请下载后查看")
 
     if ext == ".xlsx":
         try:
@@ -835,7 +838,10 @@ def _render_office_file(abs_path: str, original_path: str) -> dict:
             )
             return {"type": "markdown", "html": list_html}
         except Exception as exc:
-            return _download_link_response(original_path, error=str(exc))
+            logger.bind(error_type=type(exc).__name__).opt(exception=True).warning(
+                "表格文件预览转换失败"
+            )
+            return _download_link_response(original_path, error="表格预览失败，请下载后查看")
 
     if ext == ".pptx":
         try:
@@ -852,7 +858,10 @@ def _render_office_file(abs_path: str, original_path: str) -> dict:
                 "html": f"<p>共 {slide_count} 张幻灯片</p>",
             }
         except Exception as exc:
-            return _download_link_response(original_path, error=str(exc))
+            logger.bind(error_type=type(exc).__name__).opt(exception=True).warning(
+                "演示文件预览转换失败"
+            )
+            return _download_link_response(original_path, error="演示文件预览失败，请下载后查看")
 
     return _download_link_response(original_path)
 

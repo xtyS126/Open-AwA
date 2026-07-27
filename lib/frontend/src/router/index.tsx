@@ -117,7 +117,6 @@ export const router = createBrowserRouter(
         { path: 'discussions', element: <ErrorBoundary name="Discussions">{withSuspense(<DiscussionsPage />)}</ErrorBoundary> },
         { path: 'discussions/:id', element: <ErrorBoundary name="Discussions">{withSuspense(<DiscussionsPage />)}</ErrorBoundary> },
         { path: 'pets', element: <ErrorBoundary name="Pets">{withSuspense(<PetsPage />)}</ErrorBoundary> },
-        { path: 'user-profile', element: <ErrorBoundary name="UserProfile">{withSuspense(<UserProfilePage />)}</ErrorBoundary> },
         // 兜底：未匹配路径重定向到 /chat（保持用户体验友好，URL 不变）
         { path: '*', element: <Navigate to="/chat" replace /> },
       ],

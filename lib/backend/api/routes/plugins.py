@@ -1145,8 +1145,10 @@ async def import_plugin_from_url(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.error(f"Error importing plugin from URL '{source_url}': {str(exc)}")
-        raise HTTPException(status_code=500, detail=f"Failed to import plugin from URL: {str(exc)}")
+        logger.bind(source_url=source_url, error_type=type(exc).__name__).opt(exception=True).error(
+            "远程插件导入失败"
+        )
+        raise HTTPException(status_code=500, detail="远程插件导入失败，请稍后重试") from exc
 
     if not discovered:
         raise HTTPException(status_code=400, detail="No valid plugin found in remote package")
@@ -1208,8 +1210,10 @@ async def import_plugin_from_url(
         db.commit()
     except Exception as exc:
         db.rollback()
-        logger.error(f"Error persisting imported plugins from URL '{source_url}': {str(exc)}")
-        raise HTTPException(status_code=500, detail=f"Failed to persist imported plugins: {str(exc)}")
+        logger.bind(source_url=source_url, error_type=type(exc).__name__).opt(exception=True).error(
+            "远程插件信息保存失败"
+        )
+        raise HTTPException(status_code=500, detail="远程插件信息保存失败，请稍后重试") from exc
 
     return {
         "message": f"Imported {installed_count} plugin(s), updated {updated_count} plugin(s).",
@@ -1262,8 +1266,10 @@ def hot_update_plugin(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.error(f"Hot update failed for plugin '{plugin.name}': {exc}")
-        raise HTTPException(status_code=500, detail=f"Hot update failed: {str(exc)}")
+        logger.bind(plugin_name=plugin.name, error_type=type(exc).__name__).opt(exception=True).error(
+            "插件热更新失败"
+        )
+        raise HTTPException(status_code=500, detail="插件热更新失败，请稍后重试") from exc
 
 
 @router.post(
@@ -1302,8 +1308,10 @@ def rollback_plugin(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.error(f"Rollback failed for plugin '{plugin.name}': {exc}")
-        raise HTTPException(status_code=500, detail=f"Rollback failed: {str(exc)}")
+        logger.bind(plugin_name=plugin.name, error_type=type(exc).__name__).opt(exception=True).error(
+            "插件回滚失败"
+        )
+        raise HTTPException(status_code=500, detail="插件回滚失败，请稍后重试") from exc
 
 
 _log_manager = LogManager()

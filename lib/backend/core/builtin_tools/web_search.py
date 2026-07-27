@@ -19,6 +19,8 @@ from loguru import logger
 MAX_RESULTS = 10
 # 请求超时（秒）
 REQUEST_TIMEOUT = 15
+# 一次搜索涵盖多个 provider 的降级链，总耗时必须有上限，避免逐个超时累加。
+SEARCH_TOTAL_TIMEOUT = 30
 # provider 配置缓存 TTL（秒），避免每次搜索都查询数据库
 _CACHE_TTL_SECONDS = 10.0
 # provider 配置内存缓存（结构: {"data": dict|None, "expires_at": float}）
@@ -116,7 +118,22 @@ class WebSearchSkill:
 
         action = kwargs.get('action', 'search')
         if action == 'search':
-            return await self._search(kwargs)
+            try:
+                return await asyncio.wait_for(
+                    self._search(kwargs),
+                    timeout=SEARCH_TOTAL_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Web search fallback chain exceeded the total timeout: "
+                    f"{SEARCH_TOTAL_TIMEOUT}s"
+                )
+                return {
+                    "success": False,
+                    "error": "搜索服务响应超时，请稍后重试",
+                    "error_code": "search_total_timeout",
+                    "retryable": True,
+                }
         elif action == 'fetch_url':
             return await self._fetch_url(kwargs)
         else:

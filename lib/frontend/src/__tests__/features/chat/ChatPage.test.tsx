@@ -1,11 +1,16 @@
 import '@testing-library/jest-dom/vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatPage from '@/features/chat/ChatPage'
 import { BrowserRouter } from 'react-router-dom'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { useModelStore } from '@/features/chat/store/modelStore'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
+
+const componentFaults = vi.hoisted(() => ({
+  messageList: false,
+}))
 
 const apiMocks = vi.hoisted(() => ({
   sendMessageStream: vi.fn(),
@@ -91,6 +96,19 @@ vi.mock('@/shared/events/billingEvents', () => ({
   dispatchBillingUsageUpdated: vi.fn(),
 }))
 
+vi.mock('@/features/chat/components/MessageList', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/features/chat/components/MessageList')>()
+  return {
+    ...actual,
+    MessageList: (props: ComponentProps<typeof actual.MessageList>) => {
+      if (componentFaults.messageList) {
+        throw new Error('消息列表渲染失败')
+      }
+      return <actual.MessageList {...props} />
+    },
+  }
+})
+
 vi.mock('@/features/settings/modelsApi', () => ({
   modelsAPI: {
     getConfigurations: vi.fn().mockResolvedValue({ data: { configurations: [] } }),
@@ -101,6 +119,7 @@ vi.mock('@/features/settings/modelsApi', () => ({
 describe('ChatPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    componentFaults.messageList = false
     window.localStorage.clear()
     if (!HTMLElement.prototype.scrollIntoView) {
       Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
@@ -162,6 +181,15 @@ describe('ChatPage', () => {
   it('renders without crashing', async () => {
     await renderChatPage()
     expect(screen.getByText('AI 助手')).toBeInTheDocument()
+  })
+
+  it('消息列表渲染失败时保留输入区域', async () => {
+    componentFaults.messageList = true
+
+    await renderChatPage()
+
+    expect(screen.getByText('MessageList 发生了意外错误')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/输入你的问题|type your question/i)).toBeInTheDocument()
   })
 
   it('在流式结构化事件中展示悬浮任务面板并支持展开工具详情', async () => {

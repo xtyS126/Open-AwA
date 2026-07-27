@@ -1,5 +1,6 @@
 """WebSocket 连接管理器的用户会话隔离回归测试。"""
 
+import asyncio
 import json
 
 import pytest
@@ -118,6 +119,26 @@ async def test_missing_pong_is_cleaned_as_zombie(monkeypatch) -> None:
 
     assert manager.get_connection("session-1", user_id="user-a") is None
     assert "user-a" not in manager._user_sessions
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_unexpected_failure_schedules_restart(monkeypatch) -> None:
+    """心跳循环异常退出时，仍有连接则必须调度替代心跳任务。"""
+    manager = WebSocketManager()
+    manager._session_connections[("user-a", "session-1")] = [FakeWebSocket()]
+    restart_calls: list[bool] = []
+    original_sleep = asyncio.sleep
+
+    async def fail_sleep(_delay: float) -> None:
+        raise RuntimeError("heartbeat failure")
+
+    monkeypatch.setattr(ws_manager_module.asyncio, "sleep", fail_sleep)
+    monkeypatch.setattr(manager, "start_heartbeat", lambda: restart_calls.append(True))
+
+    await manager._heartbeat_loop()
+    await original_sleep(0)
+
+    assert restart_calls == [True]
 
 
 @pytest.mark.asyncio

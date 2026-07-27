@@ -64,6 +64,14 @@ export function RootGuard() {
         </main>
       )
     }
+  } else if (isSystemInitialized === null) {
+    // 初始化状态无法确认时停止认证跳转，避免把服务故障误判为首次部署或未登录。
+    content = (
+      <main id="main-content" tabIndex={-1} className="loading-fallback">
+        <p>暂时无法连接服务，无法确认系统初始化状态。</p>
+        <button type="button" onClick={() => window.location.reload()}>重新连接</button>
+      </main>
+    )
   } else if (!isAuthenticated) {
     // 未登录：仅 /login 可访问，其他路径重定向到 /login
     // 防止已重定向到 /setup 后又被重定向到 /login（初始化完成后 isSystemInitialized=true）

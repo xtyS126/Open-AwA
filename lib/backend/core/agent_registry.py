@@ -40,6 +40,7 @@ class AIAgentRegistry:
     """
 
     _MAX_INSTANCES = 100
+    _MAX_REQUEST_LOCKS = 1000
     _TTL_SECONDS = 600  # 10 分钟
 
     def __init__(
@@ -102,7 +103,25 @@ class AIAgentRegistry:
     ) -> AsyncIterator["AIAgent"]:
         """独占租用指定用户的 Agent，并原子完成数据库会话绑定。"""
         with self._lock:
-            request_lock = self._request_locks.setdefault(user_id, asyncio.Lock())
+            request_lock = self._request_locks.get(user_id)
+            if request_lock is None:
+                if len(self._request_locks) >= self._MAX_REQUEST_LOCKS:
+                    # 仅淘汰未锁定条目；活跃请求的锁绝不移除，避免破坏同用户串行保证。
+                    for stale_user_id, stale_lock in list(self._request_locks.items()):
+                        if not stale_lock.locked():
+                            self._request_locks.pop(stale_user_id, None)
+                            break
+                if len(self._request_locks) < self._MAX_REQUEST_LOCKS:
+                    request_lock = asyncio.Lock()
+                    self._request_locks[user_id] = request_lock
+                else:
+                    # 极端满载时使用临时锁，保证注册表内存不随伪造 user_id 无界增长。
+                    request_lock = asyncio.Lock()
+                    logger.bind(
+                        event="agent_registry_request_lock_capacity",
+                        module="agent_registry",
+                        user_id=user_id,
+                    ).warning("Agent 请求锁容量已满，使用临时锁")
 
         async with request_lock:
             yield self.get_or_create(user_id, db_session)

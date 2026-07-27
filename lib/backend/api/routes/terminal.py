@@ -20,6 +20,7 @@
 """
 
 import asyncio
+import inspect
 import os
 import re
 import shlex
@@ -68,6 +69,52 @@ _DEFAULT_PTY_COMMAND_POSIX: List[str] = ["/bin/bash"]
 _ALLOWED_WORKSPACE_ROOTS: List[str] = [os.path.abspath(os.getcwd())]
 
 
+def _schedule_evicted_session_close(session_id: str, session: Any) -> None:
+    """调度被 LRU 淘汰会话的异步关闭，防止其子进程继续存活。"""
+    close = getattr(session, "close", None)
+    if not callable(close):
+        return
+    try:
+        result = close()
+    except Exception as exc:
+        logger.bind(
+            event="session_lru_close_error",
+            module="terminal",
+            session_id=session_id,
+            error_type=type(exc).__name__,
+        ).warning("LRU 淘汰会话关闭失败")
+        return
+    if not inspect.isawaitable(result):
+        return
+
+    try:
+        task = asyncio.get_running_loop().create_task(result)
+    except RuntimeError:
+        # 该函数通常仅在异步 API 路径调用；同步测试或异常上下文中不遗留协程。
+        result.close()
+        logger.bind(
+            event="session_lru_close_deferred",
+            module="terminal",
+            session_id=session_id,
+        ).warning("LRU 淘汰会话缺少运行事件循环，未能异步关闭")
+        return
+
+    def _log_close_result(completed_task: asyncio.Task[Any]) -> None:
+        try:
+            completed_task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.bind(
+                event="session_lru_close_error",
+                module="terminal",
+                session_id=session_id,
+                error_type=type(exc).__name__,
+            ).warning("LRU 淘汰会话异步关闭失败")
+
+    task.add_done_callback(_log_close_result)
+
+
 def _add_session(
     sessions_dict: "OrderedDict[str, Any]",
     session_id: str,
@@ -92,6 +139,7 @@ def _add_session(
     # 检查总容量：超过上限时淘汰最早的会话（LRU 头部）
     while len(sessions_dict) >= _MAX_TOTAL_SESSIONS:
         evicted_sid, evicted_session = sessions_dict.popitem(last=False)
+        _schedule_evicted_session_close(evicted_sid, evicted_session)
         logger.bind(
             event="session_lru_evicted",
             module="terminal",
@@ -307,7 +355,14 @@ class TerminalSession:
                 )
             except asyncio.TimeoutError:
                 self.process.kill()
-                await self.process.wait()
+                try:
+                    await asyncio.wait_for(self.process.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.bind(
+                        event="terminal_execute_kill_wait_timeout",
+                        module="terminal",
+                        session_id=self.session_id,
+                    ).error("终端命令超时后子进程未在限定时间内退出")
                 return {"ok": False, "error": f"命令执行超时（{timeout}s）"}
 
             stdout_text = stdout.decode("utf-8", errors="replace")
@@ -343,7 +398,13 @@ class TerminalSession:
         if self.process and self.process.returncode is None:
             try:
                 self.process.kill()
-                await self.process.wait()
+                await asyncio.wait_for(self.process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.bind(
+                    event="terminal_close_timeout",
+                    module="terminal",
+                    session_id=self.session_id,
+                ).error("终端子进程终止后未在限定时间内退出")
             except Exception as e:
                 logger.bind(
                     event="terminal_close_error",

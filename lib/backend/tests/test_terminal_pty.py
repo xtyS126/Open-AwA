@@ -27,10 +27,50 @@ from api.dependencies import get_current_user
 from api.routes.terminal import (
     MAX_PTY_SESSIONS,
     PTYTerminalSession,
+    TerminalSession,
     _is_command_safe,
     _pty_sessions,
 )
 from main import app
+
+
+class TestTerminalSessionTimeoutCleanup:
+    """普通终端命令超时后的进程清理测试。"""
+
+    @pytest.mark.asyncio
+    async def test_execute_timeout_does_not_wait_forever_after_kill(self, monkeypatch) -> None:
+        """子进程被 kill 后仍不退出时应在限定等待后返回超时结果。"""
+        class FakeProcess:
+            def __init__(self) -> None:
+                self.killed = False
+
+            async def communicate(self):
+                await asyncio.Event().wait()
+
+            async def wait(self):
+                await asyncio.Event().wait()
+
+            def kill(self) -> None:
+                self.killed = True
+
+        process = FakeProcess()
+
+        async def fake_create_subprocess_exec(*_args, **_kwargs):
+            return process
+
+        async def fake_wait_for(awaitable, timeout):
+            awaitable.close()
+            raise asyncio.TimeoutError()
+
+        monkeypatch.setattr(terminal_route.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+        monkeypatch.setattr(terminal_route.asyncio, "wait_for", fake_wait_for)
+
+        session = TerminalSession("timeout-test", cwd=".")
+        result = await session.execute("echo hello", timeout=1)
+
+        assert result["ok"] is False
+        assert "超时" in result["error"]
+        assert process.killed is True
 
 
 # ----------------------------------------------------------------------

@@ -54,6 +54,7 @@ interface SessionState {
   flushMessages: () => void
   setLoading: (loading: boolean) => void
   clearMessages: () => void
+  resetForLogout: () => void
   setSessionId: (id: string) => void
   setConversations: (
     items: ConversationSessionSummary[],
@@ -197,6 +198,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   setLoading: (loading) => set({ isLoading: loading }),
 
   clearMessages: () => set({ messages: [] }),
+
+  resetForLogout: () => {
+    ++loadSequenceNumber
+    setActiveSessionId('default')
+    setConversationSummaries([])
+    persistPinnedConversations([])
+    set({
+      messages: [],
+      isLoading: false,
+      sessionId: 'default',
+      conversations: [],
+      conversationsTotal: 0,
+      conversationsHasMore: false,
+      pinnedConversations: [],
+      conversationsVersion: 0,
+    })
+  },
 
   // 将当前会话消息显式写入 IndexedDB（消息完成/会话切换/页面隐藏时调用）
   flushMessages: () => {

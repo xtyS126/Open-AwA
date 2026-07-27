@@ -245,14 +245,15 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
       }
 
       const reader = response.body.getReader()
-      const decoder = new TextDecoder('utf-8')
-      let done = false
+      try {
+        const decoder = new TextDecoder('utf-8')
+        let done = false
 
       // SSE 流式响应最大大小限制 —— 防止后端异常/恶意推送导致前端内存耗尽
       const MAX_RESPONSE_BYTES = 10 * 1024 * 1024 // 10MB 上限
       let totalBytes = 0
 
-      while (!done) {
+        while (!done) {
         const { value, done: doneReading } = await reader.read()
         done = doneReading
         if (value) {
@@ -276,6 +277,10 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
       // 处理缓冲区中剩余的事件
       if (buffer.trim()) {
         parseAndDispatchFrame(buffer, appendEvent, setPendingPermission)
+        }
+      } finally {
+        // 所有退出路径都释放读取锁，避免后续 ACP 流被已遗留的 reader 阻塞。
+        reader.releaseLock()
       }
     } catch (e) {
       // 用户主动取消时不当作错误

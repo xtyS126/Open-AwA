@@ -124,3 +124,23 @@ class TestExecuteWithRetry:
         assert result.success is False
         assert result.attempts == 1
         assert isinstance(result.last_error, TypeError)
+
+    @pytest.mark.asyncio
+    async def test_default_policy_does_not_retry_timeout(self):
+        """默认策略不得放大已超时的外部调用。"""
+        call_count = 0
+
+        async def raise_timeout():
+            nonlocal call_count
+            call_count += 1
+            raise TimeoutError("upstream timeout")
+
+        result = await execute_with_retry(
+            raise_timeout,
+            policy=RetryPolicy(max_attempts=3, base_interval=0.01, max_interval=0.1, jitter=0.0),
+        )
+
+        assert result.success is False
+        assert result.attempts == 1
+        assert call_count == 1
+        assert isinstance(result.last_error, TimeoutError)

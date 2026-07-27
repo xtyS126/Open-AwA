@@ -94,6 +94,15 @@ describe('router 懒加载覆盖', () => {
     expect(router.routes.length).toBeGreaterThan(0)
   })
 
+  it('每个显式路径仅声明一次', () => {
+    const routeElements = collectRouteElements(router.routes)
+    const explicitPaths = routeElements
+      .map(({ path }) => path)
+      .filter((path) => path !== 'index' && path !== '*')
+
+    expect(new Set(explicitPaths).size).toBe(explicitPaths.length)
+  })
+
   it('每个页面级路由 element 为 Navigate 或 ErrorBoundary(Suspense(lazy)) 之一', () => {
     const routeElements = collectRouteElements(router.routes)
     expect(routeElements.length).toBeGreaterThan(0)

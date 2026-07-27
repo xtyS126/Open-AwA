@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // 使用 vi.hoisted 提前建立 mock 引用，避免循环依赖
 const apiMocks = vi.hoisted(() => ({
   getMe: vi.fn(),
+  getInitStatus: vi.fn(),
 }))
 
 const clientMocks = vi.hoisted(() => ({
@@ -23,12 +24,17 @@ vi.mock('@/shared/api/api', () => ({
   authAPI: {
     getMe: apiMocks.getMe,
   },
+  systemAPI: {
+    getInitStatus: apiMocks.getInitStatus,
+  },
 }))
 
 vi.mock('@/shared/api/client', () => ({
   getCachedApiKey: clientMocks.getCachedApiKey,
   persistApiKey: vi.fn(),
+  clearCachedApiKey: vi.fn(),
   refreshCsrfToken: vi.fn(() => Promise.resolve()),
+  setUnauthorizedHandler: vi.fn(),
 }))
 
 vi.mock('@/shared/utils/preferenceSync', () => ({
@@ -54,6 +60,7 @@ import { useAuthStore } from '@/shared/store/authStore'
 describe('useAppInitialization - 模型选项预加载', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    apiMocks.getInitStatus.mockResolvedValue({ data: { data: { initialized: true } } })
     // 重置模块级初始化缓存，避免跨用例污染
     resetAppInitializationStateForTests()
     // 重置 authStore
@@ -61,6 +68,20 @@ describe('useAppInitialization - 模型选项预加载', () => {
     // 清空 localStorage，避免 rehydrateStores 读取旧值
     window.localStorage.clear()
     window.sessionStorage.clear()
+  })
+
+  it('无法确认初始化状态时不继续认证流程', async () => {
+    clientMocks.getCachedApiKey.mockReturnValue('cached-api-key')
+    apiMocks.getInitStatus.mockRejectedValueOnce(new Error('服务不可达'))
+
+    renderHook(() => useAppInitialization())
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().isInitialized).toBe(true)
+    })
+
+    expect(useAuthStore.getState().isSystemInitialized).toBeNull()
+    expect(apiMocks.getMe).not.toHaveBeenCalled()
   })
 
   it('认证成功后调用 preloadModelOptions', async () => {

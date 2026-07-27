@@ -10,6 +10,11 @@ from loguru import logger
 from config.settings import settings
 
 
+# 默认只重试连接层瞬态故障。超时、业务校验和未知异常必须由调用方明确选择，
+# 避免无界重试放大外部依赖已经超时的请求。
+DEFAULT_RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (ConnectionError,)
+
+
 @dataclass
 class RetryResult:
     """重试执行结果。"""
@@ -56,7 +61,7 @@ async def execute_with_retry(
     func: Callable[..., Awaitable[Any]],
     *args: Any,
     policy: Optional[RetryPolicy] = None,
-    retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
+    retryable_exceptions: tuple[type[Exception], ...] = DEFAULT_RETRYABLE_EXCEPTIONS,
     **kwargs: Any,
 ) -> RetryResult:
     """

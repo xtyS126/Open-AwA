@@ -326,7 +326,12 @@ async def chat(
 
                 # 包装：流结束后触发 N 轮兜底
                 wrapped_gen = _stream_with_profile_trigger(leased_stream(), current_user.id)
-                await task_manager.start_task(task_id, lambda: wrapped_gen)
+                try:
+                    await task_manager.start_task(task_id, lambda: wrapped_gen)
+                except Exception:
+                    # 注册成功但启动失败时立即标记取消，避免留下无法订阅的孤儿任务。
+                    await task_manager.cancel_task(task_id)
+                    raise
 
             # 订阅任务事件流（断连重连时从 from_seq=0 开始回放全部历史事件）
             # 注意：subscribe 是 async generator，build_sse_response 会消费它
@@ -715,10 +720,12 @@ async def websocket_endpoint(
 
     # --- 鉴权通过，为 Agent 创建独立会话，贯穿整个 WebSocket 生命周期 ---
     db = SessionLocal()
+    ws_connected = False
     try:
         user_id = user.id
 
         await ws_manager.connect(session_id, websocket, user_id=user_id, subprotocol=subprotocol)
+        ws_connected = True
 
         logger.bind(
             event="chat_ws_connected",
@@ -745,6 +752,8 @@ async def websocket_endpoint(
             agent=agent,
         )
     finally:
+        if ws_connected:
+            ws_manager.disconnect(session_id, websocket, user_id=user_id)
         # 统一在此处关闭 Agent 使用的数据库连接
         db.close()
 

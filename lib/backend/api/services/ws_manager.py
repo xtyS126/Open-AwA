@@ -45,6 +45,8 @@ class WebSocketManager:
         self._last_activity: Dict[int, float] = {}
         # 全局心跳后台任务
         self._heartbeat_task: Optional[asyncio.Task] = None
+        self._max_total_connections = 1000
+        self._max_connections_per_session = 10
 
     async def connect(
         self,
@@ -64,8 +66,21 @@ class WebSocketManager:
             subprotocol: 可选的子协议标识，用于回显 Sec-WebSocket-Protocol 头。
                          当客户端通过子协议传递 token 时，必须回显以完成握手。
         """
-        await websocket.accept(subprotocol=subprotocol) if subprotocol else await websocket.accept()
         session_key = (str(user_id or ""), str(session_id))
+        total_connections = sum(len(items) for items in self._session_connections.values())
+        existing_connections = self._session_connections.get(session_key, [])
+        if total_connections >= self._max_total_connections or len(existing_connections) >= self._max_connections_per_session:
+            logger.bind(
+                event="ws_connection_capacity_reached",
+                module="ws_manager",
+                session_id=session_id,
+                user_id=user_id,
+                total_connections=total_connections,
+            ).warning("WebSocket 连接容量已满，拒绝新连接")
+            await websocket.close(code=1013, reason="WebSocket capacity reached")
+            raise RuntimeError("WebSocket connection capacity reached")
+
+        await websocket.accept(subprotocol=subprotocol) if subprotocol else await websocket.accept()
         conns = self._session_connections.setdefault(session_key, [])
         conns.append(websocket)
         self._last_activity[id(websocket)] = time.monotonic()
@@ -217,6 +232,9 @@ class WebSocketManager:
                 module="ws_manager",
                 error_type=type(exc).__name__,
             ).warning(f"心跳循环异常退出: {exc}")
+            if self._session_connections:
+                # 当前心跳任务尚未结束，延后到下一轮事件循环再创建替代任务。
+                asyncio.get_running_loop().call_soon(self.start_heartbeat)
 
     async def _send_heartbeats(self) -> None:
         """

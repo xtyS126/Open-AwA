@@ -102,6 +102,7 @@ interface StreamEntry {
 /** 指数退避重连序列（秒），最大 30s */
 const BACKOFF_SECONDS = [1, 2, 4, 8, 16, 30]
 const MAX_BACKOFF_INDEX = BACKOFF_SECONDS.length - 1
+const MAX_RECONNECT_ATTEMPTS = 5
 
 /** 角色图标颜色映射 */
 const ROLE_COLOR_MAP: Record<DiscussionRole, string> = {
@@ -226,6 +227,22 @@ const DiscussionStream: React.FC<DiscussionStreamProps> = ({
       // 关闭当前连接
       source.close()
       eventSourceRef.current = null
+
+      // Cookie 认证失效与网络不可达都无法由 EventSource 暴露状态码。
+      // 有界重试后明确降级为页面内错误，而非无限静默重连。
+      if (retryCountRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        setStatus('disconnected')
+        setEntries((prev) => [
+          ...prev,
+          {
+            id: `error-${++entryIdCounterRef.current}`,
+            type: 'error',
+            content: '实时讨论连接不可用，请重新登录后刷新页面。',
+            timestamp: Date.now(),
+          },
+        ])
+        return
+      }
 
       // 指数退避重连
       const backoffIndex = Math.min(retryCountRef.current, MAX_BACKOFF_INDEX)

@@ -255,7 +255,7 @@ async def test_search(
             provider=payload.provider,
             user_id=current_user.id,
             error_type=type(exc).__name__,
-        ).error(f"搜索连通性测试异常: {exc}")
+        ).opt(exception=True).error(f"搜索连通性测试异常: {exc}")
         return _build_response(False, [], f"未知错误: {type(exc).__name__}")
 
 

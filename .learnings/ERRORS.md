@@ -1905,7 +1905,7 @@ command timed out after 124012 milliseconds
 
 **Logged**: 2026-07-13T00:00:00+08:00
 **Priority**: high
-**Status**: in_progress
+**Status**: resolved
 **Area**: tests
 
 ### Summary
@@ -3624,5 +3624,768 @@ actual: 6
 ### Resolution
 - **Resolved**: 2026-07-27T00:10:00+08:00
 - **Notes**: 工具契约更新为六项，并新增合集下载工具的完整 schema 与 handler 断言。
+
+---
+
+## [ERR-20260727-019] apply-patch-stale-pricing-schema-context
+
+**Logged**: 2026-07-27T01:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+批量补丁基于过期的 PricingManager schema 方法上下文，校验失败且未写入任何文件。
+
+### Error
+```text
+apply_patch verification failed: Failed to find expected lines in lib/backend/billing/pricing_manager.py
+```
+
+### Context
+- 同一工作树已有并行稳定性整改，方法实现与先前片段不同。
+- 失败发生在补丁校验阶段，未产生部分写入。
+
+### Suggested Fix
+修改长文件前先读取完整目标方法，按单一职责拆成小补丁，避免跨多个文件的过期上下文。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/billing/pricing_manager.py
+
+### Resolution
+- **Resolved**: 2026-07-27T01:20:00+08:00
+- **Notes**: 已改为读取当前方法后应用精确小补丁。
+
+---
+
+## [ERR-20260727-020] im-targeted-test-not-collected
+
+**Logged**: 2026-07-27T01:25:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+以关键字筛选 IM 适配器测试时没有匹配用例，pytest 以退出码 5 结束。
+
+### Error
+```text
+1 skipped, 4566 deselected
+```
+
+### Context
+- 现有测试目录没有以 feishu 或 telegram 命名的收集项。
+- 该结果不能作为 IM 客户端释放逻辑的验证证据。
+
+### Suggested Fix
+为认证失败路径新增专属异步测试，并分别运行已存在的定价和前端检查。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/im/feishu_adapter.py, lib/backend/im/telegram_adapter.py
+
+### Resolution
+- **Resolved**: 2026-07-27T01:25:00+08:00
+- **Notes**: 已转为专属测试覆盖，未将空收集记为通过。
+
+---
+
+## [ERR-20260727-021] inline-python-non-ascii-cwd
+
+**Logged**: 2026-07-27T04:55:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+内联 Python 将含中文的绝对工作目录传给 subprocess 时，Windows 创建子进程返回 WinError 267。
+
+### Error
+```text
+NotADirectoryError: [WinError 267] 目录名称无效。
+```
+
+### Context
+- 目标是隔离 E2E 后端，子进程尚未创建，未修改真实数据库。
+- 外层命令已在仓库根目录执行。
+
+### Suggested Fix
+从 Path.cwd() 使用 ASCII 相对目录片段构造 cwd，避免在内联脚本中嵌入中文绝对路径。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend/tests/e2e/support/start_backend.py
+
+### Resolution
+- **Resolved**: 2026-07-27T04:55:00+08:00
+- **Notes**: 后续脚本改用 Path.cwd() / lib / frontend。
+
+---
+
+## [ERR-20260727-022] isolated-sse-csrf-precondition
+
+**Logged**: 2026-07-27T04:57:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+隔离后端的认证聊天 SSE 请求缺少登录响应中的 CSRF token，返回 403。
+
+### Error
+```text
+HTTPStatusError: Client error '403 Forbidden' for url '/api/chat'
+```
+
+### Context
+- 隔离服务已健康、首次初始化和密码登录均成功。
+- JWT Bearer 登录路径仍保留双提交 CSRF 请求头契约。
+
+### Suggested Fix
+测试客户端从登录响应读取 csrf_token，并为 POST SSE 请求发送 X-CSRF-Token。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/api/routes/system.py, lib/backend/api/routes/chat.py
+
+### Resolution
+- **Resolved**: 2026-07-27T04:57:00+08:00
+- **Notes**: 后续协议脚本已添加 X-CSRF-Token。
+
+---
+
+## [ERR-20260727-023] settings-page-lazy-load-full-suite-flake
+
+**Logged**: 2026-07-27T05:03:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+全量 Vitest 中 SettingsPage 的远端模型惰性加载断言超时，页面保持骨架屏。
+
+### Error
+```text
+Unable to find an element with the text: 加载远端模型
+```
+
+### Context
+- 本轮改动不涉及 SettingsPage 或模型加载容器。
+- 同一批中的定向前端测试、生产构建和后端稳定性回归均通过。
+
+### Suggested Fix
+先单文件和单 worker 重跑，区分并行测试状态泄漏与真实渲染回归后再决定是否修改测试或实现。
+
+### Metadata
+- Reproducible: unknown
+- Related Files: lib/frontend/src/__tests__/features/settings/SettingsPage.test.tsx
+
+### Resolution
+- **Resolved**: 2026-07-27T05:28:00+08:00
+- **Notes**: 单文件 7 项测试与后续全量 Vitest（89 文件、599 项）均通过，未修改 SettingsPage 实现；该失败未能复现。
+
+---
+
+## [ERR-20260727-026] skill-path-root-mismatch
+
+**Logged**: 2026-07-27T05:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+首次读取 webapp-testing 技能时使用了错误的全局技能目录，项目注册表实际指向 .agents 技能根目录。
+
+### Error
+```text
+Get-Content : Cannot find path 'C:\Users\23941\.codex\skills\webapp-testing\SKILL.md' because it does not exist.
+```
+
+### Context
+- 技能注册表将 webapp-testing 映射到 r7，即 D:\代码\Open-AwA\.agents\skills。
+- 失败发生在读取指令阶段，未修改任何业务文件或运行数据。
+
+### Suggested Fix
+读取技能前根据当前会话的 Skill roots 展开短路径，避免假定技能位于全局 Codex 目录。
+
+### Metadata
+- Reproducible: yes
+- Related Files: .agents/skills/webapp-testing/SKILL.md
+
+### Resolution
+- **Resolved**: 2026-07-27T05:10:00+08:00
+- **Notes**: 已从项目 .agents 技能根目录读取完整指令。
+
+---
+
+## [ERR-20260727-027] full-pytest-single-command-timeout
+
+**Logged**: 2026-07-27T05:30:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+完整后端 pytest 超出单次命令的 60 秒执行上限，工具以超时终止，不能将该结果误报为测试断言失败。
+
+### Error
+```text
+command timed out after 64036 milliseconds
+```
+
+### Context
+- 命令为 lib/backend 下的 pytest --no-cov。
+- 项目记忆已说明完整后端测试常超过 15 分钟，需要避免单次阻塞等待。
+
+### Suggested Fix
+以隐藏后台进程运行完整测试，并使用短周期轮询进程状态与标准输出；在日志出现最终 pytest 汇总后再判定结果。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-27T05:30:00+08:00
+- **Notes**: 后续验证改为后台进程加短周期轮询。
+
+---
+
+## [ERR-20260727-028] powershell-background-pytest-access-denied
+
+**Logged**: 2026-07-27T05:32:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Windows 环境中通过 Start-Process 加重定向日志启动后台 pytest 被系统拒绝访问。
+
+### Error
+```text
+execution error: Io(Os { code: 5, kind: PermissionDenied, message: "拒绝访问。" })
+```
+
+### Context
+- 后台方案仅用于避免单次执行超时，未触碰生产服务、数据库或源码。
+- 项目记忆已有完整后端测试按多个组运行的约束。
+
+### Suggested Fix
+在当前工具环境改用分组 pytest 与短周期工具轮询，避免依赖受限的后台进程和输出重定向。
+
+### Metadata
+- Reproducible: unknown
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-27T05:32:00+08:00
+- **Notes**: 已改用分组执行策略。
+
+---
+
+## [ERR-20260727-029] q-s-pytest-group-timeout
+
+**Logged**: 2026-07-27T05:40:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+按首字母合并的 q–s 后端测试组超出 120 秒工具时限，无法从超时结果判断是否存在断言失败。
+
+### Error
+```text
+command timed out after 124022 milliseconds
+```
+
+### Context
+- a–c、d–f、g–j、k–m、n–p 分组均已正常结束。
+- 该组的单次规模仍然过大，进程被工具终止前未返回 pytest 汇总。
+
+### Suggested Fix
+将 q–s 继续拆为 q–r 与 s 两个组，各自重跑并使用最终 pytest 汇总作为结论。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-27T05:40:00+08:00
+- **Notes**: 后续采用 q–r 与 s 分组，不将本次超时计为产品测试失败。
+
+---
+
+## [ERR-20260727-030] s-a-h-pytest-group-timeout
+
+**Logged**: 2026-07-27T05:45:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+s–a..h 后端测试子组仍超过 120 秒工具限制，因此不再重复运行该聚合命令。
+
+### Error
+```text
+command timed out after 124029 milliseconds
+```
+
+### Context
+- q–r 子组已独立验证通过。
+- 该次工具超时没有 pytest 最终汇总，不能判断为测试失败。
+
+### Suggested Fix
+将剩余 s 组按单测试文件执行，各文件只使用一次最终汇总结果，避免继续对同一聚合步骤自愈重试。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-27T05:45:00+08:00
+- **Notes**: 后续验证改为单文件粒度。
+
+---
+
+## [ERR-20260727-031] trae-memory-encoding-patch-context
+
+**Logged**: 2026-07-27T05:50:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+项目记忆文件在控制台呈现为乱码，基于中文尾行的追加补丁无法匹配上下文。
+
+### Error
+```text
+apply_patch verification failed: Failed to find expected lines in topics.md
+```
+
+### Context
+- 文件内容未丢失，失败只发生在首次追加任务摘要时。
+- ASCII session_id 标记保持稳定，可作为不依赖终端编码的补丁锚点。
+
+### Suggested Fix
+对受编码影响的历史记忆文件使用 ASCII 标记定位，避免将控制台转码后的中文文本作为补丁上下文。
+
+### Metadata
+- Reproducible: yes
+- Related Files: C:\\Users\\23941\\.trae-cn\\memory\\projects\\-d----Open-AwA\\2026-07-27\\topics.md
+
+### Resolution
+- **Resolved**: 2026-07-27T05:50:00+08:00
+- **Notes**: 已通过 session_id 锚点写入本次任务摘要。
+
+---
+
+## [ERR-20260727-037] mixed-workdir-verification-command
+
+**Logged**: 2026-07-27T09:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+复合验证命令在 frontend 工作目录中执行了 backend pytest 路径，导致未收集测试。
+
+### Error
+```text
+ERROR: file or directory not found: tests/test_terminal_pty.py
+```
+
+### Context
+- 同一命令中的 npm run build 已成功完成。
+- 后端测试路径相对于 lib/backend，而非 lib/frontend。
+
+### Suggested Fix
+前后端验证使用独立工具调用，并为各自设置正确的工作目录。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend, lib/backend/tests
+
+### Resolution
+- **Resolved**: 2026-07-27T09:10:00+08:00
+- **Notes**: 已拆分命令并在正确后端目录重新验证。
+---
+
+## [ERR-20260727-036] powershell-empty-process-id
+
+**Logged**: 2026-07-27T09:03:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+端口检查没有监听进程时仍把空列表传给 Get-Process，导致 PowerShell 参数绑定失败。
+
+### Error
+```text
+Cannot bind argument to parameter 'Id' because it is null.
+```
+
+### Context
+- 仅读取 8000 和 5173 端口的服务状态。
+- 当前没有匹配监听进程。
+
+### Suggested Fix
+先保存端口查询结果，仅在进程 ID 非空时调用 Get-Process。
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+
+### Resolution
+- **Resolved**: 2026-07-27T09:03:00+08:00
+- **Notes**: 后续命令已增加空集合保护。
+---
+
+## [ERR-20260727-035] e2e-start-backend-help-timeout
+
+**Logged**: 2026-07-27T09:01:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+前端 E2E 的 start_backend.py 未实现 --help 参数，传入后仍启动服务并超时。
+
+### Error
+```text
+command timed out after 34021 milliseconds
+```
+
+### Context
+- 按网页应用验证流程先探测辅助脚本使用方式。
+- 未向真实数据库写入数据，命令被工具超时终止。
+
+### Suggested Fix
+为服务启动脚本实现参数解析或在文档中明确其仅供 Playwright 配置导入使用。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend/tests/e2e/support/start_backend.py
+
+### Resolution
+- **Resolved**: 2026-07-27T09:01:00+08:00
+- **Notes**: 已停止该探测命令，后续不将其当作命令行服务管理器。
+---
+
+## [ERR-20260727-034] inbox-stream-coordination-test-isolation
+
+**Logged**: 2026-07-27T08:40:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+inbox 跨标签协调首轮测试暴露了 WebSocket close 回调覆盖 follower 状态，以及模块重载后测试读取旧 Zustand 实例的问题。
+
+### Error
+```text
+expected 'disconnected' to be 'connecting'
+expected [] to deeply equal [ 'message-1' ]
+```
+
+### Context
+- 新增 BroadcastChannel 领导者选举测试。
+- `vi.resetModules()` 会重新加载 store 模块，因此顶层导入的 store 实例不再与被测模块一致。
+
+### Suggested Fix
+在连接交接时先写入 follower 状态再关闭旧 socket，并在模块重载后动态导入同一份 store 实例。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend/src/features/inbox/inboxStream.ts, lib/frontend/src/__tests__/features/inbox/inboxStream.test.ts
+
+### Resolution
+- **Resolved**: 2026-07-27T08:40:00+08:00
+- **Notes**: 代码交接顺序已验证正确；测试改为从同一模块图动态读取 store。
+---
+
+## [ERR-20260727-033] powershell-brace-expansion
+
+**Logged**: 2026-07-27T08:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+PowerShell 不支持 Bash 风格的花括号文件展开，导致 task_runtime 初始检索命令在解析阶段失败。
+
+### Error
+```text
+Missing argument in parameter list.
+```
+
+### Context
+- 命令把多个文件组合为 Bash 花括号展开路径。
+- 工作环境为 Windows PowerShell。
+
+### Suggested Fix
+在 PowerShell 命令中逐个传递显式文件路径，或使用 PowerShell 数组展开。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/core/task_runtime/sessions.py, lib/backend/core/task_runtime/task_store.py, lib/backend/core/task_runtime/runners.py
+
+### Resolution
+- **Resolved**: 2026-07-27T08:00:00+08:00
+- **Notes**: 已改为显式路径并成功完成检索。
+---
+
+## [ERR-20260727-032] web-search-timeout-test-missing-import
+
+**Logged**: 2026-07-27T07:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+搜索降级总时限测试使用 asyncio.Event 时遗漏 asyncio 模块导入。
+
+### Error
+```text
+NameError: name 'asyncio' is not defined
+```
+
+### Context
+- 失败仅出现在新测试替身，生产 web_search 的总时限逻辑已经进入执行入口。
+
+### Suggested Fix
+为异步测试显式导入 asyncio，并重跑定向后端与前端测试。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_web_search_multi_provider.py
+
+### Resolution
+- **Resolved**: 2026-07-27T07:35:00+08:00
+- **Notes**: 已添加导入。
+
+---
+
+## [ERR-20260727-038] powershell-rg-combined-quote-terminator
+
+**Logged**: 2026-07-27T10:05:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+PowerShell 将组合的 rg 双引号模式解析为未闭合字符串，导致只读路由检索未执行。
+
+### Error
+```text
+The string is missing the terminator: ".
+```
+
+### Context
+- 同一条 PowerShell 命令混用了多个带转义双引号的 rg 模式。
+- 失败发生在隔离服务验证前的只读路由定位，不影响服务或源码。
+
+### Suggested Fix
+将独立的 rg 查询拆为多条命令，或使用 PowerShell 单引号包裹正则模式。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/api/routes/system.py, lib/backend/api/routes/auth.py
+- See Also: ERR-20260727-017
+
+### Resolution
+- **Resolved**: 2026-07-27T10:05:00+08:00
+- **Notes**: 已拆分检索命令，后续命令正常执行。
+
+---
+
+## [ERR-20260727-039] websocket-token-module-path
+
+**Logged**: 2026-07-27T10:08:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+隔离 WebSocket 验证错误地从 security.auth 导入令牌函数，实际实现位于 config.security。
+
+### Error
+```text
+ModuleNotFoundError: No module named 'security.auth'
+```
+
+### Context
+- 仅影响临时数据库的传输握手验证脚本。
+- api/routes/auth.py 已明确从 config.security 导入 create_access_token。
+
+### Suggested Fix
+按生产路由的导入路径使用 config.security.create_access_token，且不输出令牌内容。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/api/routes/auth.py, lib/backend/config/security.py
+
+### Resolution
+- **Resolved**: 2026-07-27T10:08:00+08:00
+- **Notes**: 已定位正确模块路径。
+
+---
+
+## [ERR-20260727-040] powershell-playwright-evaluate-quoting
+
+**Logged**: 2026-07-27T10:12:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+PowerShell 解析内嵌的 JavaScript async 箭头函数时破坏了 python -c 字符串边界。
+
+### Error
+```text
+An expression was expected after '('.
+```
+
+### Context
+- 失败发生在隔离前后端的浏览器验收命令尚未启动前。
+- 原命令在 Python 字符串内嵌 page.evaluate 的 async JavaScript。
+
+### Suggested Fix
+避免在 PowerShell 的 python -c 内嵌 JavaScript 箭头函数；浏览器页面验证与 HTTP ping 分别由 Python API 完成。
+
+### Metadata
+- Reproducible: yes
+- Related Files: .agents/skills/webapp-testing/scripts/with_server.py
+- See Also: ERR-20260727-038
+
+### Resolution
+- **Resolved**: 2026-07-27T10:12:00+08:00
+- **Notes**: 已改为无 JavaScript 内嵌的浏览器根节点与隔离 HTTP ping 联合验证。
+
+---
+
+## [ERR-20260727-041] with-server-nested-vite-argument-separator
+
+**Logged**: 2026-07-27T10:15:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+多服务验证把 Vite 的 -- 参数分隔符放进 --server 命令，仍被外层 argparse 识别为结束标记。
+
+### Error
+```text
+with_server.py: error: the following arguments are required: --port
+```
+
+### Context
+- with_server.py 已在命令结尾使用 -- 分隔待执行的浏览器检查。
+- 内嵌 npm run dev -- --host 会使外层参数解析失去后续 --port。
+
+### Suggested Fix
+使用 npm --prefix <frontend> run dev 作为服务命令，避免嵌套 -- 分隔符。
+
+### Metadata
+- Reproducible: yes
+- Related Files: .agents/skills/webapp-testing/scripts/with_server.py
+
+### Resolution
+- **Resolved**: 2026-07-27T10:15:00+08:00
+- **Notes**: 已更换无嵌套分隔符的启动命令。
+
+---
+
+## [ERR-20260727-042] with-server-multiple-command-quoting
+
+**Logged**: 2026-07-27T10:17:00+08:00
+**Priority**: low
+**Status**: pending
+**Area**: tests
+
+### Summary
+PowerShell 通过 with_server.py 传递含 cmd /c 的多服务命令时，外层 argparse 未接收到完整的 --port 参数。
+
+### Error
+```text
+with_server.py: error: the following arguments are required: --port
+```
+
+### Context
+- 已移除 Vite 的嵌套 -- 分隔符，错误仍在多服务命令解析阶段发生。
+- 不会阻塞分别执行的后端隔离传输验证与前端浏览器验证。
+
+### Suggested Fix
+后续需要同进程双服务时，改用无 shell 嵌套的临时启动脚本；当前采用已验证的单服务浏览器路径和独立后端传输路径。
+
+### Metadata
+- Reproducible: yes
+- Related Files: .agents/skills/webapp-testing/scripts/with_server.py
+- See Also: ERR-20260727-041
+
+---
+
+## [ERR-20260727-043] powershell-command-separator-and-rg-glob
+
+**Logged**: 2026-07-27T11:20:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+当前 Windows PowerShell 不支持 Bash 的 `&&`，且 rg 不会展开 Windows 路径中的文件通配符。
+
+### Error
+```text
+The token '&&' is not a valid statement separator in this version.
+rg: ... test_task_runtime_phase*.py: 文件名、目录名或卷标语法不正确。
+```
+
+### Context
+- 多命令验证与 task runtime 测试检索均仅为只读操作，未影响代码或服务。
+
+### Suggested Fix
+使用 PowerShell 分号分隔命令；需要文件通配时先用 `Get-ChildItem` 再交给 `Select-String`。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/backend/tests/test_task_runtime_phase1.py
+- See Also: ERR-20260727-033, ERR-20260727-038
+
+### Resolution
+- **Resolved**: 2026-07-27T11:20:00+08:00
+- **Notes**: 已改用分号和 Get-ChildItem 管道，验证继续执行。
+
+---
+
+## [ERR-20260727-044] powershell-rg-regex-pipe-quoting
+
+**Logged**: 2026-07-27T11:52:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+PowerShell 在双引号 rg 正则内解析管道符，导致局部 ErrorBoundary 的只读定位失败。
+
+### Error
+```text
+MessageList : The term 'MessageList' is not recognized as the name of a cmdlet.
+```
+
+### Context
+- 同一审计命令中其他静态检查已完成；错误仅影响包含 `|` 的组件名正则。
+
+### Suggested Fix
+在 PowerShell 中用单引号包裹含管道符的 rg 模式。
+
+### Metadata
+- Reproducible: yes
+- Related Files: lib/frontend/src/features/chat/ChatPage.tsx
+- See Also: ERR-20260727-038, ERR-20260727-043
+
+### Resolution
+- **Resolved**: 2026-07-27T11:52:00+08:00
+- **Notes**: 已确认后续查询应使用单引号正则。
 
 ---

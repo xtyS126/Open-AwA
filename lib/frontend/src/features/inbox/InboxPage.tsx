@@ -26,9 +26,10 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 const InboxPage: React.FC = () => {
   // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
-  const { messages, unreadCount, setMessages, markAsRead, markAllRead, removeMessage } = useInboxStore(s => ({
+  const { messages, unreadCount, streamStatus, setMessages, markAsRead, markAllRead, removeMessage } = useInboxStore(s => ({
     messages: s.messages,
     unreadCount: s.unreadCount,
+    streamStatus: s.streamStatus,
     setMessages: s.setMessages,
     markAsRead: s.markAsRead,
     markAllRead: s.markAllRead,
@@ -49,7 +50,7 @@ const InboxPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [setMessages, t]);
 
   useEffect(() => {
     void loadMessages();
@@ -131,6 +132,11 @@ const InboxPage: React.FC = () => {
       </div>
 
       {error && <div className={styles.error}>{error}</div>}
+      {streamStatus === 'unavailable' && (
+        <div className={styles.error} role="status">
+          实时通知暂不可用，列表仍会每分钟自动刷新。
+        </div>
+      )}
 
       <div className={styles.filters}>
         {['all', 'approval', 'task_result', 'notification'].map((cat) => (

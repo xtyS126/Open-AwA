@@ -69,6 +69,7 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current)
+        timerRef.current = null
       }
     }
   }, [isStreaming])

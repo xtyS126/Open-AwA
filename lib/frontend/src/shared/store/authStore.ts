@@ -1,4 +1,11 @@
 import { create } from 'zustand'
+import { clearCachedApiKey, setUnauthorizedHandler } from '@/shared/api/client'
+import { resetAppInitializationCache } from '@/shared/hooks/appInitializationCache'
+import { useSessionStore } from '@/features/chat/store/sessionStore'
+import { useModelStore } from '@/features/chat/store/modelStore'
+import { useToolCallStore } from '@/features/chat/store/toolCallStore'
+import { useInboxStore } from '@/features/inbox/store/inboxStore'
+import { resetInboxStreamForLogout } from '@/features/inbox/inboxStream'
 
 interface User {
   id?: string
@@ -19,7 +26,7 @@ interface AuthState {
   isSystemInitialized: boolean | null
   setAuth: (user: User | null, apiKey: string | null) => void
   setInitialized: (initialized: boolean) => void
-  setSystemInitialized: (initialized: boolean) => void
+  setSystemInitialized: (initialized: boolean | null) => void
   logout: () => void
   /** 更新当前用户的部分字段（用于头像上传、昵称修改后即时反映） */
   updateUser: (partial: Partial<User>) => void
@@ -41,6 +48,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   setSystemInitialized: (initialized) => set({ isSystemInitialized: initialized }),
 
   logout: () => {
+    clearCachedApiKey()
+    resetAppInitializationCache()
+    useSessionStore.getState().resetForLogout()
+    useModelStore.getState().resetForLogout()
+    useToolCallStore.getState().resetActiveToolCalls()
+    useInboxStore.getState().resetForLogout()
+    resetInboxStreamForLogout()
     set({ user: null, apiKey: null, isAuthenticated: false })
   },
 
@@ -50,3 +64,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }))
   },
 }))
+
+setUnauthorizedHandler(() => {
+  useAuthStore.getState().logout()
+})

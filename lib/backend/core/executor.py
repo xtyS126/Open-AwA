@@ -2851,6 +2851,28 @@ class ExecutionLayer:
 
         import shlex
         proc = None
+
+        async def _terminate_process() -> None:
+            """终止子进程并限制等待时长，避免清理路径本身无限阻塞。"""
+            if proc is None or proc.returncode is not None:
+                return
+            try:
+                proc.kill()
+                await asyncio.wait_for(proc.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.bind(
+                    module="executor",
+                    event="process_kill_wait_timeout",
+                    pid=proc.pid,
+                ).error("子进程终止后未在限定时间内退出")
+            except Exception as exc:
+                logger.bind(
+                    module="executor",
+                    event="process_kill_error",
+                    pid=proc.pid,
+                    error_type=type(exc).__name__,
+                ).warning("子进程清理失败")
+
         try:
             args = shlex.split(command)
             if not args:
@@ -2874,39 +2896,32 @@ class ExecutionLayer:
                 stderr=asyncio.subprocess.PIPE
             )
 
+            timeout_seconds = step.get("timeout_seconds", step.get("timeout", 30))
+            try:
+                timeout_seconds = float(timeout_seconds)
+            except (TypeError, ValueError):
+                timeout_seconds = 30.0
+            timeout_seconds = min(max(timeout_seconds, 1.0), 300.0)
+
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
-                timeout=30
+                timeout=timeout_seconds,
             )
 
             return {
                 "status": "completed",
                 "returncode": proc.returncode,
-                "stdout": stdout.decode() if stdout else "",
-                "stderr": stderr.decode() if stderr else ""
+                "stdout": stdout.decode("utf-8", errors="replace") if stdout else "",
+                "stderr": stderr.decode("utf-8", errors="replace") if stderr else ""
             }
         except asyncio.TimeoutError:
-            if proc is not None:
-                try:
-                    proc.kill()
-                    await proc.wait()
-                except Exception:
-                    logger.bind(module="executor", event="process_kill_timeout_error", pid=proc.pid).warning(
-                        "超时进程清理失败"
-                    )
+            await _terminate_process()
             return {
                 "status": "error",
                 "message": "Command execution timeout"
             }
         except Exception as e:
-            if proc is not None:
-                try:
-                    proc.kill()
-                    await proc.wait()
-                except Exception:
-                    logger.bind(module="executor", event="process_kill_error", pid=proc.pid).warning(
-                        "异常进程清理失败"
-                    )
+            await _terminate_process()
             return {
                 "status": "error",
                 "message": str(e)

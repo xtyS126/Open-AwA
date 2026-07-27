@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
 from typing import Any, Dict, Optional
 from datetime import datetime, timedelta, timezone
+from loguru import logger
 from db.models import get_db, BehaviorLog, User
 from api.dependencies import get_current_user
 from api.schemas import BehaviorStats
@@ -223,8 +224,11 @@ async def log_behavior(
     try:
         db.add(log_entry)
         db.commit()
-    except Exception:
+    except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail="行为日志写入失败")
+        logger.bind(error_type=type(exc).__name__).opt(exception=True).error(
+            "行为日志写入失败"
+        )
+        raise HTTPException(status_code=500, detail="行为日志写入失败，请稍后重试") from exc
 
     return {"message": "Behavior logged successfully"}

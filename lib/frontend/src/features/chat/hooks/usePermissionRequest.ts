@@ -73,6 +73,7 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
   const [connected, setConnected] = useState(false)
   const reconnectAttemptRef = useRef(0)
   const eventSourceRef = useRef<EventSource | null>(null)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 处理权限请求事件
   const handlePermissionRequest = useCallback((request: PermissionRequestEvent) => {
@@ -221,7 +222,11 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
           message: `SSE 连接断开，${delay}ms 后重连（第 ${reconnectAttemptRef.current} 次）`,
         })
 
-        setTimeout(() => {
+        if (reconnectTimerRef.current !== null) {
+          clearTimeout(reconnectTimerRef.current)
+        }
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null
           if (!cancelled) connect()
         }, delay)
       }
@@ -239,6 +244,10 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
       if (connectTimer) {
         clearTimeout(connectTimer)
         connectTimer = null
+      }
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
       }
       if (eventSourceRef.current) {
         eventSourceRef.current.close()

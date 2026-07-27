@@ -143,3 +143,14 @@ async def proxy_to_local(
             status_code=502,
             media_type="application/json",
         )
+    except Exception:
+        # __aenter__ 等非 RequestError 异常同样必须关闭客户端，防止连接池泄漏。
+        await client.aclose()
+        logger.bind(event="preview_proxy_error", module="preview_proxy").opt(exception=True).error(
+            "预览代理请求失败"
+        )
+        return Response(
+            content='{"detail":"upstream unavailable"}',
+            status_code=502,
+            media_type="application/json",
+        )

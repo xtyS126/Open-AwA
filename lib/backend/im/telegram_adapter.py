@@ -37,7 +37,11 @@ class TelegramAdapter(IMAdapter):
                 module="im_telegram",
                 bot_username=bot_info.get("username"),
             ).info(f"Telegram Bot 已连接: @{bot_info.get('username')}")
-        except Exception as e:
+        except Exception:
+            # 验证失败不会启动轮询，仍需释放已经创建的 HTTP 客户端。
+            if self._client is not None:
+                await self._client.aclose()
+                self._client = None
             self._running = False
             raise
 
@@ -57,6 +61,7 @@ class TelegramAdapter(IMAdapter):
                 pass
         if self._client:
             await self._client.aclose()
+            self._client = None
         logger.bind(event="telegram_stopped", module="im_telegram").info("Telegram 适配器已停止")
 
     async def send_message(self, chat_id: str, text: str) -> bool:

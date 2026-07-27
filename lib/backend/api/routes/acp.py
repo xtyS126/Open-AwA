@@ -600,7 +600,7 @@ async def prompt_session(
     if service is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"ACP service 未初始化: agent={agent}",
+            detail="ACP 服务暂不可用，请稍后重试",
         )
 
     prompt_blocks = [{"type": "text", "text": request.prompt}]
@@ -608,7 +608,8 @@ async def prompt_session(
     async def event_generator():
         """SSE 事件生成器：把 ACPService 事件转为 SSE 帧推送。"""
         # 队列承载所有要推送的事件，避免 await service.run_turn 阻塞流
-        queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+        # 有界队列避免断开客户端或异常 Agent 持续产出时无限占用内存。
+        queue: asyncio.Queue[Optional[str]] = asyncio.Queue(maxsize=256)
         # 标记 run_turn 是否已完成
         run_turn_task: Optional[asyncio.Task[Any]] = None
         cancel_event = asyncio.Event()
@@ -670,9 +671,7 @@ async def prompt_session(
                     error_type=type(exc).__name__,
                     error_message=str(exc),
                 ).error(f"ACP prompt 异常: {exc}")
-                await queue.put(
-                    _format_sse("error", {"message": f"内部错误: {exc}"})
-                )
+                await queue.put(_format_sse("error", {"message": "ACP 请求执行失败"}))
             finally:
                 # 哨兵：通知生成器退出
                 await queue.put(None)
@@ -703,7 +702,16 @@ async def prompt_session(
             ).info(f"客户端断开，取消 ACP prompt: {session_id}")
             cancel_event.set()
             try:
-                await service.cancel_turn(chat_id=chat_id, agent=agent)
+                await asyncio.wait_for(
+                    service.cancel_turn(chat_id=chat_id, agent=agent), timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                logger.bind(
+                    event="acp_prompt_cancel_timeout",
+                    module="acp",
+                    session_id=session_id,
+                    agent=agent,
+                ).warning("ACP prompt 取消超时")
             except Exception as exc:
                 logger.warning(f"取消 ACP prompt 失败: {exc}")
             raise
@@ -711,7 +719,14 @@ async def prompt_session(
             if run_turn_task is not None and not run_turn_task.done():
                 run_turn_task.cancel()
                 try:
-                    await run_turn_task
+                    await asyncio.wait_for(run_turn_task, timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.bind(
+                        event="acp_prompt_task_cancel_timeout",
+                        module="acp",
+                        session_id=session_id,
+                        agent=agent,
+                    ).warning("ACP prompt 后台任务取消超时，已停止等待")
                 except (asyncio.CancelledError, Exception):
                     pass
 
@@ -750,7 +765,7 @@ async def respond_permission(
     if service is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"ACP service 未初始化: agent={agent}",
+            detail="ACP 服务暂不可用，请稍后重试",
         )
 
     # 通过 get_session 拿到 _Conversation 实例，从中取 acp_session_id
@@ -786,10 +801,16 @@ async def respond_permission(
             on_message=_noop_on_message,
         )
     except ACPConfigurationError as exc:
+        logger.bind(
+            event="acp_permission_configuration_error",
+            module="acp",
+            session_id=session_id,
+            error_type=type(exc).__name__,
+        ).opt(exception=True).warning("ACP 权限响应配置异常")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        )
+            detail="ACP 服务暂不可用，请稍后重试",
+        ) from exc
     except ACPSessionError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -820,7 +841,7 @@ async def cancel_session_turn(
     if service is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"ACP service 未初始化: agent={agent}",
+            detail="ACP 服务暂不可用，请稍后重试",
         )
 
     try:

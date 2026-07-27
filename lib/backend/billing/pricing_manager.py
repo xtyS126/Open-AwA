@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from loguru import logger
 from pathlib import Path
 import json
+from threading import RLock
 
 
 class PricingManager:
@@ -18,6 +19,9 @@ class PricingManager:
     计费管理器，负责模型价格配置、用量追踪与预算控制。
     提供模型定价的增删改查、供应商配置管理以及默认配置初始化等功能。
     """
+    # 仅串行化运行期 schema 检查与迁移标记。请求级 Session 不是线程安全对象，
+    # 普通查询和写入仍必须由各自请求持有的 Session 执行。
+    _schema_lock = RLock()
     @staticmethod
     def get_provider_base_suffix(provider: Optional[str]) -> str:
         """
@@ -299,68 +303,71 @@ class PricingManager:
 
         禁止在运行期执行 DDL；部署或升级前必须先执行 Alembic migration。
         """
-        if self._pricing_schema_ensured:
-            return
-        self._pricing_schema_ensured = True
+        with self._schema_lock:
+            if self._pricing_schema_ensured:
+                return
+            self._pricing_schema_ensured = True
 
     def ensure_credential_schema(self) -> None:
         """
         确保 provider_credentials 表存在，若不存在则创建。
         首次调用后设置标志，后续调用直接返回。
         """
-        if self._credential_schema_ensured:
-            return
-        tables = {
-            row[0]
-            for row in self.db.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
-        }
-        if "provider_credentials" not in tables:
-            self.db.execute(text("""
-                CREATE TABLE provider_credentials (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    provider VARCHAR(50) UNIQUE NOT NULL,
-                    display_name VARCHAR(200),
-                    api_key TEXT,
-                    api_endpoint VARCHAR(500),
-                    icon VARCHAR(500),
-                    is_active BOOLEAN DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """))
-        self.db.commit()
-        self._credential_schema_ensured = True
+        with self._schema_lock:
+            if self._credential_schema_ensured:
+                return
+            tables = {
+                row[0]
+                for row in self.db.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
+            }
+            if "provider_credentials" not in tables:
+                self.db.execute(text("""
+                    CREATE TABLE provider_credentials (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        provider VARCHAR(50) UNIQUE NOT NULL,
+                        display_name VARCHAR(200),
+                        api_key TEXT,
+                        api_endpoint VARCHAR(500),
+                        icon VARCHAR(500),
+                        is_active BOOLEAN DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            self.db.commit()
+            self._credential_schema_ensured = True
 
     def ensure_configuration_schema(self) -> None:
         """
         确保模型配置表包含必要的字段，若缺失则动态添加。
         首次调用后设置标志，后续调用直接返回，避免重复 PRAGMA 查询。
         """
-        if self._config_schema_ensured:
-            return
-        # 确保 Provider 凭据表先于配置表存在
-        self.ensure_credential_schema()
+        with self._schema_lock:
+            if self._config_schema_ensured:
+                return
+            # 确保 Provider 凭据表先于配置表存在
+            self.ensure_credential_schema()
 
-        columns = {
-            row[1]
-            for row in self.db.execute(text("PRAGMA table_info(model_configurations)")).fetchall()
-        }
+            columns = {
+                row[1]
+                for row in self.db.execute(text("PRAGMA table_info(model_configurations)")).fetchall()
+            }
 
-        if "icon" not in columns:
-            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN icon VARCHAR"))
-        if "selected_models" not in columns:
-            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN selected_models TEXT"))
-        if "max_tokens" not in columns:
-            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN max_tokens INTEGER"))
-        if "input_modality" not in columns:
-            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN input_modality TEXT"))
-        if "output_modality" not in columns:
-            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN output_modality TEXT"))
-        if "credential_id" not in columns:
-            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN credential_id INTEGER REFERENCES provider_credentials(id)"))
+            if "icon" not in columns:
+                self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN icon VARCHAR"))
+            if "selected_models" not in columns:
+                self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN selected_models TEXT"))
+            if "max_tokens" not in columns:
+                self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN max_tokens INTEGER"))
+            if "input_modality" not in columns:
+                self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN input_modality TEXT"))
+            if "output_modality" not in columns:
+                self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN output_modality TEXT"))
+            if "credential_id" not in columns:
+                self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN credential_id INTEGER REFERENCES provider_credentials(id)"))
 
-        self.db.commit()
-        self._config_schema_ensured = True
+            self.db.commit()
+            self._config_schema_ensured = True
 
     @staticmethod
     def _get_capability_defaults(key: Tuple[str, str]) -> Dict:

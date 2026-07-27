@@ -30,8 +30,10 @@ def get():
             # 双重检查锁定：在锁内再次确认 _instance 未被其他线程初始化
             if _instance is None:
                 from .plugin_manager import PluginManager
-                _instance = PluginManager()
-                logger.warning("插件管理器单例未经 init() 初始化，已自动创建默认实例")
+                from db.models import SessionLocal
+
+                _instance = PluginManager(db_session_factory=SessionLocal)
+                logger.warning("插件管理器单例未经过 init() 初始化，已使用默认数据库工厂创建实例")
     return _instance
 
 

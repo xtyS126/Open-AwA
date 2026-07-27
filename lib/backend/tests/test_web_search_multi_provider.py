@@ -16,6 +16,7 @@ HTTP mock：使用 monkeypatch 替换 httpx.AsyncClient 与 _duckduckgo_search�
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -604,6 +605,31 @@ class TestWebSearchSkillLifecycle:
 
         assert result["success"] is True
         assert result["provider"] == "duckduckgo"
+
+    async def test_execute_stops_fallback_chain_at_total_timeout(
+        self, web_search_tool_fixture, monkeypatch
+    ) -> None:
+        """provider 降级链超时必须返回结构化结果，而不是累积多个请求超时。"""
+        await web_search_tool_fixture.initialize()
+
+        async def _never_returns(_kwargs):
+            await asyncio.Event().wait()
+            return {"success": True}
+
+        monkeypatch.setattr(web_search_tool_fixture, "_search", _never_returns)
+        monkeypatch.setattr(
+            "core.builtin_tools.web_search.SEARCH_TOTAL_TIMEOUT",
+            0.01,
+        )
+
+        result = await web_search_tool_fixture.execute(action="search", query="test")
+
+        assert result == {
+            "success": False,
+            "error": "搜索服务响应超时，请稍后重试",
+            "error_code": "search_total_timeout",
+            "retryable": True,
+        }
 
     async def test_execute_dispatches_fetch_url_action(
         self, web_search_tool_fixture, monkeypatch

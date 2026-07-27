@@ -14,24 +14,31 @@ export interface InboxMessage {
   created_at: string;
 }
 
+export type InboxStreamStatus = 'disconnected' | 'connecting' | 'connected' | 'unavailable';
+
 interface InboxStore {
   messages: InboxMessage[];
   unreadCount: number;
+  streamStatus: InboxStreamStatus;
   setMessages: (messages: InboxMessage[]) => void;
+  setStreamStatus: (status: InboxStreamStatus) => void;
   /** 新增单条消息（WebSocket 实时推送时使用），插入列表顶部，已存在则跳过去重 */
   addMessage: (message: InboxMessage) => void;
   markAsRead: (id: string) => void;
   markAllRead: () => void;
   removeMessage: (id: string) => void;
+  resetForLogout: () => void;
 }
 
 export const useInboxStore = create<InboxStore>((set, get) => ({
   messages: [],
   unreadCount: 0,
+  streamStatus: 'disconnected',
   setMessages: (messages) => set({
     messages,
     unreadCount: messages.filter((m) => !m.read).length,
   }),
+  setStreamStatus: (streamStatus) => set({ streamStatus }),
   addMessage: (message) => {
     const existing = get().messages;
     // 去重：避免 WS 推送与轮询拉取产生重复条目
@@ -56,4 +63,5 @@ export const useInboxStore = create<InboxStore>((set, get) => ({
     const messages = get().messages.filter((m) => m.id !== id);
     set({ messages, unreadCount: messages.filter((m) => !m.read).length });
   },
+  resetForLogout: () => set({ messages: [], unreadCount: 0, streamStatus: 'disconnected' }),
 }));

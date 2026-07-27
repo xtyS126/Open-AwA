@@ -804,13 +804,16 @@ function ChatPage() {
         </ErrorBoundary>
 
         <div className={styles['chat-main']}>
-          <ErrorBoundary name="ChatMain">
+          <ErrorBoundary name="PermissionRequestNotification">
             <PermissionRequestNotification
               pendingRequests={permissionRequests}
               onApprove={approvePermission}
               onApproveAlways={approveAlwaysPermission}
               onDeny={denyPermission}
             />
+          </ErrorBoundary>
+
+          <ErrorBoundary name="MessageList">
             <MessageList
               messages={messages}
               messageMeta={messageMeta}
@@ -828,7 +831,9 @@ function ChatPage() {
               feedbackState={feedbackState}
               onUndo={handleUndoOperation}
             />
+          </ErrorBoundary>
 
+          <ErrorBoundary name="TodoPanel">
             <React.Suspense fallback={(
               <div style={{ padding: 'var(--space-2) var(--space-3)' }}>
                 <Skeleton variant="rectangular" height="var(--space-6)" width="40%" />
@@ -839,7 +844,9 @@ function ChatPage() {
                 summary={todoSummary}
               />
             </React.Suspense>
+          </ErrorBoundary>
 
+          <ErrorBoundary name="AskUserCard">
             <React.Suspense fallback={(
               <div style={{ padding: 'var(--space-2) var(--space-3)' }}>
                 <Skeleton variant="rectangular" height="var(--space-6)" width="40%" />
@@ -850,7 +857,9 @@ function ChatPage() {
                 onResolved={() => setAskUserRequest(null)}
               />
             </React.Suspense>
+          </ErrorBoundary>
 
+          <ErrorBoundary name="ChatInput">
             <ChatInput
               onSend={handleChatInputSend}
               isLoading={isLoading}

@@ -31,7 +31,7 @@ onTTFB((m) => {
   mark('ttfb') // TTFB 是后端+TLS 耗时，单独记录
 })
 
-window.addEventListener('error', (event) => {
+const handleWindowError = (event: ErrorEvent) => {
   appLogger.error({
     event: 'frontend_runtime_error',
     module: 'main',
@@ -45,9 +45,9 @@ window.addEventListener('error', (event) => {
       error: event.error?.message || event.message,
     },
   })
-})
+}
 
-window.addEventListener('unhandledrejection', (event) => {
+const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
   appLogger.error({
     event: 'frontend_runtime_error',
     module: 'main',
@@ -58,7 +58,17 @@ window.addEventListener('unhandledrejection', (event) => {
       reason: event.reason instanceof Error ? event.reason.message : String(event.reason),
     },
   })
-})
+}
+
+window.addEventListener('error', handleWindowError)
+window.addEventListener('unhandledrejection', handleUnhandledRejection)
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    window.removeEventListener('error', handleWindowError)
+    window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+  })
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

@@ -97,4 +97,21 @@ describe('ReasoningContent', () => {
     const contentDiv = screen.getByText('Thinking...')
     expect(contentDiv.className).not.toContain('expanded')
   })
+
+  it('cleans the previous timer during streaming transitions and unmount', () => {
+    vi.useFakeTimers()
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
+    const { rerender, unmount } = render(
+      <ReasoningContent messageId="msg-7" content="Thinking..." isStreaming={true} />,
+    )
+
+    rerender(<ReasoningContent messageId="msg-7" content="Thinking..." isStreaming={false} />)
+    rerender(<ReasoningContent messageId="msg-7" content="Thinking..." isStreaming={true} />)
+    unmount()
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(2)
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
+  })
 })

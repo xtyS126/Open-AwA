@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -14,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 
 import core.agent as agent_module
 import core.task_runtime.runners as runners_module
+import core.task_runtime.facade as facade_module
 
 from db.models import TaskAgentSession, init_db
 from core.task_runtime.sessions import (
@@ -466,6 +468,98 @@ class TestSubagentRunnerContext:
             "[思考] 我正在分析问题\n最终答复",
             "[状态] 准备执行工具",
         ]
+
+
+class TestRunnerDatabaseOperations:
+    """运行器短生命周期数据库操作测试。"""
+
+    @pytest.mark.asyncio
+    async def test_short_lived_session_helpers_close_their_owned_sessions(self, monkeypatch):
+        """线程化状态操作应关闭自身创建的会话，且不复用已关闭实例。"""
+        class FakeSession:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        created_sessions = []
+
+        def make_session():
+            session = FakeSession()
+            created_sessions.append(session)
+            return session
+
+        class CreatedRecord:
+            agent_id = "agt_threaded_db"
+
+        updates = []
+        monkeypatch.setattr(runners_module, "SessionLocal", make_session)
+        monkeypatch.setattr(runners_module, "create_session", lambda _db, **_kwargs: CreatedRecord())
+        monkeypatch.setattr(
+            runners_module,
+            "update_session_state",
+            lambda _db, agent_id, state, **kwargs: updates.append((agent_id, state, kwargs)),
+        )
+        monkeypatch.setattr(runners_module, "claim_session", lambda *_args, **_kwargs: CreatedRecord())
+
+        agent_id = await runners_module._create_session_record(
+            parent_session_id=None,
+            root_chat_session_id=None,
+            agent_type="Explore",
+            run_mode="foreground",
+            isolation_mode="inherit",
+        )
+        await runners_module._update_session_record(agent_id, "queued", summary="已入队")
+        renewed = await runners_module._renew_session_lease(agent_id, "worker-1")
+
+        assert agent_id == "agt_threaded_db"
+        assert updates == [("agt_threaded_db", "queued", {"summary": "已入队"})]
+        assert renewed is True
+        assert len(created_sessions) == 3
+        assert all(session.closed for session in created_sessions)
+        assert len({id(session) for session in created_sessions}) == 3
+
+
+class TestFacadeDatabaseOperations:
+    """外观层同步存储操作必须在线程池中执行。"""
+
+    @pytest.mark.asyncio
+    async def test_query_and_team_operations_delegate_to_thread(self, monkeypatch):
+        """查询会话和团队时不得阻塞事件循环。"""
+        calls = []
+        session = SimpleNamespace(
+            agent_id="agt_facade",
+            agent_type="Explore",
+            parent_session_id=None,
+            root_chat_session_id=None,
+            state="running",
+            run_mode="background",
+            isolation_mode="inherit",
+            transcript_path="",
+            summary="",
+            last_error="",
+            created_at=None,
+            started_at=None,
+            ended_at=None,
+        )
+
+        async def fake_to_thread(function, *args, **kwargs):
+            calls.append(function)
+            return function(*args, **kwargs)
+
+        monkeypatch.setattr(facade_module.asyncio, "to_thread", fake_to_thread)
+        monkeypatch.setattr(facade_module, "get_session", lambda _agent_id: session)
+        monkeypatch.setattr(facade_module, "_list_teams", lambda **_kwargs: [])
+
+        facade = facade_module.TaskRuntimeFacade()
+        agent = await facade.get_agent("agt_facade")
+        teams = await facade.list_teams(state="active")
+
+        assert agent is not None
+        assert agent["agent_id"] == "agt_facade"
+        assert teams == []
+        assert calls == [facade_module.get_session, facade_module._list_teams]
 
 
 # -- 代理定义 ----------------------------------------------------------

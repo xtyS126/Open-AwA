@@ -389,7 +389,7 @@ def test_get_list_respects_page_size(client):
     assert len(body["items"]) == 10
 
 
-def test_get_list_returns_only_own_tasks(app, test_orchestrator):
+def test_get_list_returns_only_own_tasks(app, client):
     """用户 A 创建 2 个任务 -> 用户 B 调用 -> 返回 0 条。"""
     # 用户 A 创建任务
     _seed_user(user_id="userA", username="alice")
@@ -398,8 +398,7 @@ def test_get_list_returns_only_own_tasks(app, test_orchestrator):
     # 用户 B 请求
     _seed_user(user_id="userB", username="bob")
     app.dependency_overrides[get_current_user] = lambda: _DummyUser(user_id="userB", role="user")
-    with TestClient(app) as b_client:
-        response = b_client.get("/api/discussions")
+    response = client.get("/api/discussions")
 
     body = response.json()
     assert body["total"] == 0

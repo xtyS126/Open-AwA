@@ -270,6 +270,7 @@ async def execute_with_failover(
     call_fn: Callable[[ModelCandidate], Dict[str, Any]],
     chain_key: str,
     request_id: Optional[str] = None,
+    total_timeout_seconds: float = 120.0,
 ) -> Tuple[Dict[str, Any], Optional[ModelCandidate]]:
     """
     按候选链执行调用，遇到可故障转移错误时切换到下一个候选。
@@ -289,15 +290,30 @@ async def execute_with_failover(
     manager = get_failover_manager()
     last_error: Optional[Dict[str, Any]] = None
     started_at = time.time()
+    deadline = time.monotonic() + max(float(total_timeout_seconds), 1.0)
 
     for idx, candidate in enumerate(candidates):
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            last_error = {
+                "error_code": "failover_total_timeout",
+                "message": "故障转移链路总超时",
+            }
+            break
         is_primary = idx == 0
         logger.info(
             f"故障转移链调用: chain={chain_key}, idx={idx}, "
             f"provider={candidate.provider}, model={candidate.model}"
         )
 
-        result = await call_fn(candidate)
+        try:
+            result = await asyncio.wait_for(call_fn(candidate), timeout=remaining_seconds)
+        except asyncio.TimeoutError:
+            last_error = {
+                "error_code": "failover_total_timeout",
+                "message": "故障转移链路总超时",
+            }
+            break
 
         if result.get("ok"):
             # 成功

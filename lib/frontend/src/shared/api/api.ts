@@ -380,6 +380,40 @@ const buildChatRequestPayload = (
   return payload
 }
 
+async function fetchWithResponseTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number = 30_000,
+): Promise<Response> {
+  const controller = new AbortController()
+  const sourceSignal = init.signal
+  let timedOut = false
+  const forwardAbort = () => controller.abort(sourceSignal?.reason)
+
+  if (sourceSignal?.aborted) {
+    forwardAbort()
+  } else {
+    sourceSignal?.addEventListener('abort', forwardAbort, { once: true })
+  }
+
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true
+    controller.abort(new DOMException('请求连接超时', 'TimeoutError'))
+  }, timeoutMs)
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (timedOut) {
+      throw Object.assign(new Error('请求连接超时，请稍后重试'), { cause: error })
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+    sourceSignal?.removeEventListener('abort', forwardAbort)
+  }
+}
+
 export const chatAPI = {
   sendMessage: (
     message: string,
@@ -448,7 +482,7 @@ export const chatAPI = {
         headers[hKey] = headers[hKey].replace(/[^\x00-\xFF]/g, '')
       }
 
-      let response = await fetch(url, {
+      let response = await fetchWithResponseTimeout(url, {
         method: 'POST',
         credentials: 'same-origin',
         headers,
@@ -501,7 +535,7 @@ export const chatAPI = {
                 // eslint-disable-next-line no-control-regex
                 retriedHeaders[hKey] = retriedHeaders[hKey].replace(/[^\x00-\xFF]/g, '')
               }
-              const retryResponse = await fetch(url, {
+              const retryResponse = await fetchWithResponseTimeout(url, {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: retriedHeaders,
@@ -610,6 +644,7 @@ export const chatAPI = {
       if (!response.body) throw new Error('ReadableStream not yet supported in this browser.')
 
       const reader = response.body.getReader()
+      try {
       const decoder = new TextDecoder('utf-8')
       let done = false
       let buffer = ''
@@ -660,6 +695,10 @@ export const chatAPI = {
       if (buffer.trim()) {
         const remainingLines = buffer.trim().split('\n')
         parseSSELines(remainingLines, onEvent, onError, 'tail')
+      }
+      } finally {
+        // 无论正常完成、解析失败还是主动取消，都必须释放流读取锁。
+        reader.releaseLock()
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {
@@ -754,7 +793,7 @@ export const chatAPI = {
         headers[hKey] = headers[hKey].replace(/[^\x00-\xFF]/g, '')
       }
 
-      const response = await fetch(url, {
+      const response = await fetchWithResponseTimeout(url, {
         method: 'GET',
         credentials: 'same-origin',
         headers,
@@ -780,6 +819,7 @@ export const chatAPI = {
       if (!response.body) throw new Error('ReadableStream not yet supported in this browser.')
 
       const reader = response.body.getReader()
+      try {
       const decoder = new TextDecoder('utf-8')
       let done = false
       let buffer = ''
@@ -805,6 +845,10 @@ export const chatAPI = {
       if (buffer.trim()) {
         const remainingLines = buffer.trim().split('\n')
         parseSSELines(remainingLines, onEvent, onError, 'tail')
+      }
+      } finally {
+        // 无论正常完成、解析失败还是主动取消，都必须释放流读取锁。
+        reader.releaseLock()
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {

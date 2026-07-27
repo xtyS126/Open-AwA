@@ -38,6 +38,7 @@ interface ModelState {
   setModelOptions: (options: ModelOption[]) => void
   setModelLoading: (loading: boolean) => void
   setModelError: (error: string | null) => void
+  resetForLogout: () => void
 }
 
 /** 判断指定模型标识是否为推理模型（包含 reasoner/r1/o1/o3） */
@@ -93,4 +94,9 @@ export const useModelStore = create<ModelState>((set, get) => ({
   setModelLoading: (loading) => set({ modelLoading: loading }),
 
   setModelError: (error) => set({ modelError: error }),
+
+  resetForLogout: () => {
+    safeSetItem('chat_selected_model', '')
+    set({ selectedModel: '', modelOptions: [], modelLoading: false, modelError: null })
+  },
 }))

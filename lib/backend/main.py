@@ -8,7 +8,7 @@ import errno
 import inspect
 import os
 import time
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from fastapi import FastAPI, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +19,7 @@ from loguru import logger
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from sqlalchemy.exc import SQLAlchemyError
 
 from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks, soul, discussions, search_config, profile_settings  # [NEW] Task 3+9: 讨论任务 + 搜索配置 + 画像设置路由
 from api.routes import issue_feedback  # 全局问题反馈路由
@@ -584,8 +585,6 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                     logger.bind(event="skill_migrated", module="main", skill=old_skill.name).info(
                         f"已迁移内置技能 {old_skill.name} 至 system-tools 插件"
                     )
-                db.commit()
-
                 # 迁移：将旧名 openbiliclaw-builtin 的种子记录改名为 bilibili-toolkit-builtin
                 # 保留 enabled / source / category / is_uninstallable / config 等全部字段，
                 # 仅更新 name 与 author。幂等：无旧名记录时跳过；新名已存在时删除旧记录。
@@ -602,7 +601,6 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                         # 直接改名，保留全部配置
                         legacy_plugin.name = _NEW_PLUGIN_NAME
                         legacy_plugin.author = "OpenBiliClaw Team"
-                        db.commit()
                         logger.bind(
                             event="builtin_plugin_renamed",
                             module="main",
@@ -614,7 +612,6 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                     else:
                         # 新名记录已存在（可能由人工或前次启动创建），删除旧记录避免重复
                         db.delete(legacy_plugin)
-                        db.commit()
                         logger.bind(
                             event="builtin_plugin_dedup",
                             module="main",
@@ -639,7 +636,6 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                         dependencies=[],
                     )
                     db.add(new_plugin)
-                    db.commit()
                     logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
                         "已注册系统内置插件 system-tools"
                     )
@@ -662,7 +658,6 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                         dependencies=[],
                     )
                     db.add(new_bilibili_toolkit)
-                    db.commit()
                     logger.bind(
                         event="builtin_plugin_seeded",
                         module="main",
@@ -687,12 +682,13 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                         dependencies=[],
                     )
                     db.add(new_user_profile)
-                    db.commit()
                     logger.bind(
                         event="builtin_plugin_seeded",
                         module="main",
                         plugin="user-profile-builtin",
                     ).info("已注册系统内置插件 user-profile-builtin")
+                # 内置插件迁移必须原子提交，任一步失败时由下方 rollback 恢复完整旧状态。
+                db.commit()
             except Exception as exc:
                 logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
                 db.rollback()
@@ -1015,6 +1011,26 @@ async def _shutdown_data_collector() -> None:
         logger.bind(event="data_collector_stop_error", module="shutdown").warning(f"数据收集器关闭失败: {e}")
 
 
+async def _run_optional_startup_step(
+    app: FastAPI,
+    step_name: str,
+    step: Callable[[], Awaitable[None]],
+) -> None:
+    """执行可降级启动步骤，并将失败状态暴露给运行期诊断接口。"""
+    try:
+        await step()
+    except Exception as exc:
+        startup_failures = getattr(app.state, "startup_failures", {})
+        startup_failures[step_name] = type(exc).__name__
+        app.state.startup_failures = startup_failures
+        logger.bind(
+            event="optional_startup_step_failed",
+            module="main",
+            step=step_name,
+            error_type=type(exc).__name__,
+        ).opt(exception=True).warning(f"可选启动步骤失败，服务将以降级模式继续运行: {step_name}")
+
+
 async def lifespan(app: FastAPI):
     """
     管理应用启动与关闭阶段的全局生命周期。
@@ -1025,6 +1041,7 @@ async def lifespan(app: FastAPI):
 
     profiler = StartupProfiler()
     profiler.start()
+    app.state.startup_failures = {}
 
     try:
         # 注入 AskUserPortAdapter 到 AIAgentRegistry 单例，
@@ -1039,8 +1056,13 @@ async def lifespan(app: FastAPI):
         await _startup_infrastructure(profiler)
         await _startup_data_init(profiler)
         await _startup_owner_user_init(profiler)
-        await _startup_plugin_system(profiler)
-        await _startup_background_tasks(profiler)
+        # 数据库与认证是可用服务的硬前提，失败时仍应拒绝启动；其余能力允许降级。
+        await _run_optional_startup_step(
+            app, "plugin_system", lambda: _startup_plugin_system(profiler)
+        )
+        await _run_optional_startup_step(
+            app, "background_tasks", lambda: _startup_background_tasks(profiler)
+        )
         # task_runtime 初始化：回收悬挂会话（原 @router.on_event("startup") 迁移至 lifespan）
         # task_runtime.initialize 为 async 函数，直接 await 调用（asyncio.to_thread 不适用于 async 函数）
         try:
@@ -1051,9 +1073,13 @@ async def lifespan(app: FastAPI):
                 f"task_runtime 初始化失败: {e}"
             )
         # 17. 自主运行模式初始化（在所有其他初始化之后）
-        await _startup_autonomous_mode(profiler)
+        await _run_optional_startup_step(
+            app, "autonomous_mode", lambda: _startup_autonomous_mode(profiler)
+        )
         # 18. ACP 服务初始化（数据库初始化之后，按 agent 注册 ACPService 实例）
-        await _startup_acp_service(profiler)
+        await _run_optional_startup_step(
+            app, "acp_service", lambda: _startup_acp_service(profiler)
+        )
         # 19. 初始化数据收集器
         try:
             from data.collector import data_collector
@@ -1062,9 +1088,20 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.bind(event="data_collector_init_error", module="startup").warning(f"数据收集器初始化失败: {e}")
         # 20. 配置 MCP SSE 传输层 origin 白名单
-        _startup_mcp_sse_origin(profiler)
+        try:
+            _startup_mcp_sse_origin(profiler)
+        except Exception as exc:
+            app.state.startup_failures["mcp_sse_origin"] = type(exc).__name__
+            logger.bind(
+                event="optional_startup_step_failed",
+                module="main",
+                step="mcp_sse_origin",
+                error_type=type(exc).__name__,
+            ).opt(exception=True).warning("MCP SSE Origin 配置失败，服务将以降级模式继续运行")
         # 21. MCPManager 预热：触发单例构造与持久化配置恢复，避免首次对话同步阻塞
-        await _startup_mcp_preheat(profiler)
+        await _run_optional_startup_step(
+            app, "mcp_preheat", lambda: _startup_mcp_preheat(profiler)
+        )
     except Exception:
         logger.bind(event="app_startup_failed", module="main").error("启动过程发生异常，服务将终止")
         raise
@@ -1383,15 +1420,31 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         error_message=sanitize_for_logging(str(exc)),
     ).exception("unhandled exception")
 
+    if isinstance(exc, asyncio.TimeoutError):
+        status_code = 504
+        code = "request_timeout"
+        message = "请求处理超时，请稍后重试"
+        retryable = True
+    elif isinstance(exc, SQLAlchemyError):
+        status_code = 503
+        code = "database_unavailable"
+        message = "数据服务暂不可用，请稍后重试"
+        retryable = True
+    else:
+        status_code = 500
+        code = "internal_server_error"
+        message = "Internal server error"
+        retryable = False
+
     error = build_standard_error(
-        code="internal_server_error",
-        message="Internal server error",
+        code=code,
+        message=message,
         request_id=request_id,
-        status_code=500,
-        retryable=False,
+        status_code=status_code,
+        retryable=retryable,
     )
     response = JSONResponse(
-        status_code=500,
+        status_code=status_code,
         content={"error": error},
     )
     response.headers[REQUEST_ID_HEADER] = request_id

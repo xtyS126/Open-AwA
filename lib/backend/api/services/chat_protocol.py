@@ -2,6 +2,7 @@
 聊天协议服务层，负责处理 SSE 流和 WebSocket 分段协议。
 """
 
+import asyncio
 import hashlib
 import json
 from typing import Dict, Any, AsyncGenerator, Tuple
@@ -138,6 +139,7 @@ async def build_sse_response(stream_generator: AsyncGenerator) -> StreamingRespo
     推理内容使用 event: reasoning 类型单独发送，正常内容使用默认事件类型。
     """
     async def event_generator():
+        cancelled = False
         try:
             async for chunk in stream_generator:
                 chunk_type = chunk.get("type")
@@ -172,6 +174,13 @@ async def build_sse_response(stream_generator: AsyncGenerator) -> StreamingRespo
                 # 再发送正常内容（如果有），使用默认事件类型
                 if content:
                     yield f"data: {json.dumps({'type': 'chunk', 'content': content}, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            # 客户端断开时必须继续传播取消信号，确保上游 Agent 与工具协程能够退出。
+            cancelled = True
+            logger.bind(event="sse_generator_cancelled", module="chat_protocol").debug(
+                "SSE 生成器已取消"
+            )
+            raise
         except Exception as exc:
             # 生成器异常时向前端发送错误事件，避免前端无限等待
             # 从异常中提取底层 error code/message，不再统一显示「流式响应异常，请重试」
@@ -185,8 +194,9 @@ async def build_sse_response(stream_generator: AsyncGenerator) -> StreamingRespo
             error_code, error_message = _extract_error_from_exception(exc)
             yield f"data: {json.dumps({'type': 'error', 'error': {'code': error_code, 'message': error_message}}, ensure_ascii=False)}\n\n"
         finally:
-            # 无论正常结束还是异常，都必须发送 [DONE] 信号，否则前端会无限等待
-            yield "data: [DONE]\n\n"
+            # 已断开的客户端不再接收结束帧；继续 yield 会掩盖取消并延长资源释放时间。
+            if not cancelled:
+                yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_generator(),

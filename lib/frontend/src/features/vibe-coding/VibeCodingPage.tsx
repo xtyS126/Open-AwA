@@ -10,7 +10,7 @@
  * 布局层（中栏面板切换、移动端 Tab、文件预览状态）由 useVibeCodingLayout hook 管理。
  * 通知列表通过 EventSource 订阅 /api/notifications/stream 长连接。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { useI18nStore } from '@/i18n'
@@ -42,6 +42,8 @@ import styles from './VibeCodingPage.module.css'
 
 /** 通知列表保留的最大条数 */
 const MAX_NOTIFICATIONS = 50
+const MAX_NOTIFICATION_RECONNECT_ATTEMPTS = 5
+const NOTIFICATION_RECONNECT_BASE_DELAY_MS = 1000
 
 function VibeCodingPage() {
   const { t } = useI18nStore()
@@ -66,10 +68,13 @@ function VibeCodingPage() {
   const [projectCwd, setProjectCwd] = useState<string>('')
   const [openCodeStatus, setOpenCodeStatus] = useState<OpenCodeStatus | null>(null)
   const [error, setError] = useState<string>('')
+  const notificationReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /** mount 时拉取 agents / sessions / notifications，并建立通知 SSE 订阅 */
   useEffect(() => {
     let eventSource: EventSource | null = null
+    let cancelled = false
+    let reconnectAttempts = 0
 
     const loadInitial = async () => {
       try {
@@ -102,50 +107,93 @@ function VibeCodingPage() {
 
     void loadInitial()
 
-    // 订阅通知流 —— 使用 withCredentials 携带 Cookie 认证
-    try {
-      eventSource = new EventSource('/api/notifications/stream', { withCredentials: true })
-      eventSource.onmessage = (event) => {
-        try {
-          const item = JSON.parse(event.data) as NotificationItem
-          if (!item || typeof item.id !== 'string') return
-          setNotifications((prev) => {
-            // 去重并限制条数，最新通知置顶
-            const filtered = prev.filter((n) => n.id !== item.id)
-            return [item, ...filtered].slice(0, MAX_NOTIFICATIONS)
-          })
-        } catch (e) {
+    const clearNotificationReconnectTimer = () => {
+      if (notificationReconnectTimerRef.current !== null) {
+        clearTimeout(notificationReconnectTimerRef.current)
+        notificationReconnectTimerRef.current = null
+      }
+    }
+
+    const connectNotificationStream = () => {
+      if (cancelled) return
+      clearNotificationReconnectTimer()
+      try {
+        const source = new EventSource('/api/notifications/stream', { withCredentials: true })
+        eventSource = source
+
+        source.onmessage = (event) => {
+          try {
+            const item = JSON.parse(event.data) as NotificationItem
+            if (!item || typeof item.id !== 'string') return
+            setNotifications((prev) => {
+              // 去重并限制条数，最新通知置顶
+              const filtered = prev.filter((n) => n.id !== item.id)
+              return [item, ...filtered].slice(0, MAX_NOTIFICATIONS)
+            })
+          } catch (e) {
+            appLogger.warning({
+              event: 'vibe_coding_notification_parse_failed',
+              module: 'vibe-coding',
+              action: 'sse',
+              status: 'warning',
+              message: '通知 SSE 解析失败',
+              extra: { error: e instanceof Error ? e.message : String(e) },
+            })
+          }
+        }
+        source.onopen = () => {
+          reconnectAttempts = 0
+        }
+        source.onerror = () => {
+          source.close()
+          if (eventSource === source) {
+            eventSource = null
+          }
           appLogger.warning({
-            event: 'vibe_coding_notification_parse_failed',
+            event: 'vibe_coding_notification_stream_error',
             module: 'vibe-coding',
             action: 'sse',
             status: 'warning',
-            message: '通知 SSE 解析失败',
-            extra: { error: e instanceof Error ? e.message : String(e) },
+            message: '通知 SSE 连接错误',
           })
+          scheduleNotificationReconnect()
         }
+      } catch (e) {
+        scheduleNotificationReconnect(e)
+        return
       }
-      eventSource.onerror = () => {
+    }
+
+    const scheduleNotificationReconnect = (cause?: unknown) => {
+      if (cancelled || notificationReconnectTimerRef.current !== null) return
+      if (reconnectAttempts >= MAX_NOTIFICATION_RECONNECT_ATTEMPTS) {
+        setError((previous) => previous || '通知实时连接已断开，请刷新页面后重试')
         appLogger.warning({
-          event: 'vibe_coding_notification_stream_error',
+          event: 'vibe_coding_notification_stream_unavailable',
           module: 'vibe-coding',
           action: 'sse',
           status: 'warning',
-          message: '通知 SSE 连接错误',
+          message: '通知 SSE 重连次数已达上限',
+          extra: { error: cause instanceof Error ? cause.message : undefined },
         })
+        return
       }
-    } catch (e) {
-      appLogger.warning({
-        event: 'vibe_coding_notification_stream_init_failed',
-        module: 'vibe-coding',
-        action: 'sse',
-        status: 'warning',
-        message: '通知 SSE 初始化失败',
-        extra: { error: e instanceof Error ? e.message : String(e) },
-      })
+      const delay = Math.min(
+        NOTIFICATION_RECONNECT_BASE_DELAY_MS * Math.pow(2, reconnectAttempts),
+        30000
+      )
+      reconnectAttempts += 1
+      notificationReconnectTimerRef.current = setTimeout(() => {
+        notificationReconnectTimerRef.current = null
+        connectNotificationStream()
+      }, delay)
     }
 
+    connectNotificationStream()
+
     return () => {
+      cancelled = true
+      clearNotificationReconnectTimer()
       if (eventSource) {
         eventSource.close()
         eventSource = null

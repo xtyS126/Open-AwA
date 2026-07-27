@@ -6,6 +6,7 @@ vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
   weixinAPI: { getConfig: vi.fn().mockResolvedValue({ data: {} }) },
   authAPI: { getMe: vi.fn().mockResolvedValue({ data: {} }) },
+  systemAPI: { getInitStatus: vi.fn().mockResolvedValue({ data: { data: { initialized: true } } }) },
   billingAPI: { getSummary: vi.fn().mockResolvedValue({ data: {} }) },
   chatAPI: { getHistory: vi.fn().mockResolvedValue({ data: [] }) },
   modelsAPI: { getConfigurations: vi.fn().mockResolvedValue({ data: { configurations: [] } }) },
