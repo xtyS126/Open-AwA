@@ -5,6 +5,8 @@ import difflib
 from pathlib import Path
 from typing import Optional
 
+from loguru import logger
+
 
 class DiffEngine:
     """
@@ -118,11 +120,19 @@ class DiffEngine:
 
         try:
             content_a = path_a.read_text(errors="replace")
-        except Exception:
+        except Exception as exc:
+            # 文件读取失败降级为空字符串，记录 warning 便于排查
+            # 否则两个文件都失败时会误报"无差异"
+            logger.bind(module="diff_engine", event="file_read_error").warning(
+                f"文件 A 读取失败，降级为空字符串: {file_a}, error={exc}"
+            )
             content_a = ""
         try:
             content_b = path_b.read_text(errors="replace")
-        except Exception:
+        except Exception as exc:
+            logger.bind(module="diff_engine", event="file_read_error").warning(
+                f"文件 B 读取失败，降级为空字符串: {file_b}, error={exc}"
+            )
             content_b = ""
 
         return DiffEngine.compute_inline_diff(content_a, content_b)

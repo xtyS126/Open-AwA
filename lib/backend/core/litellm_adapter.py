@@ -109,21 +109,28 @@ def build_standard_error(
     *,
     request_id: Optional[str] = None,
     details: Optional[Dict[str, Any]] = None,
-    retryable: bool = False,
+    retryable: Optional[bool] = None,
     status_code: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     统一标准错误对象结构，便于前端和日志系统稳定解析。
+
+    retryable 与 status_code 未显式传入时，根据 code 从 error_codes.REGISTRY
+    解析默认值，避免调用方重复指定。显式传值优先级最高。
     """
+    # 延迟导入避免循环依赖
+    from core.error_codes import resolve_defaults
+
+    defaults = resolve_defaults(code, retryable=retryable, status_code=status_code)
     error: Dict[str, Any] = {
         "code": str(code or "unknown_error"),
         "message": str(message or "Unknown error"),
         "request_id": str(request_id or generate_request_id()),
-        "retryable": bool(retryable),
+        "retryable": bool(defaults.get("retryable", False)),
         "details": details or {},
     }
-    if status_code is not None:
-        error["status_code"] = int(status_code)
+    if "status_code" in defaults:
+        error["status_code"] = int(defaults["status_code"])
     return error
 
 

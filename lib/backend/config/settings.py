@@ -261,6 +261,19 @@ class Settings(BaseSettings):
     # 模型降级策略：主模型失败时是否自动切换备用模型
     AGENT_MODEL_FALLBACK_ENABLED: bool = True
 
+    # 熔断器配置（保护 LLM/DB 等外部依赖，防止级联故障）
+    # 连续失败多少次后进入 open 状态
+    LLM_CB_FAILURE_THRESHOLD: int = 5
+    # open 状态持续多少秒后进入 half_open 探测
+    LLM_CB_RECOVERY_TIMEOUT: float = 30.0
+    # half_open 状态允许的最大探测请求数
+    LLM_CB_HALF_OPEN_MAX_CALLS: int = 1
+
+    # 数据库熔断器配置
+    DB_CB_FAILURE_THRESHOLD: int = 10
+    DB_CB_RECOVERY_TIMEOUT: float = 15.0
+    DB_CB_HALF_OPEN_MAX_CALLS: int = 2
+
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True
 

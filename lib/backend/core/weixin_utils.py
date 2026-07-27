@@ -81,7 +81,10 @@ def deserialize_skill_config(config_value: Any) -> Dict[str, Any]:
     # 优先尝试 JSON 解析
     try:
         loaded = json.loads(text)
-    except Exception:
+    except Exception as exc:
+        # JSON 解析失败时降级为 None，记录 debug 便于排查配置格式问题
+        # 后续会回退到 YAML 解析，无需 warning 级别
+        logger.debug(f"[weixin_utils] JSON 解析失败，将尝试 YAML: {exc}")
         loaded = None
     if isinstance(loaded, dict):
         return loaded

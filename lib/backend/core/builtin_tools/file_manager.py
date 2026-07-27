@@ -52,7 +52,17 @@ def is_path_safe(file_path: str, allowed_directories: List[str]) -> bool:
                 return True
 
         return False
-    except Exception:
+    except Exception as exc:
+        # 安全校验失败时一律拒绝访问，记录 warning 便于排查路径解析异常
+        # 不抛出异常避免阻断调用方流程，但需保留可诊断信息
+        try:
+            from loguru import logger
+            logger.bind(module="file_manager", event="path_safety_check_error").warning(
+                f"路径白名单校验异常，已拒绝访问: path={path}, error={exc}"
+            )
+        except Exception:
+            # logger 不可用时静默忽略，避免日志失败导致安全校验抛出
+            pass
         return False
 
 

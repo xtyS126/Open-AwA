@@ -23,6 +23,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { EmptyState, StatusBadge, Tooltip } from '@/shared/components/ui'
+import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { Plugin } from '@/features/dashboard/dashboard'
 import PluginDebugPanel from '@/features/plugins/PluginDebugPanel'
 import {
@@ -434,7 +435,9 @@ const PluginCard = React.memo(function PluginCard(props: PluginCardProps): React
         {/* 调试面板 */}
         {isDebugActive && (
           <div className={styles['debug-panel']}>
-            <PluginDebugPanel pluginId={plugin.id} pluginName={plugin.name} />
+            <ErrorBoundary name="PluginDebugPanel" variant="compact">
+              <PluginDebugPanel pluginId={plugin.id} pluginName={plugin.name} />
+            </ErrorBoundary>
           </div>
         )}
       </div>

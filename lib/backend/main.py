@@ -67,6 +67,7 @@ from config.logging import (
     set_request_id,
 )
 from core.metrics import prometheus_registry
+from core.error_codes import ErrorCode
 from core.litellm_adapter import (
     CLIENT_VERSION_HEADER,
     SERVER_VERSION_HEADER,
@@ -1421,28 +1422,22 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     ).exception("unhandled exception")
 
     if isinstance(exc, asyncio.TimeoutError):
-        status_code = 504
-        code = "request_timeout"
+        code = ErrorCode.REQUEST_TIMEOUT
         message = "请求处理超时，请稍后重试"
-        retryable = True
     elif isinstance(exc, SQLAlchemyError):
-        status_code = 503
-        code = "database_unavailable"
+        code = ErrorCode.DATABASE_UNAVAILABLE
         message = "数据服务暂不可用，请稍后重试"
-        retryable = True
     else:
-        status_code = 500
-        code = "internal_server_error"
+        code = ErrorCode.INTERNAL_SERVER_ERROR
         message = "Internal server error"
-        retryable = False
 
+    # build_standard_error 会根据 code 从注册表自动解析 retryable / status_code
     error = build_standard_error(
         code=code,
         message=message,
         request_id=request_id,
-        status_code=status_code,
-        retryable=retryable,
     )
+    status_code = error.get("status_code", 500)
     response = JSONResponse(
         status_code=status_code,
         content={"error": error},

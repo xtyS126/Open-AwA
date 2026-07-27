@@ -2,9 +2,14 @@ import React, { Component, type ErrorInfo, type ReactNode } from 'react'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './ErrorBoundary.module.css'
 
+type ErrorBoundaryVariant = 'page' | 'compact'
+
 interface Props {
   children: ReactNode
+  /** 模块名，用于日志标识与错误展示 */
   name?: string
+  /** 展示变体：page=页面级（默认，居中大卡片）；compact=子模块级（内联小条幅，不破坏布局） */
+  variant?: ErrorBoundaryVariant
 }
 
 interface State {
@@ -81,8 +86,50 @@ class ErrorBoundary extends Component<Props, State> {
   render(): ReactNode {
     const { hasError, error, retryCount } = this.state
     const moduleName = this.props.name || '应用'
+    const variant: ErrorBoundaryVariant = this.props.variant || 'page'
 
     if (hasError) {
+      // 子模块紧凑变体：内联小条幅，避免破坏整体布局
+      if (variant === 'compact') {
+        return (
+          <div className={styles.compactShell} role="alert" aria-live="assertive">
+            <div className={styles.compactBody}>
+              <span className={styles.compactTitle}>{moduleName} 渲染异常</span>
+              <span className={styles.compactErrorText}>{error?.message || '未知错误'}</span>
+            </div>
+            <div className={styles.compactActions}>
+              {retryCount < MAX_RETRY_COUNT ? (
+                <button
+                  type="button"
+                  className={styles.compactBtn}
+                  onClick={this.handleRetry}
+                  aria-label={`重试 ${moduleName}`}
+                >
+                  重试（{retryCount}/{MAX_RETRY_COUNT}）
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.compactBtn}
+                  onClick={this.handleReloadPage}
+                  aria-label="刷新页面"
+                >
+                  刷新页面
+                </button>
+              )}
+              <button
+                type="button"
+                className={styles.compactBtnGhost}
+                onClick={this.handleCopyError}
+                aria-label="复制错误信息"
+              >
+                复制
+              </button>
+            </div>
+          </div>
+        )
+      }
+
       if (retryCount >= MAX_RETRY_COUNT) {
         return (
           <div className={styles.shell}>

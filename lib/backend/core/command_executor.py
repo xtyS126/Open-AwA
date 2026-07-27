@@ -145,7 +145,9 @@ class CommandDefinition:
         try:
             import yaml
             frontmatter = yaml.safe_load(frontmatter_match.group(1)) or {}
-        except Exception:
+        except Exception as exc:
+            # frontmatter 解析失败时降级为空字典，记录 debug 便于排查命令定义格式问题
+            logger.debug(f"[command_executor] frontmatter 解析失败，降级为空字典: {filepath}, error={exc}")
             frontmatter = {}
 
         body = frontmatter_match.group(2).strip() if frontmatter_match.group(2) else ""

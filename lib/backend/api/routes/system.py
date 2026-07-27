@@ -8,6 +8,7 @@ import os
 import sys
 import platform
 import time
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 
@@ -248,6 +249,171 @@ async def ping() -> Dict[str, Any]:
     用于基础网络可达性验证。
     """
     return {"pong": True, "timestamp": time.time()}
+
+
+def _check_vector_db() -> Dict[str, Any]:
+    """
+    检查向量库（Qdrant 嵌入式）存储路径可达性。
+
+    嵌入式 Qdrant 使用本地路径持久化，健康检查仅需验证路径存在且可写，
+    避免在健康端点上触发完整的 embedding provider 初始化（耗时且依赖模型下载）。
+    """
+    start = time.time()
+    try:
+        path = getattr(settings, "VECTOR_DB_PATH", None) or os.environ.get("VECTOR_DB_PATH")
+        if not path:
+            return {
+                "ok": False,
+                "latency_ms": 0,
+                "error": "VECTOR_DB_PATH 未配置",
+            }
+        path_obj = Path(path)
+        # 路径不存在时尝试创建（与 VectorStoreManager.__init__ 行为一致）
+        path_obj.mkdir(parents=True, exist_ok=True)
+        # 写入探针文件验证可写性
+        probe = path_obj / ".health_probe"
+        probe.write_text(str(time.time()), encoding="utf-8")
+        try:
+            probe.unlink()
+        except OSError:
+            pass  # 删除失败不影响健康判定，可能被并发占用
+        elapsed_ms = round((time.time() - start) * 1000, 2)
+        return {
+            "ok": True,
+            "latency_ms": elapsed_ms,
+            "path": str(path_obj),
+            "error": None,
+        }
+    except Exception as e:
+        elapsed_ms = round((time.time() - start) * 1000, 2)
+        logger.warning(f"向量库健康检查失败: {e}")
+        return {"ok": False, "latency_ms": elapsed_ms, "path": None, "error": str(e)}
+
+
+def _check_acp_service() -> Dict[str, Any]:
+    """
+    检查 ACP（Agent Client Protocol）子进程服务可用性。
+
+    通过 discover_agents() 验证内置 Agent 配置加载正常，不发起真实子进程。
+    ACP SDK 缺失时返回降级状态，不视为不健康（已记录在 AGENTS.md 已知约束）。
+    """
+    try:
+        from acp_host.agents import discover_agents
+        agents = discover_agents()
+        return {
+            "ok": True,
+            "available_agents": list(agents.keys()),
+            "agent_count": len(agents),
+            "error": None,
+        }
+    except ImportError:
+        # ACP SDK 是可选依赖，缺失时不算不健康
+        return {
+            "ok": True,
+            "available_agents": [],
+            "agent_count": 0,
+            "error": None,
+            "note": "ACP 模块未安装（可选依赖）",
+        }
+    except Exception as e:
+        logger.warning(f"ACP 服务检查失败: {e}")
+        return {"ok": False, "available_agents": [], "agent_count": 0, "error": str(e)}
+
+
+def _check_circuit_breakers() -> Dict[str, Any]:
+    """
+    汇总所有熔断器当前状态。
+
+    任一熔断器处于 open 视为降级；half_open 视为恢复中（仍算降级）。
+    """
+    try:
+        from core.circuit_breaker import list_circuit_breakers
+        metrics = list_circuit_breakers()
+        if not metrics:
+            return {"ok": True, "breakers": {}, "open_count": 0, "half_open_count": 0, "error": None}
+
+        open_count = sum(1 for m in metrics.values() if m.get("state") == "open")
+        half_open_count = sum(1 for m in metrics.values() if m.get("state") == "half_open")
+        # 仅 open 状态视为不健康；half_open 是恢复中，仍可服务探测请求
+        return {
+            "ok": open_count == 0,
+            "breakers": metrics,
+            "open_count": open_count,
+            "half_open_count": half_open_count,
+            "error": None,
+        }
+    except Exception as e:
+        logger.warning(f"熔断器状态汇总失败: {e}")
+        return {"ok": False, "breakers": {}, "open_count": 0, "half_open_count": 0, "error": str(e)}
+
+
+@router.get("/health")
+async def health_check() -> JSONResponse:
+    """
+    运行时健康检查端点，无需认证。
+
+    检查项：
+    - database: 主数据库 SELECT 1
+    - vector_db: 向量库 collection 列表可达
+    - acp: ACP 子进程服务可用性
+    - circuit_breakers: 全局熔断器状态汇总
+
+    返回:
+        HTTP 200: 所有检查项健康（circuit_breakers.open_count == 0 且 database.ok）
+        HTTP 503: 任一关键依赖不可用或存在 open 熔断器
+
+    响应体结构:
+        {
+            "status": "healthy" | "degraded" | "unhealthy",
+            "timestamp": float,
+            "checks": {
+                "database": {"ok": bool, "latency_ms": float, "error": str | None},
+                "vector_db": {"ok": bool, "latency_ms": float, "error": str | None},
+                "acp": {"ok": bool, "error": str | None},
+                "circuit_breakers": {"ok": bool, "open_count": int, "half_open_count": int, ...}
+            }
+        }
+    """
+    # 各检查函数为同步实现，统一通过 asyncio.to_thread 包装避免阻塞事件循环
+    db_status, vector_status, acp_status, cb_status = await asyncio.gather(
+        asyncio.to_thread(_check_database),
+        asyncio.to_thread(_check_vector_db),
+        asyncio.to_thread(_check_acp_service),
+        asyncio.to_thread(_check_circuit_breakers),
+    )
+
+    checks: Dict[str, Any] = {
+        "database": db_status,
+        "vector_db": vector_status,
+        "acp": acp_status,
+        "circuit_breakers": cb_status,
+    }
+
+    # 数据库与熔断器是关键路径：任一失败即 unhealthy
+    # 向量库与 ACP 为可降级路径：失败时整体降级但不阻断
+    db_ok = db_status.get("ok", False)
+    cb_ok = cb_status.get("ok", False)
+    vector_ok = vector_status.get("ok", False)
+    acp_ok = acp_status.get("ok", False)
+
+    if not db_ok or not cb_ok:
+        overall_status = "unhealthy"
+        http_status = 503
+    elif not vector_ok or not acp_ok:
+        overall_status = "degraded"
+        http_status = 200  # 降级仍返回 200，避免监控告警风暴
+    else:
+        overall_status = "healthy"
+        http_status = 200
+
+    return JSONResponse(
+        status_code=http_status,
+        content={
+            "status": overall_status,
+            "timestamp": time.time(),
+            "checks": checks,
+        },
+    )
 
 
 class EnvVarUpdatePayload(BaseModel):

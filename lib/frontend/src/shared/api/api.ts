@@ -102,15 +102,19 @@ interface ChatStreamEvent {
 }
 
 /**
- * 构造一个携带 error.code 的 Error 对象。
+ * 构造一个携带 error.code / error.retryable 的 Error 对象。
  * 当 code 存在时挂载到 Error 的 code 属性上，便于上层按错误码分支处理
  * （例如 llm_api_key_stale 触发跳转设置对话框）。
+ * retryable 同步挂载，让 useChatStream 直接消费而无需重复字符串匹配。
  * 不改变 Error.name，避免破坏既有 onError(new Error(msg)) 形态的断言。
  */
-function createStreamError(message: string, code?: string): Error {
-  const error = new Error(message) as Error & { code?: string }
+function createStreamError(message: string, code?: string, retryable?: boolean): Error {
+  const error = new Error(message) as Error & { code?: string; retryable?: boolean }
   if (code) {
     error.code = code
+  }
+  if (typeof retryable === 'boolean') {
+    error.retryable = retryable
   }
   return error
 }
@@ -169,8 +173,10 @@ export function parseSSELines(
         else if (data.type === 'error') {
           const errorCode = typeof data.error?.code === 'string' ? data.error.code : undefined
           const errorMessage = typeof data.error?.message === 'string' ? data.error.message : 'Stream error'
-          // 保留错误码，便于上层按 code 做分支处理（如 llm_api_key_stale）
-          onError?.(createStreamError(errorMessage, errorCode))
+          const errorRetryable = typeof data.error?.retryable === 'boolean' ? data.error.retryable : undefined
+          // 保留错误码与 retryable，便于上层按 code 做分支处理（如 llm_api_key_stale）
+          // 与按 retryable 决策重试（避免重复字符串匹配 message）
+          onError?.(createStreamError(errorMessage, errorCode, errorRetryable))
         }
         // 其他有类型的事件：直接传递
         else if (data?.type) {

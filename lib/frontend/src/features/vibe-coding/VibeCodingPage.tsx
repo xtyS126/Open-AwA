@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
+import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { useI18nStore } from '@/i18n'
 import { useBreakpoint } from '@/shared/hooks/useBreakpoint'
 import { appLogger } from '@/shared/utils/logger'
@@ -386,7 +387,9 @@ function VibeCodingPage() {
             </div>
           )}
           {activePanel === 'terminal' && (
-            <TerminalPane cwd={resolveTerminalCwd(sessions, selectedSessionId)} />
+            <ErrorBoundary name="TerminalPane" variant="compact">
+              <TerminalPane cwd={resolveTerminalCwd(sessions, selectedSessionId)} />
+            </ErrorBoundary>
           )}
           {activePanel === 'preview' && (
             <FilePreviewPane filePath={selectedFilePath} previewPort={previewPort} />
@@ -470,7 +473,9 @@ function VibeCodingPage() {
 
           {/* 中栏面板内容：ACP 模式渲染 AcpSessionPanel / Terminal 模式渲染 TerminalPane */}
           {activePane === 'terminal' ? (
-            <TerminalPane cwd={resolveTerminalCwd(sessions, selectedSessionId)} />
+            <ErrorBoundary name="TerminalPane" variant="compact">
+              <TerminalPane cwd={resolveTerminalCwd(sessions, selectedSessionId)} />
+            </ErrorBoundary>
           ) : (
             <AcpSessionPanel
               sessionId={selectedSessionId}

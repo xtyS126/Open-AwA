@@ -86,3 +86,89 @@
   background: var(--color-bg-secondary, #f8fafc);
   color: var(--color-text-primary, #1e293b);
 }
+
+/* ============================================================================
+ * 子模块紧凑变体（compact）：内联小条幅，用于包装 SubagentExecutionContainer /
+ * PluginDebugPanel / TerminalPane / MessageList 等局部组件，避免错误 UI 抢占整屏。
+ * ============================================================================ */
+
+.compactShell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  min-height: 48px;
+  width: 100%;
+  background: var(--color-bg-secondary, #fef2f2);
+  border: 1px solid var(--color-error, #fecaca);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-text-primary, #1e293b);
+}
+
+.compactBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.compactTitle {
+  font-weight: 600;
+  color: var(--color-error, #dc2626);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.compactErrorText {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--color-text-secondary, #64748b);
+  word-break: break-all;
+  line-height: 1.3;
+  max-height: 36px;
+  overflow: hidden;
+}
+
+.compactActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.compactBtn {
+  padding: 4px 10px;
+  background: var(--color-primary, #2563eb);
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.compactBtn:hover {
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.compactBtnGhost {
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--color-text-secondary, #64748b);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.compactBtnGhost:hover {
+  background: var(--color-bg-secondary, #f8fafc);
+  color: var(--color-text-primary, #1e293b);
+}

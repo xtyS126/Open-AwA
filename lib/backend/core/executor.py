@@ -25,6 +25,10 @@ from core.litellm_adapter import (
     litellm_chat_completion,
     litellm_chat_completion_stream,
 )
+from core.circuit_breaker import (
+    CircuitOpenError,
+    get_circuit_breaker,
+)
 from core.tool_use_context import ToolUseContext, coerce_tool_context
 from billing.token_counter import (
     TokenBreakdown,
@@ -1520,6 +1524,36 @@ class ExecutionLayer:
         _tools = context.get("_tools")
         _thinking_params = context.get("_thinking_params")
         step_timeout = context.get("step_timeout", settings.AGENT_STEP_TIMEOUT_SECONDS)
+
+        # 熔断器：LLM 服务持续故障时短路请求，避免请求方阻塞在超时上拖垮整站
+        breaker = await get_circuit_breaker(
+            "llm_call",
+            failure_threshold=settings.LLM_CB_FAILURE_THRESHOLD,
+            recovery_timeout=settings.LLM_CB_RECOVERY_TIMEOUT,
+            half_open_max_calls=settings.LLM_CB_HALF_OPEN_MAX_CALLS,
+        )
+        try:
+            await breaker.acquire()
+        except CircuitOpenError as exc:
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            record_model_service_metric(resolved["provider"], "chat", "circuit_open", duration_ms)
+            logger.bind(
+                event="llm_circuit_open",
+                module="executor",
+                provider=resolved["provider"],
+                model=resolved["model"],
+                retry_after_seconds=exc.retry_after_seconds,
+            ).warning(f"LLM 熔断器 open，跳过调用: {exc}")
+            return {
+                "ok": False,
+                "error": {
+                    "message": str(exc),
+                    "type": "circuit_open",
+                    "retryable": True,
+                    "retry_after_seconds": exc.retry_after_seconds,
+                },
+            }
+
         try:
             result = await asyncio.wait_for(
                 litellm_chat_completion(
@@ -1535,7 +1569,9 @@ class ExecutionLayer:
                 ),
                 timeout=step_timeout,
             )
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
+            # 超时计入熔断器失败统计
+            await breaker.record_failure(exc)
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat", "error", duration_ms)
             logger.bind(
@@ -1549,6 +1585,12 @@ class ExecutionLayer:
                 "ok": False,
                 "error": {"message": f"LLM 调用超时 ({step_timeout}s)", "type": "timeout"},
             }
+        except Exception as exc:
+            # 其他异常（网络、5xx 等）也计入熔断器失败统计
+            await breaker.record_failure(exc)
+            raise
+        else:
+            await breaker.record_success()
 
         # 支持 tool_calls 循环：检测到工具调用时自动执行并将结果回传 LLM
         max_rounds = resolve_max_tool_call_rounds(context)
@@ -1713,6 +1755,37 @@ class ExecutionLayer:
         # 收集流式 chunk 用于后续 token 计数（count_from_stream 会查找 usage 字段）
         stream_chunks: List[Dict[str, Any]] = []
 
+        # 熔断器：LLM 服务持续故障时短路请求，避免流式连接积压拖垮整站
+        breaker = await get_circuit_breaker(
+            "llm_call",
+            failure_threshold=settings.LLM_CB_FAILURE_THRESHOLD,
+            recovery_timeout=settings.LLM_CB_RECOVERY_TIMEOUT,
+            half_open_max_calls=settings.LLM_CB_HALF_OPEN_MAX_CALLS,
+        )
+        try:
+            await breaker.acquire()
+        except CircuitOpenError as exc:
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            record_model_service_metric(resolved["provider"], "chat_stream", "circuit_open", duration_ms)
+            logger.bind(
+                event="llm_stream_circuit_open",
+                module="executor",
+                provider=resolved["provider"],
+                model=resolved["model"],
+                retry_after_seconds=exc.retry_after_seconds,
+            ).warning(f"LLM 流式熔断器 open，跳过调用: {exc}")
+            yield {
+                "error": {
+                    "message": str(exc),
+                    "type": "circuit_open",
+                    "retryable": True,
+                    "retry_after_seconds": exc.retry_after_seconds,
+                }
+            }
+            return
+
+        # 跟踪本次调用是否已记录成功/失败，避免 yield 错误 chunk 后重复计数
+        cb_outcome_recorded = False
         try:
             _thinking_params = context.get("_thinking_params")
             stream_gen = litellm_chat_completion_stream(
@@ -1737,7 +1810,10 @@ class ExecutionLayer:
                         stream_iter.__anext__(),
                         timeout=STREAM_CHUNK_TIMEOUT_SECONDS,
                     )
-                except asyncio.TimeoutError:
+                except asyncio.TimeoutError as timeout_exc:
+                    # 流式超时计入熔断器失败统计
+                    await breaker.record_failure(timeout_exc)
+                    cb_outcome_recorded = True
                     duration_ms = int((time.perf_counter() - started_at) * 1000)
                     record_model_service_metric(resolved["provider"], "chat_stream", "timeout", duration_ms)
                     logger.bind(
@@ -1763,6 +1839,10 @@ class ExecutionLayer:
 
                 # 错误事件直接转发
                 if "error" in chunk:
+                    # 流式错误事件计入熔断器失败统计
+                    err_exc = Exception(chunk["error"].get("message", "stream error"))
+                    await breaker.record_failure(err_exc)
+                    cb_outcome_recorded = True
                     duration_ms = int((time.perf_counter() - started_at) * 1000)
                     record_model_service_metric(resolved["provider"], "chat_stream", "error", duration_ms)
                     if callable(record_hook):
@@ -1785,6 +1865,9 @@ class ExecutionLayer:
                     return
 
                 if chunk.get("type") == "tool_calls":
+                    # tool_calls 事件视为成功完成（LLM 已返回完整结构化响应）
+                    await breaker.record_success()
+                    cb_outcome_recorded = True
                     yield chunk
                     return
 
@@ -1799,6 +1882,11 @@ class ExecutionLayer:
 
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat_stream", "success", duration_ms)
+
+            # 流式正常结束计入熔断器成功统计（tool_calls 路径已自行记账）
+            if not cb_outcome_recorded:
+                await breaker.record_success()
+                cb_outcome_recorded = True
 
             if callable(record_hook):
                 token_breakdown = count_from_stream(stream_chunks)
@@ -1826,6 +1914,10 @@ class ExecutionLayer:
                 )
 
         except Exception as e:
+            # 流式异常计入熔断器失败统计（超时路径已自行记账）
+            if not cb_outcome_recorded:
+                await breaker.record_failure(e)
+                cb_outcome_recorded = True
             logger.bind(
                 event="llm_stream_error",
                 module="executor",

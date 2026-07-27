@@ -69,6 +69,8 @@ export interface TerminalPaneProps {
 const RECONNECT_DELAY_MAX_MS = 30000
 /** 重连基础延迟（毫秒），实际延迟为 base * 2^attempts */
 const RECONNECT_DELAY_BASE_MS = 1000
+/** 最大重连尝试次数：超过后停止重连，避免无限重试占用资源 */
+const MAX_RECONNECT_ATTEMPTS = 10
 /** 终端默认行列数，创建会话时使用 */
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24
@@ -350,12 +352,27 @@ export default function TerminalPane({ cwd }: TerminalPaneProps) {
     /**
      * 调度重连：指数退避 1s → 2s → 4s → ... → 30s 上限。
      * 已卸载或已主动断开时不再调度。
+     * 超过 MAX_RECONNECT_ATTEMPTS 后停止重连，进入 error 状态，避免无限重试占用资源。
      */
     function scheduleReconnect(sessionId: string): void {
       if (disposedRef.current) return
       // 已有定时器在等待，跳过
       if (reconnectTimeoutRef.current !== null) return
       const attempts = reconnectAttemptsRef.current
+      // 超过重连上限：切换为 error 状态，停止重连
+      if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+        appLogger.error({
+          event: 'pty_ws_reconnect_exhausted',
+          module: 'vibe-coding',
+          action: 'terminal',
+          status: 'failure',
+          message: 'PTY WebSocket 重连次数耗尽，停止重连',
+          extra: { attempts },
+        })
+        setStatus('error')
+        setCreateError(`已重连 ${MAX_RECONNECT_ATTEMPTS} 次仍失败，请检查网络或刷新页面后重试`)
+        return
+      }
       const delay = Math.min(RECONNECT_DELAY_BASE_MS * 2 ** attempts, RECONNECT_DELAY_MAX_MS)
       reconnectAttemptsRef.current = attempts + 1
       setStatus('reconnecting')

@@ -15,6 +15,12 @@ import { asRecord, type ShortTermMemory } from '@/shared/types/api'
 import type { AssistantExecutionMeta, AssistantMessageSegment, AskUserRequest } from '@/features/chat/types'
 import type { FileAttachment } from '@/features/chat/components/ChatInput'
 import type { TodoItem } from '@/features/chat/components/TodoPanel'
+import {
+  ErrorCode,
+  extractErrorCode,
+  getErrorCodeMeta,
+  isRetryableError,
+} from '@/shared/api/errorCodes'
 
 const MAX_STREAM_RETRY_COUNT = 3
 
@@ -22,19 +28,17 @@ const MAX_STREAM_RETRY_COUNT = 3
 const RECENT_SHORT_TERM_MEMORY_LIMIT = 20
 
 /** 后端返回的密钥失效错误码，需引导用户跳转设置页重新录入 */
-const LLM_API_KEY_STALE_CODE = 'llm_api_key_stale'
+const LLM_API_KEY_STALE_CODE = ErrorCode.LLM_API_KEY_STALE
 
 /** 密钥失效时展示给用户的提示文案 */
 const LLM_API_KEY_STALE_USER_MESSAGE = '[!] 该供应商 API Key 已失效，请在设置页重新录入'
 
 /**
  * 从 Error 对象中提取流式错误携带的 code 字段。
- * api.ts 的 createStreamError 会将后端 error.code 挂载到 Error.code 属性上，
- * 这里读取该属性；不存在或非字符串时返回 undefined。
+ * 透传到 errorCodes.ts 的 extractErrorCode，保持单一实现。
  */
 function extractStreamErrorCode(error: Error): string | undefined {
-  const code = (error as { code?: unknown }).code
-  return typeof code === 'string' ? code : undefined
+  return extractErrorCode(error)
 }
 
 function sanitizeDisplayedError(message: string): string {
@@ -46,23 +50,63 @@ function sanitizeDisplayedError(message: string): string {
     .replace(/'/g, '&#39;')
 }
 
+/**
+ * 判断流式错误是否可重试。
+ * 透传到 errorCodes.ts 的 isRetryableError，统一消费后端 retryable 字段或错误码注册表，
+ * 不再字符串匹配 message（保持向后兼容作为兜底）。
+ */
 function shouldRetryStreamError(error: Error): boolean {
-  const message = String(error.message || '').toLowerCase()
-  return [
-    'failed to fetch',
-    'network',
-    'stream',
-    'timeout',
-    'load failed',
-    'econnreset',
-  ].some((keyword) => message.includes(keyword))
+  return isRetryableError(error)
 }
 
 /** 错误类型分类 */
 type ErrorCategory = 'auth' | 'timeout' | 'server' | 'network' | 'unknown'
 
-/** 分类错误类型 */
+/**
+ * 分类错误类型。
+ *
+ * 优先消费后端 error.code 字段做精确映射，code 不存在或未注册时
+ * 回退到字符串匹配 message + 状态码的旧逻辑（向后兼容）。
+ */
 function classifyError(error: Error): ErrorCategory {
+  // 优先按 code 精确映射
+  const code = extractErrorCode(error)
+  const meta = getErrorCodeMeta(code)
+  if (code && meta) {
+    if (
+      code === ErrorCode.UNAUTHORIZED ||
+      code === ErrorCode.AUTHENTICATION_FAILED ||
+      code === ErrorCode.FORBIDDEN ||
+      code === ErrorCode.CSRF_TOKEN_INVALID ||
+      code === ErrorCode.LLM_API_KEY_STALE
+    ) {
+      return 'auth'
+    }
+    if (code === ErrorCode.REQUEST_TIMEOUT || code === ErrorCode.FAILOVER_TOTAL_TIMEOUT) {
+      return 'timeout'
+    }
+    if (
+      code === ErrorCode.LLM_PROVIDER_UNAVAILABLE ||
+      code === ErrorCode.DATABASE_UNAVAILABLE ||
+      code === ErrorCode.FAILOVER_ALL_CANDIDATES_FAILED ||
+      code === ErrorCode.INTERNAL_SERVER_ERROR ||
+      code === ErrorCode.LLM_CALL_FAILED
+    ) {
+      return 'server'
+    }
+    if (code === ErrorCode.NETWORK_ERROR) {
+      return 'network'
+    }
+    // 其他已注册 code：按状态码兜底
+    if (meta.statusCode >= 500) {
+      return 'server'
+    }
+    if (meta.statusCode === 401 || meta.statusCode === 403) {
+      return 'auth'
+    }
+  }
+
+  // 回退：字符串匹配 message + 状态码（旧逻辑）
   const message = String(error.message || '').toLowerCase()
   const statusMatch = message.match(/(\d{3})/)
   const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 0
@@ -117,6 +161,14 @@ function classifyError(error: Error): ErrorCategory {
 function getUserFriendlyErrorMessage(error: Error): string {
   const category = classifyError(error)
   const rawMessage = sanitizeDisplayedError(error.message)
+
+  // 已注册错误码：优先使用注册表中的用户友好提示
+  const code = extractErrorCode(error)
+  const meta = getErrorCodeMeta(code)
+  if (meta && code !== ErrorCode.LLM_API_KEY_STALE) {
+    // 密钥失效有专用提示文案，不使用注册表 user_message
+    return `[!] ${meta.userMessage}`
+  }
 
   switch (category) {
     case 'auth':

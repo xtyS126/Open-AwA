@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { AssistantThoughtSegment as AssistantThoughtSegmentData, TaskStatus } from '@/features/chat/types'
 import { formatUsageCost, formatUsageTokens, getTaskTitle, getVisibleSubagentTools } from '@/features/chat/utils/executionMeta'
+import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { ThinkingProcess } from './ThinkingProcess'
 import InlineToolCallCard from './InlineToolCallCard'
 import { SubagentExecutionContainer } from './SubagentExecutionContainer'
@@ -125,15 +126,17 @@ function AssistantThoughtSegmentInner({ segments, isStreaming, onUndo }: Assista
                   <div className={styles.sectionTitle}>子代理执行</div>
                   {subagentTools.map((tool) => (
                     <div key={tool.id} className={styles.subagentContent}>
-                      <SubagentExecutionContainer
-                        id={tool.id}
-                        name={tool.name}
-                        status={tool.status === 'error' ? 'error' : tool.status === 'completed' ? 'completed' : 'running'}
-                        statusLabel={tool.status === 'completed' ? '已完成' : tool.status === 'error' ? '异常' : '运行中'}
-                        logs={tool.subagent?.logs || tool.detail || ''}
-                        truncated={Boolean(tool.subagent?.truncated)}
-                        depth={1}
-                      />
+                      <ErrorBoundary name="SubagentExecutionContainer" variant="compact">
+                        <SubagentExecutionContainer
+                          id={tool.id}
+                          name={tool.name}
+                          status={tool.status === 'error' ? 'error' : tool.status === 'completed' ? 'completed' : 'running'}
+                          statusLabel={tool.status === 'completed' ? '已完成' : tool.status === 'error' ? '异常' : '运行中'}
+                          logs={tool.subagent?.logs || tool.detail || ''}
+                          truncated={Boolean(tool.subagent?.truncated)}
+                          depth={1}
+                        />
+                      </ErrorBoundary>
                     </div>
                   ))}
                 </div>
