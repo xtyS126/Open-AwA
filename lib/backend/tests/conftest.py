@@ -29,6 +29,10 @@ def pytest_configure(config):
     os.environ["AGENT_WORKSPACE_UNRESTRICTED_COMMANDS"] = "false"
     # ACP 路由测试只允许后端测试工作区，不放宽生产环境的默认白名单
     os.environ["ACP_ALLOWED_WORKDIRS"] = str(_BACKEND_ROOT)
+    # 默认使用 hash 嵌入提供方，避免 VectorStoreManager 在未配置 OPENAI_API_KEY 时
+    # 回退到 SentenceTransformerEmbeddingProvider 触发 sentence-transformers ImportError
+    # 想测试 sentence-transformers 路径的用例可在 fixture 内显式覆盖此变量
+    os.environ.setdefault("MEMORY_EMBEDDING_PROVIDER", "hash")
 
 
 def _reset_loaded_runtime_state() -> None:
@@ -70,6 +74,20 @@ def _reset_loaded_runtime_state() -> None:
         ws_manager._session_connections.clear()
         ws_manager._user_sessions.clear()
         ws_manager._last_activity.clear()
+
+    # MemoryManager 持有类级 _shared_vector_store 单例（VectorStoreManager），
+    # 跨用例共享会导致 Qdrant 嵌入式文件锁冲突与跨用例数据污染。
+    # 必须在 teardown 时关闭并清空，强制下个用例重新构造 VectorStoreManager。
+    memory_manager_module = sys.modules.get("memory.manager")
+    memory_manager_cls = getattr(memory_manager_module, "MemoryManager", None) if memory_manager_module else None
+    if memory_manager_cls is not None:
+        existing_store = getattr(memory_manager_cls, "_shared_vector_store", None)
+        if existing_store is not None:
+            try:
+                existing_store.close()
+            except Exception:
+                pass
+            memory_manager_cls._shared_vector_store = None
 
 
 def pytest_runtest_setup(item):

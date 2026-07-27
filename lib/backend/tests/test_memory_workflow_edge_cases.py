@@ -199,6 +199,9 @@ async def test_vector_embedding_providers_and_factory(monkeypatch):
     """
     验证哈希、OpenAI、本地 sentence-transformers 以及工厂分支逻辑。
     """
+    # conftest.py 默认设置 MEMORY_EMBEDDING_PROVIDER=hash 避免 sentence-transformers ImportError，
+    # 本测试需要验证 create_embedding_provider(None) 的默认回退路径，需临时清除该环境变量
+    monkeypatch.delenv("MEMORY_EMBEDDING_PROVIDER", raising=False)
     hash_provider = HashEmbeddingProvider(dimension=4)
     vector = (await hash_provider.embed_texts([""]))[0]
     assert len(vector) == 4

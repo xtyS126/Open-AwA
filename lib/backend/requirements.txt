@@ -62,3 +62,7 @@ apscheduler[sqlalchemy]>=4.0.0a1,<5.0.dev0
 # multilspy（Microsoft 开源）替代 backend/core/coding/lsp_proxy.py 自管 JSON-RPC framing + PRESET_SERVERS
 # 统一管理 Python/TypeScript/JavaScript/Rust/Go 等语言 LSP server 的下载、启动与 JSON-RPC 通信
 multilspy>=0.0.15,<1.0.0
+# Markdown 渲染 + bleach HTML 净化：api/routes/coding.py 的 /api/coding/preview/file 端点依赖
+# 缺失时 Markdown 预览会降级为 <pre> 包裹的纯文本（test_preview_routes 期望完整 HTML 渲染）
+markdown>=3.5,<4.0
+bleach>=6.0,<7.0

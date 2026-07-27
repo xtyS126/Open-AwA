@@ -94,8 +94,9 @@ async def test_open_transitions_to_half_open_after_recovery_timeout():
     await breaker.record_failure(RuntimeError("trigger"))
     assert breaker.state == CircuitState.OPEN
 
-    # 等待 recovery_timeout 过期
-    await asyncio.sleep(0.06)
+    # 等待 recovery_timeout 过期（sleep 留 3 倍 buffer，避免大测试套件压力下
+    # asyncio.sleep 提前返回或 time.monotonic 精度不足导致 elapsed < recovery_timeout）
+    await asyncio.sleep(0.15)
 
     # acquire 应转入 half_open 并放行
     await breaker.acquire()
@@ -112,7 +113,7 @@ async def test_half_open_success_restores_closed():
         half_open_max_calls=1,
     )
     await breaker.record_failure(RuntimeError("trigger"))
-    await asyncio.sleep(0.06)
+    await asyncio.sleep(0.15)
     await breaker.acquire()
     assert breaker.state == CircuitState.HALF_OPEN
 
@@ -130,7 +131,7 @@ async def test_half_open_failure_back_to_open():
         half_open_max_calls=1,
     )
     await breaker.record_failure(RuntimeError("trigger1"))
-    await asyncio.sleep(0.06)
+    await asyncio.sleep(0.15)
     await breaker.acquire()
     assert breaker.state == CircuitState.HALF_OPEN
 
@@ -148,7 +149,7 @@ async def test_half_open_max_calls_rejected():
         half_open_max_calls=1,
     )
     await breaker.record_failure(RuntimeError("trigger"))
-    await asyncio.sleep(0.06)
+    await asyncio.sleep(0.15)
     await breaker.acquire()  # 占用唯一的探测名额
     assert breaker.state == CircuitState.HALF_OPEN
 

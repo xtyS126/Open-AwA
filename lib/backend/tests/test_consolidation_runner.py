@@ -139,6 +139,13 @@ def _reset_shared_vector_store():
     """每个用例前清理类级共享向量库，避免污染后续测试。"""
     saved = MemoryManager._shared_vector_store
     yield
+    # 用例结束后关闭当前用例中可能创建的 vector_store（避免 Qdrant 文件锁跨用例残留）
+    current = MemoryManager._shared_vector_store
+    if current is not None and current is not saved:
+        try:
+            current.close()
+        except Exception:
+            pass
     MemoryManager._shared_vector_store = saved
 
 
