@@ -95,11 +95,11 @@ setup_dirs() {
     mkdir -p "${INSTALL_DIR}" "${INSTALL_DIR}/data" "${INSTALL_DIR}/logs"
 
     # 如果脚本在项目目录中运行，使用本地代码；否则从 GitHub 克隆
-    # 重组后子项目位于 lib/ 下，校验 lib/backend 是否存在
-    if [ -f "../pyproject.toml" ] && [ -d "../lib/backend" ]; then
+    # 重组后子项目位于根目录，校验 backend 是否存在
+    if [ -f "../pyproject.toml" ] && [ -d "../backend" ]; then
         PROJECT_DIR="$(cd .. && pwd)"
         info "检测到本地项目目录: ${PROJECT_DIR}"
-    elif [ -d "./lib/backend" ] && [ -f "./pyproject.toml" ]; then
+    elif [ -d "./backend" ] && [ -f "./pyproject.toml" ]; then
         PROJECT_DIR="$(pwd)"
         info "使用当前目录作为项目目录: ${PROJECT_DIR}"
     else
@@ -129,9 +129,9 @@ install_backend() {
     fi
     source .venv/bin/activate
 
-    # 安装依赖（重组后 requirements.txt 位于 lib/backend/）
+    # 安装依赖（重组后 requirements.txt 位于 backend/）
     pip install -q --upgrade pip
-    pip install -q -r lib/backend/requirements.txt
+    pip install -q -r backend/requirements.txt
     pip install -q -e . --no-deps 2>/dev/null || true
     ok "后端依赖安装完成"
 }
@@ -144,7 +144,7 @@ build_frontend() {
     fi
 
     info "构建前端..."
-    cd "${PROJECT_DIR}/lib/frontend"
+    cd "${PROJECT_DIR}/frontend"
 
     if [ ! -d "node_modules" ]; then
         info "安装前端依赖..."
@@ -178,9 +178,9 @@ OPENAWA_API_KEY=${OPENAWA_API_KEY}
 OPENAWA_OWNER_PASSWORD=${OPENAWA_OWNER_PASSWORD}
 BACKEND_HOST=0.0.0.0
 BACKEND_PORT=8000
-DATABASE_URL=sqlite:///${INSTALL_DIR}/data/openawa.db
-VECTOR_DB_PATH=${INSTALL_DIR}/data/vector_db
-LOG_DIR=${INSTALL_DIR}/logs
+DATABASE_URL=sqlite:///${INSTALL_DIR}/var/data/openawa.db
+VECTOR_DB_PATH=${INSTALL_DIR}/var/data/qdrant
+LOG_DIR=${INSTALL_DIR}/var/logs
 EOF
 
     ok "配置文件已创建: ${INSTALL_DIR}/.env"
@@ -193,7 +193,7 @@ EOF
         # 如果 CLI 不可用，直接用 Python 初始化
         $PYTHON -c "
 import sys
-sys.path.insert(0, 'lib/backend')
+sys.path.insert(0, 'backend')
 from db.models import init_db
 init_db()
 " 2>/dev/null || warn "数据库初始化跳过（将在首次启动时自动完成）"

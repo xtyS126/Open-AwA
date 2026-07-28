@@ -1,7 +1,7 @@
 #!/bin/sh
 # SSL 证书首次申请脚本
 # 用法：
-#   bash docker/init-ssl.sh
+#   bash deploy/init-ssl.sh
 #
 # 前置条件：
 #   1. 已在 .env 中设置 DOMAIN 和 EMAIL

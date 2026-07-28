@@ -8,6 +8,6 @@
       "warning": 4,
       "suggestion": 2
     },
-    "scope": "lib/backend/core/agent.py (1457 lines, AIAgent class)"
+    "scope": "backend/core/agent.py (1457 lines, AIAgent class)"
   }
 ]

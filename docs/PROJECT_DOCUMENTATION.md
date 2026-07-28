@@ -21,7 +21,7 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 后端采用 FastAPI 组织 API 层，通过 SQLAlchemy 管理数据模型，核心模块分布于 core/、skills/、plugins/、billing/、memory/、mcp/、channels/、im/、workflow/ 等目录。入口文件 main.py 负责创建 FastAPI 应用、配置 CORS/CSRF/CSP/速率限制中间件、在 lifespan 中按职责拆分为四个独立启动步骤（基础设施、数据初始化、插件系统、后台任务）、注册 39 个业务路由模块。
 
 ```
-lib/backend/
+backend/
 ├── api/                        # FastAPI 路由、依赖与接口 schema
 │   ├── routes/                 # 业务路由模块（39 个）
 │   │   ├── auth.py            # 认证路由
@@ -261,7 +261,7 @@ lib/backend/
 前端使用 React 18 + TypeScript + Vite 构建，采用功能模块分离的目录结构（`features/` 按领域拆分，`shared/` 放共享资源），通过 Zustand 管理状态，Axios 处理 API 请求，Recharts 展示图表数据。
 
 ```
-lib/frontend/
+frontend/
 ├── src/
 │   ├── features/             # 功能模块（按领域拆分）
 │   │   ├── auth/            # 认证（LoginPage）
@@ -382,7 +382,7 @@ WebSocket 协议增强在保留最终完整消息的同时，新增了分段消�
 
 ### 2.10 MCP 协议支持
 
-MCP（Model Context Protocol）模块已实现完整的客户端协议栈，位于 lib/backend/mcp/ 目录。支持 Stdio（子进程 stdin/stdout）和 SSE（HTTP POST）两种传输方式，提供工具发现（tools/list）、工具调用（tools/call）和资源访问（resources/list、resources/read）能力。MCPManager 采用线程安全单例模式管理多 Server 连接，MCPProtocol 生成标准 JSON-RPC 2.0 请求。传输层基类声明了统一的 `send_and_receive()` 接口，SSE 和 Stdio 各自实现，避免跨模式调用不兼容。Stdio transport 会自动启动后台任务读取子进程 stderr，防止缓冲区满导致进程假死。
+MCP（Model Context Protocol）模块已实现完整的客户端协议栈，位于 backend/mcp/ 目录。支持 Stdio（子进程 stdin/stdout）和 SSE（HTTP POST）两种传输方式，提供工具发现（tools/list）、工具调用（tools/call）和资源访问（resources/list、resources/read）能力。MCPManager 采用线程安全单例模式管理多 Server 连接，MCPProtocol 生成标准 JSON-RPC 2.0 请求。传输层基类声明了统一的 `send_and_receive()` 接口，SSE 和 Stdio 各自实现，避免跨模式调用不兼容。Stdio transport 会自动启动后台任务读取子进程 stderr，防止缓冲区满导致进程假死。
 
 ### 2.11 安全体系
 
@@ -400,31 +400,31 @@ MCP（Model Context Protocol）模块已实现完整的客户端协议栈，位�
 
 ### 2.12 子代理编排系统
 
-v1.6 引入的子代理（Subagent）编排系统位于 lib/backend/core/subagent.py 与 lib/backend/api/routes/subagents.py，提供三级隔离（进程级/协程级/会话级）、生命周期状态机（created/running/paused/completed/failed/cancelled）、资源限制（最大并发数、超时、内存上限）与编排器（Orchestrator）能力。支持子代理并行执行、消息合并、错误事件回调，前端 SubagentContainer 组件已对接 /api/subagents 系列接口。
+v1.6 引入的子代理（Subagent）编排系统位于 backend/core/subagent.py 与 backend/api/routes/subagents.py，提供三级隔离（进程级/协程级/会话级）、生命周期状态机（created/running/paused/completed/failed/cancelled）、资源限制（最大并发数、超时、内存上限）与编排器（Orchestrator）能力。支持子代理并行执行、消息合并、错误事件回调，前端 SubagentContainer 组件已对接 /api/subagents 系列接口。
 
 ### 2.13 IM 渠道适配
 
-v1.6 引入的 IM 渠道适配层位于 lib/backend/channels/ 与 lib/backend/im/ 目录，支持飞书、Telegram、钉钉、企业微信、Slack、Discord、QQ、微信、邮件等 9 个渠道的统一接入。每个渠道实现独立的适配器（Adapter）与 Webhook 处理器，通过 /api/im 统一路由对外暴露。渠道配置支持在线管理，消息双向同步。
+v1.6 引入的 IM 渠道适配层位于 backend/channels/ 与 backend/im/ 目录，支持飞书、Telegram、钉钉、企业微信、Slack、Discord、QQ、微信、邮件等 9 个渠道的统一接入。每个渠道实现独立的适配器（Adapter）与 Webhook 处理器，通过 /api/im 统一路由对外暴露。渠道配置支持在线管理，消息双向同步。
 
 ### 2.14 任务运行时与定时任务
 
-任务运行时（Task Runtime）位于 lib/backend/core/task_runtime/ 与 lib/backend/api/routes/task_runtime.py，提供长时任务的创建、调度、状态追踪、结果回收能力。定时任务（Scheduled Tasks）位于 lib/backend/api/routes/scheduled_tasks.py，基于 cron 表达式调度，支持任务暂停/恢复/删除/手动触发。前端 ScheduledTasksPage 与 TaskRuntimePage 已对接相应接口。
+任务运行时（Task Runtime）位于 backend/core/task_runtime/ 与 backend/api/routes/task_runtime.py，提供长时任务的创建、调度、状态追踪、结果回收能力。定时任务（Scheduled Tasks）位于 backend/api/routes/scheduled_tasks.py，基于 cron 表达式调度，支持任务暂停/恢复/删除/手动触发。前端 ScheduledTasksPage 与 TaskRuntimePage 已对接相应接口。
 
 ### 2.15 角色系统与用户画像
 
-角色系统（Roles）位于 lib/backend/api/routes/roles.py 与 role_market.py，支持角色的增删改查、市场共享、应用与卸载。用户画像（User Profile）位于 lib/backend/api/routes/user_profile.py，记录用户偏好、技能标签、历史行为特征，用于个性化推荐与上下文注入。
+角色系统（Roles）位于 backend/api/routes/roles.py 与 role_market.py，支持角色的增删改查、市场共享、应用与卸载。用户画像（User Profile）位于 backend/api/routes/user_profile.py，记录用户偏好、技能标签、历史行为特征，用于个性化推荐与上下文注入。
 
 ### 2.16 工作区与编码助手
 
-工作区（Workspace）位于 lib/backend/api/routes/workspace.py 与 lib/backend/core/workspace/，提供项目级文件管理、多项目切换、工作区隔离能力。编码助手（Coding Assistant）位于 lib/backend/api/routes/coding.py 与 lib/backend/core/coding/，集成代码补全、重构建议、错误诊断、测试生成等能力，前端 CodingPage 已对接。
+工作区（Workspace）位于 backend/api/routes/workspace.py 与 backend/core/workspace/，提供项目级文件管理、多项目切换、工作区隔离能力。编码助手（Coding Assistant）位于 backend/api/routes/coding.py 与 backend/core/coding/，集成代码补全、重构建议、错误诊断、测试生成等能力，前端 CodingPage 已对接。
 
 ### 2.17 TTS、终端与自主运行模式
 
-TTS 模块位于 lib/backend/api/routes/tts.py，支持文本转语音输出。终端（Terminal）位于 lib/backend/api/routes/terminal.py，提供 Web 终端能力（受限沙箱内执行）。自主运行模式（Autonomous）位于 lib/backend/core/autonomous/，支持 Agent 在无用户输入的情况下自主规划并执行任务链。
+TTS 模块位于 backend/api/routes/tts.py，支持文本转语音输出。终端（Terminal）位于 backend/api/routes/terminal.py，提供 Web 终端能力（受限沙箱内执行）。自主运行模式（Autonomous）位于 backend/core/autonomous/，支持 Agent 在无用户输入的情况下自主规划并执行任务链。
 
 ### 2.18 数据仪表盘、收件箱与插件市场
 
-数据仪表盘（Data Dashboard）位于 lib/backend/api/routes/data.py，聚合展示用量、计费、行为、性能等多维指标。收件箱（Inbox）位于 lib/backend/api/routes/inbox.py，统一收集系统通知、任务结果、子代理消息。插件市场（Marketplace）位于 lib/backend/plugins/marketplace/ 与 lib/backend/api/routes/marketplace.py，提供插件浏览、搜索、详情、安装能力（详见 9.3 节）。
+数据仪表盘（Data Dashboard）位于 backend/api/routes/data.py，聚合展示用量、计费、行为、性能等多维指标。收件箱（Inbox）位于 backend/api/routes/inbox.py，统一收集系统通知、任务结果、子代理消息。插件市场（Marketplace）位于 backend/plugins/marketplace/ 与 backend/api/routes/marketplace.py，提供插件浏览、搜索、详情、安装能力（详见 9.3 节）。
 
 ---
 
@@ -603,7 +603,7 @@ TTS 模块位于 lib/backend/api/routes/tts.py，支持文本转语音输出。�
 
 Windows PowerShell 环境启动后端：
 ```powershell
-cd d:\代码\Open-AwA\lib\backend
+cd d:\代码\Open-AwA\backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -615,7 +615,7 @@ python main.py
 ### 8.3 前端启动
 
 ```powershell
-cd d:\代码\Open-AwA\lib\frontend
+cd d:\代码\Open-AwA\frontend
 npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
@@ -640,7 +640,7 @@ MCP 客户端协议栈已在 v1.3 完整落地，包括 Stdio/SSE 双传输、�
 
 ### 9.3 插件市场 [已实现]
 
-插件市场已在 v1.6 落地，位于 lib/backend/plugins/marketplace/ 与 lib/backend/api/routes/marketplace.py。提供插件浏览（分页 + 分类筛选）、关键词搜索、详情查看、一键安装能力，前端 MarketplacePage 已对接 /api/marketplace/plugins 系列接口。后续可扩展插件上传审核、版本回滚、付费分发等运营能力。
+插件市场已在 v1.6 落地，位于 backend/plugins/marketplace/ 与 backend/api/routes/marketplace.py。提供插件浏览（分页 + 分类筛选）、关键词搜索、详情查看、一键安装能力，前端 MarketplacePage 已对接 /api/marketplace/plugins 系列接口。后续可扩展插件上传审核、版本回滚、付费分发等运营能力。
 
 ### 9.4 前端 UI 改进 [部分已实现]
 

@@ -118,7 +118,7 @@ Write-Info "安装 Python 依赖..."
 $activateScript = "$venvPath\Scripts\Activate.ps1"
 . $activateScript
 python -m pip install -q --upgrade pip
-pip install -q -r "$ProjectDir\lib\backend\requirements.txt"
+pip install -q -r "$ProjectDir\backend\requirements.txt"
 try {
     pip install -q -e $ProjectDir --no-deps 2>$null
 } catch {}
@@ -127,7 +127,7 @@ Write-OK "后端依赖安装完成"
 # ---- 构建前端 ----
 if (-not $SkipFrontend -and $hasNode) {
     Write-Info "构建前端..."
-    $frontendDir = "$ProjectDir\lib\frontend"
+    $frontendDir = "$ProjectDir\frontend"
     if (-not (Test-Path "$frontendDir\node_modules")) {
         Write-Info "安装前端依赖..."
         Push-Location $frontendDir
@@ -160,9 +160,9 @@ OPENAWA_API_KEY=$openawaApiKey
 OPENAWA_OWNER_PASSWORD=$ownerPassword
 BACKEND_HOST=0.0.0.0
 BACKEND_PORT=8000
-DATABASE_URL=sqlite:///$InstallDir/data/openawa.db
-VECTOR_DB_PATH=$InstallDir/data/vector_db
-LOG_DIR=$InstallDir/logs
+DATABASE_URL=sqlite:///$InstallDir/var/data/openawa.db
+VECTOR_DB_PATH=$InstallDir/var/data/qdrant
+LOG_DIR=$InstallDir/var/logs
 "@
 $envContent | Out-File -FilePath "$InstallDir\.env" -Encoding UTF8
 Write-OK "配置文件已创建: $InstallDir\.env"
@@ -175,7 +175,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         # CLI 不可用时直接用 Python 初始化
         python -c @"
-import sys; sys.path.insert(0, 'lib/backend')
+import sys; sys.path.insert(0, 'backend')
 from db.models import init_db
 init_db()
 print('数据库初始化完成')

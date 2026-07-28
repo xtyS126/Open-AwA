@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from loguru import logger
 
+from backend.config.runtime_paths import PLUGINS_DATA_DIR
 from backend.plugins.base_plugin import BasePlugin
 from backend.billing.pricing_manager import PricingManager
 
@@ -134,8 +135,7 @@ class TwitterMonitorPlugin(BasePlugin):
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
-        self.plugin_root = Path(__file__).resolve().parents[1]
-        self.data_dir = self.plugin_root / "data"
+        self.data_dir = PLUGINS_DATA_DIR / self.name / "data"
         self.daily_dir = self.data_dir / "daily"
         self.summaries_dir = self.data_dir / "summaries"
 
@@ -402,7 +402,7 @@ class TwitterMonitorPlugin(BasePlugin):
 
         deduplicated = self._deduplicate_tweets(tweets)
         if normalized_mode in {"latest", "both"}:
-            self._write_json_payload(self.plugin_root / "data" / "latest.json", "latest", deduplicated)
+            self._write_json_payload(self.data_dir / "latest.json", "latest", deduplicated)
 
         if normalized_mode in {"daily", "both"}:
             return self._append_daily_tweets(deduplicated, date.today().isoformat())
@@ -664,7 +664,7 @@ class TwitterMonitorPlugin(BasePlugin):
             return {"status": "error", "message": f"不支持的 storage_type: {normalized_storage}"}
 
         if normalized_storage == "latest":
-            latest_path = self.plugin_root / "data" / "latest.json"
+            latest_path = self.data_dir / "latest.json"
             payload = self._read_json_payload(latest_path)
             normalized_date = None
         else:

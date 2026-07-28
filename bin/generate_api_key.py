@@ -17,8 +17,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-# __file__ = bin/generate_api_key.py；上溯 1 级到项目根，再进入 lib/backend
-BACKEND_DIR = Path(__file__).resolve().parent.parent / "lib" / "backend"
+# __file__ = bin/generate_api_key.py；上溯 1 级到项目根，再进入 backend
+BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
 ENV_LOCAL = BACKEND_DIR / ".env.local"
 KEY_NAME = "OPENAWA_API_KEY"
 

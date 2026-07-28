@@ -1,0 +1,77 @@
+# FastAPI 升级至 0.139.0+ 修复多个 CVE（DEP-03）
+# 包含 Starlette 路径遍历、DoS 等安全修复
+fastapi>=0.139.0,<0.140.0
+# Starlette 升级至 1.3.1+ 修复 PYSEC-2026-161/248/249 + CVE-2026-48817/48818
+# FastAPI 0.139.0 已协调支持 starlette 1.x
+starlette>=1.3.1,<2.0.0
+uvicorn[standard]==0.27.0
+sqlalchemy==2.0.25
+pydantic>=2.6.0,<3.0.0
+pydantic-settings>=2.1.0,<3.0.0
+# PyJWT 替代 python-jose（jose 已停止维护且与 pyasn1 0.6.x 冲突）
+# PyJWT 是事实标准，API 兼容，无 pyasn1 依赖
+PyJWT>=2.8.0,<3.0.0
+passlib[bcrypt]==1.7.4
+# python-multipart 升级至 0.0.31+ 修复 CVE-2026-42561/53538/53539/53540（DEP-02）
+python-multipart>=0.0.31,<1.0.0
+websockets==12.0
+loguru==0.7.2
+pyyaml==6.0.1
+# Qdrant 嵌入式向量库，替代 ChromaDB，原生支持 dense + sparse 混合检索（RRF 融合）
+qdrant-client>=1.18.0,<2.0.0
+httpx>=0.26.0,<0.28.0
+# iLink CDN 多媒体下载使用 AES-128-ECB 解密。
+cryptography>=46.0.0,<47.0.0
+litellm>=1.80.0,<2.0.0
+aiofiles==23.2.1
+# ????: ?????????????(?? 10.1.0????????/CI)
+Pillow>=10.0.0,<12.0.0
+# python-dotenv 升级至 1.2.2+ 修复 CVE-2026-28684
+python-dotenv>=1.2.2,<2.0.0
+click~=8.1.0
+slowapi~=0.1.9
+# fastapi-csrf-protect 提供双提交 Cookie 模式的 CSRF 防护，替代 proactive_defense.py:CsrfTokenManager
+fastapi-csrf-protect>=1.0.0,<2.0.0
+# RestrictedPython 升级至 8.0+ 修复 CVE-2025-22153
+RestrictedPython>=8.0,<9.0
+cachetools>=5.3.0,<6.0.0
+# tiktoken 用于 OpenAI 系列模型的精确 token 估算（billing/token_counter.py 第三层策略）
+tiktoken>=0.7.0
+# 本地长期记忆嵌入模型。三者需保持兼容，避免导入失败后静默回退到哈希嵌入。
+sentence-transformers>=3.4.1,<4.0.0
+transformers>=4.41.0,<5.0.0
+huggingface-hub>=0.25.0,<1.0.0
+acp>=0.1.0,<1.0.0
+psutil>=5.9.0,<7.0.0
+pywinpty>=2.0.0,<3.0.0; sys_platform == "win32"
+# pyte 终端仿真器，替代自实现的 VT100 子集，支持 vim/tmux/htop 等复杂 TUI
+pyte>=0.8.2,<1.0.0
+# tree-sitter-languages 提供 60+ 语言的预编译 AST parser，替代自实现 Python-only ast_search
+# 注意: tree-sitter-languages 1.10 与 tree-sitter>=0.22 的 Language 构造签名不兼容，
+# 因此锁定 tree-sitter>=0.21,<0.22
+tree-sitter-languages>=1.10,<2.0
+tree-sitter>=0.21,<0.22
+# mcp 官方 Python SDK，替代 backend/mcp/ 自实现协议层（types/protocol/transport/client）
+# 提供 stdio_client / sse_client / ClientSession 等标准实现
+mcp>=1.27.0,<2.0.0
+# APScheduler 4.x 替代 backend/core/scheduled_task_manager.py 的 DB 轮询 + asyncio.Lock
+# 使用 AsyncScheduler + CronTrigger + SQLAlchemyDataStore（指向主数据库）
+# APScheduler 内部维护 apscheduler_jobs 等独立表，与业务表 scheduled_tasks 分离
+# 注: 4.x 目前处于 alpha 阶段，需 --pre 安装；API 与 3.x 差异较大（原生 async）
+apscheduler[sqlalchemy]>=4.0.0a1,<5.0.dev0
+# multilspy（Microsoft 开源）替代 backend/core/coding/lsp_proxy.py 自管 JSON-RPC framing + PRESET_SERVERS
+# 统一管理 Python/TypeScript/JavaScript/Rust/Go 等语言 LSP server 的下载、启动与 JSON-RPC 通信
+multilspy>=0.0.15,<1.0.0
+# Markdown 渲染 + bleach HTML 净化：api/routes/coding.py 的 /api/coding/preview/file 端点依赖
+# 缺失时 Markdown 预览会降级为 <pre> 包裹的纯文本（test_preview_routes 期望完整 HTML 渲染）
+markdown>=3.5,<4.0
+bleach>=6.0,<7.0
+# bilibili-toolkit-builtin 内置插件核心依赖
+# 缺失时插件无法加载，AI 调用 plugin_bilibili-toolkit-builtin__* 工具会返回 "Failed to load plugin"
+# 完整 OpenBiliClaw 能力（抖音/YouTube/X/小红书发现、桌面打包）请参考
+# plugins/bilibili_toolkit_builtin/requirements.txt 补装 LLM SDK 等可选依赖
+bilibili-api-python>=16
+# 弹幕 protobuf 解析与 ASS 渲染所需依赖
+protobuf>=4.0
+# 路径模板渲染所需依赖（Jinja2 替代 Rust 版 Handlebars）
+jinja2>=3.0

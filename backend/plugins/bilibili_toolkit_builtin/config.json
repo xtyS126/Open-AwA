@@ -1,0 +1,52 @@
+{
+  "bilibili_cookie": "enable_web_push=DISABLE; rpdid=0zbfVP8aaq|1euCQUJyL|39|3w1UuFsA; theme-tip-show=SHOWED; buvid_fp=57df8d60c5c6d95423a9c11a58cb9f17; buvid4=83161CD7-C7DA-F940-F781-DDAFB30CB7D718324-025062523-rED0dxd627ZfFYlfC18QM/ScYP/Wtr9oiEx//ByhHitznVynMKF8qSdVSvrbdK/z; theme-switch-show=SHOWED; DedeUserID=663614052; DedeUserID__ckMd5=703bdb265dc11d3e; CURRENT_BLACKGAP=0; LIVE_BUVID=AUTO6317712556325243; hit-dyn-v2=1; buvid3=0872BD41-BDB9-4924-FC88-388929D0293005225infoc; b_nut=1782468905; _uuid=88A3F96E-64F6-CE104-97AB-8E238A41FC8804134infoc; theme-avatar-tip-show=SHOWED; bmg_af_switch=1; bmg_src_def_domain=i0.hdslb.com; bmg_af_sc={\"none\":{\"on\":1,\"def\":\"i0.hdslb.com\"},\"sgp\":{\"on\":1,\"def\":\"i0-sgp.hdslb.com\"}}; home_feed_column=5; browser_resolution=2143-1316; bsource=search_bing; PVID=1; CURRENT_QUALITY=116; SESSDATA=d6c49320%2C1800458436%2Cb7057%2A72CjA7VrSVukm4KGIPtnAxfJCJ0K4IYGTUD4EG3MEbj2s_uFbZ3xa8P0JYvjTsIiavNasSVm5nQ2w0YTFMMk5kWjhOT0kycC1ROUZpbUNYeGpYa2VHdGd1QlNzQ29sWjBoV2tIOUZJckVSMVZFMV9Dd2ZJXzJwYVJLaGJvS0xuVDZkRG1CMzEwTkRRIIEC; bili_jct=ae1bc2746c7952ac304f1641a5f08b2b; sid=7a2ccngc; CURRENT_FNVAL=4048; bp_t_offset_663614052=1229425145710379008; bili_ticket=eyJhbGciOiJIUzI1NiIsImtpZCI6InMwMyIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3ODU0MTgwOTcsImlhdCI6MTc4NTE1ODgzNywicGx0IjotMX0.OGd-8asWD-PnGmJ2ftPku2C2pbwK59mCWYc_NbnyuLg; bili_ticket_expires=1785418037; b_lsid=23AF4478_19FA3D05C63",
+  "bilibili_user_agent": "",
+  "bilibili_request_timeout_seconds": 15,
+  "bilibili_max_concurrent_requests": 5,
+  "x_cookie": "",
+  "douyin_cookie": "",
+  "xiaohongshu_cookie": "",
+  "youtube_cookie": "",
+  "zhihu_cookie": "",
+  "reddit_cookie": "",
+  "data_path": "./data/openbiliclaw",
+  "enable_bili_history": true,
+  "enable_bili_recommendation": true,
+  "enable_x_history": false,
+  "enable_douyin_history": false,
+  "enable_xiaohongshu_history": false,
+  "enable_youtube_history": false,
+  "enable_zhihu_history": false,
+  "enable_reddit_history": false,
+  "discovery_cycle_seconds": 3600,
+  "max_events_per_cycle": 500,
+  "log_level": "INFO",
+  "video_name": "{{title}}",
+  "page_name": "{{bvid}}",
+  "video_default_path": "videos/{{title}}",
+  "page_default_path": "{{bvid}}",
+  "upper_path": "upers",
+  "nfo_time_type": "fav",
+  "time_format": "%Y-%m-%d %H:%M:%S",
+  "trigger": {
+    "type": "interval",
+    "seconds": 1200
+  },
+  "concurrent_limit": {
+    "video": 3,
+    "page": 2,
+    "rate_limit": 2,
+    "download": {
+      "concurrency": 4,
+      "threshold": 20971520
+    }
+  },
+  "skip_option": {
+    "no_poster": false,
+    "no_video_nfo": false,
+    "no_upper": false,
+    "no_danmaku": false,
+    "no_subtitle": false
+  },
+  "cdn_sorting": true
+}

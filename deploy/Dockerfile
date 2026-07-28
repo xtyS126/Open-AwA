@@ -5,14 +5,14 @@
 # ---- 阶段 1：前端构建 ----
 FROM node:20-alpine AS frontend-builder
 
-WORKDIR /app/lib/frontend
+WORKDIR /app/frontend
 
 # 利用 Docker 缓存层：先复制依赖文件
-COPY lib/frontend/package.json lib/frontend/package-lock.json* ./
+COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci --production=false 2>/dev/null || npm install
 
 # 复制前端源码并构建
-COPY lib/frontend/ ./
+COPY frontend/ ./
 RUN npm run build
 
 # ---- 阶段 2：后端依赖安装（独立层，便于缓存） ----
@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 Python 依赖
-COPY lib/backend/requirements.txt /app/requirements.txt
+COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
 
@@ -53,14 +53,14 @@ RUN groupadd --system --gid 1000 openawa \
     && chown -R openawa:openawa /app
 
 # 复制后端代码与项目元数据
-COPY --chown=openawa:openawa lib/backend/ /app/lib/backend/
+COPY --chown=openawa:openawa backend/ /app/backend/
 COPY --chown=openawa:openawa pyproject.toml /app/
 
 # 安装 openawa 包（开发模式，便于依赖解析与版本约束）
 RUN pip install --no-cache-dir -e /app/
 
 # 复制前端构建产物
-COPY --chown=openawa:openawa --from=frontend-builder /app/lib/frontend/dist /app/lib/frontend/dist
+COPY --chown=openawa:openawa --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 # 复制入口脚本并赋权
 COPY --chown=openawa:openawa deploy/entrypoint.sh /usr/local/bin/entrypoint.sh

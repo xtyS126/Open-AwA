@@ -2,7 +2,7 @@
 项目目录重组迁移脚本。
 
 功能：
-    将 Open-AwA 根目录重组为 lib/ var/ bin/ assets/ deploy/ 五个统一目录。
+    将 Open-AwA 根目录重组为 backend/ frontend/ desktop/ android/ var/ 等职责目录。
     仅负责文件/目录移动与目录创建，路径替换与构建配置更新由人工后续执行。
 
 用法：
@@ -61,7 +61,7 @@ class MoveOperation:
     Attributes:
         source: 源路径（相对项目根）
         destination: 目标路径（相对项目根）
-        category: 操作分类（lib/var/bin/assets/deploy/docs）
+    category: 操作分类（workspace/var/bin/assets/deploy/docs）
         is_optional: True 表示源不存在时静默跳过（运行时数据常见）
         description: 人类可读的操作说明
     """
@@ -77,43 +77,35 @@ class MoveOperation:
 # 文件/目录移动清单：按 category 分组，顺序执行
 # ============================================================================
 MOVE_OPERATIONS: list[MoveOperation] = [
-    # ---------- lib/：子项目迁入 ----------
+    # ---------- workspace/：可构建子项目迁入根目录 ----------
     MoveOperation(
         source="backend",
-        destination="lib/backend",
-        category="lib",
+        destination="backend",
+        category="workspace",
         is_optional=False,
-        description="后端 Python 项目迁入 lib/",
+        description="后端 Python 项目迁入根目录工作区",
     ),
     MoveOperation(
         source="frontend",
-        destination="lib/frontend",
-        category="lib",
+        destination="frontend",
+        category="workspace",
         is_optional=False,
-        description="前端 React 项目迁入 lib/",
+        description="前端 React 项目迁入根目录工作区",
     ),
     MoveOperation(
         source="desktop",
-        destination="lib/desktop",
-        category="lib",
+        destination="desktop",
+        category="workspace",
         is_optional=False,
-        description="Electron 桌面壳迁入 lib/",
+        description="Electron 桌面壳迁入根目录工作区",
     ),
     MoveOperation(
         source="Android",
-        destination="lib/Android",
-        category="lib",
+        destination="android",
+        category="workspace",
         is_optional=False,
-        description="Android 原生项目迁入 lib/",
+        description="Android 原生项目迁入根目录工作区",
     ),
-    MoveOperation(
-        source="openawa",
-        destination="lib/openawa",
-        category="lib",
-        is_optional=False,
-        description="CLI 工具包迁入 lib/",
-    ),
-
     # ---------- var/：运行时数据迁入（全部 optional，gitignored 数据可能不存在） ----------
     MoveOperation(
         source="backend/openawa.db",
@@ -357,37 +349,37 @@ MOVE_OPERATIONS: list[MoveOperation] = [
 PATH_REPLACEMENT_RULES: list[dict[str, str]] = [
     # ---------- 后端路径常量 ----------
     {
-        "file": "lib/backend/config/settings.py",
+        "file": "backend/config/settings.py",
         "rule": "_PROJECT_DIR 改为 Path(__file__).resolve().parents[3]；新增 _VAR_DIR / _DATA_DIR / _LOG_DIR / _WORKSPACE_DIR / _PLUGINS_DATA_DIR / _PETS_DATA_DIR；DATABASE_URL 指向 var/data/openawa.db；VECTOR_DB_PATH 指向 var/data/qdrant；LOG_DIR 指向 var/logs",
     },
     {
-        "file": "lib/backend/main.py",
+        "file": "backend/main.py",
         "rule": "_project_root 路径深度调整（parents[2]）；_FRONTEND_DIST 改为 _project_root / 'lib' / 'frontend' / 'dist'；_avatars_dir 改为绝对路径指向 var/data/uploads/avatars",
     },
     {
-        "file": "lib/backend/core/initialization.py",
+        "file": "backend/core/initialization.py",
         "rule": "_DEFAULT_MARKER_DIR 改为 Path('var/data')；注释中 backend/data 改为 var/data",
     },
     {
-        "file": "lib/backend/pets/asset_pack.py",
+        "file": "backend/pets/asset_pack.py",
         "rule": "注释中 backend/data/pets/builtin 改为 var/data/pets/builtin；若代码写入该路径则同步更新",
     },
     {
-        "file": "lib/backend/api/routes/acp.py",
+        "file": "backend/api/routes/acp.py",
         "rule": "注释中 backend/workspace 改为 var/workspace；ACP_ALLOWED_WORKDIRS 默认值同步更新",
     },
     {
-        "file": "lib/backend/tests/test_settings_paths.py",
+        "file": "backend/tests/test_settings_paths.py",
         "rule": "expected_path 改为 Path(__file__).resolve().parents[3] / 'var' / 'data' / 'openawa.db'",
     },
     # ---------- 构建配置 ----------
     {
         "file": "deploy/Dockerfile",
-        "rule": "COPY frontend/ → COPY lib/frontend/；COPY backend/ → COPY lib/backend/；COPY openawa/ → COPY lib/openawa/；COPY docker/entrypoint.sh → COPY deploy/entrypoint.sh；mkdir -p /app/data /app/logs /app/backend/workspace → mkdir -p /app/var/data /app/var/logs /app/var/workspace；ENV LOG_DIR / DATABASE_URL / VECTOR_DB_PATH 路径前缀改为 /app/var/",
+        "rule": "COPY frontend/ → COPY frontend/；COPY backend/ → COPY backend/；COPY docker/entrypoint.sh → COPY deploy/entrypoint.sh；mkdir -p /app/data /app/logs /app/backend/workspace → mkdir -p /app/var/data /app/var/logs /app/var/workspace；ENV LOG_DIR / DATABASE_URL / VECTOR_DB_PATH 路径前缀改为 /app/var/",
     },
     {
         "file": "deploy/docker-compose.yml",
-        "rule": "build.dockerfile: Dockerfile → deploy/Dockerfile；build.dockerfile: frontend/Dockerfile → lib/frontend/Dockerfile；volumes: /app/data → /app/var/data；/app/logs → /app/var/logs；/app/openawa/uploads → /app/var/uploads；/app/backend/workspace → /app/var/workspace；environment 中 DATABASE_URL / VECTOR_DB_PATH / LOG_DIR 同步更新",
+        "rule": "build.dockerfile: Dockerfile → deploy/Dockerfile；build.dockerfile: frontend/Dockerfile → frontend/Dockerfile；volumes: /app/data → /app/var/data；/app/logs → /app/var/logs；/app/openawa/uploads → /app/var/uploads；/app/backend/workspace → /app/var/workspace；environment 中 DATABASE_URL / VECTOR_DB_PATH / LOG_DIR 同步更新",
     },
     {
         "file": "deploy/docker-compose.prod.yml",
@@ -403,18 +395,18 @@ PATH_REPLACEMENT_RULES: list[dict[str, str]] = [
     },
     {
         "file": "pyproject.toml",
-        "rule": "[tool.setuptools] packages=['openawa'] → [tool.setuptools.packages.find] where=['lib'] include=['backend*','openawa*']；[tool.coverage.run] source=['openawa'] → source=['lib/openawa']",
+        "rule": "[tool.setuptools] packages=['openawa'] → [tool.setuptools.packages.find] where=['lib'] include=['backend*']；[tool.coverage.run] source=['openawa'] → source=['backend']",
     },
     {
-        "file": "lib/frontend/vite.config.ts",
-        "rule": "cacheDir: path.resolve(__dirname, '..', '.vite-cache') → path.resolve(__dirname, '..', '..', '.vite-cache')（保持项目根 .vite-cache）",
+        "file": "frontend/vite.config.ts",
+        "rule": "cacheDir 迁移至 path.resolve(__dirname, '..', '..', 'var', 'cache', 'vite')，避免构建缓存污染项目根目录",
     },
     {
-        "file": "lib/desktop/scripts/build-frontend.ts",
+        "file": "desktop/scripts/build-frontend.ts",
         "rule": "path.resolve(__dirname, '..', '..', 'frontend') → path.resolve(__dirname, '..', '..', '..', 'lib', 'frontend')",
     },
     {
-        "file": "lib/desktop/scripts/dev.ts",
+        "file": "desktop/scripts/dev.ts",
         "rule": "path.resolve(__dirname, '..', '..', 'frontend') → path.resolve(__dirname, '..', '..', '..', 'lib', 'frontend')",
     },
     # ---------- 脚本与启动文件 ----------
@@ -428,7 +420,7 @@ PATH_REPLACEMENT_RULES: list[dict[str, str]] = [
     },
     {
         "file": "bin/install.ps1",
-        "rule": "$ProjectDir\\backend\\requirements.txt → $ProjectDir\\lib\\backend\\requirements.txt；$ProjectDir\\frontend → $ProjectDir\\lib\\frontend；sys.path.insert(0, 'backend') → 'lib/backend'",
+        "rule": "$ProjectDir\\backend\\requirements.txt → $ProjectDir\\lib\\backend\\requirements.txt；$ProjectDir\\frontend → $ProjectDir\\lib\\frontend；sys.path.insert(0, 'backend') → 'backend'",
     },
     {
         "file": "bin/generate_api_key.py",
@@ -436,17 +428,17 @@ PATH_REPLACEMENT_RULES: list[dict[str, str]] = [
     },
     {
         "file": "scripts/install.sh",
-        "rule": "../backend → ../lib/backend；./backend → ./lib/backend；$PROJECT_DIR/frontend → $PROJECT_DIR/lib/frontend",
+        "rule": "../backend → ../backend；./backend → ./backend；$PROJECT_DIR/frontend → $PROJECT_DIR/frontend",
     },
     # ---------- .gitignore ----------
     {
         "file": ".gitignore",
-        "rule": "添加 var/ 整体忽略；移除 backend/openawa_e2e*.db / backend/data/* / backend/uploads/ / backend/logs 等旧条目；Android/Open-AwA-Android/* → lib/Android/Open-AwA-Android/*；openawa/* → lib/openawa/*；frontend/* → lib/frontend/*",
+        "rule": "添加 var/ 整体忽略；移除 backend/openawa_e2e*.db / backend/data/* / backend/uploads/ / backend/logs 等旧条目；Android/Open-AwA-Android/* → android/Open-AwA-Android/*；frontend/* → frontend/*",
     },
     # ---------- 文档 ----------
     {
         "file": "README.md / CLAUDE.md / AGENTS.md / docs/架构/*.md / docs/指南/*.md",
-        "rule": "cd backend → cd lib/backend；cd frontend → cd lib/frontend；backend/openawa.db → var/data/openawa.db；backend/data → var/data；backend/logs → var/logs；backend/workspace → var/workspace；dev.bat → bin/dev.bat；scripts/deploy.ps1 → bin/deploy.ps1；scripts/install.ps1 → bin/install.ps1；backend/generate_api_key.py → bin/generate_api_key.py",
+        "rule": "cd backend → cd backend；cd frontend → cd frontend；backend/openawa.db → var/data/openawa.db；backend/data → var/data；backend/logs → var/logs；backend/workspace → var/workspace；dev.bat → bin/dev.bat；scripts/deploy.ps1 → bin/deploy.ps1；scripts/install.ps1 → bin/install.ps1；backend/generate_api_key.py → bin/generate_api_key.py",
     },
 ]
 

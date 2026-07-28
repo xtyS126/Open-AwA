@@ -1,0 +1,113 @@
+{
+  "name": "bilibili-toolkit-builtin",
+  "version": "0.3.147",
+  "pluginApiVersion": "1.0.0",
+  "description": "兼顾 B 站信息获取与视频下载双能力的 B 站工具箱插件 - 为 OpenAwA AI 提供 B 站/X/抖音/小红书等多平台内容数据采集渠道（仅接入数据，AI 能力由主平台提供）",
+  "author": "OpenBiliClaw Team",
+  "permissions": ["network:http"],
+  "auto_authorize_permissions": true,
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "openbiliclaw_sync_account",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_get_profile",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_recommend",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_submit_feedback",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_get_delight",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_get_runtime_status",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_chat",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_download_video",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_next_probe",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_next_avoidance_probe",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "openbiliclaw_respond_avoidance_probe",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "bilibili_add_subscription",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "bilibili_download_collection",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "bilibili_list_subscriptions",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "bilibili_trigger_download",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "bilibili_get_download_status",
+      "version": "0.3.147",
+      "config": {}
+    },
+    {
+      "point": "tool",
+      "name": "bilibili_list_videos",
+      "version": "0.3.147",
+      "config": {}
+    }
+  ]
+}

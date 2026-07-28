@@ -62,13 +62,14 @@ Documentation = "https://github.com/open-awa/open-awa"
 Repository = "https://github.com/open-awa/open-awa.git"
 
 [tool.setuptools.packages.find]
-where = ["lib"]
+where = ["."]
 include = ["backend*"]
 
 [tool.pytest.ini_options]
-testpaths = ["lib/backend/tests"]
-pythonpath = ["lib/backend", "."]
+testpaths = ["backend/tests"]
+pythonpath = ["backend", "."]
+cache_dir = "var/cache/pytest/current"
 
 [tool.coverage.run]
-source = ["lib/backend"]
-omit = ["lib/backend/tests/*"]
+source = ["backend"]
+omit = ["backend/tests/*"]

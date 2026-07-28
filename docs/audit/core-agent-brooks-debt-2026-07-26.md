@@ -2,7 +2,7 @@
 
 > 评估时间：2026-07-26
 > 评估工具：trae-remote-official:brooks-lint:brooks-debt
-> 评估对象：[lib/backend/core/agent.py](file:///d:/代码/Open-AwA/lib/backend/core/agent.py)（2775 行，AIAgent 类 80+ 方法）
+> 评估对象：[backend/core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py)（2775 行，AIAgent 类 80+ 方法）
 > 评估上下文：wave3 完成后（4 个父方法已拆分），对剩余技术债做完整扫描
 
 ---
@@ -10,7 +10,7 @@
 ## 报告头
 
 **Mode:** Tech Debt Assessment
-**Scope:** [lib/backend/core/agent.py](file:///d:/代码/Open-AwA/lib/backend/core/agent.py) (2775 行，AIAgent 类 80+ 方法)
+**Scope:** [backend/core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) (2775 行，AIAgent 类 80+ 方法)
 **Health Score:** 20/100
 
 AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God Class）几乎阻塞任何非平凡改动，9 个 Warning 债务分布在 R2/R3/R4/R5/R6 五个维度，表明 decay 风险已系统性扩散而非局部问题。
@@ -22,12 +22,12 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
 ### Critical
 
 **F1. R1 Cognitive Overload — 5 个方法超 80 行硬上限**
-- **Symptom**: [lib/backend/core/agent.py](file:///d:/代码/Open-AwA/lib/backend/core/agent.py) 中 5 个方法超过项目硬上限（80 行）：
-  - `_build_native_tools` ([L586-L703, 118 行](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L586-L703))
-  - `__init__` ([L194-L306, 113 行](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L194-L306))
-  - `_execute_single_plan_step` ([L2046-L2145, 100 行](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L2046-L2145))
-  - `_handle_tool_calls_in_round` ([L1272-L1357, 86 行](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1272-L1357))
-  - `_emit_tool_post_events` ([L1576-L1659, 84 行](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1576-L1659))
+- **Symptom**: [backend/core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) 中 5 个方法超过项目硬上限（80 行）：
+  - `_build_native_tools` ([L586-L703, 118 行](file:///d:/代码/Open-AwA/backend/core/agent.py#L586-L703))
+  - `__init__` ([L194-L306, 113 行](file:///d:/代码/Open-AwA/backend/core/agent.py#L194-L306))
+  - `_execute_single_plan_step` ([L2046-L2145, 100 行](file:///d:/代码/Open-AwA/backend/core/agent.py#L2046-L2145))
+  - `_handle_tool_calls_in_round` ([L1272-L1357, 86 行](file:///d:/代码/Open-AwA/backend/core/agent.py#L1272-L1357))
+  - `_emit_tool_post_events` ([L1576-L1659, 84 行](file:///d:/代码/Open-AwA/backend/core/agent.py#L1576-L1659))
 - **Source**: Fowler — Refactoring (Long Method)；项目 memory 中 "Long Method 拆分硬上限" 约束
 - **Consequence**: wave3 仅拆分了 4 个父方法主体，拆出的子方法本身仍超阈值，长方法债务被"向下推"而非消除；100+ 行方法中任何改动都需在多分支间定位，回归风险高，开发者倾向于绕过而非修正。
 - **Remedy**: 按 wave3 并行 subagent 模式启动 wave4：
@@ -39,7 +39,7 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
 - **Pain × Spread**: 3 × 3 = 9（Critical debt，next sprint）
 
 **F2. R2 Change Propagation — God Class: AIAgent 2775 行承载 80+ 方法**
-- **Symptom**: [lib/backend/core/agent.py](file:///d:/代码/Open-AwA/lib/backend/core/agent.py) 单文件 2775 行，AIAgent 类包含 80+ 方法，覆盖意图识别、规划、工具分发、流式处理、状态机、记忆检索、经验提取、工作流执行、自主纠错、能力缓存、行为记录、预算追踪、灵魂注入等 13+ 个职责。Grep 显示 39 个 import 语句、17 处 lazy import。
+- **Symptom**: [backend/core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) 单文件 2775 行，AIAgent 类包含 80+ 方法，覆盖意图识别、规划、工具分发、流式处理、状态机、记忆检索、经验提取、工作流执行、自主纠错、能力缓存、行为记录、预算追踪、灵魂注入等 13+ 个职责。Grep 显示 39 个 import 语句、17 处 lazy import。
 - **Source**: Fowler — Refactoring (God Class, Divergent Change)；Brooks — The Mythical Man-Month (Ch. 2: Brooks's Law)
 - **Consequence**: 任何新功能（新工具类型、新钩子、新事件类型）都需要修改 AIAgent，导致多开发者并行开发时合并冲突高发；测试套件必须通过 `AIAgent.__new__` 跳过 `__init__` 才能隔离测试，进一步加剧 T2 测试脆弱性；开发者"avoid touching it"是 Pain 3 的直接证据。
 - **Remedy**: 按职责拆分为多个协作对象：
@@ -55,44 +55,44 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
 
 **F3. R1 Cognitive Overload — Long Parameter List**
 - **Symptom**:
-  - [lib/backend/core/agent.py:2256-2268](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L2256-L2268) `_collect_and_execute_in_parallel` 接收 10 个参数
-  - [L1358-L1368](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1358-L1368) `_advance_state_machine_for_round` 接收 8 个参数
-  - [L1660-L1669](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1660-L1669) `_finalize_stream` 接收 7 个参数
+  - [backend/core/agent.py:2256-2268](file:///d:/代码/Open-AwA/backend/core/agent.py#L2256-L2268) `_collect_and_execute_in_parallel` 接收 10 个参数
+  - [L1358-L1368](file:///d:/代码/Open-AwA/backend/core/agent.py#L1358-L1368) `_advance_state_machine_for_round` 接收 8 个参数
+  - [L1660-L1669](file:///d:/代码/Open-AwA/backend/core/agent.py#L1660-L1669) `_finalize_stream` 接收 7 个参数
 - **Source**: Fowler — Refactoring (Long Parameter List)
 - **Consequence**: 调用方必须记住参数顺序，IDE 自动补全无法提示语义；参数间存在隐式约束（如 `intent`/`entities`/`intent_keywords`/`entities_list` 四个参数必须一致）却无法在签名中表达，容易传入不一致状态。
 - **Remedy**: 提取 `PlanExecutionContext` dataclass 封装 `(intent, entities, intent_keywords, entities_list, user_input, context)`；提取 `RoundState` dataclass 封装 `(round_count, round_content, round_reasoning, state, effective_user_input)`。
 - **Pain × Spread**: 2 × 2 = 4（Scheduled debt）
 
 **F4. R2 Change Propagation — process vs process_stream 双路径 Divergent Change**
-- **Symptom**: [lib/backend/core/agent.py:1852-1886](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1852-L1886) `_prepare_process_context` 与 [L1116-L1164](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1116-L1164) `_prepare_role_and_capabilities` 各自实现"魔法命令检查 + 上下文准备 + 能力注入 + 多模态/思考构建"，但行为略有差异（stream 路径有角色引擎加载与灵魂注入，process 路径没有）。
+- **Symptom**: [backend/core/agent.py:1852-1886](file:///d:/代码/Open-AwA/backend/core/agent.py#L1852-L1886) `_prepare_process_context` 与 [L1116-L1164](file:///d:/代码/Open-AwA/backend/core/agent.py#L1116-L1164) `_prepare_role_and_capabilities` 各自实现"魔法命令检查 + 上下文准备 + 能力注入 + 多模态/思考构建"，但行为略有差异（stream 路径有角色引擎加载与灵魂注入，process 路径没有）。
 - **Source**: Fowler — Refactoring (Divergent Change)
 - **Consequence**: 修改上下文准备逻辑（如新增"附件预处理"步骤）必须在两处同步修改，遗漏会导致 stream 与非 stream 行为不一致；当前已有差异（角色引擎只在 stream 路径触发）可能是 bug 也可能是设计，但代码未注释意图。
 - **Remedy**: 提取统一的 `_prepare_execution_context(user_input, context, *, is_stream)` 模板方法，参数化差异点；或在 `ProcessContext` 对象中显式声明 `enable_role_engine` 等开关。
 - **Pain × Spread**: 2 × 3 = 6（Scheduled debt）
 
 **F5. R2 Change Propagation — tool_name 字符串硬编码多处（Shotgun Surgery）**
-- **Symptom**: Grep 显示字符串 `"task_spawn_agent"` 在 [L1431](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1431)、[L1546](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1546)、[L1631](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1631) 出现 3 次；`"builtin_ask_user"` 在 [L1447](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1447) 出现；`"builtin_notify"` / `"builtin_todo_write"` / `"task_create_task"` / `"task_update_task"` / `"task_todo_write"` / `"task_create_team"` / `"task_delete_team"` / `"task_add_teammate"` / `"task_remove_teammate"` 等 9 个工具名在 `_emit_tool_post_events` 中硬编码。
+- **Symptom**: Grep 显示字符串 `"task_spawn_agent"` 在 [L1431](file:///d:/代码/Open-AwA/backend/core/agent.py#L1431)、[L1546](file:///d:/代码/Open-AwA/backend/core/agent.py#L1546)、[L1631](file:///d:/代码/Open-AwA/backend/core/agent.py#L1631) 出现 3 次；`"builtin_ask_user"` 在 [L1447](file:///d:/代码/Open-AwA/backend/core/agent.py#L1447) 出现；`"builtin_notify"` / `"builtin_todo_write"` / `"task_create_task"` / `"task_update_task"` / `"task_todo_write"` / `"task_create_team"` / `"task_delete_team"` / `"task_add_teammate"` / `"task_remove_teammate"` 等 9 个工具名在 `_emit_tool_post_events` 中硬编码。
 - **Source**: Fowler — Refactoring (Shotgun Surgery)；Hunt & Thomas — The Pragmatic Programmer (Orthogonality)
 - **Consequence**: 重命名任一工具名需在 3-5 处同步修改；新增工具类型（如 `task_create_label`）必须修改 `_emit_tool_post_events` 添加新分支，违反 OCP。
 - **Remedy**: 提取 `ToolNames` 常量类（或 enum），所有引用改为 `ToolNames.TASK_SPAWN_AGENT`；事件派发改为 dict dispatch + 工具注册表模式。
 - **Pain × Spread**: 2 × 3 = 6（Scheduled debt）
 
 **F6. R3 Knowledge Duplication — `_execute_single_plan_step` 三分支重复**
-- **Symptom**: [lib/backend/core/agent.py:2061-2144](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L2061-L2144) skill / plugin / execution 三个分支各自重复同一模式：`await execute_X(...) → results.append({type, step, result}) → self._schedule_record(node_type="tool_execution", ...) → record_tool_execution_metric(...)`，三段代码结构对称仅参数不同。
+- **Symptom**: [backend/core/agent.py:2061-2144](file:///d:/代码/Open-AwA/backend/core/agent.py#L2061-L2144) skill / plugin / execution 三个分支各自重复同一模式：`await execute_X(...) → results.append({type, step, result}) → self._schedule_record(node_type="tool_execution", ...) → record_tool_execution_metric(...)`，三段代码结构对称仅参数不同。
 - **Source**: Hunt & Thomas — The Pragmatic Programmer (DRY)；Fowler — Refactoring (Duplicate Code)
 - **Consequence**: 新增第 4 种执行类型（如 future "agent_tool"）时必须在 3 处对称位置添加分支；`_schedule_record` 调用契约变更需同步修改 3 处。
 - **Remedy**: 提取 `_record_step_execution(step, result, execution_type, user_input, context)` 模板方法，三分支只传入差异化参数；或用 dict dispatch `{type: execute_fn}` 消除分支。
 - **Pain × Spread**: 2 × 2 = 4（Scheduled debt）
 
 **F7. R3 Knowledge Duplication — process vs process_stream 准备流程重复**
-- **Symptom**: [lib/backend/core/agent.py:1804-1807](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1804-L1807) `process` 调用 `_prepare_process_context`（魔法命令 + 上下文 + 能力注入 + 多模态 + 思考），[lib/backend/core/agent.py:1756-1760](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1756-L1760) `process_stream` 调用 `_handle_magic_command_or_yield` + `_prepare_role_and_capabilities`（角色引擎 + 能力注入 + 多模态 + 思考），两条路径的"能力注入 + 多模态 + 思考"部分完全相同。
+- **Symptom**: [backend/core/agent.py:1804-1807](file:///d:/代码/Open-AwA/backend/core/agent.py#L1804-L1807) `process` 调用 `_prepare_process_context`（魔法命令 + 上下文 + 能力注入 + 多模态 + 思考），[backend/core/agent.py:1756-1760](file:///d:/代码/Open-AwA/backend/core/agent.py#L1756-L1760) `process_stream` 调用 `_handle_magic_command_or_yield` + `_prepare_role_and_capabilities`（角色引擎 + 能力注入 + 多模态 + 思考），两条路径的"能力注入 + 多模态 + 思考"部分完全相同。
 - **Source**: Fowler — Refactoring (Duplicate Code)
 - **Consequence**: 修改能力注入或多模态构建逻辑需同步修改两处；wave1 提取的 `agent_context_builder` 已部分缓解，但调用点仍重复。
 - **Remedy**: 统一为单一 `_prepare_context_pipeline(user_input, context, *, is_stream)` 入口，参数化差异点（角色引擎只在 stream 触发）。
 - **Pain × Spread**: 2 × 2 = 4（Scheduled debt）
 
 **F8. R4 Accidental Complexity — 14 个 deprecated 兼容别名（Speculative Generality 反向）**
-- **Symptom**: [lib/backend/core/agent.py:183-516](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L183-L516) 保留 14 个 `# Deprecated: 仅为兼容测试` 的 staticmethod 别名：
+- **Symptom**: [backend/core/agent.py:183-516](file:///d:/代码/Open-AwA/backend/core/agent.py#L183-L516) 保留 14 个 `# Deprecated: 仅为兼容测试` 的 staticmethod 别名：
   - `_is_final_only_mode` / `_build_status_event` / `_map_finish_reason_to_state`
   - `_get_stream_tool_kind` / `_summarize_stream_tool_result` / `_extract_spawned_subagent_result`
   - `_build_effective_user_input` / `_build_configured_model_hint`
@@ -101,7 +101,7 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
   - `_summarize_skill_capabilities` / `_summarize_plugin_capabilities`
   - `_collect_mcp_capabilities` / `_collect_configured_model_capabilities`
 
-  真实实现在 [agent_helpers.py](file:///d:/代码/Open-AwA/lib/backend/core/agent_helpers.py) / [agent_context_builder.py](file:///d:/代码/Open-AwA/lib/backend/core/agent_context_builder.py) / [agent_capability_builder.py](file:///d:/代码/Open-AwA/lib/backend/core/agent_capability_builder.py)。
+  真实实现在 [agent_helpers.py](file:///d:/代码/Open-AwA/backend/core/agent_helpers.py) / [agent_context_builder.py](file:///d:/代码/Open-AwA/backend/core/agent_context_builder.py) / [agent_capability_builder.py](file:///d:/代码/Open-AwA/backend/core/agent_capability_builder.py)。
 - **Source**: Fowler — Refactoring (Speculative Generality, Lazy Class)；Winters et al. — Software Engineering at Google (Ch. 1: Hyrum's Law)
 - **Consequence**: 真实抽象边界模糊，新开发者难以判断该调用 `agent._build_status_event` 还是 `agent_helpers.build_status_event`；别名成为事实 API（Hyrum's Law），移除时破坏 8 个测试文件，导致债务被"锁定"。
 - **Remedy**: 落地 fix-test-implementation-coupling spec：
@@ -111,7 +111,7 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
 - **Pain × Spread**: 2 × 2 = 4（Scheduled debt，intentional）
 
 **F9. R4 Accidental Complexity — `_emit_tool_post_events` Switch Statements**
-- **Symptom**: [lib/backend/core/agent.py:1611-1658](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1611-L1658) `_emit_tool_post_events` 用 7 个 `if tc_state.tool_name == "..."` 链式分发不同事件类型（builtin_notify / builtin_todo_write / task_spawn_agent / task_create_task / task_update_task / task_todo_write / task_create_team 等）。
+- **Symptom**: [backend/core/agent.py:1611-1658](file:///d:/代码/Open-AwA/backend/core/agent.py#L1611-L1658) `_emit_tool_post_events` 用 7 个 `if tc_state.tool_name == "..."` 链式分发不同事件类型（builtin_notify / builtin_todo_write / task_spawn_agent / task_create_task / task_update_task / task_todo_write / task_create_team 等）。
 - **Source**: Fowler — Refactoring (Switch Statements)
 - **Consequence**: 新增工具类型必须修改 `_emit_tool_post_events` 添加新 if 分支，违反 OCP；7 个分支挤在 84 行方法中，是该方法是 Long Method Critical 的主要贡献者。
 - **Remedy**: 改用 dict dispatch：`_TOOL_EVENT_DISPATCHERS: Dict[str, Callable[[tc_state, context], EventDict]] = {"builtin_notify": _emit_notification_event, "builtin_todo_write": _emit_todo_event, ...}`，新增工具类型只需注册新 dispatcher；或提取 `ToolEventDispatcher` 类。
@@ -119,8 +119,8 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
 
 **F10. R5 Dependency Disorder — core/agent.py 反向依赖 db.models**
 - **Symptom**:
-  - [lib/backend/core/agent.py:249](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L249) `from db.models import SessionLocal`
-  - [lib/backend/core/agent.py:2555](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L2555) `from db.models import Workflow`
+  - [backend/core/agent.py:249](file:///d:/代码/Open-AwA/backend/core/agent.py#L249) `from db.models import SessionLocal`
+  - [backend/core/agent.py:2555](file:///d:/代码/Open-AwA/backend/core/agent.py#L2555) `from db.models import Workflow`
 
   domain 层（core/）直接 import persistence 层（db/models.py 中的 SQLAlchemy ORM 类）。wave1 已通过 AskUserPort 解决了 `from api.routes.* import` 的反向依赖，但 persistence 反向依赖未处理。
 - **Source**: Martin — Clean Architecture (Dependency Inversion Principle)
@@ -130,9 +130,9 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
 
 **F11. R6 Domain Model Distortion — Tool 分发逻辑在 service 层而非 domain**
 - **Symptom**:
-  - [lib/backend/core/agent.py:1406-1574](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1406-L1574) `_dispatch_tool_call` / `_dispatch_ask_user_tool` / `_dispatch_regular_tool` 在 AIAgent service 层实现工具分发领域逻辑（解析参数、发射 running 事件、按工具名委派、处理取消/超时/参数校验）
-  - [L1576-L1659](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1576-L1659) `_emit_tool_post_events` 在 service 层实现工具事件派发领域逻辑
-  - `_ToolCallState` ([L158-L172](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L158-L172)) 是纯数据袋，无任何行为
+  - [backend/core/agent.py:1406-1574](file:///d:/代码/Open-AwA/backend/core/agent.py#L1406-L1574) `_dispatch_tool_call` / `_dispatch_ask_user_tool` / `_dispatch_regular_tool` 在 AIAgent service 层实现工具分发领域逻辑（解析参数、发射 running 事件、按工具名委派、处理取消/超时/参数校验）
+  - [L1576-L1659](file:///d:/代码/Open-AwA/backend/core/agent.py#L1576-L1659) `_emit_tool_post_events` 在 service 层实现工具事件派发领域逻辑
+  - `_ToolCallState` ([L158-L172](file:///d:/代码/Open-AwA/backend/core/agent.py#L158-L172)) 是纯数据袋，无任何行为
 - **Source**: Evans — Domain-Driven Design (Anemic Domain Model, Domain Model pattern)；Fowler — Refactoring (Data Class)
 - **Consequence**: 工具分发的领域规则散落在 service 层方法中，无法在 domain 层单元测试；新增工具类型需修改 service 层而非扩展 domain 模型；`_ToolCallState` 作为纯数据袋被 4 个 service 方法读写，状态一致性靠开发者记忆维护。
 - **Remedy**: 提取 `ToolDispatcher` 领域对象，封装工具分发规则与 `_ToolCallState` 状态机；`_emit_tool_post_events` 提取为 `ToolEventEmitter` 对象，按工具类型注册 dispatcher 策略。
@@ -142,10 +142,10 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
 
 **F12. R1 Cognitive Overload — Magic numbers 跨方法耦合**
 - **Symptom**:
-  - [lib/backend/core/agent.py:1183](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1183) `if len(conversation_history) > 40:`
-  - [lib/backend/core/agent.py:1056](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L1056) `if not budget.should_compress() and len(messages) <= 40:`
+  - [backend/core/agent.py:1183](file:///d:/代码/Open-AwA/backend/core/agent.py#L1183) `if len(conversation_history) > 40:`
+  - [backend/core/agent.py:1056](file:///d:/代码/Open-AwA/backend/core/agent.py#L1056) `if not budget.should_compress() and len(messages) <= 40:`
 
-  在两处独立硬编码同一阈值 40；[L969](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L969) `MAX_MSG_CHARS = 5_000` 在方法内局部定义。
+  在两处独立硬编码同一阈值 40；[L969](file:///d:/代码/Open-AwA/backend/core/agent.py#L969) `MAX_MSG_CHARS = 5_000` 在方法内局部定义。
 - **Source**: McConnell — Code Complete (Ch. 12: Fundamental Data Types)
 - **Consequence**: 压缩阈值调整时需同步修改两处，遗漏会导致状态事件与实际压缩行为不一致。
 - **Remedy**: 提取为 `agent_helpers.COMPACTION_MESSAGE_THRESHOLD = 40` 常量，两处引用同一常量；`MAX_MSG_CHARS` 提升为模块级常量。
@@ -159,7 +159,7 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
 - **Pain × Spread**: 1 × 2 = 2（Monitored debt）
 
 **F14. R4 Accidental Complexity — Lazy imports 散落 17 处**
-- **Symptom**: Grep 显示 [lib/backend/core/agent.py](file:///d:/代码/Open-AwA/lib/backend/core/agent.py) 中有 17 处方法内 lazy import：
+- **Symptom**: Grep 显示 [backend/core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) 中有 17 处方法内 lazy import：
   - `from config.settings import settings`
   - `from memory.manager import MemoryManager`
   - `from core.role_engine import RoleEngine`
@@ -175,14 +175,14 @@ AIAgent 类已积累系统性技术债：2 个 Critical 债务（长方法 + God
 - **Pain × Spread**: 1 × 2 = 2（Monitored debt）
 
 **F15. R5 Dependency Disorder — 模块扇出 > 30**
-- **Symptom**: [lib/backend/core/agent.py](file:///d:/代码/Open-AwA/lib/backend/core/agent.py) 顶部 import 39 个符号，跨 6 个子包（core/、memory/、skills/、plugins/、workflow/、billing/），加上 17 处 lazy import，总扇出 > 50。
+- **Symptom**: [backend/core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) 顶部 import 39 个符号，跨 6 个子包（core/、memory/、skills/、plugins/、workflow/、billing/），加上 17 处 lazy import，总扇出 > 50。
 - **Source**: Martin — Clean Architecture (Stable Dependencies Principle)
 - **Consequence**: 任何子包变更都可能影响 AIAgent；测试隔离困难，是 `AIAgent.__new__` 模式的根因之一。
 - **Remedy**: 通过 God Class 拆分（F2）与 RepositoryPort 抽象（F10）自然降低扇出；目标将 AIAgent 扇出降至 < 15。
 - **Pain × Spread**: 1 × 3 = 3（Monitored debt）
 
 **F16. R6 Domain Model Distortion — `_ToolCallState` anemic data class**
-- **Symptom**: [lib/backend/core/agent.py:157-172](file:///d:/代码/Open-AwA/lib/backend/core/agent.py#L157-L172) `_ToolCallState` 是 `@dataclass`，仅包含 8 个字段无任何方法；4 个 service 方法（`_dispatch_tool_call` / `_dispatch_ask_user_tool` / `_dispatch_regular_tool` / `_emit_tool_post_events`）读写其字段。
+- **Symptom**: [backend/core/agent.py:157-172](file:///d:/代码/Open-AwA/backend/core/agent.py#L157-L172) `_ToolCallState` 是 `@dataclass`，仅包含 8 个字段无任何方法；4 个 service 方法（`_dispatch_tool_call` / `_dispatch_ask_user_tool` / `_dispatch_regular_tool` / `_emit_tool_post_events`）读写其字段。
 - **Source**: Fowler — Refactoring (Data Class)；Evans — Domain-Driven Design (Anemic Domain Model)
 - **Consequence**: 状态一致性规则（如"result 必须在 tool_name 之后设置"）散落在 4 个方法中，无法在 dataclass 内聚。
 - **Remedy**: 与 F11 合并：将 `_ToolCallState` 升级为 `ToolCallContext` 领域对象，封装状态转换规则（如 `mark_running(tool_name, tool_id)` / `set_result(result)` / `mark_background_subagent()`）。
@@ -259,7 +259,7 @@ wave6 (within quarter, 收尾)
 
 ## 修复验收证据
 
-验收时间：2026-07-26。以下结果以本轮修复后的 `lib/backend/core/agent.py` 和生产构造路径为准。
+验收时间：2026-07-26。以下结果以本轮修复后的 `backend/core/agent.py` 和生产构造路径为准。
 
 | Finding | 状态 | 修复证据 |
 |---|---|---|
@@ -310,7 +310,7 @@ wave6 (within quarter, 收尾)
 
 ### 评估范围
 
-- 文件：`lib/backend/core/agent.py`
+- 文件：`backend/core/agent.py`
 - 行数：2775 行
 - 类：AIAgent（80+ 方法）
 - 评估时点：wave3 完成后（2026-07-26）

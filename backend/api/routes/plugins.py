@@ -1,0 +1,1386 @@
+"""
+后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
+这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+"""
+
+import asyncio
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Body
+from sqlalchemy.orm import Session
+from typing import Any, Dict, List, Optional
+from pathlib import Path as PathLib
+from copy import deepcopy
+from pydantic import BaseModel
+from db.models import get_db, Plugin
+from api.dependencies import get_current_user, get_current_admin_user
+from api.schemas import PluginCreate, PluginImportUrlRequest, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
+from plugins.plugin_manager import PluginManager
+from plugins import plugin_instance
+from plugins.plugin_logger import LogManager
+from security.audit import AuditLogger
+from loguru import logger
+
+
+class PluginConfigSaveRequest(BaseModel):
+    """插件配置保存请求体。配置为动态 key-value，由插件 schema 定义具体字段。"""
+
+    # 允许任意配置字段，但确保顶层是 JSON 对象
+    model_config = {"extra": "allow"}
+
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_ZIP_FILES = 100
+MAX_ZIP_EXTRACTION_SIZE = 200 * 1024 * 1024  # 200MB
+import uuid
+import zipfile
+import io
+import os
+import shutil
+import tempfile
+import json
+
+
+router = APIRouter(prefix="/plugins", tags=["Plugins"])
+
+
+def _get_plugin_manager() -> PluginManager:
+    """获取全局插件管理器单例。"""
+    return plugin_instance.get()
+
+
+# 模块级变量已废弃，内部函数应使用 _get_plugin_manager()
+# 保留此变量仅为兼容外部可能存在的直接引用
+def __getattr__(name):
+    """模块级属性懒加载，确保 plugin_manager 引用始终指向全局单例。"""
+    if name == "plugin_manager":
+        return plugin_instance.get()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _read_json_file(path: str) -> Optional[Dict[str, Any]]:
+    """
+    读取 JSON 文件并返回字典结构，异常时返回 None。
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, dict):
+            return payload
+        return None
+    except Exception as exc:
+        # JSON 文件读取/解析失败时降级为 None，记录 debug 便于排查插件配置加载问题
+        logger.debug(f"[plugins] JSON 文件读取失败: {path}, error={exc}")
+        return None
+
+
+def _write_json_file(path: str, payload: Dict[str, Any]) -> None:
+    """
+    将字典按 JSON 形式写入文件，确保目录存在。
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _write_json_file_atomic(path: str, payload: Dict[str, Any]) -> None:
+    """
+    通过临时文件 + 原子替换写入 JSON，避免配置文件处于半写入状态。
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temp_file_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=os.path.dirname(path),
+            delete=False,
+        ) as temp_file:
+            json.dump(payload, temp_file, ensure_ascii=False, indent=2)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            temp_file_path = temp_file.name
+        os.replace(temp_file_path, path)
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+
+def _resolve_plugin_root_dir(plugin_name: str) -> Optional[str]:
+    """
+    根据插件名解析插件根目录，优先使用扫描元数据，其次回退到目录与 manifest 查找。
+    所有路径均验证不溢出插件根目录，防止路径遍历攻击。
+
+    兼容两种插件入口结构：
+    - 扁平结构：``<plugin_root>/plugin.py``（内置插件常用）
+    - 嵌套结构：``<plugin_root>/src/index.py``（外部插件常用）
+
+    查找范围包括两个目录：
+    - 用户插件目录：项目根 ``plugins/``（plugins_dir）
+    - 内置插件目录：``backend/plugins/``（bilibili-toolkit-builtin 等系统内置插件）
+    """
+    plugins_base = PathLib(_get_plugin_manager().plugins_dir).resolve()
+    # 内置插件目录：backend/plugins/（本文件位于 backend/api/routes/）
+    backend_plugins_base = PathLib(__file__).resolve().parent.parent.parent / "plugins"
+
+    _ensure_plugin_discovered(plugin_name)
+    metadata = _get_plugin_manager().plugin_metadata.get(plugin_name, {})
+    metadata_path = metadata.get("path")
+    if isinstance(metadata_path, str) and metadata_path:
+        entry_file = PathLib(metadata_path).resolve()
+        # 扁平结构：入口文件所在目录直接包含 manifest.json
+        direct_root = entry_file.parent
+        if (direct_root / "manifest.json").is_file() and (
+            direct_root.is_relative_to(plugins_base)
+            or direct_root.is_relative_to(backend_plugins_base)
+        ):
+            return str(direct_root)
+        # 嵌套结构：约定插件入口通常为 <plugin_root>/src/index.py
+        nested_root = direct_root.parent
+        if nested_root.is_dir() and (
+            nested_root.is_relative_to(plugins_base)
+            or nested_root.is_relative_to(backend_plugins_base)
+        ):
+            return str(nested_root)
+
+    # 回退：在用户插件目录与内置插件目录中查找
+    name_variants = [plugin_name, plugin_name.replace("-", "_")]
+    for search_base in (plugins_base, backend_plugins_base):
+        if not search_base.is_dir():
+            continue
+        for variant in name_variants:
+            direct_candidate = search_base / variant
+            if direct_candidate.resolve().is_relative_to(search_base) and direct_candidate.is_dir():
+                return str(direct_candidate)
+        for child in os.listdir(str(search_base)):
+            child_dir = search_base / child
+            if not child_dir.is_dir():
+                continue
+            manifest_path = child_dir / "manifest.json"
+            manifest = _read_json_file(str(manifest_path))
+            if manifest and str(manifest.get("name", "")).strip() == plugin_name:
+                return str(child_dir)
+    return None
+
+
+def _default_schema_for_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    当插件未提供 schema.json 时，根据当前配置生成最小可用的动态表单 schema。
+    """
+    properties: Dict[str, Any] = {}
+    for key, value in config.items():
+        if isinstance(value, bool):
+            properties[key] = {
+                "type": "boolean",
+                "title": key,
+                "default": value,
+                "x-component": "switch",
+            }
+        elif isinstance(value, int) and not isinstance(value, bool):
+            properties[key] = {"type": "integer", "title": key, "default": value}
+        elif isinstance(value, float):
+            properties[key] = {"type": "number", "title": key, "default": value}
+        else:
+            properties[key] = {"type": "string", "title": key, "default": "" if value is None else str(value)}
+    return {
+        "type": "object",
+        "title": "插件配置",
+        "properties": properties,
+        "required": [],
+    }
+
+
+def _extract_default_config(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    从 JSON Schema 中提取默认配置，仅处理对象根与一层属性默认值。
+    """
+    defaults: Dict[str, Any] = {}
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return defaults
+    for key, prop in properties.items():
+        if isinstance(prop, dict) and "default" in prop:
+            defaults[key] = prop.get("default")
+    return defaults
+
+
+def _merge_with_schema_defaults(schema: Dict[str, Any], raw_config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    将入参配置与 schema 默认值合并，保证缺省字段可用。
+    """
+    merged = _extract_default_config(schema)
+    merged.update(raw_config)
+    return merged
+
+
+def _persist_plugin_config(
+    db: Session,
+    plugin: Plugin,
+    next_config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    统一处理插件配置落库、写入 config.json 与运行时刷新。
+    """
+    plugin_root = _resolve_plugin_root_dir(plugin.name)
+    if not plugin_root:
+        raise HTTPException(status_code=404, detail=f"未找到插件目录: {plugin.name}")
+
+    schema_path = os.path.join(plugin_root, "schema.json")
+    schema_payload = _read_json_file(schema_path) or _default_schema_for_config(next_config)
+    normalized_config = _merge_with_schema_defaults(schema_payload, next_config)
+
+    config_json_path = os.path.join(plugin_root, "config.json")
+    previous_db_config = deepcopy(plugin.config) if isinstance(plugin.config, dict) else {}
+    previous_file_config = _read_json_file(config_json_path)
+    config_file_previously_exists = os.path.exists(config_json_path)
+    plugin_manager = _get_plugin_manager()
+    plugin_was_loaded = plugin.name in plugin_manager.loaded_plugins
+
+    try:
+        _write_json_file_atomic(config_json_path, normalized_config)
+        plugin_manager.refresh_plugin_config(plugin.name, normalized_config)
+
+        plugin.config = normalized_config
+
+        if plugin_was_loaded:
+            # 配置接口成功返回前，确保当前会话中的插件实例已经切换到新配置。
+            reloaded = plugin_manager.reload_plugin(plugin.name)
+            if not reloaded:
+                raise RuntimeError(f"插件 '{plugin.name}' 重载失败，配置未生效")
+
+        db.commit()
+        db.refresh(plugin)
+    except Exception as exc:
+        db.rollback()
+
+        try:
+            if config_file_previously_exists and isinstance(previous_file_config, dict):
+                _write_json_file_atomic(config_json_path, previous_file_config)
+            elif not config_file_previously_exists and os.path.exists(config_json_path):
+                os.remove(config_json_path)
+        except Exception as restore_error:
+            logger.error(f"Failed to restore plugin config file for '{plugin.name}': {restore_error}")
+
+        plugin_manager.refresh_plugin_config(plugin.name, previous_db_config)
+
+        if plugin_was_loaded:
+            try:
+                recovered = plugin_manager.reload_plugin(plugin.name)
+                if not recovered:
+                    logger.error(f"Plugin '{plugin.name}' failed to recover previous runtime config after rollback")
+            except Exception as recovery_error:
+                logger.error(
+                    f"Plugin '{plugin.name}' runtime recovery failed after config rollback: {recovery_error}"
+                )
+
+        logger.error(f"Failed to persist config for plugin '{plugin.name}': {exc}")
+        raise HTTPException(status_code=500, detail="保存插件配置失败，请稍后重试") from exc
+
+    return {
+        "plugin_id": plugin.id,
+        "plugin_name": plugin.name,
+        "config": normalized_config,
+        "config_file_path": config_json_path,
+    }
+
+
+def _ensure_plugin_discovered(plugin_name: str) -> None:
+    """
+    处理ensure、plugin、discovered相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
+    if plugin_name in _get_plugin_manager().plugin_metadata:
+        return
+    _get_plugin_manager().discover_plugins()
+
+
+@router.get(
+    "",
+    response_model=List[PluginResponse],
+    summary="获取插件列表",
+    description="返回数据库中已登记的插件记录列表，并附带运行时状态信息。支持 limit/offset 分页。"
+)
+def get_plugins(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+    limit: int = Query(100, ge=1, le=500, description="返回数量上限"),
+    offset: int = Query(0, ge=0, description="分页偏移量"),
+):
+    """
+    获取所有已注册的插件列表，合并数据库记录与运行时状态。
+    """
+    plugins = db.query(Plugin).offset(offset).limit(limit).all()
+    pm = _get_plugin_manager()
+    for p in plugins:
+        # 将运行时加载状态注入到插件记录中（不持久化，仅作为响应补充）
+        p.runtime_loaded = p.name in pm.loaded_plugins
+        state = pm.state_machine.get_state(p.name) if p.name in pm.plugin_metadata else None
+        p.runtime_state = state.value if state else "unknown"
+    return plugins
+
+
+@router.get(
+    "/discover",
+    summary="发现可用插件",
+    description="扫描插件目录，返回文件系统中发现的所有插件元数据（不依赖数据库）。"
+)
+def discover_plugins(
+    current_user=Depends(get_current_user)
+):
+    """
+    扫描插件目录，返回可用的插件列表及其元数据。
+    """
+    pm = _get_plugin_manager()
+    discovered = pm.discover_plugins()
+    result = []
+    for info in discovered:
+        name = info.get("name", "")
+        result.append({
+            "name": name,
+            "version": info.get("version", "unknown"),
+            "description": info.get("description", ""),
+            "path": info.get("path", ""),
+            "loaded": name in pm.loaded_plugins,
+            "state": pm.state_machine.get_state(name).value if name in pm.plugin_metadata else "unknown",
+            "requested_permissions": info.get("requested_permissions", []),
+        })
+    return result
+
+
+@router.get(
+    "/{plugin_id}",
+    response_model=PluginResponse,
+    summary="获取插件详情",
+    description="根据插件 ID 返回对应插件的详细信息。"
+)
+def get_plugin(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取plugin相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+    return plugin
+
+
+@router.post("", response_model=PluginResponse)
+def install_plugin(
+    plugin: PluginCreate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    安装插件：创建数据库记录，发现插件文件，并尝试加载到运行时。
+    """
+    pm = _get_plugin_manager()
+
+    new_plugin = Plugin(
+        id=str(uuid.uuid4()),
+        name=plugin.name,
+        version=plugin.version or "1.0.0",
+        config=plugin.config or {},
+        enabled=True,
+        category="general",
+        author="unknown",
+        source="local",
+        dependencies=[],
+    )
+    
+    db.add(new_plugin)
+    db.commit()
+    db.refresh(new_plugin)
+
+    # 发现并加载插件到运行时
+    if new_plugin.name not in pm.plugin_metadata:
+        pm.discover_plugins()
+    if new_plugin.name in pm.plugin_metadata:
+        try:
+            pm.load_plugin(new_plugin.name)
+            logger.info(f"插件 '{new_plugin.name}' 安装后已成功加载")
+        except Exception as exc:
+            logger.warning(f"插件 '{new_plugin.name}' 安装成功但加载失败: {exc}")
+    else:
+        logger.warning(f"插件 '{new_plugin.name}' 已注册到数据库但未在文件系统中发现")
+
+    return new_plugin
+
+
+@router.delete("/{plugin_id}")
+async def uninstall_plugin(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+) -> Dict[str, Any]:
+    """
+    卸载插件：从运行时卸载并删除数据库记录。
+    """
+    # PERF-05: 同步 DB 查询通过 to_thread 卸载到线程池，避免阻塞事件循环
+    plugin = await asyncio.to_thread(
+        db.query(Plugin).filter(Plugin.id == plugin_id).first
+    )
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    # 内置插件不可卸载
+    if plugin.is_uninstallable:
+        logger.bind(
+            event="builtin_plugin_operation_blocked",
+            module="plugins",
+            plugin=plugin.name,
+            action="uninstall",
+        ).warning(f"尝试卸载内置插件 {plugin.name} 已被拦截")
+        # 记录审计日志（不阻塞 403 响应）
+        try:
+            audit_logger = AuditLogger(db)
+            await audit_logger.log(
+                user_id=str(current_user.id),
+                action="plugin:uninstall",
+                resource=plugin.name,
+                result="blocked",
+                details={"reason": "builtin_plugin_uninstallable"},
+            )
+        except Exception as audit_exc:
+            logger.warning(f"审计日志写入失败: {audit_exc}")
+        raise HTTPException(status_code=403, detail="内置插件不可卸载或禁用")
+
+    # 从运行时卸载插件
+    pm = _get_plugin_manager()
+    if plugin.name in pm.loaded_plugins:
+        try:
+            pm.unload_plugin(plugin.name)
+            logger.info(f"插件 '{plugin.name}' 已从运行时卸载")
+        except Exception as exc:
+            logger.warning(f"插件 '{plugin.name}' 运行时卸载失败: {exc}")
+
+    # PERF-05: 同步 DB 删除与提交通过 to_thread 卸载到线程池
+    def _delete_and_commit() -> None:
+        db.delete(plugin)
+        db.commit()
+
+    await asyncio.to_thread(_delete_and_commit)
+
+    return {"message": "Plugin uninstalled successfully"}
+
+
+@router.put(
+    "/{plugin_id}/toggle",
+    summary="切换插件启用状态",
+    description="将指定插件在启用和禁用状态之间切换。"
+)
+async def toggle_plugin(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+) -> Dict[str, Any]:
+    """
+    切换插件启用/禁用状态，并同步加载或卸载运行时实例。
+    """
+    # PERF-05: 同步 DB 查询通过 to_thread 卸载到线程池，避免阻塞事件循环
+    plugin = await asyncio.to_thread(
+        db.query(Plugin).filter(Plugin.id == plugin_id).first
+    )
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    # 内置插件不可禁用/启用切换
+    if plugin.is_uninstallable:
+        logger.bind(
+            event="builtin_plugin_operation_blocked",
+            module="plugins",
+            plugin=plugin.name,
+            action="toggle",
+        ).warning(f"尝试切换内置插件 {plugin.name} 启用状态已被拦截")
+        # 记录审计日志（不阻塞 403 响应）
+        try:
+            audit_logger = AuditLogger(db)
+            await audit_logger.log(
+                user_id=str(current_user.id),
+                action="plugin:toggle",
+                resource=plugin.name,
+                result="blocked",
+                details={"reason": "builtin_plugin_uninstallable"},
+            )
+        except Exception as audit_exc:
+            logger.warning(f"审计日志写入失败: {audit_exc}")
+        raise HTTPException(status_code=403, detail="内置插件不可卸载或禁用")
+
+    # PERF-05: 同步 DB 状态切换与提交通过 to_thread 卸载到线程池
+    def _toggle_and_commit() -> None:
+        plugin.enabled = not plugin.enabled
+        db.commit()
+
+    await asyncio.to_thread(_toggle_and_commit)
+
+    # 同步运行时状态
+    pm = _get_plugin_manager()
+    if plugin.enabled:
+        # 启用：发现并加载
+        if plugin.name not in pm.plugin_metadata:
+            pm.discover_plugins()
+        if plugin.name in pm.plugin_metadata and plugin.name not in pm.loaded_plugins:
+            try:
+                pm.load_plugin(plugin.name)
+                logger.info(f"插件 '{plugin.name}' 已启用并加载")
+            except Exception as exc:
+                logger.warning(f"插件 '{plugin.name}' 启用后加载失败: {exc}")
+    else:
+        # 禁用：卸载
+        if plugin.name in pm.loaded_plugins:
+            try:
+                pm.unload_plugin(plugin.name)
+                logger.info(f"插件 '{plugin.name}' 已禁用并卸载")
+            except Exception as exc:
+                logger.warning(f"插件 '{plugin.name}' 禁用后卸载失败: {exc}")
+
+    return {"message": f"Plugin {'enabled' if plugin.enabled else 'disabled'}"}
+
+
+@router.put(
+    "/{plugin_id}",
+    response_model=PluginResponse,
+    summary="更新插件",
+    description="更新插件名称、版本、配置或启用状态。"
+)
+def update_plugin(
+    plugin_id: str,
+    plugin_update: PluginUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    更新plugin相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    if plugin_update.name is not None:
+        plugin.name = plugin_update.name
+    if plugin_update.version is not None:
+        plugin.version = plugin_update.version
+    if plugin_update.config is not None:
+        plugin.config = plugin_update.config
+    if plugin_update.enabled is not None:
+        plugin.enabled = plugin_update.enabled
+
+    db.commit()
+    db.refresh(plugin)
+
+    logger.info(f"Plugin '{plugin_id}' updated by user '{current_user.username}'")
+
+    return plugin
+
+
+@router.get(
+    "/{plugin_id}/config/schema",
+    summary="获取插件配置 schema",
+    description="读取插件目录中的 schema.json、config.json 与数据库配置，返回动态表单所需数据。",
+)
+def get_plugin_config_schema(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    plugin_root = _resolve_plugin_root_dir(plugin.name)
+    if not plugin_root:
+        raise HTTPException(status_code=404, detail=f"未找到插件目录: {plugin.name}")
+
+    schema_path = os.path.join(plugin_root, "schema.json")
+    config_path = os.path.join(plugin_root, "config.json")
+    schema_payload = _read_json_file(schema_path)
+
+    db_config = plugin.config if isinstance(plugin.config, dict) else {}
+    file_config = _read_json_file(config_path) or {}
+    if not schema_payload:
+        schema_payload = _default_schema_for_config({**db_config, **file_config})
+
+    default_config = _extract_default_config(schema_payload)
+    current_config = default_config.copy()
+    current_config.update(db_config)
+    current_config.update(file_config)
+
+    return {
+        "plugin_id": plugin.id,
+        "plugin_name": plugin.name,
+        "schema": schema_payload,
+        "default_config": default_config,
+        "current_config": current_config,
+        "config_file_exists": os.path.exists(config_path),
+    }
+
+
+@router.put(
+    "/{plugin_id}/config",
+    summary="保存插件配置",
+    description="保存插件配置到数据库并持久化到插件目录 config.json。",
+)
+def save_plugin_config(
+    plugin_id: str,
+    payload: PluginConfigSaveRequest = Body(default_factory=PluginConfigSaveRequest),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_admin_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+    config_dict = payload.model_dump()
+    return _persist_plugin_config(db=db, plugin=plugin, next_config=config_dict)
+
+
+@router.post(
+    "/{plugin_id}/config/reset",
+    summary="重置插件配置为默认值",
+    description="按 schema 默认值重置配置并写入 config.json。",
+)
+def reset_plugin_config(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_admin_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    plugin_root = _resolve_plugin_root_dir(plugin.name)
+    if not plugin_root:
+        raise HTTPException(status_code=404, detail=f"未找到插件目录: {plugin.name}")
+    schema_payload = _read_json_file(os.path.join(plugin_root, "schema.json")) or _default_schema_for_config({})
+    next_config = _extract_default_config(schema_payload)
+    return _persist_plugin_config(db=db, plugin=plugin, next_config=next_config)
+
+
+@router.get(
+    "/{plugin_id}/config/export",
+    summary="导出插件配置",
+    description="返回当前生效配置，供前端导出为 JSON 文件。",
+)
+def export_plugin_config(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    plugin_root = _resolve_plugin_root_dir(plugin.name)
+    if not plugin_root:
+        raise HTTPException(status_code=404, detail=f"未找到插件目录: {plugin.name}")
+    config_path = os.path.join(plugin_root, "config.json")
+    file_config = _read_json_file(config_path) or {}
+    db_config = plugin.config if isinstance(plugin.config, dict) else {}
+    merged = db_config.copy()
+    merged.update(file_config)
+    return {
+        "plugin_id": plugin.id,
+        "plugin_name": plugin.name,
+        "config": merged,
+    }
+
+
+def _persist_and_sync_permissions(
+    db: Session,
+    plugin: Plugin,
+    permissions: List[str],
+    action: str,
+) -> Dict[str, Any]:
+    """
+    将权限变更持久化到数据库并同步运行时缓存，确保接口返回 200 时状态已落库。
+
+    Args:
+        db: 数据库会话。
+        plugin: 插件模型实例。
+        permissions: 要操作的权限列表。
+        action: "authorize" 或 "revoke"。
+
+    Returns:
+        操作后的权限状态字典，与 PluginManager.get_plugin_permission_status 结构一致。
+    """
+    # 规范化权限名：去重、去空白、过滤空字符串
+    normalized = sorted({
+        p.strip() for p in permissions
+        if isinstance(p, str) and p.strip()
+    })
+
+    current = list(plugin.granted_permissions) if isinstance(plugin.granted_permissions, list) else []
+
+    if action == "authorize":
+        next_permissions = sorted(set(current + normalized))
+    elif action == "revoke":
+        revoke_set = set(normalized)
+        next_permissions = sorted([p for p in current if p not in revoke_set])
+    else:
+        raise ValueError(f"Unknown permission action: {action}")
+
+    # 先落库，确保持久化成功后再同步运行时
+    plugin.granted_permissions = next_permissions
+    db.commit()
+
+    # 用数据库中的完整权限集合回放运行时缓存，保证数据库是唯一真相源
+    pm = _get_plugin_manager()
+    pm.restore_plugin_permissions(plugin.name, next_permissions)
+    status = pm.get_plugin_permission_status(plugin.name)
+
+    logger.bind(
+        plugin=plugin.name, action=action, added=normalized, result=next_permissions
+    ).info(f"插件权限已持久化: {plugin.name} action={action}")
+
+    return status
+
+
+@router.post("/{plugin_id}/permissions/authorize", response_model=PluginPermissionUpdateResponse)
+def authorize_plugin_permissions(
+    plugin_id: str,
+    payload: PluginPermissionUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    为plugin、permissions相关操作授予所需权限。
+    授权结果会持久化到数据库，重启或重新部署后仍保持有效。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+    try:
+        status = _persist_and_sync_permissions(db, plugin, payload.permissions, "authorize")
+        return PluginPermissionUpdateResponse(
+            plugin_id=plugin_id,
+            plugin_name=status["plugin_name"],
+            requested_permissions=status["requested_permissions"],
+            granted_permissions=status["granted_permissions"],
+            missing_permissions=status["missing_permissions"],
+            message="权限授权成功",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post(
+    "/{plugin_id}/permissions/revoke",
+    response_model=PluginPermissionUpdateResponse,
+    summary="撤销插件权限",
+    description="撤销指定插件的部分或全部已授予权限，变更会持久化到数据库。"
+)
+def revoke_plugin_permissions(
+    plugin_id: str,
+    payload: PluginPermissionUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    撤销plugin、permissions相关操作已授予的权限或访问能力。
+    持久化到数据库后，重启或重新部署时不会恢复已撤销的权限。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+    try:
+        status = _persist_and_sync_permissions(db, plugin, payload.permissions, "revoke")
+        return PluginPermissionUpdateResponse(
+            plugin_id=plugin_id,
+            plugin_name=status["plugin_name"],
+            requested_permissions=status["requested_permissions"],
+            granted_permissions=status["granted_permissions"],
+            missing_permissions=status["missing_permissions"],
+            message="权限撤销成功",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/{plugin_id}/permissions", response_model=PluginPermissionStatus)
+def get_plugin_permissions(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取plugin、permissions相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+    try:
+        status = _get_plugin_manager().get_plugin_permission_status(plugin.name)
+        return PluginPermissionStatus(
+            plugin_id=plugin_id,
+            plugin_name=status["plugin_name"],
+            requested_permissions=status["requested_permissions"],
+            granted_permissions=status["granted_permissions"],
+            missing_permissions=status["missing_permissions"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post(
+    "/{plugin_id}/execute",
+    summary="执行插件方法",
+    description="调用指定插件的方法并返回执行结果。"
+)
+async def execute_plugin(
+    plugin_id: str,
+    execution_data: PluginExecute,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    处理execute、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    if not plugin.enabled:
+        raise HTTPException(status_code=400, detail="Plugin is disabled")
+
+    try:
+        _ensure_plugin_discovered(plugin.name)
+
+        if plugin.name not in _get_plugin_manager().loaded_plugins:
+            load_success = _get_plugin_manager().load_plugin(plugin.name)
+            if not load_success:
+                raise HTTPException(status_code=500, detail="Failed to load plugin")
+
+        result = await _get_plugin_manager().execute_plugin_async(
+            plugin_name=plugin.name,
+            method=execution_data.method,
+            **execution_data.params
+        )
+
+        logger.info(f"Plugin '{plugin.name}' method '{execution_data.method}' executed by user '{current_user.username}'")
+
+        return {
+            "status": result.get("status", "error"),
+            "plugin_id": plugin_id,
+            "plugin_name": plugin.name,
+            "method": execution_data.method,
+            "result": result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing plugin '{plugin.name}': {str(e)}")
+        raise HTTPException(status_code=500, detail="插件执行失败，请稍后重试")
+
+
+@router.get("/{plugin_id}/tools", response_model=PluginToolsResponse)
+def get_plugin_tools(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取plugin、tools相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    try:
+        _ensure_plugin_discovered(plugin.name)
+
+        if plugin.name not in _get_plugin_manager().loaded_plugins:
+            load_success = _get_plugin_manager().load_plugin(plugin.name)
+            if not load_success:
+                raise HTTPException(status_code=500, detail="Failed to load plugin")
+
+        tools = _get_plugin_manager().get_plugin_tools(plugin.name)
+
+        return PluginToolsResponse(
+            plugin_id=plugin_id,
+            plugin_name=plugin.name,
+            tools=tools
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting tools for plugin '{plugin.name}': {str(e)}")
+        raise HTTPException(status_code=500, detail="获取插件工具失败，请稍后重试")
+
+
+@router.post("/validate", response_model=PluginValidationResult)
+def validate_plugin(
+    validation_request: PluginValidationRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    校验plugin相关输入、规则或结构是否合法。
+    返回结果通常用于阻止非法输入继续流入后续链路。
+    """
+    try:
+        config_data = validation_request.yaml_content.strip()
+
+        if config_data.startswith('{'):
+            import json
+            try:
+                config = json.loads(config_data)
+            except json.JSONDecodeError:
+                return PluginValidationResult(
+                    valid=False,
+                    errors=["Invalid JSON format"],
+                    warnings=[]
+                )
+        else:
+            try:
+                import yaml
+                config = yaml.safe_load(config_data)
+            except yaml.YAMLError as e:
+                logger.error(f"YAML parsing error in plugin validation: {str(e)}")
+                return PluginValidationResult(
+                    valid=False,
+                    errors=["Invalid YAML format"],
+                    warnings=[]
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error parsing plugin config: {str(e)}")
+                return PluginValidationResult(
+                    valid=False,
+                    errors=[f"Configuration parsing error: {str(e)}"],
+                    warnings=[]
+                )
+
+        if not isinstance(config, dict):
+            return PluginValidationResult(
+                valid=False,
+                errors=["Configuration must be a dictionary"],
+                warnings=[]
+            )
+
+        required_fields = ["name", "version"]
+        missing_fields = [f for f in required_fields if f not in config]
+
+        if missing_fields:
+            return PluginValidationResult(
+                valid=False,
+                errors=[f"Missing required fields: {', '.join(missing_fields)}"],
+                warnings=[]
+            )
+
+        return PluginValidationResult(
+            valid=True,
+            errors=[],
+            warnings=["Plugin validation requires plugin code to be fully validated"]
+        )
+
+    except Exception as e:
+        logger.error(f"Error validating plugin configuration: {str(e)}")
+        return PluginValidationResult(
+            valid=False,
+            errors=[f"Validation error: {str(e)}"],
+            warnings=[]
+        )
+
+
+@router.post(
+    "/upload",
+    summary="上传插件包",
+    description="上传 zip 格式插件包并尝试安装到系统中。"
+)
+async def upload_plugin(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+) -> Dict[str, Any]:
+    """
+    处理upload、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
+    if not file.filename or not file.filename.endswith('.zip'):
+        raise HTTPException(status_code=400, detail="Only .zip files are supported")
+    if file.content_type and file.content_type not in ["application/zip", "application/x-zip-compressed"]:
+        raise HTTPException(status_code=400, detail="Invalid ZIP file MIME type")
+    if file.size is not None and file.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail=f"File size exceeds limit ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
+        
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail=f"File size exceeds limit ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
+    
+    # 使用临时目录解压，校验通过后再原子移动到插件目录
+    temp_dir = None
+    moved_dirs = []
+    try:
+        # PERF-04: 使用单例而非直接 PluginManager() 构造，避免重复初始化
+        plugins_dir = _get_plugin_manager().plugins_dir
+        
+        # 先解压到临时目录进行校验
+        temp_dir = tempfile.mkdtemp(prefix="plugin_upload_")
+        
+        with zipfile.ZipFile(io.BytesIO(content)) as z:
+            all_members = z.namelist()
+            if len(all_members) > MAX_ZIP_FILES:
+                raise HTTPException(status_code=400, detail=f"ZIP file contains too many files ({len(all_members)} > {MAX_ZIP_FILES})")
+            total_size = 0
+            # 路径穿越防护：使用 Path.resolve()+relative_to() 替代字符串校验
+            from pathlib import Path as _Path
+            _temp_resolved = _Path(temp_dir).resolve()
+            for member in all_members:
+                # 拒绝绝对路径（Unix 与 Windows 风格）
+                if member.startswith('/') or member.startswith('\\'):
+                    raise HTTPException(status_code=400, detail="Invalid zip file structure: absolute path")
+                # 拒绝 Windows 盘符绝对路径（如 C:\...）
+                if len(member) >= 2 and member[1] == ':':
+                    raise HTTPException(status_code=400, detail="Invalid zip file structure: drive letter path")
+                # 拒绝 .. 穿越
+                if '..' in member.split('/'):
+                    raise HTTPException(status_code=400, detail="Invalid zip file structure: directory traversal")
+                # 最终路径校验：解压后路径必须位于 temp_dir 内
+                try:
+                    (_temp_resolved / member).resolve().relative_to(_temp_resolved)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid zip file structure: path escape")
+                info = z.getinfo(member)
+                total_size += info.file_size
+                if info.file_size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(status_code=400, detail=f"Individual file in ZIP exceeds size limit ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
+            if total_size > MAX_ZIP_EXTRACTION_SIZE:
+                raise HTTPException(status_code=400, detail=f"Total extraction size exceeds limit ({MAX_ZIP_EXTRACTION_SIZE // (1024*1024)}MB)")
+
+            z.extractall(temp_dir)
+        
+        # 在临时目录中发现插件
+        discovered = _get_plugin_manager()._discover_plugins_in_directory(temp_dir)
+        installed_count = 0
+        
+        for plugin_info in discovered:
+            name = plugin_info.get('name')
+            version = plugin_info.get('version', '1.0.0')
+            description = plugin_info.get('description', '')
+            
+            existing_plugin = db.query(Plugin).filter(Plugin.name == name).first()
+            if not existing_plugin:
+                new_plugin = Plugin(
+                    id=str(uuid.uuid4()),
+                    name=name,
+                    version=version,
+                    config={"description": description},
+                    enabled=True
+                )
+                db.add(new_plugin)
+                installed_count += 1
+        
+        # 先将文件从临时目录移动到插件目录，再提交数据库
+        for item in os.listdir(temp_dir):
+            src_path = os.path.join(temp_dir, item)
+            dst_path = os.path.join(plugins_dir, item)
+            if os.path.isdir(src_path):
+                if os.path.exists(dst_path):
+                    shutil.rmtree(dst_path)
+                shutil.move(src_path, dst_path)
+                moved_dirs.append(dst_path)
+            else:
+                shutil.move(src_path, dst_path)
+
+        # 文件移动成功后再提交数据库
+        db.commit()
+            
+        return {"message": f"Plugin uploaded and extracted successfully. Installed {installed_count} new plugins."}
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid zip file")
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        # 回滚数据库事务
+        db.rollback()
+        # 清理已移动的目录
+        for moved_dir in moved_dirs:
+            shutil.rmtree(moved_dir, ignore_errors=True)
+        logger.error(f"Error extracting plugin: {str(e)}")
+        raise HTTPException(status_code=500, detail="插件解压失败，请稍后重试")
+    finally:
+        # 清理临时目录
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@router.post(
+    "/import-url",
+    summary="通过远程 URL 导入插件",
+    description="从白名单域名下载 ZIP 插件包并导入系统。"
+)
+async def import_plugin_from_url(
+    payload: PluginImportUrlRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+) -> Dict[str, Any]:
+    """
+    处理远程 URL 插件导入，成功后写入数据库并返回导入结果。
+    """
+    source_url = (payload.source_url or "").strip()
+    if not source_url:
+        raise HTTPException(status_code=400, detail="source_url is required")
+
+    try:
+        # PERF-04: 使用单例而非直接 PluginManager() 构造，避免重复初始化
+        plugin_manager_instance = _get_plugin_manager()
+        discovered = await asyncio.to_thread(
+            plugin_manager_instance.register_plugin_from_url,
+            source_url=source_url,
+            timeout=max(1, int(payload.timeout_seconds or 30)),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.bind(source_url=source_url, error_type=type(exc).__name__).opt(exception=True).error(
+            "远程插件导入失败"
+        )
+        raise HTTPException(status_code=500, detail="远程插件导入失败，请稍后重试") from exc
+
+    if not discovered:
+        raise HTTPException(status_code=400, detail="No valid plugin found in remote package")
+
+    installed_count = 0
+    updated_count = 0
+    imported_plugins = []
+
+    try:
+        for plugin_info in discovered:
+            name = plugin_info.get("name")
+            if not name:
+                continue
+
+            manifest = plugin_info.get("manifest") if isinstance(plugin_info.get("manifest"), dict) else {}
+            version = str(plugin_info.get("version", "1.0.0"))
+            description = str(plugin_info.get("description", ""))
+            author = str(manifest.get("author", "unknown"))
+
+            dependencies: List[str] = []
+            raw_dependencies = manifest.get("dependencies")
+            if isinstance(raw_dependencies, dict):
+                dependencies = list(raw_dependencies.keys())
+            elif isinstance(raw_dependencies, list):
+                dependencies = [str(item) for item in raw_dependencies if isinstance(item, (str, int, float))]
+
+            config_payload: Dict[str, Any] = {
+                "description": description,
+                "source_url": source_url,
+                "manifest": manifest,
+            }
+
+            existing_plugin = db.query(Plugin).filter(Plugin.name == name).first()
+            if existing_plugin:
+                existing_plugin.version = version
+                existing_plugin.config = config_payload
+                existing_plugin.author = author
+                existing_plugin.source = "remote_url"
+                existing_plugin.dependencies = dependencies
+                updated_count += 1
+                imported_plugins.append(name)
+                continue
+
+            new_plugin = Plugin(
+                id=str(uuid.uuid4()),
+                name=name,
+                version=version,
+                enabled=True,
+                config=config_payload,
+                category="general",
+                author=author,
+                source="remote_url",
+                dependencies=dependencies,
+            )
+            db.add(new_plugin)
+            installed_count += 1
+            imported_plugins.append(name)
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.bind(source_url=source_url, error_type=type(exc).__name__).opt(exception=True).error(
+            "远程插件信息保存失败"
+        )
+        raise HTTPException(status_code=500, detail="远程插件信息保存失败，请稍后重试") from exc
+
+    return {
+        "message": f"Imported {installed_count} plugin(s), updated {updated_count} plugin(s).",
+        "source_url": source_url,
+        "installed_count": installed_count,
+        "updated_count": updated_count,
+        "plugins": imported_plugins,
+    }
+
+
+@router.post("/{plugin_id}/hot-update", response_model=HotUpdateResponse)
+def hot_update_plugin(
+    plugin_id: str,
+    payload: HotUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_admin_user),
+):
+    """
+    处理hot、update、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+
+    rollout_dict = payload.rollout_config.model_dump() if payload.rollout_config else None
+
+    try:
+        result = _get_plugin_manager().hot_update_plugin(
+            plugin_name=plugin.name,
+            rollout_policy=rollout_dict,
+            strategy=payload.strategy,
+        )
+        hot_status = _get_plugin_manager().hot_update_manager.get_status(plugin.name)
+        return HotUpdateResponse(
+            success=result.get("success", False),
+            plugin_name=plugin.name,
+            strategy=payload.strategy,
+            new_version=hot_status.get("standby", {}).get("version") if hot_status.get("standby") else hot_status.get("active", {}).get("version"),
+            standby_ready=hot_status.get("standby") is not None,
+            rollout_config=hot_status.get("rollout_config"),
+            active_release_id=result.get("active_release_id"),
+            standby_release_id=result.get("standby_release_id"),
+            rolled_back=result.get("rolled_back", False),
+            error=result.get("error"),
+            hot_update_status=hot_status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.bind(plugin_name=plugin.name, error_type=type(exc).__name__).opt(exception=True).error(
+            "插件热更新失败"
+        )
+        raise HTTPException(status_code=500, detail="插件热更新失败，请稍后重试") from exc
+
+
+@router.post(
+    "/{plugin_id}/rollback",
+    response_model=RollbackResponse,
+    summary="回滚插件",
+    description="将指定插件回滚到之前的稳定版本。"
+)
+def rollback_plugin(
+    plugin_id: str,
+    payload: RollbackRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_admin_user),
+):
+    """
+    处理rollback、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+
+    try:
+        result = _get_plugin_manager().rollback_plugin(
+            plugin_name=plugin.name,
+            snapshot_id=payload.snapshot_id,
+        )
+        return RollbackResponse(
+            success=True,
+            plugin_name=plugin.name,
+            rolled_back_to=result.get("rolled_back_to"),
+            snapshot_id=result.get("snapshot_id"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.bind(plugin_name=plugin.name, error_type=type(exc).__name__).opt(exception=True).error(
+            "插件回滚失败"
+        )
+        raise HTTPException(status_code=500, detail="插件回滚失败，请稍后重试") from exc
+
+
+_log_manager = LogManager()
+
+
+@router.get("/{plugin_id}/logs", response_model=PluginLogsResponse)
+def get_plugin_logs(
+    plugin_id: str,
+    level: Optional[str] = Query(None, description="按级别过滤: DEBUG/INFO/WARNING/ERROR/CRITICAL"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    获取plugin、logs相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    plugin_logger = _log_manager.get_logger(plugin_id)
+    entries = plugin_logger.get_entries(level=level, limit=limit, offset=offset)
+
+    return PluginLogsResponse(
+        plugin_id=plugin_id,
+        plugin_name=plugin.name,
+        level_filter=level,
+        total=len(entries),
+        entries=[PluginLogEntry(**e) for e in entries],
+    )
+
+
+@router.put(
+    "/{plugin_id}/log-level",
+    response_model=PluginLogLevelResponse,
+    summary="更新插件日志级别",
+    description="修改指定插件的日志输出级别。"
+)
+def update_plugin_log_level(
+    plugin_id: str,
+    payload: PluginLogLevelUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user),
+):
+    """
+    更新plugin、log、level相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    level_upper = payload.level.upper()
+    if level_upper not in valid_levels:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid log level '{payload.level}'. Must be one of: {', '.join(sorted(valid_levels))}",
+        )
+
+    plugin_logger = _log_manager.get_logger(plugin_id)
+    plugin_logger.level = level_upper
+
+    logger.info(f"Plugin '{plugin.name}' log level set to {level_upper} by user '{current_user.username}'")
+
+    return PluginLogLevelResponse(
+        plugin_id=plugin_id,
+        plugin_name=plugin.name,
+        level=level_upper,
+    )

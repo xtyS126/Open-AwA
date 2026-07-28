@@ -1,6 +1,6 @@
 # Open-AwA 生产环境 Docker Compose 覆盖配置
 # 用法：
-#   1. 首次部署：先在 .env 中设置 DOMAIN 和 EMAIL，运行 docker/init-ssl.sh 申请证书
+#   1. 首次部署：先在 .env 中设置 DOMAIN 和 EMAIL，运行 deploy/init-ssl.sh 申请证书
 #   2. 启动生产：docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d
 #   3. 续期：certbot 容器自动每小时检查一次，到期前 30 天自动续期
 #

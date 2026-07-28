@@ -6,7 +6,7 @@
 
 所有插件基类位于：
 
-- [base_plugin.py](file:///d:/代码/Open-AwA/lib/backend/plugins/base_plugin.py#L5-L58)
+- [base_plugin.py](file:///d:/代码/Open-AwA/backend/plugins/base_plugin.py#L5-L58)
 
 ### 1.1 类属性
 
@@ -62,7 +62,7 @@ def on_error(self, error: Exception, from_state: str, to_state: str) -> None: ..
 
 扩展点定义位于：
 
-- [extension_protocol.py](file:///d:/代码/Open-AwA/lib/backend/plugins/extension_protocol.py#L8-L156)
+- [extension_protocol.py](file:///d:/代码/Open-AwA/backend/plugins/extension_protocol.py#L8-L156)
 
 ### 2.1 支持的扩展点类型
 
@@ -115,7 +115,7 @@ register_data_provider(...)
 
 相关实现：
 
-- [plugin_loader.py](file:///d:/代码/Open-AwA/lib/backend/plugins/plugin_loader.py#L11-L93)
+- [plugin_loader.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_loader.py#L11-L93)
 
 ### 3.1 PluginLoader
 
@@ -141,7 +141,7 @@ get_loading_state(plugin_name: str) -> str
 
 相关实现：
 
-- [plugin_validator.py](file:///d:/代码/Open-AwA/lib/backend/plugins/plugin_validator.py#L24-L160)
+- [plugin_validator.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_validator.py#L24-L160)
 
 ### 4.1 校验内容
 
@@ -165,7 +165,7 @@ get_loading_state(plugin_name: str) -> str
 
 相关实现：
 
-- [plugin_sandbox.py](file:///d:/代码/Open-AwA/lib/backend/plugins/plugin_sandbox.py#L8-L121)
+- [plugin_sandbox.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_sandbox.py#L8-L121)
 
 ### 5.1 作用
 
@@ -199,7 +199,7 @@ reset_stats()
 
 相关实现：
 
-- [plugin_lifecycle.py](file:///d:/代码/Open-AwA/lib/backend/plugins/plugin_lifecycle.py#L13-L220)
+- [plugin_lifecycle.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_lifecycle.py#L13-L220)
 
 ### 6.1 状态枚举
 
@@ -234,7 +234,7 @@ unloaded -> loaded
 
 后端插件路由位于：
 
-- [plugins.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/plugins.py#L15-L519)
+- [plugins.py](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L15-L519)
 
 ### 7.1 基础管理接口
 
@@ -277,7 +277,7 @@ unloaded -> loaded
 
 前端请求封装见：
 
-- [api.ts](file:///d:/代码/Open-AwA/lib/frontend/src/services/api.ts#L110-L134)
+- [api.ts](file:///d:/代码/Open-AwA/frontend/src/services/api.ts#L110-L134)
 
 当前前端已封装的插件接口包括：
 
@@ -299,7 +299,7 @@ pluginsAPI.setLogLevel(id, level)
 
 插件 CLI 位于：
 
-- [plugin_cli.py](file:///d:/代码/Open-AwA/lib/backend/plugins/cli/plugin_cli.py#L11-L166)
+- [plugin_cli.py](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L11-L166)
 
 当前可用命令：
 
@@ -314,7 +314,7 @@ python -m plugins.cli.plugin_cli sign ...
 
 CLI 测试样例可参考：
 
-- [test_plugin_cli.py](file:///d:/代码/Open-AwA/lib/backend/tests/test_plugin_cli.py#L12-L202)
+- [test_plugin_cli.py](file:///d:/代码/Open-AwA/backend/tests/test_plugin_cli.py#L12-L202)
 
 该测试文件验证了：
 

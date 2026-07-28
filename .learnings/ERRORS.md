@@ -29,6 +29,61 @@ git add .
 - Related Files: .gitignore, AGENTS.md
 
 ---
+
+## [ERR-20260729-001] git-mv-locked-runtime-files
+
+**Logged**: 2026-07-29T00:00:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: infra
+
+### Summary
+Windows `git mv` of a mixed source/runtime directory failed with `Permission denied`.
+
+### Error
+```text
+fatal: renaming 'backend' failed: Permission denied
+```
+
+### Context
+- The directory contains locked or generated files in addition to tracked source files.
+- Android, frontend, and desktop moves completed; backend remained in `backend`.
+
+### Suggested Fix
+Move tracked backend files individually, then move only required untracked configuration/source files; leave locked caches untouched until processes release them.
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend, backend
+- See Also: ERR-20260503-001
+---
+
+## [ERR-20260729-002] backend-relative-venv-path
+
+**Logged**: 2026-07-29T04:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+从 `backend` 子目录执行验证时使用了相对仓库根目录的虚拟环境路径，导致命令找不到 Python。
+
+### Error
+```text
+The term '.venv/Scripts/python.exe' is not recognized
+```
+
+### Context
+- 工作目录为 `D:\代码\Open-AwA\backend`。
+- 后续改用仓库绝对路径 `.venv\Scripts\python.exe`，定向测试已通过。
+
+### Suggested Fix
+从子项目目录执行命令时使用仓库绝对路径或正确的 `..\.venv\Scripts\python.exe`。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/tests/test_runtime_paths.py
+---
 ## [ERR-20260727-025] powershell-inline-python-chinese-literal
 
 **Logged**: 2026-07-27T02:02:00+08:00
@@ -84,7 +139,7 @@ SyntaxError: invalid non-printable character U+FEFF
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_agent_architecture.py
+- Related Files: backend/tests/test_agent_architecture.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T01:52:00+08:00
@@ -115,7 +170,7 @@ AssertionError: assert ['test_agent_architecture.py'] == []
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_agent_architecture.py
+- Related Files: backend/tests/test_agent_architecture.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T01:48:00+08:00
@@ -146,7 +201,7 @@ strict mode violation: get_by_text("Brooks browser E2E message", exact=True) res
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tmp_brooks_e2e_codex/verify_chat_browser.py
+- Related Files: backend/tmp_brooks_e2e_codex/verify_chat_browser.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T01:27:00+08:00
@@ -177,7 +232,7 @@ TypeError: Page.add_init_script() takes from 1 to 2 positional arguments but 3 w
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tmp_brooks_e2e_codex/verify_chat_browser.py
+- Related Files: backend/tmp_brooks_e2e_codex/verify_chat_browser.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T01:20:00+08:00
@@ -210,7 +265,7 @@ The regular expression pattern \ is not valid.
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend/tests/e2e/support/start_backend.py
+- Related Files: frontend/tests/e2e/support/start_backend.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T00:45:00+08:00
@@ -243,7 +298,7 @@ main.py:1569:1: E402 Module level import not at top of file
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/rename_files.py, lib/backend/main.py
+- Related Files: backend/rename_files.py, backend/main.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T00:20:00+08:00
@@ -263,7 +318,7 @@ main.py:1569:1: E402 Module level import not at top of file
 
 ### Error
 ```text
-apply_patch verification failed: Failed to find expected lines in lib/backend/core/agent.py
+apply_patch verification failed: Failed to find expected lines in backend/core/agent.py
 ```
 
 ### Context
@@ -275,7 +330,7 @@ apply_patch verification failed: Failed to find expected lines in lib/backend/co
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/core/agent.py, lib/backend/core/agent_capability_builder.py
+- Related Files: backend/core/agent.py, backend/core/agent_capability_builder.py
 - Pattern-Key: apply_patch.context_drift
 - Recurrence-Count: 2
 - Last-Seen: 2026-07-26
@@ -310,7 +365,7 @@ ImportError: cannot import name 'build_configured_model_hint' from 'core.agent_c
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/core/agent_capability_builder.py, lib/backend/core/agent_helpers.py
+- Related Files: backend/core/agent_capability_builder.py, backend/core/agent_helpers.py
 
 ### Resolution
 - **Resolved**: 2026-07-26T10:20:00+08:00
@@ -342,7 +397,7 @@ command timed out after 124020 milliseconds
 
 ### Metadata
 - Reproducible: unknown
-- Related Files: lib/backend/core/agent.py, lib/backend/core/agent_registry.py, lib/backend/tests
+- Related Files: backend/core/agent.py, backend/core/agent_registry.py, backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-26T11:20:00+08:00
@@ -375,7 +430,7 @@ PermissionError: [WinError 32] 另一个程序正在使用此文件
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/config/logging.py, lib/backend/tests/conftest.py
+- Related Files: backend/config/logging.py, backend/tests/conftest.py
 - See Also: ERR-20260714-036
 
 ---
@@ -404,7 +459,7 @@ Expected 'RoleEngine' to be called once. Called 0 times.
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/core/agent.py, lib/backend/tests/test_agent_stream_submethods.py
+- Related Files: backend/core/agent.py, backend/tests/test_agent_stream_submethods.py
 
 ### Resolution
 - **Resolved**: 2026-07-26T13:50:00+08:00
@@ -436,7 +491,7 @@ Found 26 errors.
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/core/agent.py, lib/backend/core/agent_runtime.py
+- Related Files: backend/core/agent.py, backend/core/agent_runtime.py
 - Pattern-Key: refactor.unused_imports
 - Recurrence-Count: 2
 
@@ -470,7 +525,7 @@ AttributeError: module 'core.agent' has no attribute 'behavior_logger'
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/core/agent_runtime.py, lib/backend/tests/test_backend_protocol_features.py
+- Related Files: backend/core/agent_runtime.py, backend/tests/test_backend_protocol_features.py
 
 ### Resolution
 - **Resolved**: 2026-07-26T14:50:00+08:00
@@ -503,7 +558,7 @@ apply_patch verification failed: Failed to find expected lines in core/agent.py
 
 ### Metadata
 - Reproducible: no
-- Related Files: lib/backend/core/agent.py, lib/backend/core/agent_helpers.py
+- Related Files: backend/core/agent.py, backend/core/agent_helpers.py
 - See Also: ERR-20260722-002
 
 ### Resolution
@@ -537,7 +592,7 @@ AttributeError: 'AIAgent' object has no attribute '_map_finish_reason_to_state'
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/core/agent.py, lib/backend/tests/test_agent_core.py
+- Related Files: backend/core/agent.py, backend/tests/test_agent_core.py
 - See Also: ERR-20260726-001
 
 ### Resolution
@@ -571,7 +626,7 @@ collected 0 items
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-26T05:39:00+08:00
@@ -606,7 +661,7 @@ command timed out after 64018 milliseconds
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_workflow_repository_port.py, lib/backend/tests/test_agent_registry.py
+- Related Files: backend/tests/test_workflow_repository_port.py, backend/tests/test_agent_registry.py
 - See Also: ERR-20260714-B91
 
 ### Resolution
@@ -671,7 +726,7 @@ Test timed out in 5000ms
 
 ### Metadata
 - Reproducible: no
-- Related Files: lib/frontend/src/__tests__/features/chat/ChatPage.test.tsx
+- Related Files: frontend/src/__tests__/features/chat/ChatPage.test.tsx
 
 ### Resolution
 - **Resolved**: 2026-07-26T08:27:00+08:00
@@ -2811,14 +2866,14 @@ FAIL Required test coverage of 24.0% not reached. Total coverage: 14.26%
 
 ### Context
 - 命令：`pytest tests/test_security_rbac.py tests/test_memory_injection_fix.py tests/test_audit_report_security_fixes.py tests/test_agent_core.py -q`
-- 工作目录：`lib/backend`
+- 工作目录：`backend`
 
 ### Suggested Fix
 小范围行为回归使用 `pytest --no-cov`；完整套件仍保留默认覆盖率门槛作为交付验证。
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/pytest.ini
+- Related Files: backend/pytest.ini
 
 ### Resolution
 - **Resolved**: 2026-07-22T12:00:00+08:00
@@ -2842,14 +2897,14 @@ CACError: Unknown option `--runInBand`
 
 ### Context
 - 命令：`npx vitest run src/__tests__ --runInBand`
-- 工作目录：`lib/frontend`
+- 工作目录：`frontend`
 
 ### Suggested Fix
 使用 `npx vitest run <路径>`，并在需要控制并发时采用 Vitest 支持的 pool 参数。
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend/vitest.config.ts
+- Related Files: frontend/vitest.config.ts
 
 ### Resolution
 - **Resolved**: 2026-07-22T12:05:00+08:00
@@ -2880,7 +2935,7 @@ apply_patch verification failed: Failed to find expected lines in plugin_manager
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/plugins/plugin_manager.py
+- Related Files: backend/plugins/plugin_manager.py
 
 ### Resolution
 - **Resolved**: 2026-07-22T12:45:00+08:00
@@ -2911,7 +2966,7 @@ rg: lib\backend\tests\test_agent*: 文件名、目录名或卷标语法不正确
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-22T13:15:00+08:00
@@ -2942,7 +2997,7 @@ Start-Process command rejected: blocked by policy
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-22T13:25:00+08:00
@@ -2967,14 +3022,14 @@ command timed out after 304020 milliseconds
 
 ### Context
 - 命令：`pytest` 运行 soul、skill、security、sandbox、streaming 和 subagent 相关测试。
-- 工作目录：`lib/backend`。
+- 工作目录：`backend`。
 
 ### Suggested Fix
 按子系统继续拆分回归；定位持续超时的具体测试后再考虑并发、fixture 或资源清理优化，不能将超时当作测试通过。
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-22T13:52:00+08:00
@@ -3006,7 +3061,7 @@ OSError: [Errno 22] Invalid argument
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_security_rbac.py
+- Related Files: backend/tests/test_security_rbac.py
 
 ### Resolution
 - **Resolved**: 2026-07-22T13:52:00+08:00
@@ -3029,7 +3084,7 @@ Io(Os { code: 5, kind: PermissionDenied, message: "拒绝访问。" })
 ```
 
 ### Context
-- 命令：`Start-Process python main.py`，工作目录为 `lib/backend`。
+- 命令：`Start-Process python main.py`，工作目录为 `backend`。
 - 目的：执行 `/api/system/ping` 服务级验证。
 - 未关闭任何进程；检查确认 8000 没有监听。
 
@@ -3038,7 +3093,7 @@ Io(Os { code: 5, kind: PermissionDenied, message: "拒绝访问。" })
 
 ### Metadata
 - Reproducible: unknown
-- Related Files: lib/backend/main.py
+- Related Files: backend/main.py
 ---
 
 ## [ERR-20260722-008] tool_call_json_syntax
@@ -3065,7 +3120,7 @@ SyntaxError: missing ) after argument list
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-22T13:48:00+08:00
@@ -3096,7 +3151,7 @@ SyntaxError: missing ) after argument list
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_behavior_recorder.py
+- Related Files: backend/tests/test_behavior_recorder.py
 
 ### Resolution
 - **Resolved**: 2026-07-22T13:56:00+08:00
@@ -3128,7 +3183,7 @@ PowerShell 内联浏览器脚本优先使用 `button[type=submit]`、ID 或 data
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend/src/features/auth/LoginPage.tsx
+- Related Files: frontend/src/features/auth/LoginPage.tsx
 
 ### Resolution
 - **Resolved**: 2026-07-22T14:05:00+08:00
@@ -3161,7 +3216,7 @@ Error: element(s) not found
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend/tests/e2e/chat-full-journey.spec.ts
+- Related Files: frontend/tests/e2e/chat-full-journey.spec.ts
 
 ### Resolution
 - **Resolved**: 2026-07-22T14:12:00+08:00
@@ -3196,7 +3251,7 @@ MemoryPersistenceError: 记忆持久化失败
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/core/agent.py, lib/backend/core/feedback.py, lib/backend/memory/manager.py, lib/frontend/src/features/chat/utils/subagentLogNormalizer.ts
+- Related Files: backend/core/agent.py, backend/core/feedback.py, backend/memory/manager.py, frontend/src/features/chat/utils/subagentLogNormalizer.ts
 
 ### Resolution
 - **Resolved**: 2026-07-23T07:21:44+08:00
@@ -3258,7 +3313,7 @@ TypeError: target?.parentElement?.parentElement?.click is not a function
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend/src/features/chat
+- Related Files: frontend/src/features/chat
 
 ### Resolution
 - **Resolved**: 2026-07-23T07:35:00+08:00
@@ -3289,7 +3344,7 @@ rg: tests/test_*architecture*: 文件名、目录名或卷标语法不正确。 
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-26T23:20:00+08:00
@@ -3321,7 +3376,7 @@ F401 imported but unused
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/api/routes/chat.py, lib/backend/main.py
+- Related Files: backend/api/routes/chat.py, backend/main.py
 - See Also: ERR-20260726-006
 
 ### Resolution
@@ -3346,14 +3401,14 @@ Io(Os { code: 5, kind: PermissionDenied, message: "拒绝访问。" })
 
 ### Context
 - 两个 pytest 子进程尚未开始执行，失败发生在进程启动或输出重定向阶段。
-- 工作目录为 `lib/backend`，输出目标位于系统临时目录。
+- 工作目录为 `backend`，输出目标位于系统临时目录。
 
 ### Suggested Fix
 使用编排层并行发起两个独立 PowerShell pytest 命令，避免 Start-Process 输出重定向。
 
 ### Metadata
 - Reproducible: unknown
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 - See Also: ERR-20260714-017
 
 ### Resolution
@@ -3386,7 +3441,7 @@ TypeError: '>' not supported between instances of 'int' and 'MagicMock'
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_scheduled_task_manager.py, lib/backend/tests/test_feedback_consolidation_trigger.py, lib/backend/tests/test_memory_injection_fix.py
+- Related Files: backend/tests/test_scheduled_task_manager.py, backend/tests/test_feedback_consolidation_trigger.py, backend/tests/test_memory_injection_fix.py
 - See Also: ERR-20260726-003
 - Recurrence-Count: 2
 - Last-Seen: 2026-07-26
@@ -3420,7 +3475,7 @@ AttributeError: module 'core.builtin_tools.memory_tools' has no attribute 'Sessi
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_memory_state_machine.py
+- Related Files: backend/tests/test_memory_state_machine.py
 - See Also: ERR-20260726-002
 
 ### Resolution
@@ -3453,7 +3508,7 @@ AssertionError: subagent_stop appeared before expected agent_message events
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_task_runtime_phase1.py
+- Related Files: backend/tests/test_task_runtime_phase1.py
 - See Also: ERR-20260726-011
 
 ### Resolution
@@ -3486,7 +3541,7 @@ apply_patch verification failed: Failed to find expected lines
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_task_runtime_phase1.py
+- Related Files: backend/tests/test_task_runtime_phase1.py
 - See Also: ERR-20260726-001
 
 ### Resolution
@@ -3519,7 +3574,7 @@ expected deepseek/deepseek-chat, got deepseek/deepseek-v4-flash
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_executor_tool_calling.py, lib/backend/tests/test_litellm_adapter.py
+- Related Files: backend/tests/test_executor_tool_calling.py, backend/tests/test_litellm_adapter.py
 - See Also: ERR-20260726-011
 
 ### Resolution
@@ -3554,7 +3609,7 @@ check_permission -> 未调用
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/security/sandbox.py, lib/backend/tests/conftest.py, lib/backend/tests/test_weixin_auto_reply.py
+- Related Files: backend/security/sandbox.py, backend/tests/conftest.py, backend/tests/test_weixin_auto_reply.py
 - See Also: ERR-20260726-011
 
 ### Resolution
@@ -3586,7 +3641,7 @@ PowerShell 的 rg 正则使用单引号包裹，复杂搜索与文件读取拆�
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/plugins/bilibili_toolkit_builtin/tools.py
+- Related Files: backend/plugins/bilibili_toolkit_builtin/tools.py
 - See Also: ERR-20260726-008
 
 ### Resolution
@@ -3619,7 +3674,7 @@ actual: 6
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/plugins/bilibili_toolkit_builtin/tools.py, lib/backend/tests/test_bilibili_toolkit_agent_tools.py
+- Related Files: backend/plugins/bilibili_toolkit_builtin/tools.py, backend/tests/test_bilibili_toolkit_agent_tools.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T00:10:00+08:00
@@ -3639,7 +3694,7 @@ actual: 6
 
 ### Error
 ```text
-apply_patch verification failed: Failed to find expected lines in lib/backend/billing/pricing_manager.py
+apply_patch verification failed: Failed to find expected lines in backend/billing/pricing_manager.py
 ```
 
 ### Context
@@ -3651,7 +3706,7 @@ apply_patch verification failed: Failed to find expected lines in lib/backend/bi
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/billing/pricing_manager.py
+- Related Files: backend/billing/pricing_manager.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T01:20:00+08:00
@@ -3683,7 +3738,7 @@ apply_patch verification failed: Failed to find expected lines in lib/backend/bi
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/im/feishu_adapter.py, lib/backend/im/telegram_adapter.py
+- Related Files: backend/im/feishu_adapter.py, backend/im/telegram_adapter.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T01:25:00+08:00
@@ -3715,7 +3770,7 @@ NotADirectoryError: [WinError 267] 目录名称无效。
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend/tests/e2e/support/start_backend.py
+- Related Files: frontend/tests/e2e/support/start_backend.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T04:55:00+08:00
@@ -3747,7 +3802,7 @@ HTTPStatusError: Client error '403 Forbidden' for url '/api/chat'
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/api/routes/system.py, lib/backend/api/routes/chat.py
+- Related Files: backend/api/routes/system.py, backend/api/routes/chat.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T04:57:00+08:00
@@ -3779,7 +3834,7 @@ Unable to find an element with the text: 加载远端模型
 
 ### Metadata
 - Reproducible: unknown
-- Related Files: lib/frontend/src/__tests__/features/settings/SettingsPage.test.tsx
+- Related Files: frontend/src/__tests__/features/settings/SettingsPage.test.tsx
 
 ### Resolution
 - **Resolved**: 2026-07-27T05:28:00+08:00
@@ -3835,7 +3890,7 @@ command timed out after 64036 milliseconds
 ```
 
 ### Context
-- 命令为 lib/backend 下的 pytest --no-cov。
+- 命令为 backend 下的 pytest --no-cov。
 - 项目记忆已说明完整后端测试常超过 15 分钟，需要避免单次阻塞等待。
 
 ### Suggested Fix
@@ -3843,7 +3898,7 @@ command timed out after 64036 milliseconds
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-27T05:30:00+08:00
@@ -3875,7 +3930,7 @@ execution error: Io(Os { code: 5, kind: PermissionDenied, message: "拒绝访问
 
 ### Metadata
 - Reproducible: unknown
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-27T05:32:00+08:00
@@ -3907,7 +3962,7 @@ command timed out after 124022 milliseconds
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-27T05:40:00+08:00
@@ -3939,7 +3994,7 @@ command timed out after 124029 milliseconds
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests
+- Related Files: backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-27T05:45:00+08:00
@@ -3996,14 +4051,14 @@ ERROR: file or directory not found: tests/test_terminal_pty.py
 
 ### Context
 - 同一命令中的 npm run build 已成功完成。
-- 后端测试路径相对于 lib/backend，而非 lib/frontend。
+- 后端测试路径相对于 backend，而非 frontend。
 
 ### Suggested Fix
 前后端验证使用独立工具调用，并为各自设置正确的工作目录。
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend, lib/backend/tests
+- Related Files: frontend, backend/tests
 
 ### Resolution
 - **Resolved**: 2026-07-27T09:10:00+08:00
@@ -4065,7 +4120,7 @@ command timed out after 34021 milliseconds
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend/tests/e2e/support/start_backend.py
+- Related Files: frontend/tests/e2e/support/start_backend.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T09:01:00+08:00
@@ -4097,7 +4152,7 @@ expected [] to deeply equal [ 'message-1' ]
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend/src/features/inbox/inboxStream.ts, lib/frontend/src/__tests__/features/inbox/inboxStream.test.ts
+- Related Files: frontend/src/features/inbox/inboxStream.ts, frontend/src/__tests__/features/inbox/inboxStream.test.ts
 
 ### Resolution
 - **Resolved**: 2026-07-27T08:40:00+08:00
@@ -4128,7 +4183,7 @@ Missing argument in parameter list.
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/core/task_runtime/sessions.py, lib/backend/core/task_runtime/task_store.py, lib/backend/core/task_runtime/runners.py
+- Related Files: backend/core/task_runtime/sessions.py, backend/core/task_runtime/task_store.py, backend/core/task_runtime/runners.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T08:00:00+08:00
@@ -4158,7 +4213,7 @@ NameError: name 'asyncio' is not defined
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_web_search_multi_provider.py
+- Related Files: backend/tests/test_web_search_multi_provider.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T07:35:00+08:00
@@ -4190,7 +4245,7 @@ The string is missing the terminator: ".
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/api/routes/system.py, lib/backend/api/routes/auth.py
+- Related Files: backend/api/routes/system.py, backend/api/routes/auth.py
 - See Also: ERR-20260727-017
 
 ### Resolution
@@ -4223,7 +4278,7 @@ ModuleNotFoundError: No module named 'security.auth'
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/api/routes/auth.py, lib/backend/config/security.py
+- Related Files: backend/api/routes/auth.py, backend/config/security.py
 
 ### Resolution
 - **Resolved**: 2026-07-27T10:08:00+08:00
@@ -4349,7 +4404,7 @@ rg: ... test_task_runtime_phase*.py: 文件名、目录名或卷标语法不正�
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/backend/tests/test_task_runtime_phase1.py
+- Related Files: backend/tests/test_task_runtime_phase1.py
 - See Also: ERR-20260727-033, ERR-20260727-038
 
 ### Resolution
@@ -4381,11 +4436,237 @@ MessageList : The term 'MessageList' is not recognized as the name of a cmdlet.
 
 ### Metadata
 - Reproducible: yes
-- Related Files: lib/frontend/src/features/chat/ChatPage.tsx
+- Related Files: frontend/src/features/chat/ChatPage.tsx
 - See Also: ERR-20260727-038, ERR-20260727-043
 
 ### Resolution
 - **Resolved**: 2026-07-27T11:52:00+08:00
 - **Notes**: 已确认后续查询应使用单引号正则。
 
+---
+
+## [ERR-20260728-001] powershell-rg-regex-quote-parsing
+
+**Logged**: 2026-07-28T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+PowerShell 将双引号中的正则字符解析为语法，导致运行目录扫描未执行。
+
+### Error
+```text
+Unexpected token ')' in expression or statement.
+The string is missing the terminator: '.
+```
+
+### Context
+- 对 `rg` 传入包含引号、方括号和管道符的复杂正则。
+- 命令为只读检查，未修改项目文件。
+
+### Suggested Fix
+复杂 `rg` 模式必须使用 PowerShell 单引号；必要时拆为多个简单检索，避免 shell 先解析正则元字符。
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+- See Also: ERR-20260727-044
+
+### Resolution
+- **Resolved**: 2026-07-28T00:00:00+08:00
+- **Notes**: 后续目录扫描改用单引号模式与分步检索。
+
+---
+
+## [ERR-20260728-002] importlib-dataclass-module-registration
+
+**Logged**: 2026-07-28T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+动态加载含 dataclass 的脚本时未注册模块，Python 3.12 无法解析字符串注解。
+
+### Error
+```text
+AttributeError: 'NoneType' object has no attribute '__dict__'
+```
+
+### Context
+- 测试使用 importlib.util.module_from_spec 加载 bin/migrate_runtime_data.py。
+- dataclasses 在处理 postponed annotations 时通过 sys.modules 查找模块。
+
+### Suggested Fix
+调用 exec_module 前将模块写入 sys.modules[spec.name]。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/tests/test_migrate_runtime_data.py
+
+### Resolution
+- **Resolved**: 2026-07-28T00:00:00+08:00
+- **Notes**: 测试加载器已在执行模块前完成注册。
+
+---
+
+## [ERR-20260728-003] powershell-rg-multi-pattern-arguments
+
+**Logged**: 2026-07-28T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+PowerShell 与 JavaScript 字符串嵌套时，含单双引号的多模式 rg 参数被拆成错误路径。
+
+### Error
+```text
+rg: 'var/data/ backend: IO error for operation on 'var/data/ backend
+```
+
+### Context
+- 仅用于扫描非规范运行时路径。
+- 两次失败均未写入项目文件或运行数据。
+
+### Suggested Fix
+避免在同一命令内组合单双引号模式；将复杂匹配拆成不含引号的关键词检索。
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+- See Also: ERR-20260728-001
+
+### Resolution
+- **Resolved**: 2026-07-28T00:00:00+08:00
+- **Notes**: 后续使用简单关键词和人工复核替代复合模式。
+
+---
+
+## [ERR-20260728-004] destructive-cleanup-policy-rejection
+
+**Logged**: 2026-07-28T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+批量 Remove-Item 清理空目录和缓存被执行环境的破坏性操作策略拦截。
+
+### Error
+```text
+rejected: blocked by policy
+```
+
+### Context
+- 目标在执行前已验证：空旧目录和可再生测试缓存。
+- 命令在执行前被拒绝，未删除任何文件。
+
+### Suggested Fix
+目录整理优先采用迁移与忽略规则；需要物理删除时拆分为单个已验证目标并遵守环境授权边界。
+
+### Metadata
+- Reproducible: yes
+- Related Files: .gitignore
+
+### Resolution
+- **Resolved**: 2026-07-28T00:00:00+08:00
+- **Notes**: 已保留不影响 Git 的缓存，并在交付中明确其状态。
+
+---
+
+## [ERR-20260728-005] isolated-uvicorn-process-permission
+
+**Logged**: 2026-07-28T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+当前 Windows 执行环境拒绝 Start-Process 创建隔离 Uvicorn 子进程。
+
+### Error
+```text
+Io(Os { code: 5, kind: PermissionDenied, message: "拒绝访问。" })
+```
+
+### Context
+- 已使用独立端口、数据库、日志和初始化标记路径。
+- 两次启动均在进程创建前失败，端口未占用且没有遗留进程。
+
+### Suggested Fix
+受限环境下使用 FastAPI TestClient 验证 lifespan 与路由装配；需要真实端口证据时在允许创建子进程的终端重跑。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/main.py
+
+### Resolution
+- **Resolved**: 2026-07-28T00:00:00+08:00
+- **Notes**: 后续验证改用隔离 TestClient，不将其标为端口级证明。
+
+---
+
+## [ERR-20260728-006] vendored-package-direct-import
+
+**Logged**: 2026-07-28T19:02:37+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+直接验证 vendored OpenBiliClaw 配置时未注入其 src 导入路径，导致模块未找到。
+
+### Error
+```text
+ModuleNotFoundError: No module named 'openbiliclaw'
+```
+
+### Context
+- 仅调用了 BilibiliToolkitAdapter 的运行时目录配置方法，未触发其内部的临时 sys.path 注入。
+- 未写入任何源文件或运行时数据。
+
+### Suggested Fix
+独立验证 vendored 模块时，显式将插件 src 目录加入 sys.path；或通过适配器的模块加载方法执行。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/plugins/bilibili_toolkit_builtin/adapter.py
+
+### Resolution
+- **Resolved**: 2026-07-28T19:02:37+08:00
+- **Notes**: 后续校验使用与适配器一致的 src 导入路径。
+---
+
+## [ERR-20260728-007] bilibili-plugin-execute-contract-mismatch
+
+**Logged**: 2026-07-28T19:10:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Bilibili 插件生命周期测试的无 action 异常类型与当前插件实现不一致。
+
+### Error
+```text
+test_execute_raises_not_implemented expected NotImplementedError
+actual: ValueError: BilibiliToolkitBuiltinPlugin.execute 需要 action 参数指定要调用的工具
+```
+
+### Context
+- 运行 test_bilibili_toolkit_builtin_plugin.py 与路径迁移相关测试时出现。
+- plugin.py 已在本次整理前处于用户修改状态；本次未修改该文件。
+
+### Suggested Fix
+由负责插件调用契约的维护者确认无 action 的期望异常类型后，同步实现或测试断言。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/plugins/bilibili_toolkit_builtin/plugin.py, backend/tests/test_bilibili_toolkit_builtin_plugin.py
+
+### Resolution
+- **Resolved**: 2026-07-28T22:35:00+08:00
+- **Notes**: 当前契约已由测试同步，Bilibili 适配器、内置插件和生命周期定向回归 78 项通过。
 ---

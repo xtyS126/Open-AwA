@@ -97,7 +97,7 @@ Open-AwA 是一个以 **FastAPI 后端 + React 前端** 构建的 AI Agent 实�
 
 ```
 Open-AwA/
-├── lib/backend/               # FastAPI 后端
+├── backend/               # FastAPI 后端
 │   ├── main.py            # FastAPI 入口
 │   ├── api/               # 路由、依赖注入、Schema
 │   │   ├── routes/        # 业务路由（39 个模块）
@@ -129,7 +129,7 @@ Open-AwA/
 │   ├── skills/            # 技能系统
 │   ├── tools/             # 工具注册
 │   └── workflow/          # 工作流引擎
-├── lib/frontend/              # React 前端
+├── frontend/              # React 前端
 │   ├── src/
 │   │   ├── features/      # 功能模块（按领域拆分）
 │   │   ├── shared/        # 共享资源（API/组件/Store/Hooks）
@@ -211,7 +211,7 @@ Open-AwA/
 
 ### 3.1 入口与启动 (main.py)
 
-**文件**: [main.py](file:///d:/代码/Open-AwA/lib/backend/main.py)
+**文件**: [main.py](file:///d:/代码/Open-AwA/backend/main.py)
 
 #### 启动流程
 
@@ -292,7 +292,7 @@ Open-AwA/
 
 #### 3.2.1 依赖注入 (dependencies.py)
 
-**文件**: [dependencies.py](file:///d:/代码/Open-AwA/lib/backend/api/dependencies.py)
+**文件**: [dependencies.py](file:///d:/代码/Open-AwA/backend/api/dependencies.py)
 
 | 依赖函数 | 说明 |
 |----------|------|
@@ -316,31 +316,31 @@ Open-AwA/
 
 | 路由文件 | 核心功能 |
 |----------|----------|
-| [auth.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/auth.py) | 登录、注册、登出、CSRF Token获取、当前用户信息 |
-| [chat.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/chat.py) | 聊天发送（HTTP+SSE）、WebSocket 聊天、会话取消、历史消息 |
-| [skills.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/skills.py) | 技能CRUD、执行、微信技能适配 |
-| [plugins.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/plugins.py) | 插件CRUD、导入/导出、启用/禁用、权限管理、热更新 |
-| [memory.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/memory.py) | 短期/长期记忆管理、向量搜索、归档、质量报告 |
-| [models.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/models.py) | 模型配置管理、供应商管理 |
-| [scheduled_tasks.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/scheduled_tasks.py) | 定时任务CRUD、Cron表达式、每日重复任务 |
-| [task_runtime.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/task_runtime.py) | 子代理管理、团队管理、任务清单 |
-| [tts.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/tts.py) | 语音合成、声音克隆、语音库管理 |
-| [weixin.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/weixin.py) | 微信二维码登录、绑定状态、自动回复规则 |
-| [tasks.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/tasks.py) | 非交互式任务执行（v1.5）：后台任务提交、超时控制、Webhook回调、SSRF防护 |
-| [weixin_skill.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/weixin_skill.py) | 微信技能适配路由 |
-| [user_profile.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/user_profile.py) | 用户画像管理 |
-| [workspace.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/workspace.py) | 工作区管理 |
-| [heartbeat.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/heartbeat.py) | 心跳路由 |
-| [inbox.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/inbox.py) | 收件箱管理 |
-| [magic_commands.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/magic_commands.py) | 魔法命令路由 |
-| [marketplace.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/marketplace.py) | 插件/技能市场路由 |
-| [user.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/user.py) | 用户管理路由 |
-| [diary.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/diary.py) | 日记路由 |
-| [tools.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/tools.py) | 工具路由 |
-| [subagents.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/subagents.py) | 子代理路由 |
-| [system.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/system.py) | 系统信息路由 |
-| [security.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/security.py) | 安全配置路由 |
-| [coding.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/coding.py) | 编码辅助路由 |
+| [auth.py](file:///d:/代码/Open-AwA/backend/api/routes/auth.py) | 登录、注册、登出、CSRF Token获取、当前用户信息 |
+| [chat.py](file:///d:/代码/Open-AwA/backend/api/routes/chat.py) | 聊天发送（HTTP+SSE）、WebSocket 聊天、会话取消、历史消息 |
+| [skills.py](file:///d:/代码/Open-AwA/backend/api/routes/skills.py) | 技能CRUD、执行、微信技能适配 |
+| [plugins.py](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py) | 插件CRUD、导入/导出、启用/禁用、权限管理、热更新 |
+| [memory.py](file:///d:/代码/Open-AwA/backend/api/routes/memory.py) | 短期/长期记忆管理、向量搜索、归档、质量报告 |
+| [models.py](file:///d:/代码/Open-AwA/backend/api/routes/models.py) | 模型配置管理、供应商管理 |
+| [scheduled_tasks.py](file:///d:/代码/Open-AwA/backend/api/routes/scheduled_tasks.py) | 定时任务CRUD、Cron表达式、每日重复任务 |
+| [task_runtime.py](file:///d:/代码/Open-AwA/backend/api/routes/task_runtime.py) | 子代理管理、团队管理、任务清单 |
+| [tts.py](file:///d:/代码/Open-AwA/backend/api/routes/tts.py) | 语音合成、声音克隆、语音库管理 |
+| [weixin.py](file:///d:/代码/Open-AwA/backend/api/routes/weixin.py) | 微信二维码登录、绑定状态、自动回复规则 |
+| [tasks.py](file:///d:/代码/Open-AwA/backend/api/routes/tasks.py) | 非交互式任务执行（v1.5）：后台任务提交、超时控制、Webhook回调、SSRF防护 |
+| [weixin_skill.py](file:///d:/代码/Open-AwA/backend/api/routes/weixin_skill.py) | 微信技能适配路由 |
+| [user_profile.py](file:///d:/代码/Open-AwA/backend/api/routes/user_profile.py) | 用户画像管理 |
+| [workspace.py](file:///d:/代码/Open-AwA/backend/api/routes/workspace.py) | 工作区管理 |
+| [heartbeat.py](file:///d:/代码/Open-AwA/backend/api/routes/heartbeat.py) | 心跳路由 |
+| [inbox.py](file:///d:/代码/Open-AwA/backend/api/routes/inbox.py) | 收件箱管理 |
+| [magic_commands.py](file:///d:/代码/Open-AwA/backend/api/routes/magic_commands.py) | 魔法命令路由 |
+| [marketplace.py](file:///d:/代码/Open-AwA/backend/api/routes/marketplace.py) | 插件/技能市场路由 |
+| [user.py](file:///d:/代码/Open-AwA/backend/api/routes/user.py) | 用户管理路由 |
+| [diary.py](file:///d:/代码/Open-AwA/backend/api/routes/diary.py) | 日记路由 |
+| [tools.py](file:///d:/代码/Open-AwA/backend/api/routes/tools.py) | 工具路由 |
+| [subagents.py](file:///d:/代码/Open-AwA/backend/api/routes/subagents.py) | 子代理路由 |
+| [system.py](file:///d:/代码/Open-AwA/backend/api/routes/system.py) | 系统信息路由 |
+| [security.py](file:///d:/代码/Open-AwA/backend/api/routes/security.py) | 安全配置路由 |
+| [coding.py](file:///d:/代码/Open-AwA/backend/api/routes/coding.py) | 编码辅助路由 |
 
 ---
 
@@ -348,7 +348,7 @@ Open-AwA/
 
 #### 3.3.1 AIAgent — 主控制器
 
-**文件**: [agent.py](file:///d:/代码/Open-AwA/lib/backend/core/agent.py)
+**文件**: [agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py)
 
 **类**: `AIAgent`
 
@@ -384,7 +384,7 @@ Open-AwA/
 
 #### 3.3.2 ExecutionLayer — 执行层
 
-**文件**: [executor.py](file:///d:/代码/Open-AwA/lib/backend/core/executor.py)
+**文件**: [executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py)
 
 **类**: `ExecutionLayer`
 
@@ -413,7 +413,7 @@ Open-AwA/
 
 #### 3.3.3 PlanningLayer — 规划层
 
-**文件**: [planner.py](file:///d:/代码/Open-AwA/lib/backend/core/planner.py)
+**文件**: [planner.py](file:///d:/代码/Open-AwA/backend/core/planner.py)
 
 **类**: `PlanningLayer`
 
@@ -450,7 +450,7 @@ Open-AwA/
 
 ##### 3.3.4.1 Owner 用户模块
 
-**文件**: [core/owner.py](file:///d:/代码/Open-AwA/lib/backend/core/owner.py)
+**文件**: [core/owner.py](file:///d:/代码/Open-AwA/backend/core/owner.py)
 
 v1.5 引入的单用户模式 Owner 管理模块，提供统一的所有者查询和创建逻辑：
 
@@ -469,7 +469,7 @@ v1.5 引入的单用户模式 Owner 管理模块，提供统一的所有者查�
 
 ##### 3.3.4.2 自主运行模式安全增强 (autonomous/)
 
-**目录**: [core/autonomous/](file:///d:/代码/Open-AwA/lib/backend/core/autonomous/)
+**目录**: [core/autonomous/](file:///d:/代码/Open-AwA/backend/core/autonomous/)
 
 v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱模型**：
 
@@ -511,7 +511,7 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 ### 3.4 技能系统 (skills/)
 
-**目录**: [lib/backend/skills/](file:///d:/代码/Open-AwA/lib/backend/skills/)
+**目录**: [backend/skills/](file:///d:/代码/Open-AwA/backend/skills/)
 
 #### 核心模块
 
@@ -554,7 +554,7 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 ### 3.5 插件系统 (plugins/)
 
-**目录**: [lib/backend/plugins/](file:///d:/代码/Open-AwA/lib/backend/plugins/)
+**目录**: [backend/plugins/](file:///d:/代码/Open-AwA/backend/plugins/)
 
 #### 核心模块
 
@@ -593,7 +593,7 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 ### 3.6 计费系统 (billing/)
 
-**目录**: [lib/backend/billing/](file:///d:/代码/Open-AwA/lib/backend/billing/)
+**目录**: [backend/billing/](file:///d:/代码/Open-AwA/backend/billing/)
 
 | 文件 | 类/函数 | 说明 |
 |------|---------|------|
@@ -610,7 +610,7 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 ### 3.7 记忆系统 (memory/)
 
-**目录**: [lib/backend/memory/](file:///d:/代码/Open-AwA/lib/backend/memory/)
+**目录**: [backend/memory/](file:///d:/代码/Open-AwA/backend/memory/)
 
 #### 三层记忆架构
 
@@ -636,7 +636,7 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 ### 3.8 安全模块 (security/)
 
-**目录**: [lib/backend/security/](file:///d:/代码/Open-AwA/lib/backend/security/)
+**目录**: [backend/security/](file:///d:/代码/Open-AwA/backend/security/)
 
 | 文件 | 类/函数 | 说明 |
 |------|---------|------|
@@ -664,7 +664,7 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 ### 3.9 MCP 协议 (mcp/)
 
-**目录**: [lib/backend/mcp/](file:///d:/代码/Open-AwA/lib/backend/mcp/)
+**目录**: [backend/mcp/](file:///d:/代码/Open-AwA/backend/mcp/)
 
 | 文件 | 类/函数 | 说明 |
 |------|---------|------|
@@ -684,7 +684,7 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 ### 3.10 数据库 (db/)
 
-**文件**: [models.py](file:///d:/代码/Open-AwA/lib/backend/db/models.py)
+**文件**: [models.py](file:///d:/代码/Open-AwA/backend/db/models.py)
 
 #### 关键函数
 
@@ -781,7 +781,7 @@ Base
 
 #### 3.11.1 CLI 工具 (v1.5)
 
-**文件**: [bin/generate_api_key.py](file:///d:/代码/Open-AwA/lib/backend/bin/generate_api_key.py)
+**文件**: [bin/generate_api_key.py](file:///d:/代码/Open-AwA/backend/bin/generate_api_key.py)
 
 独立的访问密钥生成工具，用于在生产环境部署前手动配置 API Key：
 
@@ -835,7 +835,7 @@ Base
 
 ### 3.12 频道模块 (channels/)
 
-**目录**: [lib/backend/channels/](file:///d:/代码/Open-AwA/lib/backend/channels/)
+**目录**: [backend/channels/](file:///d:/代码/Open-AwA/backend/channels/)
 
 支持多渠道接入：
 
@@ -857,7 +857,7 @@ Base
 
 ### 3.13 工作流模块 (workflow/)
 
-**目录**: [lib/backend/workflow/](file:///d:/代码/Open-AwA/lib/backend/workflow/)
+**目录**: [backend/workflow/](file:///d:/代码/Open-AwA/backend/workflow/)
 
 | 文件 | 类/函数 | 说明 |
 |------|---------|------|
@@ -959,9 +959,9 @@ Base
 
 ### 4.1 应用入口与路由
 
-**入口文件**: [lib/frontend/src/main.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/main.tsx)
+**入口文件**: [frontend/src/main.tsx](file:///d:/代码/Open-AwA/frontend/src/main.tsx)
 
-**路由配置**: [App.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/App.tsx) 基于 React Router DOM 6
+**路由配置**: [App.tsx](file:///d:/代码/Open-AwA/frontend/src/App.tsx) 基于 React Router DOM 6
 
 | 路由 | 组件 | 说明 |
 |------|------|------|
@@ -1104,7 +1104,7 @@ Base
 
 ### 4.5 国际化 (i18n/)
 
-**目录**: [lib/frontend/src/i18n/](file:///d:/代码/Open-AwA/lib/frontend/src/i18n/)
+**目录**: [frontend/src/i18n/](file:///d:/代码/Open-AwA/frontend/src/i18n/)
 
 支持语言：简体中文 (`zh-CN`)、英语 (`en-US`)、日语 (`ja-JP`)、俄语 (`ru-RU`)
 
@@ -1287,36 +1287,36 @@ v1.5.1 对系统进行了全链路性能优化，按 P0/P1/P2 分级：
 
 | 类 | 文件 | 职责 |
 |----|------|------|
-| `AIAgent` | [core/agent.py](file:///d:/代码/Open-AwA/lib/backend/core/agent.py) | Agent主控制器，管理理解→规划→执行→反馈全流程 |
-| `ExecutionLayer` | [core/executor.py](file:///d:/代码/Open-AwA/lib/backend/core/executor.py) | 执行层：LLM调用、工具分派、幂等缓存 |
-| `PlanningLayer` | [core/planner.py](file:///d:/代码/Open-AwA/lib/backend/core/planner.py) | 规划层：根据意图生成执行计划 |
-| `ComprehensionLayer` | [core/comprehension.py](file:///d:/代码/Open-AwA/lib/backend/core/comprehension.py) | 理解层：意图识别与实体提取 |
-| `FeedbackLayer` | [core/feedback.py](file:///d:/代码/Open-AwA/lib/backend/core/feedback.py) | 反馈层：结果评估与记忆更新 |
-| `PluginManager` | [plugins/plugin_manager.py](file:///d:/代码/Open-AwA/lib/backend/plugins/plugin_manager.py) | 插件管理器：加载/卸载/执行/发现 |
-| `SkillEngine` | [skills/skill_engine.py](file:///d:/代码/Open-AwA/lib/backend/skills/skill_engine.py) | 技能引擎：技能加载/执行/统计 |
-| `PricingManager` | [billing/pricing_manager.py](file:///d:/代码/Open-AwA/lib/backend/billing/pricing_manager.py) | 价格管理：模型配置CRUD、API端点解析 |
-| `MemoryManager` | [memory/manager.py](file:///d:/代码/Open-AwA/lib/backend/memory/manager.py) | 记忆管理：三层记忆统一入口 |
-| `MCPManager` | [mcp/manager.py](file:///d:/代码/Open-AwA/lib/backend/mcp/manager.py) | MCP管理器：线程安全单例、多Server连接 |
-| `SubAgentOrchestrator` | [core/subagent.py](file:///d:/代码/Open-AwA/lib/backend/core/subagent.py) | 子Agent编排系统：状态图（StateGraph）风格编排，支持节点/边/状态传递 |
-| `AutonomousModeManager` | [core/autonomous/manager.py](file:///d:/代码/Open-AwA/lib/backend/core/autonomous/manager.py) | 自主模式管理器（v1.5增强）：四层安全洋葱（硬底线/工作区边界/网络策略/资源限制） |
-| `HardDenyChecker` | [core/autonomous/hard_deny.py](file:///d:/代码/Open-AwA/lib/backend/core/autonomous/hard_deny.py) | 硬底线检查器（v1.5新增）：禁止系统破坏命令和敏感路径访问 |
-| `ResourceLimiter` | [core/autonomous/resource_limits.py](file:///d:/代码/Open-AwA/lib/backend/core/autonomous/resource_limits.py) | 资源限制器（v1.5新增）：CPU/内存/时间硬限制 |
-| `RBACManager` | [security/rbac.py](file:///d:/代码/Open-AwA/lib/backend/security/rbac.py) | RBAC权限管理 |
-| `WorkflowEngine` | [workflow/engine.py](file:///d:/代码/Open-AwA/lib/backend/workflow/engine.py) | 工作流执行引擎 |
-| `ContextCompressor` | [core/context/compressor.py](file:///d:/代码/Open-AwA/lib/backend/core/context/compressor.py) | 上下文压缩器 |
-| `TokenBudget` | [core/context/token_budget.py](file:///d:/代码/Open-AwA/lib/backend/core/context/token_budget.py) | Token预算控制 |
+| `AIAgent` | [core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) | Agent主控制器，管理理解→规划→执行→反馈全流程 |
+| `ExecutionLayer` | [core/executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py) | 执行层：LLM调用、工具分派、幂等缓存 |
+| `PlanningLayer` | [core/planner.py](file:///d:/代码/Open-AwA/backend/core/planner.py) | 规划层：根据意图生成执行计划 |
+| `ComprehensionLayer` | [core/comprehension.py](file:///d:/代码/Open-AwA/backend/core/comprehension.py) | 理解层：意图识别与实体提取 |
+| `FeedbackLayer` | [core/feedback.py](file:///d:/代码/Open-AwA/backend/core/feedback.py) | 反馈层：结果评估与记忆更新 |
+| `PluginManager` | [plugins/plugin_manager.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_manager.py) | 插件管理器：加载/卸载/执行/发现 |
+| `SkillEngine` | [skills/skill_engine.py](file:///d:/代码/Open-AwA/backend/skills/skill_engine.py) | 技能引擎：技能加载/执行/统计 |
+| `PricingManager` | [billing/pricing_manager.py](file:///d:/代码/Open-AwA/backend/billing/pricing_manager.py) | 价格管理：模型配置CRUD、API端点解析 |
+| `MemoryManager` | [memory/manager.py](file:///d:/代码/Open-AwA/backend/memory/manager.py) | 记忆管理：三层记忆统一入口 |
+| `MCPManager` | [mcp/manager.py](file:///d:/代码/Open-AwA/backend/mcp/manager.py) | MCP管理器：线程安全单例、多Server连接 |
+| `SubAgentOrchestrator` | [core/subagent.py](file:///d:/代码/Open-AwA/backend/core/subagent.py) | 子Agent编排系统：状态图（StateGraph）风格编排，支持节点/边/状态传递 |
+| `AutonomousModeManager` | [core/autonomous/manager.py](file:///d:/代码/Open-AwA/backend/core/autonomous/manager.py) | 自主模式管理器（v1.5增强）：四层安全洋葱（硬底线/工作区边界/网络策略/资源限制） |
+| `HardDenyChecker` | [core/autonomous/hard_deny.py](file:///d:/代码/Open-AwA/backend/core/autonomous/hard_deny.py) | 硬底线检查器（v1.5新增）：禁止系统破坏命令和敏感路径访问 |
+| `ResourceLimiter` | [core/autonomous/resource_limits.py](file:///d:/代码/Open-AwA/backend/core/autonomous/resource_limits.py) | 资源限制器（v1.5新增）：CPU/内存/时间硬限制 |
+| `RBACManager` | [security/rbac.py](file:///d:/代码/Open-AwA/backend/security/rbac.py) | RBAC权限管理 |
+| `WorkflowEngine` | [workflow/engine.py](file:///d:/代码/Open-AwA/backend/workflow/engine.py) | 工作流执行引擎 |
+| `ContextCompressor` | [core/context/compressor.py](file:///d:/代码/Open-AwA/backend/core/context/compressor.py) | 上下文压缩器 |
+| `TokenBudget` | [core/context/token_budget.py](file:///d:/代码/Open-AwA/backend/core/context/token_budget.py) | Token预算控制 |
 
 ### 前端核心组件
 
 | 组件 | 文件 | 职责 |
 |------|------|------|
-| `ChatPage` | [features/chat/ChatPage.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/features/chat/ChatPage.tsx) | 聊天主页面 |
-| `SettingsPage` | [features/settings/SettingsPage.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/features/settings/SettingsPage.tsx) | 设置页面 |
-| `PluginsPage` | [features/plugins/PluginsPage.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/features/plugins/PluginsPage.tsx) | 插件管理页面 |
-| `BillingPage` | [features/billing/BillingPage.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/features/billing/BillingPage.tsx) | 计费页面 |
-| `ReasoningContent` | [features/chat/components/ReasoningContent.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/features/chat/components/ReasoningContent.tsx) | 思维链折叠展示 |
-| `Sidebar` | [shared/components/Sidebar/Sidebar.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/shared/components/Sidebar/Sidebar.tsx) | 全局侧边栏导航 |
-| `ErrorBoundary` | [shared/components/ErrorBoundary/ErrorBoundary.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/shared/components/ErrorBoundary/ErrorBoundary.tsx) | 错误边界组件 |
+| `ChatPage` | [features/chat/ChatPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/chat/ChatPage.tsx) | 聊天主页面 |
+| `SettingsPage` | [features/settings/SettingsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/settings/SettingsPage.tsx) | 设置页面 |
+| `PluginsPage` | [features/plugins/PluginsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/plugins/PluginsPage.tsx) | 插件管理页面 |
+| `BillingPage` | [features/billing/BillingPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/billing/BillingPage.tsx) | 计费页面 |
+| `ReasoningContent` | [features/chat/components/ReasoningContent.tsx](file:///d:/代码/Open-AwA/frontend/src/features/chat/components/ReasoningContent.tsx) | 思维链折叠展示 |
+| `Sidebar` | [shared/components/Sidebar/Sidebar.tsx](file:///d:/代码/Open-AwA/frontend/src/shared/components/Sidebar/Sidebar.tsx) | 全局侧边栏导航 |
+| `ErrorBoundary` | [shared/components/ErrorBoundary/ErrorBoundary.tsx](file:///d:/代码/Open-AwA/frontend/src/shared/components/ErrorBoundary/ErrorBoundary.tsx) | 错误边界组件 |
 
 ---
 
@@ -1432,7 +1432,7 @@ main.py ──┬── api/routes/*      (路由层)
 
 ```powershell
 # Windows PowerShell
-cd d:\代码\Open-AwA\lib\backend
+cd d:\代码\Open-AwA\backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -1448,7 +1448,7 @@ python main.py
 ### 9.3 前端启动
 
 ```powershell
-cd d:\代码\Open-AwA\lib\frontend
+cd d:\代码\Open-AwA\frontend
 npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
@@ -1493,7 +1493,7 @@ docker-compose up -d
 ### 10.1 后端测试
 
 ```powershell
-cd lib/backend
+cd backend
 
 # 运行全部测试
 python -m pytest
@@ -1505,7 +1505,7 @@ pytest -v --cov
 pytest tests/test_agent_core.py -v
 ```
 
-**测试目录**: [lib/backend/tests/](file:///d:/代码/Open-AwA/lib/backend/tests/)
+**测试目录**: [backend/tests/](file:///d:/代码/Open-AwA/backend/tests/)
 
 **测试覆盖**（主要测试文件）:
 
@@ -1530,7 +1530,7 @@ pytest tests/test_agent_core.py -v
 ### 10.2 前端测试
 
 ```powershell
-cd lib/frontend
+cd frontend
 
 # 单元测试
 npm run test
@@ -1551,16 +1551,16 @@ npm run build
 npm run e2e
 ```
 
-**测试目录**: [lib/frontend/src/__tests__/](file:///d:/代码/Open-AwA/lib/frontend/src/__tests__/)
+**测试目录**: [frontend/src/__tests__/](file:///d:/代码/Open-AwA/frontend/src/__tests__/)
 
-**E2E测试目录**: [lib/frontend/tests/e2e/](file:///d:/代码/Open-AwA/lib/frontend/tests/e2e/)
+**E2E测试目录**: [frontend/tests/e2e/](file:///d:/代码/Open-AwA/frontend/tests/e2e/)
 
 ### 10.3 代码质量检查清单
 
 | 检查项 | 命令 | 说明 |
 |--------|------|------|
-| 后端类型检查 | `mypy lib/backend/ --ignore-missing-imports` | Python静态类型分析 |
-| 后端安全扫描 | `bandit -r lib/backend/` | 安全漏洞扫描 |
+| 后端类型检查 | `mypy backend/ --ignore-missing-imports` | Python静态类型分析 |
+| 后端安全扫描 | `bandit -r backend/` | 安全漏洞扫描 |
 | 前端类型检查 | `tsc --noEmit` | TypeScript编译检查 |
 | 前端代码检查 | `eslint "src/**/*.{ts,tsx}" --max-warnings=0` | ESLint零警告 |
 | 构建验证 | `npm run build` | 生产构建验证 |
@@ -1609,29 +1609,29 @@ npm run e2e
 
 | 用途 | 文件路径 |
 |------|----------|
-| 后端入口 | [lib/backend/main.py](file:///d:/代码/Open-AwA/lib/backend/main.py) |
-| Agent主控制器 | [lib/backend/core/agent.py](file:///d:/代码/Open-AwA/lib/backend/core/agent.py) |
-| 执行层 | [lib/backend/core/executor.py](file:///d:/代码/Open-AwA/lib/backend/core/executor.py) |
-| 规划层 | [lib/backend/core/planner.py](file:///d:/代码/Open-AwA/lib/backend/core/planner.py) |
-| 数据模型 | [lib/backend/db/models.py](file:///d:/代码/Open-AwA/lib/backend/db/models.py) |
-| 认证依赖 | [lib/backend/api/dependencies.py](file:///d:/代码/Open-AwA/lib/backend/api/dependencies.py) |
-| 安全配置 | [lib/backend/config/security.py](file:///d:/代码/Open-AwA/lib/backend/config/security.py) |
-| 应用配置 | [lib/backend/config/settings.py](file:///d:/代码/Open-AwA/lib/backend/config/settings.py) |
-| API Key生成工具 | [lib/backend/bin/generate_api_key.py](file:///d:/代码/Open-AwA/lib/backend/bin/generate_api_key.py) |
-| Owner用户模块 | [lib/backend/core/owner.py](file:///d:/代码/Open-AwA/lib/backend/core/owner.py) |
-| 自主模式配置 | [lib/backend/core/autonomous/config.py](file:///d:/代码/Open-AwA/lib/backend/core/autonomous/config.py) |
-| 自主模式管理器 | [lib/backend/core/autonomous/manager.py](file:///d:/代码/Open-AwA/lib/backend/core/autonomous/manager.py) |
-| 聊天路由 | [lib/backend/api/routes/chat.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/chat.py) |
-| 插件路由 | [lib/backend/api/routes/plugins.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/plugins.py) |
-| 插件管理器 | [lib/backend/plugins/plugin_manager.py](file:///d:/代码/Open-AwA/lib/backend/plugins/plugin_manager.py) |
-| 任务执行API | [lib/backend/api/routes/tasks.py](file:///d:/代码/Open-AwA/lib/backend/api/routes/tasks.py) |
-| LiteLLM适配 | [lib/backend/core/litellm_adapter.py](file:///d:/代码/Open-AwA/lib/backend/core/litellm_adapter.py) |
-| 前端入口 | [lib/frontend/src/main.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/main.tsx) |
-| 前端路由 | [lib/frontend/src/App.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/App.tsx) |
-| 聊天页面 | [lib/frontend/src/features/chat/ChatPage.tsx](file:///d:/代码/Open-AwA/lib/frontend/src/features/chat/ChatPage.tsx) |
-| 聊天状态 | [lib/frontend/src/features/chat/store/chatStore.ts](file:///d:/代码/Open-AwA/lib/frontend/src/features/chat/store/chatStore.ts) |
-| 认证状态 | [lib/frontend/src/shared/store/authStore.ts](file:///d:/代码/Open-AwA/lib/frontend/src/shared/store/authStore.ts) |
-| CSS Token | [lib/frontend/src/styles/tokens.css](file:///d:/代码/Open-AwA/lib/frontend/src/styles/tokens.css) |
+| 后端入口 | [backend/main.py](file:///d:/代码/Open-AwA/backend/main.py) |
+| Agent主控制器 | [backend/core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) |
+| 执行层 | [backend/core/executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py) |
+| 规划层 | [backend/core/planner.py](file:///d:/代码/Open-AwA/backend/core/planner.py) |
+| 数据模型 | [backend/db/models.py](file:///d:/代码/Open-AwA/backend/db/models.py) |
+| 认证依赖 | [backend/api/dependencies.py](file:///d:/代码/Open-AwA/backend/api/dependencies.py) |
+| 安全配置 | [backend/config/security.py](file:///d:/代码/Open-AwA/backend/config/security.py) |
+| 应用配置 | [backend/config/settings.py](file:///d:/代码/Open-AwA/backend/config/settings.py) |
+| API Key生成工具 | [backend/bin/generate_api_key.py](file:///d:/代码/Open-AwA/backend/bin/generate_api_key.py) |
+| Owner用户模块 | [backend/core/owner.py](file:///d:/代码/Open-AwA/backend/core/owner.py) |
+| 自主模式配置 | [backend/core/autonomous/config.py](file:///d:/代码/Open-AwA/backend/core/autonomous/config.py) |
+| 自主模式管理器 | [backend/core/autonomous/manager.py](file:///d:/代码/Open-AwA/backend/core/autonomous/manager.py) |
+| 聊天路由 | [backend/api/routes/chat.py](file:///d:/代码/Open-AwA/backend/api/routes/chat.py) |
+| 插件路由 | [backend/api/routes/plugins.py](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py) |
+| 插件管理器 | [backend/plugins/plugin_manager.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_manager.py) |
+| 任务执行API | [backend/api/routes/tasks.py](file:///d:/代码/Open-AwA/backend/api/routes/tasks.py) |
+| LiteLLM适配 | [backend/core/litellm_adapter.py](file:///d:/代码/Open-AwA/backend/core/litellm_adapter.py) |
+| 前端入口 | [frontend/src/main.tsx](file:///d:/代码/Open-AwA/frontend/src/main.tsx) |
+| 前端路由 | [frontend/src/App.tsx](file:///d:/代码/Open-AwA/frontend/src/App.tsx) |
+| 聊天页面 | [frontend/src/features/chat/ChatPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/chat/ChatPage.tsx) |
+| 聊天状态 | [frontend/src/features/chat/store/chatStore.ts](file:///d:/代码/Open-AwA/frontend/src/features/chat/store/chatStore.ts) |
+| 认证状态 | [frontend/src/shared/store/authStore.ts](file:///d:/代码/Open-AwA/frontend/src/shared/store/authStore.ts) |
+| CSS Token | [frontend/src/styles/tokens.css](file:///d:/代码/Open-AwA/frontend/src/styles/tokens.css) |
 
 ---
 

@@ -47,25 +47,25 @@ htmlcov/
 node_modules/
 
 # =========================
-# 前端构建输出（重组后位于 lib/frontend/）
+# 前端构建输出（重组后位于 frontend/）
 # =========================
-lib/frontend/dist/
+frontend/dist/
 dist/
 dist-ssr/
 
 # =========================
-# 前端测试报告（重组后位于 lib/frontend/）
+# 前端测试报告（重组后位于 frontend/）
 # =========================
-lib/frontend/test-results/
-lib/frontend/coverage/
-lib/frontend/playwright-report/
-lib/frontend/blob-report/
-lib/frontend/playwright/.cache/
-lib/frontend/electron-report.json
-lib/frontend/playwright-full-report.json
-lib/frontend/.vite-e2e-cache/
-lib/frontend/playwright-results/
-lib/frontend/test-results-temp/
+frontend/test-results/
+frontend/coverage/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/playwright/.cache/
+frontend/electron-report.json
+frontend/playwright-full-report.json
+frontend/.vite-e2e-cache/
+frontend/playwright-results/
+frontend/test-results-temp/
 
 # =========================
 # TypeScript 构建信息
@@ -129,6 +129,8 @@ desktop.ini
 # 项目运行时数据（重组后统一存放于 var/，整体忽略）
 # =========================
 var/
+/data/
+/uploads/
 .openawa/
 .agents/
 .learnings/
@@ -145,11 +147,11 @@ reports/ocr-review.txt
 archive/
 
 # =========================
-# 生成的报告文件（重组后位于 lib/backend/）
+# 生成的报告文件（重组后位于 backend/）
 # =========================
-lib/backend/scan_report.txt
-lib/backend/COMPLETE_SCAN_REPORT.md
-lib/backend/TEST_REPORT_*.md
+backend/scan_report.txt
+backend/COMPLETE_SCAN_REPORT.md
+backend/TEST_REPORT_*.md
 
 # =========================
 # 临时文件 / 杂项
@@ -164,19 +166,19 @@ test_translate.py
 translate_chunk.py
 
 # =========================
-# Android 原生项目构建产物（重组后位于 lib/Android/）
+# Android 原生项目构建产物（重组后位于 android/）
 # =========================
-lib/Android/Open-AwA-Android/.gradle/
-lib/Android/Open-AwA-Android/build/
-lib/Android/Open-AwA-Android/app/build/
-lib/Android/Open-AwA-Android/local.properties
-lib/Android/Open-AwA-Android/.idea/
-lib/Android/Open-AwA-Android/captures/
-lib/Android/Open-AwA-Android/.cxx/
-lib/Android/Open-AwA-Android/screenshots/
-lib/Android/Open-AwA-Android/*.iml
-lib/Android/Open-AwA-Android/app/*.iml
-lib/Android/test-reports/
+android/Open-AwA-Android/.gradle/
+android/Open-AwA-Android/build/
+android/Open-AwA-Android/app/build/
+android/Open-AwA-Android/local.properties
+android/Open-AwA-Android/.idea/
+android/Open-AwA-Android/captures/
+android/Open-AwA-Android/.cxx/
+android/Open-AwA-Android/screenshots/
+android/Open-AwA-Android/*.iml
+android/Open-AwA-Android/app/*.iml
+android/test-reports/
 
 # =========================
 # 工具二进制与临时输出
@@ -185,8 +187,21 @@ lib/Android/test-reports/
 Android-Cli/
 dogfood-output/
 *.codex-disposable
-lib/backend/uploads/
+backend/uploads/
+backend/downloads/
+backend/data/
+backend/logs/
+backend/workspace/
+backend/openawa.db
+backend/openawa.db.bak.*
+backend/_e2e_sim.db*
+backend/tmp_*/
+backend/pytest_full.log
+backend/test_restore.txt
+backend/tmp_*_write.txt
+backend/rename_files.py
 uploads/tool_outputs/*.txt
+plugins/twitter-monitor/data/
 
 # Android 测试截图与测试报告（临时产物）
 android_test_*.png
@@ -196,10 +211,10 @@ android_test_*.png
 # =========================
 # E2E 调试/扫描脚本与中间输出（dumps 行号、扫 commit、路由守卫检查等临时产物）
 .e2e_*
-lib/frontend/.e2e_*
+frontend/.e2e_*
 
 # =========================
-# 桌面端构建产物（重组后位于 lib/desktop/）
+# 桌面端构建产物（重组后位于 desktop/）
 # =========================
-lib/desktop/resources/frontend/
-lib/desktop/dist/
+desktop/resources/frontend/
+desktop/dist/
