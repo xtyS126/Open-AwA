@@ -102,7 +102,11 @@ backend/
 │   ├── agent_api.py         # Agent API
 │   ├── agent_turn_coordinator.py # 单轮协调器：保留完整输入、生成唯一模型步骤
 │   ├── execution_prompt_builder.py # 执行提示与消息构建
-│   ├── executor.py          # 执行层：工具调用、结果处理
+│   ├── executor.py          # 执行层薄兼容门面
+│   ├── execution_configuration.py # 模型配置与选择
+│   ├── execution_model_runtime.py # 流式/非流式模型调用
+│   ├── execution_tool_runtime.py # 工具校验、审批与分发
+│   ├── execution_step_runtime.py # 步骤执行与重试
 │   ├── feedback.py          # 反馈层：结果验证、状态更新
 │   ├── model_service.py     # 模型服务协议适配
 │   ├── litellm_adapter.py   # LiteLLM 统一网关适配
@@ -324,7 +328,7 @@ frontend/
 
 ### 2.1 聊天与 Agent 主流程
 
-聊天接口是系统的核心交互入口，支持 HTTP 和 WebSocket 两种通信方式。接口会构造上下文后调用 AIAgent.process()：单轮协调器(agent_turn_coordinator.py)保留完整用户输入并生成唯一模型步骤，模型通过原生工具调用选择能力，执行层(executor.py)负责模型与工具调用，执行提示构建器(execution_prompt_builder.py)组合能力、画像、记忆与会话历史，反馈层(feedback.py)负责结果验证和状态更新。
+聊天接口是系统的核心交互入口，支持 HTTP 和 WebSocket 两种通信方式。接口会构造上下文后调用 AIAgent.process()：单轮协调器(agent_turn_coordinator.py)保留完整用户输入并生成唯一模型步骤，模型通过原生工具调用选择能力；执行层门面(executor.py)装配配置、模型、工具与步骤协作者，执行提示构建器(execution_prompt_builder.py)组合能力、画像、记忆与会话历史，反馈层(feedback.py)负责结果验证和状态更新。
 
 当前实现的模型服务协议与链路治理具有以下特点：按 provider 生成不同的端点、请求头与请求载荷，避免把所有模型服务都按 OpenAI 协议调用；在上游模型请求中透传 X-Request-Id 与 X-Client-Ver；对客户端请求返回 X-Server-Ver 与 X-Version-Status，提供简单版本协商结果；为模型服务请求补充标准错误码与有限次重试；通过 metrics.py 输出简易 Prometheus 文本指标。
 

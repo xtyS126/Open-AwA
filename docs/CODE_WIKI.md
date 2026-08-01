@@ -106,7 +106,11 @@ Open-AwA/
 │   │   └── schemas.py     # Pydantic 请求/响应模型
 │   ├── core/              # 核心引擎
 │   │   ├── agent.py       # AI Agent 主控制器
-│   │   ├── executor.py    # 执行层（工具调用、LLM调用）
+│   │   ├── executor.py    # 执行层薄兼容门面（装配、注册、兼容导出）
+│   │   ├── execution_configuration.py # 模型配置与选择
+│   │   ├── execution_model_runtime.py # 流式/非流式模型调用
+│   │   ├── execution_tool_runtime.py # 工具校验、审批与分发
+│   │   ├── execution_step_runtime.py # 步骤执行与重试
 │   │   ├── agent_turn_coordinator.py # 单轮协调器（保留完整输入、生成唯一模型步骤）
 │   │   ├── execution_prompt_builder.py # 执行提示与消息构建
 │   │   ├── feedback.py    # 反馈层（结果评估）
@@ -381,9 +385,16 @@ Open-AwA/
 
 #### 3.3.2 ExecutionLayer — 执行层
 
-**文件**: [executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py)
+**门面文件**: [executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py)
 
 **类**: `ExecutionLayer`
+
+`ExecutionLayer` 保留既有入口和运行时装配，具体职责由四个单向依赖的内部协作者提供：
+
+- `execution_configuration.py`：模型配置、供应商与子代理模型选择
+- `execution_model_runtime.py`：非流式、流式模型调用与工具回环
+- `execution_tool_runtime.py`：工具参数校验、权限审批、Hook、分发与并发执行
+- `execution_step_runtime.py`：步骤分发、文件/命令执行、重试与经验反馈
 
 **核心方法**:
 
@@ -1283,7 +1294,7 @@ v1.5.1 对系统进行了全链路性能优化，按 P0/P1/P2 分级：
 | 类 | 文件 | 职责 |
 |----|------|------|
 | `AIAgent` | [core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) | Agent主控制器，管理轮次准备、执行与反馈全流程 |
-| `ExecutionLayer` | [core/executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py) | 执行层：LLM调用、工具分派、幂等缓存 |
+| `ExecutionLayer` | [core/executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py) | 薄兼容门面：装配配置、模型、工具与步骤协作者 |
 | `AgentTurnCoordinator` | [core/agent_turn_coordinator.py](file:///d:/代码/Open-AwA/backend/core/agent_turn_coordinator.py) | 单轮协调器：保留完整输入并生成唯一模型执行步骤 |
 | `ExecutionPromptBuilder` | [core/execution_prompt_builder.py](file:///d:/代码/Open-AwA/backend/core/execution_prompt_builder.py) | 执行提示构建器：组合能力、画像、记忆与历史消息 |
 | `FeedbackLayer` | [core/feedback.py](file:///d:/代码/Open-AwA/backend/core/feedback.py) | 反馈层：结果评估与记忆更新 |

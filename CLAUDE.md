@@ -474,7 +474,7 @@ agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 
 | System | Directory | Key Files |
 |--------|-----------|-----------|
-| Agent Core | `backend/core/` | `agent.py`, `agent_turn_coordinator.py`, `executor.py`, `execution_prompt_builder.py`, `feedback.py` |
+| Agent Core | `backend/core/` | `agent.py`, `agent_turn_coordinator.py`, `executor.py`（兼容门面）, `execution_configuration.py`, `execution_model_runtime.py`, `execution_tool_runtime.py`, `execution_step_runtime.py`, `execution_prompt_builder.py`, `feedback.py` |
 | Plugin System | `backend/plugins/` | `plugin_manager.py`, `plugin_instance.py` (singleton), `base_plugin.py`, `plugin_sandbox.py`, `plugin_lifecycle.py` (state machine), `hot_update_manager.py` (blue-green) |
 | Skill System | `backend/skills/` | `skill_engine.py`, `skill_executor.py`, `skill_registry.py`, `skill_loader.py` |
 | Memory | `backend/memory/` | `manager.py`, `experience_manager.py`, `vector_store_manager.py` |
@@ -742,6 +742,7 @@ git commit -m "[Type] 变更描述"
 - **测试缓存路径不得越出仓库或跨任务共享**：`backend/pytest.ini` 使用工作区内已忽略的 `.pytest_cache`，`frontend/vite.config.ts` 使用 `frontend/.vite-cache`；从子工作区写 `../../var/cache` 会落到 `D:\代码\var`，共享 `var/cache` 还会在 Windows 触发 ACL 拒绝或文件锁冲突。
 - **PowerShell rg 引号解析**: 复杂正则中混用单双引号会在执行前被 PowerShell 误解析；拆分为固定关键词检查，或先在脚本文件中定义模式再执行。
 - **resolve_max_tool_call_rounds**: 定义在 `executor.py`，`agent.py` 通过 import 引用同一函数，不可重复定义
+- **ExecutionLayer 必须保持薄兼容门面**：`core/executor.py` 不得超过 420 行，直接方法不得超过 40 行；配置、模型调用、工具执行和步骤执行分别由 `execution_configuration.py`、`execution_model_runtime.py`、`execution_tool_runtime.py`、`execution_step_runtime.py` 承担，协作者禁止反向 import `core.executor`。修改执行链后必须运行 `tests/test_executor_facade_architecture.py`
 - **RBAC 通配符**: `check_permission` 支持 `skill:*` 匹配 `skill:read`，`*` 仅在同段数下生效
 - **登录限流**: 通过 `RateLimitStore` 抽象层管理，`DatabaseRateLimitStore` 使用 `time.time()`（跨 worker 一致），`MemoryRateLimitStore` 使用 `time.monotonic()`（单进程不受时钟跳变影响）
 - **模型参数 or 陷阱**: `getattr(config, "retry_count", 3) or 3` 会将 `0` 误判为未设置，必须使用 `is not None` 检查
