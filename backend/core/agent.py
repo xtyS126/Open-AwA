@@ -820,15 +820,16 @@ class AIAgent:
                 user_input, context, session_id, _ttft_session_id, _ttft_t0, state
             ):
                 yield event
-            # 4. 意图识别与计划创建
-            with ttft_stage_logger("recognize_intent", _ttft_session_id, _ttft_t0):
-                intent = await self.comprehension.recognize_intent(state["effective_user_input"])
-            with ttft_stage_logger("extract_entities", _ttft_session_id, _ttft_t0):
-                entities = await self.comprehension.extract_entities(state["effective_user_input"])
+            # 4. 单一轮次协调器准备模型原生执行步骤
             yield build_status_event("planning", "正在生成执行计划")
-            with ttft_stage_logger("create_plan", _ttft_session_id, _ttft_t0):
-                plan = await self.planner.create_plan(intent=intent, entities=entities, context=context)
+            with ttft_stage_logger("prepare_turn", _ttft_session_id, _ttft_t0):
+                intent, entities, plan = await self.turn_coordinator.prepare_turn(
+                    state["effective_user_input"],
+                    context,
+                )
             context["plan"] = plan
+            context["intent"] = intent
+            context["entities"] = entities
             yield {"type": "plan", "plan": plan}
             # 5. 初始化工具调用循环相关状态
             state["final_only_mode"] = is_final_only_mode(context)
@@ -891,7 +892,7 @@ class AIAgent:
             )
             effective_user_input = build_effective_user_input(user_input, context)
 
-            intent, entities = await self._recognize_intent_and_entities(
+            intent, entities, plan = await self._prepare_turn(
                 effective_user_input, user_input, context
             )
             experiences, relevant_memories = await self._retrieve_experiences_and_memories(
@@ -905,7 +906,7 @@ class AIAgent:
                 return workflow_early
 
             results, plan_early = await self._plan_executor.execute_plan(
-                intent, entities, user_input, context
+                plan, intent, entities, user_input, context
             )
             if plan_early is not None:
                 return plan_early
@@ -954,19 +955,21 @@ class AIAgent:
         )
         return None
 
-    async def _recognize_intent_and_entities(
+    async def _prepare_turn(
         self,
         effective_user_input: str,
         user_input: str,
         context: Dict[str, Any],
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """意图识别 + 实体抽取 + 耗时与结构化指标记录。"""
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        """准备单一模型执行轮次并记录结构化指标。"""
         intent_start = time.perf_counter()
-        intent = await self.comprehension.recognize_intent(effective_user_input)
-        logger.debug(f"Recognized intent: {intent}")
-
-        entities = await self.comprehension.extract_entities(effective_user_input)
-        logger.debug(f"Extracted entities: {entities}")
+        intent, entities, plan = await self.turn_coordinator.prepare_turn(
+            effective_user_input,
+            context,
+        )
+        context["intent"] = intent
+        context["entities"] = entities
+        context["plan"] = plan
         intent_duration_ms = int((time.perf_counter() - intent_start) * 1000)
         self._schedule_record(
             node_type="intent_recognition",
@@ -978,7 +981,7 @@ class AIAgent:
                 "entities": entities
             }
         )
-        return intent, entities
+        return intent, entities, plan
 
     async def _retrieve_experiences_and_memories(
         self,
@@ -1418,7 +1421,7 @@ class AIAgent:
             diagnosis = await self.feedback.diagnose_error(error, context)
 
             # 2. 生成修复计划
-            fix_plan = await self.planner.generate_fix_plan(diagnosis, context)
+            fix_plan = self.turn_coordinator.build_recovery_step(diagnosis)
 
             # 3. 回滚到上一个稳定状态
             if rollback_manager:

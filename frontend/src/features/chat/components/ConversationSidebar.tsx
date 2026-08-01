@@ -121,16 +121,6 @@ function ConversationSidebar(props: ConversationSidebarProps) {
     return (
       <div
         className={`${styles['item']} ${isActive ? styles['active'] : ''} ${isDeleted ? styles['deleted'] : ''}`.trim()}
-        onClick={() => onSelectConversation(item.session_id)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            onSelectConversation(item.session_id)
-          }
-        }}
-        role="button"
-        tabIndex={0}
-        aria-current={isActive ? 'page' : undefined}
       >
         {editingSessionId === item.session_id ? (
           <>
@@ -165,30 +155,37 @@ function ConversationSidebar(props: ConversationSidebarProps) {
           </>
         ) : (
           <>
-            <div className={styles['itemHeader']}>
-              <div className={styles['itemHeading']}>
-                {!isDeleted && (
-                  <input
-                    className={styles['itemCheckbox']}
-                    type="checkbox"
-                    checked={selectedSessionIds.includes(item.session_id)}
-                    onChange={() => toggleSelected(item.session_id)}
-                    onClick={(event) => event.stopPropagation()}
-                    aria-label={t('chat.history.selectSession', { title: item.title || t('chat.newChat') })}
-                  />
-                )}
-                <span className={styles['itemTitle']}>{item.title || t('chat.newChat')}</span>
-              </div>
-              <span className={styles['metaText']}>{formatTimestamp(item.last_message_at || item.updated_at)}</span>
+            <div className={styles['itemMain']}>
+              {!isDeleted && (
+                <input
+                  className={styles['itemCheckbox']}
+                  type="checkbox"
+                  checked={selectedSessionIds.includes(item.session_id)}
+                  onChange={() => toggleSelected(item.session_id)}
+                  aria-label={t('chat.history.selectSession', { title: item.title || t('chat.newChat') })}
+                />
+              )}
+              <button
+                className={styles['itemSelectButton']}
+                type="button"
+                onClick={() => onSelectConversation(item.session_id)}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={item.title || t('chat.newChat')}
+              >
+                <span className={styles['itemHeader']}>
+                  <span className={styles['itemTitle']}>{item.title || t('chat.newChat')}</span>
+                  <span className={styles['metaText']}>{formatTimestamp(item.last_message_at || item.updated_at)}</span>
+                </span>
+                <span className={styles['itemSummary']}>
+                  {item.last_message_preview || item.summary || t('chat.history.noSummary')}
+                </span>
+                <span className={styles['itemMeta']}>
+                  <span className={styles['metaText']}>{t('chat.history.messageCount', { count: String(item.message_count) })}</span>
+                  {isDeleted && <span className={styles['deletedText']}>{t('chat.history.deleted')}</span>}
+                </span>
+              </button>
             </div>
-            <div className={styles['itemSummary']}>
-              {item.last_message_preview || item.summary || t('chat.history.noSummary')}
-            </div>
-            <div className={styles['itemMeta']}>
-              <span className={styles['metaText']}>{t('chat.history.messageCount', { count: String(item.message_count) })}</span>
-              {isDeleted && <span className={styles['deletedText']}>{t('chat.history.deleted')}</span>}
-            </div>
-            <div className={styles['itemActions']} onClick={(event) => event.stopPropagation()}>
+            <div className={styles['itemActions']}>
               {!isDeleted && (
                 <button
                   className={styles['actionButton']}

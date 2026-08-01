@@ -34,12 +34,18 @@ class MemoryManager:
     _MAX_SEARCH_QUERY_CHARS = 1024
     # Spec memory-quality-and-short-term-recovery：长期记忆原始内容长度上限
     _MAX_LONG_TERM_CONTENT_CHARS = 500
-    # 写入去重阈值：余弦相似度 > 0.85 视为重复
-    _DEDUP_SIMILARITY_THRESHOLD = 0.85
 
-    def __init__(self, session_factory):
+    def __init__(
+        self,
+        session_factory,
+        dedup_similarity_threshold: float = 0.85,
+    ):
         # 使用会话工厂而非固定会话，确保每次线程内操作都使用独立短生命周期会话，避免 Session 被跨线程共享
         self.session_factory = session_factory
+        threshold = float(dedup_similarity_threshold)
+        if not 0.0 <= threshold <= 1.0:
+            raise ValueError("记忆去重相似度阈值必须位于 0.0 到 1.0 之间")
+        self.dedup_similarity_threshold = threshold
         if self.__class__._shared_vector_store is None:
             with self.__class__._shared_vector_store_lock:
                 if self.__class__._shared_vector_store is None:
@@ -131,7 +137,7 @@ class MemoryManager:
         1. 用 vector_store.search 拿候选 top-K（RRF 融合分数）
         2. 从 DB 读出每个候选的 embedding
         3. 用 calculate_similarity 计算真正的余弦相似度
-        4. 取最大值，与阈值 0.85 比较
+        4. 取最大值，与构造时注入的去重阈值比较
 
         Args:
             content: 已脱敏的内容文本
@@ -186,7 +192,7 @@ class MemoryManager:
                 best_score = similarity
                 best_id = hit.memory_id
 
-        if best_id is None or best_score <= self._DEDUP_SIMILARITY_THRESHOLD:
+        if best_id is None or best_score <= self.dedup_similarity_threshold:
             return None
         return best_id, best_score
 

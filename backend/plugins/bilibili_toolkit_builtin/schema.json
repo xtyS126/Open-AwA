@@ -401,35 +401,6 @@
       "x-component": "input",
       "maxLength": 64
     },
-    "trigger": {
-      "type": "object",
-      "title": "调度触发器",
-      "description": "下载任务的调度触发器配置，支持固定间隔（interval）或 cron 表达式（cron）。配置变更后调度器自动重建 Job，无需重启",
-      "properties": {
-        "type": {
-          "type": "string",
-          "title": "触发器类型",
-          "description": "interval=固定秒数间隔；cron=5 字段 cron 表达式（分 时 日 月 周）",
-          "enum": ["interval", "cron"],
-          "default": "interval"
-        },
-        "seconds": {
-          "type": "integer",
-          "title": "间隔秒数",
-          "description": "interval 触发器的间隔秒数，仅在 type=interval 时生效。默认 1200 秒（20 分钟）",
-          "default": 1200,
-          "minimum": 60
-        },
-        "expr": {
-          "type": "string",
-          "title": "cron 表达式",
-          "description": "cron 触发器的 5 字段表达式（分 时 日 月 周），仅在 type=cron 时生效。默认每天 0 点触发",
-          "default": "0 0 * * *",
-          "maxLength": 64
-        }
-      },
-      "default": {"type": "interval", "seconds": 1200}
-    },
     "concurrent_limit": {
       "type": "object",
       "title": "并发与限流配置",

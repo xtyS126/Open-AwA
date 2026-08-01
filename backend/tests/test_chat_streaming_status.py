@@ -82,9 +82,9 @@ async def test_ai_agent_process_stream_emits_status_before_plan(monkeypatch):
     monkeypatch.setattr(agent, "_retrieve_relevant_experiences", fake_retrieve_relevant_experiences)
     monkeypatch.setattr(agent, "_retrieve_relevant_memories", fake_retrieve_relevant_memories)
     monkeypatch.setattr(agent, "_schedule_record", lambda **kwargs: None)
-    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
 
     stream = agent.process_stream("你好", {"session_id": "session-1"})
     events = []
@@ -189,9 +189,9 @@ async def test_ai_agent_process_stream_replays_reasoning_content_after_tool_call
 
     monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
     monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
-    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
     monkeypatch.setattr(agent.executor, "_call_llm_api_stream", fake_stream_call)
     monkeypatch.setattr(agent.executor, "_execute_tool_call", fake_execute_tool_call)
 
@@ -308,9 +308,9 @@ async def test_ai_agent_process_stream_forwards_foreground_subagent_events_befor
 
     monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
     monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
-    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
     monkeypatch.setattr(agent.executor, "_call_llm_api_stream", fake_stream_call)
     monkeypatch.setattr(agent.executor, "_execute_tool_call", fake_execute_tool_call)
 
@@ -408,9 +408,9 @@ async def test_ai_agent_process_stream_allows_more_than_five_tool_rounds(monkeyp
 
     monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
     monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
-    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
     monkeypatch.setattr(agent.executor, "_call_llm_api_stream", fake_stream_call)
     monkeypatch.setattr(agent.executor, "_execute_tool_call", fake_execute_tool_call)
 
@@ -607,9 +607,9 @@ async def test_ai_agent_process_stream_persists_pending_background_subagent_exch
     monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
     monkeypatch.setattr(agent, "_retrieve_relevant_experiences", AsyncMock(return_value=[]))
     monkeypatch.setattr(agent, "_retrieve_relevant_memories", AsyncMock(return_value=[]))
-    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
     monkeypatch.setattr(agent.executor, "_call_llm_api_stream", fake_stream_call)
     monkeypatch.setattr(agent.executor, "_execute_tool_call", fake_execute_tool_call)
     monkeypatch.setattr(agent.feedback, "update_memory", AsyncMock())

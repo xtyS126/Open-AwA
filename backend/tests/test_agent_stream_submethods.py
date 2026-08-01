@@ -32,9 +32,8 @@ def make_agent() -> AIAgent:
     """
     agent = AIAgent()
     agent.executor = AsyncMock()
-    agent.planner = AsyncMock()
+    agent.turn_coordinator = AsyncMock()
     agent.feedback = AsyncMock()
-    agent.comprehension = AsyncMock()
     agent.skill_engine = AsyncMock()
     agent.budget_tracker = MagicMock()
     agent.budget_tracker.is_near_completion.return_value = False

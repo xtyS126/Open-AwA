@@ -20,7 +20,6 @@ class ExtensionPointType(str, Enum):
     COMMAND = "command"
     ROUTE = "route"
     EVENT_HANDLER = "event_handler"
-    SCHEDULER = "scheduler"
     MIDDLEWARE = "middleware"
     DATA_PROVIDER = "data_provider"
 
@@ -195,18 +194,6 @@ class ExtensionRegistry:
         """
         return self.register_extension(plugin_name, {
             "point": ExtensionPointType.EVENT_HANDLER.value,
-            "name": name,
-            "version": version,
-            "config": config,
-        })
-
-    def register_scheduler(self, plugin_name: str, name: str, version: str, config: Dict[str, Any]) -> ExtensionRegistration:
-        """
-        处理register、scheduler相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
-        return self.register_extension(plugin_name, {
-            "point": ExtensionPointType.SCHEDULER.value,
             "name": name,
             "version": version,
             "config": config,

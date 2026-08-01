@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import DashboardPage from '@/features/dashboard/DashboardPage'
 import { BrowserRouter } from 'react-router-dom'
@@ -32,5 +32,12 @@ describe('DashboardPage', () => {
   it('renders without crashing', () => {
     render(<BrowserRouter><DashboardPage /></BrowserRouter>)
     expect(true).toBe(true)
+  })
+
+  it('可滚动仪表盘区域具有可访问名称并可通过键盘聚焦', async () => {
+    render(<BrowserRouter><DashboardPage /></BrowserRouter>)
+
+    const region = await screen.findByRole('region', { name: '仪表盘内容' })
+    expect(region).toHaveAttribute('tabindex', '0')
   })
 })

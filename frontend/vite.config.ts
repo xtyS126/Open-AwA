@@ -1,9 +1,34 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import viteCompression from 'vite-plugin-compression'
 import legacy from '@vitejs/plugin-legacy'
 import { visualizer } from 'rollup-plugin-visualizer'
+
+const manualChunkGroups: Record<string, string[]> = {
+  react: ['react', 'react-dom', 'react-router-dom'],
+  core: ['zustand', 'axios'],
+  query: ['@tanstack/react-query'],
+  virtuoso: ['react-virtuoso'],
+  icons: ['lucide-react'],
+  recharts: ['recharts'],
+  markdown: ['react-markdown', 'remark-gfm', 'remark-math', 'rehype-katex', 'katex'],
+  markdownRender: ['rehype-highlight', 'highlight.js'],
+  sanitize: ['dompurify'],
+  monaco: ['@monaco-editor/react'],
+  terminal: ['@xterm/xterm', '@xterm/addon-fit'],
+  flow: ['reactflow', '@dagrejs/dagre'],
+  qrcode: ['qrcode'],
+}
+
+function resolveManualChunk(moduleId: string): string | undefined {
+  const normalizedId = moduleId.replaceAll('\\', '/')
+  for (const [chunkName, packages] of Object.entries(manualChunkGroups)) {
+    if (packages.some((packageName) => normalizedId.includes(`/node_modules/${packageName}/`))) {
+      return chunkName
+    }
+  }
+  return undefined
+}
 
 export default defineConfig(({ mode }) => {
   const apiProxyTarget = mode === 'e2e'
@@ -18,20 +43,6 @@ export default defineConfig(({ mode }) => {
       ...(process.env.ENABLE_LEGACY === '1' ? [legacy({
         targets: ['defaults', 'not IE 11', 'last 2 versions']
       })] : []),
-      viteCompression({
-        verbose: true,
-        disable: false,
-        threshold: 10240,
-        algorithm: 'gzip',
-        ext: '.gz',
-      }),
-      viteCompression({
-        verbose: true,
-        disable: false,
-        threshold: 10240,
-        algorithm: 'brotliCompress',
-        ext: '.br',
-      }),
       // P0: 构建产物分析（仅在需要时生成）
       ...(process.env.ANALYZE === '1' ? [visualizer({
         open: false,
@@ -42,15 +53,16 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src')
+        '@': path.resolve(import.meta.dirname, './src')
       },
       dedupe: dedupedReactPackages,
     },
     optimizeDeps: {
       include: [...dedupedReactPackages, 'zustand'],
     },
-    // 缓存置于统一运行时目录，避免 Windows 文件锁 EPERM 且不污染项目根目录。
-    cacheDir: path.resolve(__dirname, '..', '..', 'var', 'cache', 'vite'),
+    // 使用前端专用且已被 .gitignore 覆盖的缓存目录。
+    // 禁止与后端或构建任务共享 var/cache，避免 Windows 下 results.json 文件锁冲突。
+    cacheDir: path.resolve(import.meta.dirname, '.vite-cache'),
     build: {
       // P0: target 升级到 es2020，减少 polyfill 体积
       target: 'es2020',
@@ -67,37 +79,8 @@ export default defineConfig(({ mode }) => {
       },
       rollupOptions: {
         output: {
-          manualChunks: {
-            // 首屏必需：React 核心 + 路由
-            react: ['react', 'react-dom', 'react-router-dom'],
-            // 首屏必需：状态管理 + HTTP 客户端
-            core: ['zustand', 'axios'],
-            // 首屏必需：服务端数据查询
-            query: ['@tanstack/react-query'],
-            // 首屏必需：长列表虚拟滚动
-            virtuoso: ['react-virtuoso'],
-            // 首屏必需：图标库
-            icons: ['lucide-react'],
-            // 以下分组仅在特定路由用到，通过路由懒加载按需加载，不进入首屏
-            // recharts：仅 DashboardPage 用到
-            recharts: ['recharts'],
-            // P0: markdown 全家桶合并到同一 chunk，避免 rehype-katex/katat 跨 chunk 引用触发 TDZ
-            // （katex.mjs 内部模块间引用在 rollup manualChunks 拆分后会形成 "Cannot access 'x' before initialization"）
-            // markdown：仅 ChatPage 用到
-            markdown: ['react-markdown', 'remark-gfm', 'remark-math', 'rehype-katex', 'katex'],
-            // markdownRender：仅 ChatPage 用到
-            markdownRender: ['rehype-highlight', 'highlight.js'],
-            // sanitize：dompurify 仅 markdown 渲染用到
-            sanitize: ['dompurify'],
-            // monaco：仅 CodingPage/VibeCodingPage 用到
-            monaco: ['@monaco-editor/react'],
-            // terminal：仅 VibeCodingPage/CodingPage 用到
-            terminal: ['@xterm/xterm', '@xterm/addon-fit'],
-            // flow：仅 SubAgentPage/WorkflowPage 用到
-            flow: ['reactflow', '@dagrejs/dagre'],
-            // qrcode：仅 SettingsPage/IM 用到
-            qrcode: ['qrcode'],
-          }
+          // Rollup 5 使用函数式分组；包映射保持原有首屏与按路由拆分边界。
+          manualChunks: resolveManualChunk,
         }
       }
     },
@@ -108,6 +91,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: apiProxyTarget,
           changeOrigin: true,
+          ws: true,
           // SSE 流式响应必须禁用代理缓冲，否则 Vite 开发代理会攒满整个响应再转发
           configure: (proxy) => {
             proxy.on('proxyRes', (proxyRes) => {

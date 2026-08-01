@@ -28,6 +28,8 @@ import socket
 import httpx
 from loguru import logger
 
+from config.runtime_paths import DATA_DIR
+
 from .base_plugin import BasePlugin
 from .bundle_detector import BundleDetector, BundleFormat, BundleManifestAdapter
 from .extension_protocol import ExtensionRegistry
@@ -115,7 +117,13 @@ class PluginManager:
         "get_help",
     }
 
-    def __init__(self, plugins_dir: Optional[str] = None, sandbox_defaults: Optional[Dict[str, Any]] = None, db_session_factory: Optional[Callable[[], Any]] = None):
+    def __init__(
+        self,
+        plugins_dir: Optional[str] = None,
+        sandbox_defaults: Optional[Dict[str, Any]] = None,
+        db_session_factory: Optional[Callable[[], Any]] = None,
+        hot_update_state_path: Optional[str] = None,
+    ):
         """
         初始化插件管理器。
         
@@ -123,6 +131,7 @@ class PluginManager:
             plugins_dir: 插件目录路径，默认为项目根目录下的 plugins 文件夹。
             sandbox_defaults: 沙箱默认资源配置。
             db_session_factory: 数据库会话工厂，用于构建插件上下文。
+            hot_update_state_path: 热更新发布描述文件；自定义插件目录默认不持久化。
         """
         self.plugins_dir = plugins_dir or self._get_default_plugins_dir()
         self.loader = PluginLoader()
@@ -148,10 +157,15 @@ class PluginManager:
             max_download_size=self.MAX_DOWNLOAD_SIZE,
         )
         self.extension_registry = ExtensionRegistry()
-        self._runtime_routes: Dict[str, Dict[str, Any]] = {}
         self._rollout_release_counter = 0
         self.rollback_manager = RollbackManager()
-        self.hot_update_manager = HotUpdateManager(rollback_manager=self.rollback_manager)
+        resolved_state_path = hot_update_state_path
+        if resolved_state_path is None and plugins_dir is None:
+            resolved_state_path = str(DATA_DIR / "plugin-hot-update-state.json")
+        self.hot_update_manager = HotUpdateManager(
+            rollback_manager=self.rollback_manager,
+            state_path=resolved_state_path,
+        )
         self.db_session_factory = db_session_factory
         # bundle 格式检测器：识别 OpenClaw/Codex/Claude/Cursor 等兼容格式
         self._bundle_detector = BundleDetector()
@@ -161,6 +175,11 @@ class PluginManager:
         self._discover_cache_mtime: float = 0.0
         self._discover_cache_lock = threading.Lock()
         logger.info(f"PluginManager initialized with plugins_dir: {self.plugins_dir}")
+
+    @property
+    def _runtime_routes(self) -> Dict[str, Dict[str, Any]]:
+        """兼容旧私有入口，运行时状态由 HotUpdateManager 唯一持有。"""
+        return self.hot_update_manager.runtime_routes
 
     def _get_default_plugins_dir(self) -> str:
         """
@@ -1169,7 +1188,7 @@ class PluginManager:
         处理ensure、runtime、route相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        route = self._runtime_routes.get(plugin_name)
+        route = self.hot_update_manager.get_runtime_route(plugin_name)
         if route:
             return route
 
@@ -1179,19 +1198,21 @@ class PluginManager:
             return None
 
         release_id = self._build_release_id(plugin_name, metadata)
+        active_slot = {
+            "slot": "active",
+            "release_id": release_id,
+            "metadata": deepcopy(metadata),
+            "plugin_instance": plugin_instance,
+            "sandbox": self._plugin_sandboxes.get(plugin_name, self.sandbox),
+            "tools": deepcopy(self._tools_registry.get(plugin_name, [])),
+            "loaded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        persisted = self.hot_update_manager.get_persisted_runtime_route(plugin_name)
         route = {
             "plugin_name": plugin_name,
             "active_slot": "active",
             "slots": {
-                "active": {
-                    "slot": "active",
-                    "release_id": release_id,
-                    "metadata": deepcopy(metadata),
-                    "plugin_instance": plugin_instance,
-                    "sandbox": self._plugin_sandboxes.get(plugin_name, self.sandbox),
-                    "tools": deepcopy(self._tools_registry.get(plugin_name, [])),
-                    "loaded_at": datetime.now(timezone.utc).isoformat(),
-                },
+                "active": active_slot,
                 "standby": None,
             },
             "rollout_policy": self._normalize_rollout_policy(None),
@@ -1199,8 +1220,51 @@ class PluginManager:
             "last_error": None,
             "last_rollback": None,
         }
-        self._runtime_routes[plugin_name] = route
-        return route
+        if persisted:
+            route["rollout_policy"] = deepcopy(
+                persisted.get("rollout_policy", route["rollout_policy"])
+            )
+            route["last_update"] = persisted.get("last_update")
+            route["last_error"] = persisted.get("last_error")
+            route["last_rollback"] = deepcopy(persisted.get("last_rollback"))
+            persisted_active = persisted.get("slots", {}).get("active")
+            if persisted_active and persisted_active.get("metadata"):
+                self.rollback_manager.save_snapshot(
+                    plugin_name,
+                    persisted_active.get("version")
+                    or persisted_active["metadata"].get("version", "1.0.0"),
+                    persisted_active["metadata"],
+                    extra={"source": "process_recovery"},
+                )
+            standby_descriptor = persisted.get("slots", {}).get("standby")
+            if standby_descriptor:
+                try:
+                    binding = self._load_plugin_release(
+                        plugin_name,
+                        deepcopy(standby_descriptor.get("metadata", {})),
+                    )
+                    route["slots"]["standby"] = {
+                        "slot": "standby",
+                        "release_id": standby_descriptor.get("release_id"),
+                        "metadata": deepcopy(binding["metadata"]),
+                        "plugin_instance": binding["plugin_instance"],
+                        "sandbox": binding["sandbox"],
+                        "tools": deepcopy(binding["tools"]),
+                        "loaded_at": standby_descriptor.get("loaded_at")
+                        or datetime.now(timezone.utc).isoformat(),
+                    }
+                except Exception as exc:
+                    route["last_error"] = f"恢复 standby 发布失败: {exc}"
+                    logger.warning(
+                        f"Plugin '{plugin_name}' standby release restore failed: {exc}"
+                    )
+        else:
+            self.rollback_manager.save_snapshot(
+                plugin_name,
+                metadata.get("version", "1.0.0"),
+                metadata,
+            )
+        return self.hot_update_manager.set_runtime_route(plugin_name, route)
 
     @staticmethod
     def _clone_runtime_slot(slot: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -1236,6 +1300,7 @@ class PluginManager:
             "loaded_at": datetime.now(timezone.utc).isoformat(),
         }
         route["last_update"] = datetime.now(timezone.utc).isoformat()
+        self.hot_update_manager.persist_runtime_routes()
 
     def _version_matches(self, selector_version: str, rule: str) -> bool:
         """
@@ -1418,8 +1483,7 @@ class PluginManager:
             raise ValueError(f"Plugin '{plugin_name}' is not loaded")
 
         normalized = self._normalize_rollout_policy(policy)
-        route["rollout_policy"] = normalized
-        route["last_update"] = datetime.now(timezone.utc).isoformat()
+        self.hot_update_manager.update_rollout_policy(plugin_name, normalized)
         return self.get_plugin_rollout_status(plugin_name)
 
     def hot_update_plugin(
@@ -1453,6 +1517,7 @@ class PluginManager:
         if previous_active_slot is None:
             raise RuntimeError(f"Plugin '{plugin_name}' active slot is missing")
 
+        state_prepared = False
         try:
             binding = self._load_plugin_release(plugin_name, source_metadata)
             standby_slot = {
@@ -1464,21 +1529,30 @@ class PluginManager:
                 "tools": deepcopy(binding["tools"]),
                 "loaded_at": datetime.now(timezone.utc).isoformat(),
             }
-            old_standby = route["slots"].get("standby")
-            route["slots"]["standby"] = standby_slot
+            normalized_policy = self._normalize_rollout_policy(rollout_policy)
+            old_standby = self.hot_update_manager.prepare_runtime_update(
+                plugin_name,
+                standby_slot,
+                normalized_policy,
+            )
+            state_prepared = True
             self._cleanup_release_binding(plugin_name, old_standby)
 
-            normalized_policy = self._normalize_rollout_policy(rollout_policy)
-            route["rollout_policy"] = normalized_policy
-            route["last_error"] = None
-            route["last_update"] = datetime.now(timezone.utc).isoformat()
-
             if strategy in {"immediate", "force"}:
-                route["slots"]["active"], route["slots"]["standby"] = route["slots"]["standby"], route["slots"]["active"]
-                route["active_slot"] = "active"
-                route["rollout_policy"] = self._normalize_rollout_policy({"enabled": False, "rollout_percentage": 0, "targets": {}})
+                disabled_policy = self._normalize_rollout_policy(
+                    {
+                        "enabled": False,
+                        "rollout_percentage": 0,
+                        "targets": {},
+                    }
+                )
+                self.hot_update_manager.commit_runtime_update(
+                    plugin_name,
+                    rollout_policy=disabled_policy,
+                )
                 self._apply_active_route_slot(plugin_name)
 
+            route = self.hot_update_manager.get_runtime_route(plugin_name) or route
             return {
                 "success": True,
                 "plugin_name": plugin_name,
@@ -1490,13 +1564,21 @@ class PluginManager:
                 "rollout_policy": route["rollout_policy"],
             }
         except Exception as exc:
-            route["slots"]["active"] = previous_active_slot
-            route["last_error"] = str(exc)
-            route["last_rollback"] = {
-                "at": datetime.now(timezone.utc).isoformat(),
-                "reason": str(exc),
-                "active_release_id": previous_active_slot.get("release_id"),
-            }
+            if state_prepared:
+                failed_standby = (
+                    self.hot_update_manager.rollback_failed_runtime_update(
+                        plugin_name,
+                        previous_active_slot,
+                        exc,
+                    )
+                )
+                self._cleanup_release_binding(plugin_name, failed_standby)
+            else:
+                self.hot_update_manager.record_runtime_error(
+                    plugin_name,
+                    exc,
+                    previous_active_slot.get("release_id"),
+                )
             self._apply_active_route_slot(plugin_name)
             return {
                 "success": False,
@@ -1812,13 +1894,6 @@ class PluginManager:
         self._ensure_runtime_route(plugin_name)
         self._sync_runtime_route_active_slot(plugin_name)
         self._apply_active_route_slot(plugin_name)
-        _meta = self.plugin_metadata.get(plugin_name, {})
-        self.hot_update_manager.register_initial(
-            plugin_name=plugin_name,
-            version=_meta.get("version", "1.0.0"),
-            metadata=_meta,
-            plugin_instance=self.loaded_plugins.get(plugin_name),
-        )
         return True
 
     def unload_plugin(self, plugin_name: str) -> bool:
@@ -3249,12 +3324,21 @@ class PluginManager:
             restore_fn=_restore,
         )
 
-        restored_instance = self.hot_update_manager._slots.get(plugin_name, {}).get(
-            "active", {}
-        ).get("plugin_instance")
+        restored_instance = self.hot_update_manager.get_active_instance(plugin_name)
         if restored_instance is not None:
             self.loaded_plugins[plugin_name] = restored_instance
+            active_route = self.hot_update_manager.get_runtime_route(plugin_name)
+            active_metadata = (
+                active_route.get("slots", {})
+                .get("active", {})
+                .get("metadata", {})
+                if active_route
+                else {}
+            )
+            if active_metadata:
+                self.plugin_metadata[plugin_name] = deepcopy(active_metadata)
             self._register_plugin_tools(plugin_name, restored_instance)
+            self._sync_runtime_route_active_slot(plugin_name)
 
         logger.info(
             f"Plugin '{plugin_name}' rolled back to version '{result['rolled_back_to']}'"

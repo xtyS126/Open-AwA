@@ -1,7 +1,7 @@
 /**
  * 工作区 Zustand 状态管理。
  */
-import { create } from 'zustand';
+import { createWithEqualityFn } from 'zustand/traditional';
 
 export interface Workspace {
   id: string;
@@ -23,7 +23,7 @@ interface WorkspaceStore {
   setCurrentWorkspace: (workspaceId: string) => void;
 }
 
-export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
+export const useWorkspaceStore = createWithEqualityFn<WorkspaceStore>((set) => ({
   workspaces: [],
   currentWorkspaceId: 'default',
   setWorkspaces: (workspaces) => set({ workspaces }),

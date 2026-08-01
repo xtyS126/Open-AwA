@@ -155,8 +155,9 @@ function GeneralSettingsInner({
     <div className={styles['settings-section']}>
       <h2>通用设置</h2>
       <div className={styles['setting-item']}>
-        <label>主题</label>
+        <label htmlFor="general-theme">主题</label>
         <select
+          id="general-theme"
           value={settings.theme}
           onChange={(e) => onSettingChange('theme', e.target.value)}
         >
@@ -165,8 +166,9 @@ function GeneralSettingsInner({
         </select>
       </div>
       <div className={styles['setting-item']}>
-        <label>语言</label>
+        <label htmlFor="general-language">语言</label>
         <select
+          id="general-language"
           value={settings.language}
           onChange={(e) => onSettingChange('language', e.target.value)}
         >
@@ -203,8 +205,9 @@ function GeneralSettingsInner({
       <h2 style={{ marginTop: '32px' }}>主模型选择</h2>
       <p className={styles['section-desc']}>选择聊天页面使用的默认AI模型和输出模式，对全局生效。</p>
       <div className={styles['setting-item']}>
-        <label>输出模式</label>
+        <label htmlFor="general-output-mode">输出模式</label>
         <select
+          id="general-output-mode"
           value={outputMode}
           onChange={(e) => onOutputModeChange(e.target.value as 'stream' | 'direct')}
         >

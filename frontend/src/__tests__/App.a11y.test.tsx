@@ -24,6 +24,7 @@ const preferenceMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/shared/api/api', () => ({
+  systemAPI: { getInitStatus: vi.fn().mockResolvedValue({ data: { data: { initialized: true } } }) },
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
   weixinAPI: { getConfig: vi.fn().mockResolvedValue({ data: {} }) },
   authAPI: { getMe: authApiMocks.getMe },
@@ -96,7 +97,12 @@ describe('App 全局无障碍 (axe-core)', () => {
       expect(useAuthStore.getState().isInitialized).toBe(true)
     }, { timeout: 5000 })
 
-    const results = await axe.run(container)
+    // jsdom 不实现 Canvas，颜色对比度由真实浏览器验收覆盖。
+    const results = await axe.run(container, {
+      rules: {
+        'color-contrast': { enabled: false },
+      },
+    })
     const violations = results.violations.filter(
       (v) => v.impact === 'critical' || v.impact === 'serious'
     )

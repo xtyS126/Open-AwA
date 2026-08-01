@@ -4,7 +4,7 @@
  * 语言包采用动态加载策略：仅默认语言（zh-CN）在首屏加载，其他语言按需异步拉取，
  * 减少初始打包体积约 180KB（三个非默认语言包）。
  */
-import { create } from 'zustand';
+import { createWithEqualityFn } from 'zustand/traditional';
 
 // 语言包类型
 export type LocaleKey = string;
@@ -88,7 +88,7 @@ async function loadLocaleAsync(locale: string): Promise<void> {
  */
 const initialLocale = getInitialLocale();
 
-export const useI18nStore = create<I18nStore>((set, get) => ({
+export const useI18nStore = createWithEqualityFn<I18nStore>((set, get) => ({
   locale: initialLocale,
   isLocaleLoaded: initialLocale === FALLBACK_LOCALE || Boolean(loadedLocales[initialLocale]),
   setLocale: (locale) => {

@@ -107,8 +107,8 @@ Open-AwA/
 │   ├── core/              # 核心引擎
 │   │   ├── agent.py       # AI Agent 主控制器
 │   │   ├── executor.py    # 执行层（工具调用、LLM调用）
-│   │   ├── planner.py     # 规划层（任务分解）
-│   │   ├── comprehension.py # 理解层（意图识别）
+│   │   ├── agent_turn_coordinator.py # 单轮协调器（保留完整输入、生成唯一模型步骤）
+│   │   ├── execution_prompt_builder.py # 执行提示与消息构建
 │   │   ├── feedback.py    # 反馈层（结果评估）
 │   │   ├── autonomous/    # 自主运行模式
 │   │   ├── builtin_tools/ # 内置工具（文件/终端/搜索/待办）
@@ -143,7 +143,7 @@ Open-AwA/
 └── reports/               # 审计/代码审查报告
 ```
 
-### 2.3 Agent 核心流程（理解 -> 规划 -> 执行 -> 反馈）
+### 2.3 Agent 核心流程（协调 -> 模型原生工具调用 -> 反馈）
 
 ```
 用户输入
@@ -151,17 +151,14 @@ Open-AwA/
   ├── 魔法命令检测 (magic_commands.py)
   │    └── 匹配成功 → 直接执行命令 → 返回结果
   │
-  ├── 意图识别 (comprehension.py: recognize_intent)
-  ├── 实体提取 (comprehension.py: extract_entities)
+  ├── 单轮准备 (agent_turn_coordinator.py: prepare_turn)
+  │    ├── 保留完整用户消息作为相关性元数据
+  │    └── 生成唯一 llm_chat 模型执行步骤
   │
   ├── 经验检索 (experience检索)
   ├── 长期记忆检索 (向量搜索)
   │
-  ├── 任务规划 (planner.py: create_plan)
-  │    ├── execute → [read_files, execute_command, llm_generate]
-  │    ├── query   → [llm_query]
-  │    ├── explain → [llm_explain]
-  │    └── chat    → [llm_chat]
+  ├── 模型原生工具选择（由统一工具定义与执行器驱动）
   │
   ├── 自动执行技能/插件 (匹配的Skill和Plugin)
   │
@@ -411,29 +408,27 @@ Open-AwA/
 - `_build_tool_idempotency_key()` — 构建幂等键，防止重复副作用
 - `_build_agent_capability_system_prompt()` — 构建Agent能力说明系统提示词
 
-#### 3.3.3 PlanningLayer — 规划层
+#### 3.3.3 AgentTurnCoordinator — 单轮协调器
 
-**文件**: [planner.py](file:///d:/代码/Open-AwA/backend/core/planner.py)
+**文件**: [agent_turn_coordinator.py](file:///d:/代码/Open-AwA/backend/core/agent_turn_coordinator.py)
 
-**类**: `PlanningLayer`
+**类**: `AgentTurnCoordinator`
 
 **方法**:
 
 | 方法 | 说明 |
 |------|------|
-| `create_plan(intent, entities, context)` | 根据意图类型创建执行计划 |
-| `_create_execution_plan()` | 执行意图：read_files + execute_command + llm_generate |
-| `_create_query_plan()` | 查询意图：llm_query |
-| `_create_explain_plan()` | 解释意图：llm_explain |
-| `_create_chat_plan()` | 对话意图：llm_chat |
-| `analyze_dependencies(steps)` | 分析步骤依赖关系，识别可并行执行的步骤 |
-| `generate_experience_prompt(experiences)` | 生成经验提示词 |
+| `prepare_turn(user_input, context)` | 一次性准备相关性元数据与唯一模型执行步骤 |
+| `recognize_intent(user_input)` | 返回稳定的模型回答意图，不按关键词切换分支 |
+| `extract_entities(user_input)` | 保留完整用户消息供技能和插件相关性匹配 |
+| `create_plan(intent, entities, context)` | 生成唯一 `llm_chat` 步骤，由模型选择工具 |
+| `build_recovery_step(diagnosis)` | 将结构化错误诊断转换为统一模型恢复步骤 |
 
 #### 3.3.4 其他核心模块
 
 | 文件 | 核心类/函数 | 说明 |
 |------|-------------|------|
-| `comprehension.py` | `ComprehensionLayer` | 意图识别、实体提取 |
+| `execution_prompt_builder.py` | `ExecutionPromptBuilder` | 构建系统提示、用户画像、记忆与会话历史消息 |
 | `feedback.py` | `FeedbackLayer` | 结果评估、确认需求判断、记忆更新 |
 | `model_service.py` | `build_thinking_params()`, `build_multimodal_message()` | 模型服务协议适配 |
 | `litellm_adapter.py` | `litellm_chat_completion()`, `litellm_chat_completion_stream()` | LiteLLM 统一调用层 |
@@ -1287,10 +1282,10 @@ v1.5.1 对系统进行了全链路性能优化，按 P0/P1/P2 分级：
 
 | 类 | 文件 | 职责 |
 |----|------|------|
-| `AIAgent` | [core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) | Agent主控制器，管理理解→规划→执行→反馈全流程 |
+| `AIAgent` | [core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) | Agent主控制器，管理轮次准备、执行与反馈全流程 |
 | `ExecutionLayer` | [core/executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py) | 执行层：LLM调用、工具分派、幂等缓存 |
-| `PlanningLayer` | [core/planner.py](file:///d:/代码/Open-AwA/backend/core/planner.py) | 规划层：根据意图生成执行计划 |
-| `ComprehensionLayer` | [core/comprehension.py](file:///d:/代码/Open-AwA/backend/core/comprehension.py) | 理解层：意图识别与实体提取 |
+| `AgentTurnCoordinator` | [core/agent_turn_coordinator.py](file:///d:/代码/Open-AwA/backend/core/agent_turn_coordinator.py) | 单轮协调器：保留完整输入并生成唯一模型执行步骤 |
+| `ExecutionPromptBuilder` | [core/execution_prompt_builder.py](file:///d:/代码/Open-AwA/backend/core/execution_prompt_builder.py) | 执行提示构建器：组合能力、画像、记忆与历史消息 |
 | `FeedbackLayer` | [core/feedback.py](file:///d:/代码/Open-AwA/backend/core/feedback.py) | 反馈层：结果评估与记忆更新 |
 | `PluginManager` | [plugins/plugin_manager.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_manager.py) | 插件管理器：加载/卸载/执行/发现 |
 | `SkillEngine` | [skills/skill_engine.py](file:///d:/代码/Open-AwA/backend/skills/skill_engine.py) | 技能引擎：技能加载/执行/统计 |
@@ -1398,8 +1393,8 @@ main.py ──┬── api/routes/*      (路由层)
           │    │                      ├── plugins/             (插件执行)
           │    │                      ├── core/tool_registry   (工具注册)
           │    │                      └── core/builtin_tools/  (内置工具)
-          │    ├── core/planner.py
-          │    ├── core/comprehension.py
+          │    ├── core/agent_turn_coordinator.py
+          │    ├── core/execution_prompt_builder.py
           │    ├── core/feedback.py
           │    ├── skills/           (技能引擎)
           │    ├── memory/           (记忆系统)
@@ -1411,7 +1406,7 @@ main.py ──┬── api/routes/*      (路由层)
 **关键依赖路径**:
 - API Route → `get_current_user()` (dependencies) → JWT/Cookie/API Key 认证
 - API Route → `get_db()` → `SessionLocal` → SQLAlchemy Engine
-- Chat Route → `AIAgent.process()/process_stream()` → 四层核心流程
+- Chat Route → `AIAgent.process()/process_stream()` → 单轮协调、模型执行与反馈流程
 - Agent → `ExecutionLayer._call_llm_api()` → `litellm_adapter` → 外部LLM API
 - Agent → `ExecutionLayer._execute_tool_call()` → 按前缀分派（plugin_/mcp_/builtin_/task_）
 - Agent → `FeedbackLayer.update_memory()` → `MemoryManager` → `ShortTermMemory`
@@ -1513,8 +1508,8 @@ pytest tests/test_agent_core.py -v
 |----------|----------|
 | `test_agent_core.py` | Agent 核心流程(process/process_stream/魔法命令) |
 | `test_executor_tool_calling.py` | 工具调用（plugin/mcp/builtin/task分发） |
-| `test_planner.py` | 规划层（四种意图的plan生成） |
-| `test_comprehension.py` | 理解层（意图识别/实体提取） |
+| `test_agent_turn_coordinator.py` | 单轮协调器、完整输入保留与旧模块退役门禁 |
+| `test_execution_prompt_builder.py` | 执行提示与历史消息构建 |
 | `test_billing_calculator.py` | 计费计算 |
 | `test_pricing_manager.py` | 价格配置 |
 | `test_budget_manager.py` | 预算管理 |
@@ -1612,7 +1607,8 @@ npm run e2e
 | 后端入口 | [backend/main.py](file:///d:/代码/Open-AwA/backend/main.py) |
 | Agent主控制器 | [backend/core/agent.py](file:///d:/代码/Open-AwA/backend/core/agent.py) |
 | 执行层 | [backend/core/executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py) |
-| 规划层 | [backend/core/planner.py](file:///d:/代码/Open-AwA/backend/core/planner.py) |
+| 单轮协调器 | [backend/core/agent_turn_coordinator.py](file:///d:/代码/Open-AwA/backend/core/agent_turn_coordinator.py) |
+| 执行提示构建 | [backend/core/execution_prompt_builder.py](file:///d:/代码/Open-AwA/backend/core/execution_prompt_builder.py) |
 | 数据模型 | [backend/db/models.py](file:///d:/代码/Open-AwA/backend/db/models.py) |
 | 认证依赖 | [backend/api/dependencies.py](file:///d:/代码/Open-AwA/backend/api/dependencies.py) |
 | 安全配置 | [backend/config/security.py](file:///d:/代码/Open-AwA/backend/config/security.py) |

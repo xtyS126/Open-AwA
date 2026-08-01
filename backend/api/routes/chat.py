@@ -31,6 +31,7 @@ from core.litellm_adapter import CLIENT_VERSION_HEADER
 from config.security import decode_access_token
 from core.agent import AIAgent
 from core.agent_registry import get_registry
+from core.agent_runtime_warmup import prewarm_agent_memory
 from core.chat_task_manager import (
     generate_task_id,
     get_chat_task_manager,
@@ -288,6 +289,8 @@ async def chat(
     ).info("chat request received")
 
     try:
+        # 首次创建 Agent 前在线程中预热共享向量运行时，避免冻结服务事件循环。
+        await prewarm_agent_memory(SessionLocal)
         # 通过 AIAgentRegistry 复用 AIAgent 实例，并在整个请求期间独占用户级实例
         _registry_t0 = _chat_time.time()
         registry = get_registry()
@@ -737,6 +740,8 @@ async def websocket_endpoint(
             user_id=user_id,
         ).info("websocket connected")
 
+        # WebSocket 与 HTTP 入口共享同一套向量运行时冷启动策略。
+        await prewarm_agent_memory(SessionLocal)
         agent = AIAgent(
             db_session=db,
             workflow_repository=WorkflowRepositoryAdapter(db),

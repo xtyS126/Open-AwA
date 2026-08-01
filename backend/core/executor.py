@@ -14,11 +14,17 @@ from typing import Awaitable, Dict, Any, Optional, Callable, List, Tuple
 
 import httpx
 from loguru import logger
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 
 from config.logging import generate_request_id, get_request_id, sanitize_for_logging
 from config.settings import settings
+from core.execution_prompt_builder import (
+    ExecutionPromptBuilder,
+    _build_onion_fact_set,
+    _build_profile_context,
+    _build_profile_facts_context,
+    _load_onion_profile,
+    build_recent_short_term_memories_prompt,
+)
 from core.metrics import record_model_service_metric, record_tool_execution_metric
 from core.litellm_adapter import (
     build_standard_error,
@@ -37,7 +43,6 @@ from billing.token_counter import (
 )
 from memory.experience_manager import ExperienceManager
 from mcp.manager import MCPManager
-from soul.profile import OnionProfile
 
 # tool_result 在序列化后允许的最大字符数，超出部分将被截断。
 # 防止 plugin_/mcp_/task_ 等无内置截断的工具返回超大结果，导致 messages 列表无限膨胀。
@@ -124,263 +129,6 @@ def _handle_audit_task_result(task: asyncio.Task) -> None:
         logger.warning(f"[审计日志] 任务执行失败: {e}")
 
 
-def _load_onion_profile(user_id: str, db: Session) -> Optional[OnionProfile]:
-    """
-    加载用户 OnionProfile 画像对象，供画像摘要与事实去重共用。
-
-    从 user_profiles 表反序列化 OnionProfile。未建立画像或加载失败时返回 None，
-    不阻塞主流程。抽出此方法是避免 _build_profile_context 与 _build_profile_facts_context
-    重复执行 load_profile 数据库查询。
-
-    Args:
-        user_id: 用户 ID
-        db: 数据库 session
-
-    Returns:
-        Optional[OnionProfile]: 反序列化后的画像对象；未命中或失败时返回 None
-    """
-    if not user_id or db is None:
-        return None
-
-    try:
-        from soul.persistence import load_profile
-
-        return load_profile(db, user_id)
-    except SQLAlchemyError as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"读取用户画像数据库查询失败: {exc}"
-        )
-        return None
-    except (ImportError, AttributeError, ValueError, TypeError) as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"加载用户画像失败: {exc}"
-        )
-        return None
-
-
-def _build_profile_context(user_id: str, db: Session) -> str:
-    """
-    构建 OnionProfile 五层摘要，用于注入 system prompt。
-
-    从 user_profiles 表读取 OnionProfile，按 surface/interest/role/values/core
-    五层结构生成简短摘要文本。未建立画像或读取失败时返回空字符串，不阻塞主流程。
-
-    Args:
-        user_id: 用户 ID
-        db: 数据库 session
-
-    Returns:
-        格式化的画像摘要文本，未建立画像时返回空字符串
-    """
-    profile = _load_onion_profile(user_id, db)
-    if profile is None:
-        return ""
-
-    parts = ["[用户画像]"]
-
-    # 五层洋葱模型：surface / interest / role / values / core
-    layer_labels = {
-        "surface": "行为偏好",
-        "interest": "兴趣偏好",
-        "role": "角色认同",
-        "values": "价值观",
-        "core": "人格特征",
-    }
-
-    for layer_name, label in layer_labels.items():
-        layer = getattr(profile, layer_name, None)
-        if layer is None:
-            continue
-        description = getattr(layer, "description", None)
-        if description:
-            parts.append(f"- {label}: {description}")
-
-    if len(parts) <= 1:
-        return ""
-
-    return "\n".join(parts)
-
-
-def _build_onion_fact_set(onion_profile: Optional[OnionProfile]) -> set:
-    """
-    遍历 OnionProfile 五层 structured_data，构建 (fact_key, str(fact_value)) 集合。
-
-    用于 ProfileFact 去重：OnionProfile 的 description 本就来自 ProfileFact 拼接，
-    若不去重会导致 LLM 上下文中同一事实被注入两次（一次在画像摘要，一次在事实列表）。
-
-    Args:
-        onion_profile: 用户 OnionProfile 画像对象，可为 None
-
-    Returns:
-        set: 包含 (fact_key, str(fact_value)) 元组的集合；构建失败时返回空集合，
-             降级为不去重以保证注入不中断
-    """
-    if onion_profile is None:
-        return set()
-
-    try:
-        fact_set: set = set()
-        # 五层洋葱模型：surface / interest / role / values / core
-        for layer_name in ("surface", "interest", "role", "values", "core"):
-            layer = getattr(onion_profile, layer_name, None)
-            if layer is None:
-                continue
-            structured_data = getattr(layer, "structured_data", None)
-            if not isinstance(structured_data, dict):
-                continue
-            for key, value in structured_data.items():
-                if key is None:
-                    continue
-                fact_set.add((str(key), str(value)))
-        return fact_set
-    except (AttributeError, TypeError) as exc:
-        logger.opt(exception=True).warning(
-            f"构建 OnionProfile 事实集合失败，降级为不去重: {exc}"
-        )
-        return set()
-
-
-def _build_profile_facts_context(
-    user_id: str,
-    db: Session,
-    onion_profile: Optional[OnionProfile] = None,
-) -> str:
-    """
-    构建高置信度 ProfileFact 摘要，用于注入 system prompt。
-
-    从 profile_facts 表读取 confidence >= 0.7 且 is_active 的事实，按置信度
-    降序取前 20 条。若同时传入 OnionProfile，会过滤掉已在五层 structured_data
-    中表达的事实，避免与画像摘要重复注入。无事实或读取失败时返回空字符串，
-    不阻塞主流程。
-
-    Args:
-        user_id: 用户 ID
-        db: 数据库 session
-        onion_profile: 可选的 OnionProfile 对象，用于事实去重；
-                       为 None 时保持原行为（不去重）
-
-    Returns:
-        格式化的事实摘要文本，无事实时返回空字符串
-    """
-    if not user_id or db is None:
-        return ""
-
-    try:
-        from db.models import ProfileFact
-
-        facts = (
-            db.query(ProfileFact)
-            .filter(
-                ProfileFact.user_id == user_id,
-                ProfileFact.is_active.is_(True),
-                ProfileFact.confidence >= 0.7,
-            )
-            .order_by(ProfileFact.confidence.desc())
-            .limit(20)
-            .all()
-        )
-    except SQLAlchemyError as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"读取用户画像事实数据库查询失败: {exc}"
-        )
-        return ""
-    except (ImportError, AttributeError) as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"加载 ProfileFact 模型失败: {exc}"
-        )
-        return ""
-
-    if not facts:
-        return ""
-
-    # 构建 OnionProfile 五层 structured_data 的事实集合，用于去重；
-    # 构建失败时返回空集合，降级为不去重，保证注入不阻塞
-    onion_fact_set = _build_onion_fact_set(onion_profile)
-
-    parts = ["[用户画像事实]"]
-    for fact in facts:
-        fact_key = getattr(fact, "fact_key", "")
-        fact_value = getattr(fact, "fact_value", "")
-        confidence = getattr(fact, "confidence", 0.0)
-        if not fact_key or not fact_value:
-            continue
-        # 去重：跳过已在 OnionProfile 五层 structured_data 中表达的事实
-        if (fact_key, str(fact_value)) in onion_fact_set:
-            continue
-        parts.append(f"- {fact_key}: {fact_value} (置信度: {float(confidence):.0%})")
-
-    if len(parts) <= 1:
-        return ""
-
-    return "\n".join(parts)
-
-
-def build_recent_short_term_memories_prompt(
-    memory_manager,
-    context: Dict[str, Any],
-) -> str:
-    """
-    构建近期短期记忆 system prompt 片段（Spec memory-quality-and-short-term-recovery Task 12）。
-
-    提取为模块级纯函数，便于 ExecutionLayer 与单元测试共用同一份实现，
-    避免测试中复制粘贴生产代码导致的 stub 漂移（详见 brooks-lint T4 Mock Abuse）。
-
-    设计要点：
-    1. 通过 MemoryManager._get_recent_short_term_memories_sync(user_id, limit=20) 加载
-    2. 渲染为 markdown 区块 [近期对话记忆]，每条 [{session_id}] {role}: {content_preview[:100]}
-    3. 无短期记忆时不注入区块（返回空串）
-    4. content_preview 截断到 100 字符，避免上下文过长
-    5. 按时间正序排列（最早在前），符合自然阅读习惯
-    6. 跳过 system 角色消息，只注入 user/assistant 消息
-    7. 失败时静默返回空串（不阻塞对话主流程）
-
-    Args:
-        memory_manager: MemoryManager 实例，None 时返回空串
-        context: 含 user_id / workspace_id 的上下文字典
-    """
-    if memory_manager is None:
-        return ""
-
-    user_id = context.get("user_id")
-    if not user_id:
-        return ""
-
-    workspace_id = context.get("workspace_id", "default")
-    try:
-        memories = memory_manager._get_recent_short_term_memories_sync(
-            user_id, limit=20, workspace_id=workspace_id
-        )
-    except Exception as exc:
-        logger.opt(exception=True).warning(
-            f"加载近期短期记忆失败（不影响主流程）: {exc}"
-        )
-        return ""
-
-    if not memories:
-        return ""
-
-    ordered_memories = list(reversed(memories))
-    lines = ["[近期对话记忆]"]
-    for memory in ordered_memories:
-        role = getattr(memory, "role", "user") or "user"
-        if role not in ("user", "assistant"):
-            continue
-        session_id = getattr(memory, "session_id", "") or ""
-        content = str(getattr(memory, "content", "") or "").strip()
-        if not content:
-            continue
-        content_preview = content[:100]
-        if len(content) > 100:
-            content_preview += "..."
-        session_short = session_id[:8] if session_id else "unknown"
-        lines.append(f"[{session_short}] {role}: {content_preview}")
-
-    if len(lines) <= 1:
-        return ""
-
-    return "\n".join(lines)
-
-
 class ExecutionLayer:
     """
     封装与ExecutionLayer相关的核心逻辑与运行状态。
@@ -391,6 +139,7 @@ class ExecutionLayer:
         初始化执行层：注册默认供应商端点映射、API Key 字段映射、
         工具执行幂等缓存（LRU，上限由 settings.TOOL_EXECUTION_CACHE_SIZE 控制）。
         """
+        self.prompt_builder = ExecutionPromptBuilder()
         self.tools = {}
         self.llm_api_url = None
         self.llm_api_key = None
@@ -688,128 +437,8 @@ class ExecutionLayer:
         return max_tokens
 
     def _build_agent_capability_system_prompt(self, context: Dict[str, Any]) -> str:
-        """
-        基于 Agent 注入的运行态能力摘要生成系统提示，避免模型把自己误判成纯文本聊天机器人。
-        """
-        capabilities = context.get("agent_capabilities")
-        if not isinstance(capabilities, dict):
-            return ""
-
-        lines = [
-            "你是 Open-AwA 平台中的 AI Agent，不是孤立的纯文本聊天模型。",
-            "回答关于自身能力的问题时，必须以当前运行态能力清单为准。",
-            "不要笼统声称自己不能调用 MCP、技能或插件；要区分平台是否支持、当前会话是否启用、当前是否已有可用工具。",
-        ]
-
-        skills_enabled = bool(capabilities.get("skills_enabled", False))
-        skills = capabilities.get("skills") if isinstance(capabilities.get("skills"), list) else []
-        if skills_enabled:
-            if skills:
-                lines.append("当前会话可用技能：")
-                for skill in skills[:12]:
-                    if not isinstance(skill, dict):
-                        continue
-                    lines.append(
-                        f"- 技能 {skill.get('name', '')}: {skill.get('description', '')}"
-                    )
-            else:
-                lines.append("当前会话未发现可用技能。")
-        else:
-            lines.append("当前会话已关闭技能自动调度。")
-
-        plugins_enabled = bool(capabilities.get("plugins_enabled", False))
-        plugins = capabilities.get("plugins") if isinstance(capabilities.get("plugins"), list) else []
-        if plugins_enabled:
-            if plugins:
-                lines.append("当前会话可用插件：")
-                for plugin in plugins[:12]:
-                    if not isinstance(plugin, dict):
-                        continue
-                    tools = plugin.get("tools") if isinstance(plugin.get("tools"), list) else []
-                    tool_names = [
-                        str(tool.get("name", "")).strip()
-                        for tool in tools
-                        if isinstance(tool, dict) and str(tool.get("name", "")).strip()
-                    ]
-                    tool_text = "、".join(tool_names) if tool_names else "无显式工具"
-                    lines.append(
-                        f"- 插件 {plugin.get('name', '')}: {plugin.get('description', '')}。工具: {tool_text}。如需了解参数，优先查看 help 工具。"
-                    )
-            else:
-                lines.append("当前会话未发现可用插件。")
-        else:
-            lines.append("当前会话已关闭插件自动调度。")
-
-        configured_model_catalog = (
-            capabilities.get("configured_models")
-            if isinstance(capabilities.get("configured_models"), dict)
-            else {}
-        )
-        configured_model_entries = (
-            configured_model_catalog.get("entries")
-            if isinstance(configured_model_catalog.get("entries"), list)
-            else []
-        )
-        if configured_model_entries:
-            lines.append("当前可用于派生子代理的已配置模型：")
-            for entry in configured_model_entries[:12]:
-                if not isinstance(entry, dict):
-                    continue
-                label = str(entry.get("label", "")).strip()
-                if not label:
-                    continue
-                lines.append(f"- {label}")
-            lines.append(
-                "调用 task_spawn_agent 时，优先同时传 provider 和 model；也支持把 model 写成 provider:model。仅传 provider 时，系统会自动选用该 provider 的默认或已选模型。"
-            )
-        else:
-            lines.append("当前未提供已配置模型目录；派生子代理时若省略 provider/model，将回退到系统默认模型配置。")
-
-        mcp_capabilities = capabilities.get("mcp") if isinstance(capabilities.get("mcp"), dict) else {}
-        if mcp_capabilities.get("platform_supported", False):
-            connected_servers = (
-                mcp_capabilities.get("connected_servers")
-                if isinstance(mcp_capabilities.get("connected_servers"), list)
-                else []
-            )
-            mcp_tools = mcp_capabilities.get("tools") if isinstance(mcp_capabilities.get("tools"), list) else []
-
-            if mcp_tools:
-                lines.append("平台当前已连接的 MCP 工具：")
-                for tool in mcp_tools[:12]:
-                    if not isinstance(tool, dict):
-                        continue
-                    lines.append(
-                        f"- MCP {tool.get('server_name', tool.get('server_id', ''))}/{tool.get('name', '')}: {tool.get('description', '')}"
-                    )
-            elif connected_servers:
-                server_names = [
-                    str(server.get("name", "")).strip()
-                    for server in connected_servers[:12]
-                    if isinstance(server, dict) and str(server.get("name", "")).strip()
-                ]
-                if server_names:
-                    lines.append(
-                        "平台已连接 MCP Server，但当前没有可直接说明的 MCP 工具摘要：" + "、".join(server_names)
-                    )
-                else:
-                    lines.append("平台已连接 MCP Server，但当前没有可直接说明的 MCP 工具摘要。")
-            else:
-                lines.append("平台支持 MCP Server 管理与工具发现，但当前没有已连接的 MCP Server。")
-
-            if not mcp_capabilities.get("chat_dispatch_enabled", False):
-                lines.append(
-                    "注意：当前聊天链路未直接暴露自动 MCP 调度。不要谎称已经调用了某个 MCP 工具；如果用户询问能力，应说明平台支持 MCP，但本轮会话是否可直接调用取决于已连接 Server 和执行链路配置。"
-                )
-
-        lines.extend([
-            "规则：",
-            "1. 不要捏造已经执行过的技能、插件或 MCP 调用。",
-            "2. 不要回答“我没有调用技能/插件/MCP 的能力”这类绝对否定句。",
-            "3. 当某类能力当前不可用时，要说明是当前会话未启用、未连接或未暴露，而不是说平台完全不支持。",
-        ])
-
-        return "\n".join(lines)
+        """兼容入口，委托提示构建协作者。"""
+        return self.prompt_builder.build_agent_capability_system_prompt(context)
 
     def _normalize_subagent_model_selection(
         self,
@@ -1295,188 +924,31 @@ class ExecutionLayer:
         }
 
     def _build_auto_execution_system_prompt(self, auto_execution_results: Dict[str, Any]) -> str:
-        lines = []
-        skills = auto_execution_results.get("skills", []) or []
-        plugins = auto_execution_results.get("plugins", []) or []
-
-        if not skills and not plugins:
-            return ""
-
-        if skills:
-            lines.append("平台已在生成当前回答前自动执行了部分技能：")
-            for skill in skills:
-                lines.append(f"- {skill.get('skill_name', 'unknown')}")
-            lines.append("")
-
-        # 处理插件结果
-        for plugin in plugins:
-            plugin_name = plugin.get("plugin_name", "unknown")
-            tool = plugin.get("tool", "unknown")
-            result = plugin.get("result", {}) or {}
-
-            if result.get("summary_mode") == "current_model":
-                lines.append(f"平台已在生成当前回答前自动执行了插件 {plugin_name}/{tool}：")
-                lines.append("")
-
-                if result.get("summary_role"):
-                    lines.append(result["summary_role"])
-
-                if result.get("summary_guidance"):
-                    lines.append(result["summary_guidance"])
-
-                if result.get("summary_output_rules"):
-                    lines.append("")
-                    lines.append("输出规则：")
-                    for rule in result["summary_output_rules"]:
-                        lines.append(f"- {rule}")
-
-                if result.get("summary_priority_rules"):
-                    lines.append("")
-                    lines.append("优先级规则：")
-                    for rule in result["summary_priority_rules"]:
-                        lines.append(f"- {rule}")
-
-                if result.get("summary_context"):
-                    lines.append("")
-                    lines.append(result["summary_context"])
-
-                if result.get("digest"):
-                    lines.append("")
-                    lines.append("推文摘要：")
-                    for item in result["digest"]:
-                        lines.append(f"- {item}")
-
-                if result.get("top_tweets"):
-                    lines.append("")
-                    lines.append("高价值候选推文：")
-                    for tweet in result["top_tweets"]:
-                        lines.append(f"- {tweet.get('text', '')}")
-
-                lines.append("")
-                lines.append("不要输出 JSON、代码块或额外调度指令，直接基于以上素材回答用户。")
-            else:
-                if not lines:
-                    lines.append("平台已在生成当前回答前自动执行了部分技能或插件：")
-                lines.append(f"- {plugin_name}/{tool}")
-
-        if lines and "不要输出 JSON" not in lines[-1]:
-            lines.append("")
-            lines.append("不要再输出任何插件、技能或 MCP 调用 JSON。")
-
-        return "\n".join(lines).strip()
+        """兼容入口，委托提示构建协作者。"""
+        return self.prompt_builder.build_auto_execution_system_prompt(
+            auto_execution_results
+        )
 
     def _build_relevant_memories_system_prompt(self, context: Dict[str, Any]) -> str:
-        """
-        将 agent 层检索到的相关长期记忆格式化为 system prompt 片段。
-        仅在 context["vector_retrieved_memories"] 非空时生成内容，否则返回空串。
-        记忆来源：agent._retrieve_relevant_memories（混合检索关键词 + 向量）。
-        """
-        memories = context.get("vector_retrieved_memories")
-        if not isinstance(memories, list) or not memories:
-            return ""
-
-        lines = [
-            "以下是与当前用户请求可能相关的长期记忆，回答时可参考但不要逐字复述：",
-        ]
-        for idx, memory in enumerate(memories, start=1):
-            if not isinstance(memory, dict):
-                continue
-            content = str(memory.get("content", "")).strip()
-            if not content:
-                continue
-            importance = memory.get("importance")
-            confidence = memory.get("confidence")
-            meta_parts: list[str] = []
-            if isinstance(importance, (int, float)):
-                meta_parts.append(f"重要度={float(importance):.2f}")
-            if isinstance(confidence, (int, float)):
-                meta_parts.append(f"置信度={float(confidence):.2f}")
-            meta_text = f"（{', '.join(meta_parts)}）" if meta_parts else ""
-            lines.append(f"{idx}. {content}{meta_text}")
-
-        return "\n".join(lines)
+        """兼容入口，委托提示构建协作者。"""
+        return self.prompt_builder.build_relevant_memories_system_prompt(context)
 
     def _build_recent_short_term_memories_system_prompt(
         self, context: Dict[str, Any]
     ) -> str:
-        """
-        构建近期短期记忆 system prompt 片段（Spec memory-quality-and-short-term-recovery Task 12）。
-
-        在新对话开始时（或当前对话上下文不足以让 AI 理解用户意图时），
-        从短期记忆表中加载用户最近 N 条对话记录，让 AI 能"记得"用户最近的对话内容。
-
-        实现已提取为模块级纯函数 :func:`build_recent_short_term_memories_prompt`，
-        本方法仅作为薄包装，便于在 ExecutionLayer 外部（如单元测试）直接调用纯函数，
-        避免 stub 复制生产代码导致的测试漂移（brooks-lint T4 Mock Abuse）。
-        """
-        return build_recent_short_term_memories_prompt(
+        """兼容入口，委托提示构建协作者。"""
+        return self.prompt_builder.build_recent_short_term_memories_system_prompt(
             getattr(self, "memory_manager", None),
             context,
         )
 
     def _build_messages_with_history(self, prompt: str, context: Dict[str, Any]) -> list:
-        """
-        从上下文中提取对话历史，构建包含历史消息的 messages 列表。
-        对话历史由 agent 层在调用前注入到 context["conversation_history"] 中。
-        支持多模态内容：若 context 含 _multimodal_content 则使用数组格式。
-        同时注入 context["vector_retrieved_memories"] 作为相关长期记忆 system 片段，
-        避免 agent 层检索到的记忆仅用于统计计数而未参与 LLM 上下文。
-        """
-        messages = []
-        system_prompt = self._build_agent_capability_system_prompt(context)
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-
-        # 注入用户画像（五层 OnionProfile 摘要 + 高置信度 ProfileFact）
-        # 放在能力描述之后、长期记忆之前：用户身份是较稳定的上下文，优先级高于请求级记忆
-        # 先加载 OnionProfile 对象，再传给 _build_profile_facts_context 用于事实去重，
-        # 避免画像摘要（来自 ProfileFact 拼接）与事实列表重复注入同一信息
-        user_id = context.get("user_id")
-        db = context.get("db")
-        onion_profile = _load_onion_profile(user_id, db)
-        profile_context = _build_profile_context(user_id, db)
-        profile_facts_context = _build_profile_facts_context(
-            user_id, db, onion_profile=onion_profile
+        """兼容入口，委托提示构建协作者。"""
+        return self.prompt_builder.build_messages(
+            prompt,
+            context,
+            memory_manager=getattr(self, "memory_manager", None),
         )
-        if profile_context or profile_facts_context:
-            profile_block = "\n\n".join(
-                part for part in (profile_context, profile_facts_context) if part
-            )
-            if profile_block:
-                messages.append({"role": "system", "content": profile_block})
-
-        # 注入检索到的相关长期记忆（在能力描述之后、自动执行结果之前，保持语义层级清晰）
-        memories_prompt = self._build_relevant_memories_system_prompt(context)
-        if memories_prompt:
-            messages.append({"role": "system", "content": memories_prompt})
-
-        # Spec memory-quality-and-short-term-recovery Task 12：
-        # 注入用户最近 N 条短期记忆，让 AI 在新对话开始时能"记得"用户最近的对话内容
-        # 放在长期记忆之后：短期记忆是上下文恢复，长期记忆是知识检索，优先级低于知识检索
-        short_term_prompt = self._build_recent_short_term_memories_system_prompt(context)
-        if short_term_prompt:
-            messages.append({"role": "system", "content": short_term_prompt})
-
-        auto_execution_results = context.get("auto_execution_results")
-        if auto_execution_results:
-            auto_prompt = self._build_auto_execution_system_prompt(auto_execution_results)
-            if auto_prompt:
-                messages.append({"role": "system", "content": auto_prompt})
-
-        conversation_history = context.get("conversation_history", [])
-        if conversation_history:
-            for msg in conversation_history:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                if role in ("user", "assistant") and content:
-                    messages.append({"role": role, "content": content})
-        # 始终追加当前用户输入；若有多模态内容则使用数组格式
-        multimodal_content = context.get("_multimodal_content")
-        if multimodal_content:
-            messages.append({"role": "user", "content": multimodal_content})
-        else:
-            messages.append({"role": "user", "content": prompt})
-        return messages
 
     async def _call_llm_api(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -2654,22 +2126,6 @@ class ExecutionLayer:
                 return {"ok": False, "error": f"未知任务运行时工具: {task_action}"}
 
         output = {"ok": False, "error": f"No handler for tool: {func_name}"}
-
-        # 收集工具调用数据
-        try:
-            from data.collector import data_collector
-            await data_collector.collect_tool_call({
-                "conversation_id": context.get("session_id", ""),
-                "role_id": context.get("role_id", ""),
-                "tool_name": func_name,
-                "tool_params": func_args,
-                "result_summary": str(output.get("response", ""))[:500],
-                "success": output.get("ok", False),
-                "duration_ms": int((time.time() - _tool_start_time) * 1000),
-            })
-        except Exception as e:
-            # 数据收集不影响主流程，但记录日志便于排查
-            logger.warning("工具数据收集失败", exc_info=e)
 
         return output
 

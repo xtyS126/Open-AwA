@@ -1,4 +1,5 @@
-import { create } from 'zustand'
+// [Fix] 消费方使用 shallow equalityFn，改用 createWithEqualityFn 消除 zustand 弃用警告
+import { createWithEqualityFn } from 'zustand/traditional';
 import { clearCachedApiKey, setUnauthorizedHandler } from '@/shared/api/client'
 import { resetAppInitializationCache } from '@/shared/hooks/appInitializationCache'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
@@ -32,7 +33,7 @@ interface AuthState {
   updateUser: (partial: Partial<User>) => void
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = createWithEqualityFn<AuthState>((set) => ({
   user: null,
   apiKey: null,
   isAuthenticated: false,

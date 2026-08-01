@@ -1,6 +1,6 @@
 import { defineConfig, mergeConfig } from 'vitest/config'
 import type { ConfigEnv } from 'vite'
-import viteConfig from './vite.config'
+import viteConfig from './vite.config.ts'
 
 const vitestEnv: ConfigEnv = {
   command: 'serve',

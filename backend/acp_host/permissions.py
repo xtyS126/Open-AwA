@@ -21,6 +21,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+from security.command_hard_block import (
+    HARD_BLOCKED_COMMAND_SUBSTRINGS,
+    is_hard_blocked_command,
+)
+
 try:
     from acp.schema import AllowedOutcome, DeniedOutcome, RequestPermissionResponse
 
@@ -45,13 +50,8 @@ __all__ = [
 ]
 
 
-# 硬阻断命令子串黑名单：匹配则直接拒绝，不进入用户审批流程
-BLOCKED_COMMAND_PATTERNS = (
-    "rm -rf /",
-    "sudo rm -rf",
-    "mkfs",
-    "dd if=",
-)
+# 向后兼容：旧调用方仍可读取原常量名，实际定义由共享策略统一维护。
+BLOCKED_COMMAND_PATTERNS = HARD_BLOCKED_COMMAND_SUBSTRINGS
 
 
 class ACPPermissionAdapter:
@@ -414,8 +414,8 @@ class ACPPermissionAdapter:
         Returns:
             True 表示命中硬阻断规则。
         """
-        command = str(self._command(tool_call) or "").lower()
-        if any(pattern in command for pattern in BLOCKED_COMMAND_PATTERNS):
+        command = str(self._command(tool_call) or "")
+        if is_hard_blocked_command(command):
             return True
 
         for path_value in self._paths(tool_call):

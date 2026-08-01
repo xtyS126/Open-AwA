@@ -40,6 +40,7 @@ from api.security.ws_auth import extract_token_from_subprotocol, validate_ws_ori
 from config.security import decode_access_token
 from core.terminal import PTYSession
 from db.models import SessionLocal, User
+from security.command_hard_block import is_hard_blocked_command
 
 router = APIRouter(prefix="/terminal", tags=["terminal"])
 
@@ -237,6 +238,10 @@ def _is_command_safe(command: str) -> bool:
     检查命令是否安全。
     多层检查：危险命令名 + 高危路径 + 危险正则模式。
     """
+    if is_hard_blocked_command(command):
+        logger.warning("命令匹配系统级硬阻断规则")
+        return False
+
     try:
         cmd_parts = shlex.split(command)
     except ValueError:

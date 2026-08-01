@@ -95,6 +95,30 @@ class TestInstantiation:
         assert service._sessions == {}
 
 
+class TestSafeEnvironment:
+    """ACP 子进程环境变量继承策略测试。"""
+
+    def test_only_inherits_explicit_runtime_allowlist(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """父进程普通变量不得被隐式继承，运行必需项和显式配置应保留。"""
+        monkeypatch.setenv("PATH", "C:\\runtime-bin")
+        monkeypatch.setenv("USERPROFILE", "C:\\Users\\tester")
+        monkeypatch.setenv("LANG", "zh_CN.UTF-8")
+        monkeypatch.setenv("HARMLESS_BUT_UNLISTED", "must-not-leak")
+
+        safe_env = acp_service_module._build_safe_env(
+            {"AGENT_EXPLICIT_OPTION": "enabled"}
+        )
+
+        assert safe_env["PATH"] == "C:\\runtime-bin"
+        assert safe_env["USERPROFILE"] == "C:\\Users\\tester"
+        assert safe_env["LANG"] == "zh_CN.UTF-8"
+        assert safe_env["AGENT_EXPLICIT_OPTION"] == "enabled"
+        assert "HARMLESS_BUT_UNLISTED" not in safe_env
+
+
 class TestServiceRegistry:
     """init_acp_service / get_acp_service / close_acp_service 注册表测试。"""
 

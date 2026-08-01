@@ -83,13 +83,42 @@ _SENSITIVE_ENV_KEYS = {
 # 敏感环境变量子串（键名大写后包含任一即过滤）
 _SENSITIVE_ENV_SUBSTRINGS = ("SECRET", "TOKEN", "PASSWORD", "API_KEY", "PRIVATE_KEY")
 
+# ACP CLI 启动和跨平台运行所需的父进程环境变量白名单。
+# 代理专用变量必须通过 ACPAgentConfig.env 显式声明，禁止隐式扩大继承面。
+_SAFE_INHERITED_ENV_KEYS = {
+    "PATH",
+    "PATHEXT",
+    "HOME",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "USERPROFILE",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "COMMONPROGRAMFILES",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "TERM",
+    "COLORTERM",
+    "LANG",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+}
+
 
 def _build_safe_env(agent_env: dict[str, str]) -> dict[str, str]:
     """构建安全的子进程环境变量，过滤敏感键避免泄露给 Agent 子进程。
 
     Agent 子进程（如 Claude Code、Codex）会执行用户指定的任意代码，
     可通过 env 命令或 /proc/self/environ 读取环境变量。
-    本函数过滤掉含密钥的变量，仅保留运行所需的基础变量。
+    本函数只继承显式白名单中的运行基础变量，并继续过滤敏感键。
+    Agent 专用变量必须由配置显式传入。
 
     Args:
         agent_env: agent 配置中显式声明的环境变量（优先级最高，覆盖父进程值）。
@@ -99,11 +128,13 @@ def _build_safe_env(agent_env: dict[str, str]) -> dict[str, str]:
     """
     safe_env: dict[str, str] = {}
     for key, value in os.environ.items():
+        key_upper = key.upper()
+        if key_upper not in _SAFE_INHERITED_ENV_KEYS and not key_upper.startswith("LC_"):
+            continue
         # 精确匹配黑名单
-        if key in _SENSITIVE_ENV_KEYS:
+        if key_upper in _SENSITIVE_ENV_KEYS:
             continue
         # 子串匹配（键名大写后检查）
-        key_upper = key.upper()
         if any(s in key_upper for s in _SENSITIVE_ENV_SUBSTRINGS):
             continue
         safe_env[key] = value

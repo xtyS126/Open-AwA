@@ -50,6 +50,17 @@ class TestRetryPolicy:
             delay = policy.compute_delay(1)
             assert 10.0 <= delay <= 15.0
 
+    def test_compute_delay_caps_jitter_at_max_interval(self, monkeypatch):
+        """验证基础延迟封顶后，抖动不会再次突破最大间隔。"""
+        monkeypatch.setattr("core.retry.random.random", lambda: 1.0)
+        policy = RetryPolicy(
+            base_interval=10.0,
+            max_interval=30.0,
+            jitter=0.5,
+        )
+
+        assert policy.compute_delay(3) == pytest.approx(30.0, abs=0.01)
+
 
 class TestExecuteWithRetry:
     """execute_with_retry 执行逻辑测试。"""

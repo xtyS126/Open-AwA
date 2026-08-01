@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { authAPI, systemAPI } from '@/shared/api/api'
-import { getCachedApiKey } from '@/shared/api/client'
+import { getCachedApiKey, refreshCsrfToken } from '@/shared/api/client'
 import { appLogger } from '@/shared/utils/logger'
 import { loadServerPreferences } from '@/shared/utils/preferenceSync'
 import { safeGetItem } from '@/shared/utils/safeStorage'
@@ -91,6 +91,9 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
         } catch (authError) {
           throw authError
         }
+
+        // 认证状态发布前完成 CSRF 双提交令牌初始化，避免首个 POST 请求先收到 403 再重试。
+        await refreshCsrfToken()
 
         // 偏好同步独立执行，失败不阻断登录
         try {

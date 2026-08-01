@@ -19,7 +19,12 @@ function renderLogin() {
 describe('LoginPage 无障碍 (axe-core)', () => {
   it('初始渲染无 WCAG 违规', async () => {
     const { container } = renderLogin()
-    const results = await axe.run(container)
+    // jsdom 不实现 Canvas，颜色对比度由真实浏览器验收覆盖。
+    const results = await axe.run(container, {
+      rules: {
+        'color-contrast': { enabled: false },
+      },
+    })
     const violations = results.violations.filter(
       (v) => !(v.impact === 'minor')
     )

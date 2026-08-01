@@ -54,7 +54,7 @@ class RetryPolicy:
         delay = self.base_interval * (self.exponential_base ** (attempt - 1))
         delay = min(delay, self.max_interval)
         jitter_amount = delay * self.jitter * random.random()
-        return delay + jitter_amount
+        return min(delay + jitter_amount, self.max_interval)
 
 
 async def execute_with_retry(

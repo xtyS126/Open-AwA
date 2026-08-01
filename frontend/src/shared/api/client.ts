@@ -19,6 +19,20 @@ export type RetriableApiRequest = InternalAxiosRequestConfig & {
   _csrfRetried?: boolean
 }
 
+/**
+ * 判断请求失败是否由调用方主动取消产生。
+ *
+ * Axios 的 AbortSignal 会生成 code=ERR_CANCELED，浏览器原生请求则可能抛出
+ * AbortError。两者都属于组件卸载或参数切换时的预期控制流，不应写入错误日志。
+ */
+export function isExpectedRequestCancellation(error: unknown): boolean {
+  if (axios.isCancel(error)) {
+    return true
+  }
+  const candidate = error as { code?: unknown; name?: unknown } | null
+  return candidate?.code === 'ERR_CANCELED' || candidate?.name === 'AbortError'
+}
+
 // 替换原有的：const API_BASE_URL = '/api'
 const BACKEND_URL_STORAGE_KEY = 'openawa_backend_url'
 
@@ -343,6 +357,7 @@ api.interceptors.response.use(
     const isExpectedAuthError = (
       (error?.config?.url === '/auth/me' && error?.response?.status === 401)
     )
+    const isExpectedCancellation = isExpectedRequestCancellation(error)
 
     // CSRF token 失效或缺失时自动刷新并重试一次（对应 P0-9）
     // 后端在 Cookie 认证路径下会返回 403 + missing_csrf_token / invalid_csrf_token
@@ -374,7 +389,7 @@ api.interceptors.response.use(
       }
     }
 
-    if (!isExpectedAuthError) {
+    if (!isExpectedAuthError && !isExpectedCancellation) {
       const errorUrl = error?.config?.url || 'unknown'
       const errorStatus = error?.response?.status || 0
       const errorMessage = error?.message || ''

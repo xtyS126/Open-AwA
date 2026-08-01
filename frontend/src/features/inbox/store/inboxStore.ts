@@ -1,7 +1,8 @@
 /**
  * 收件箱 Zustand 状态管理。
  */
-import { create } from 'zustand';
+// [Fix] 消费方使用 shallow equalityFn，改用 createWithEqualityFn 消除 zustand 弃用警告
+import { createWithEqualityFn } from 'zustand/traditional';
 
 export interface InboxMessage {
   id: string;
@@ -30,7 +31,7 @@ interface InboxStore {
   resetForLogout: () => void;
 }
 
-export const useInboxStore = create<InboxStore>((set, get) => ({
+export const useInboxStore = createWithEqualityFn<InboxStore>((set, get) => ({
   messages: [],
   unreadCount: 0,
   streamStatus: 'disconnected',

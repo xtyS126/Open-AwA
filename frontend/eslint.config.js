@@ -6,7 +6,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 const noDebugStatementRule = 'no-' + 'debug' + 'ger'
 
 export default [
-  { ignores: ['dist/**', 'coverage/**', 'test-results/**', '.vite-e2e-cache/**', 'node_modules/**', 'tests/e2e/**/*.cjs'] },
+  { ignores: ['dist/**', 'coverage/**', 'test-results/**', '.vite-cache/**', '.vite-e2e-cache/**', 'node_modules/**', 'tests/e2e/**/*.cjs'] },
   js.configs.recommended,
   {
     files: ['src/**/*.ts', 'src/**/*.tsx'],

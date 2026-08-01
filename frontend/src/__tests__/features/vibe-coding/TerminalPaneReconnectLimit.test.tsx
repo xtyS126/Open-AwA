@@ -36,25 +36,27 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@xterm/xterm', () => ({
-  Terminal: vi.fn().mockImplementation(() => {
-    const instance = {
-      open: vi.fn(),
-      onData: vi.fn(() => ({ dispose: vi.fn() })),
-      onResize: vi.fn(() => ({ dispose: vi.fn() })),
-      write: vi.fn(),
-      dispose: vi.fn(),
-      loadAddon: vi.fn(),
+  Terminal: class MockTerminal {
+    constructor() {
+      const instance = {
+        open: vi.fn(),
+        onData: vi.fn(() => ({ dispose: vi.fn() })),
+        onResize: vi.fn(() => ({ dispose: vi.fn() })),
+        write: vi.fn(),
+        dispose: vi.fn(),
+        loadAddon: vi.fn(),
+      }
+      terminalMocks.instances.push(instance)
+      return instance
     }
-    terminalMocks.instances.push(instance)
-    return instance
-  }),
+  },
 }))
 
 vi.mock('@xterm/addon-fit', () => ({
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: vi.fn(),
-    dispose: vi.fn(),
-  })),
+  FitAddon: class MockFitAddon {
+    fit = vi.fn()
+    dispose = vi.fn()
+  },
 }))
 
 vi.mock('@/shared/api/terminalApi', () => ({
@@ -80,30 +82,31 @@ interface MockWebSocketInstance {
 
 describe('TerminalPane 重连上限', () => {
   let wsInstances: MockWebSocketInstance[]
-  let MockWebSocketCtor: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.clearAllMocks()
     terminalMocks.instances.length = 0
     wsInstances = []
 
-    MockWebSocketCtor = vi.fn().mockImplementation((url: string) => {
-      const inst: MockWebSocketInstance = {
-        url,
-        readyState: 0,
-        onopen: null,
-        onclose: null,
-        onerror: null,
-        onmessage: null,
-        close: vi.fn(),
-        send: vi.fn(),
+    class MockWebSocket implements MockWebSocketInstance {
+      static readonly OPEN = 1
+      static readonly CONNECTING = 0
+
+      url: string
+      readyState = 0
+      onopen: (() => void) | null = null
+      onclose: (() => void) | null = null
+      onerror: (() => void) | null = null
+      onmessage: ((event: { data: string }) => void) | null = null
+      close = vi.fn()
+      send = vi.fn()
+
+      constructor(url: string) {
+        this.url = url
+        wsInstances.push(this)
       }
-      wsInstances.push(inst)
-      return inst
-    })
-    ;(MockWebSocketCtor as unknown as { OPEN: number }).OPEN = 1
-    ;(MockWebSocketCtor as unknown as { CONNECTING: number }).CONNECTING = 0
-    vi.stubGlobal('WebSocket', MockWebSocketCtor)
+    }
+    vi.stubGlobal('WebSocket', MockWebSocket)
 
     apiMocks.createPtySession.mockResolvedValue({
       ok: true,

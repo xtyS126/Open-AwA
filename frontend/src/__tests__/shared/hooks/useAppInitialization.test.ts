@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
 
 const clientMocks = vi.hoisted(() => ({
   getCachedApiKey: vi.fn(() => ''),
+  refreshCsrfToken: vi.fn(() => Promise.resolve()),
 }))
 
 const preferenceSyncMocks = vi.hoisted(() => ({
@@ -33,7 +34,7 @@ vi.mock('@/shared/api/client', () => ({
   getCachedApiKey: clientMocks.getCachedApiKey,
   persistApiKey: vi.fn(),
   clearCachedApiKey: vi.fn(),
-  refreshCsrfToken: vi.fn(() => Promise.resolve()),
+  refreshCsrfToken: clientMocks.refreshCsrfToken,
   setUnauthorizedHandler: vi.fn(),
 }))
 
@@ -68,6 +69,7 @@ describe('useAppInitialization - 模型选项预加载', () => {
     // 清空 localStorage，避免 rehydrateStores 读取旧值
     window.localStorage.clear()
     window.sessionStorage.clear()
+    clientMocks.refreshCsrfToken.mockResolvedValue(undefined)
   })
 
   it('无法确认初始化状态时不继续认证流程', async () => {
@@ -106,6 +108,23 @@ describe('useAppInitialization - 模型选项预加载', () => {
     expect(result.current).toBeUndefined() // hook 返回值无意义，仅用于触发 effect
     expect(useAuthStore.getState().isAuthenticated).toBe(true)
     expect(useAuthStore.getState().user?.username).toBe('admin')
+  })
+
+  it('恢复缓存认证时等待 CSRF 初始化完成后再发布已认证状态', async () => {
+    let resolveCsrf: (() => void) | undefined
+    clientMocks.getCachedApiKey.mockReturnValue('cached-api-key')
+    apiMocks.getMe.mockResolvedValue({ data: { username: 'admin' } })
+    clientMocks.refreshCsrfToken.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveCsrf = resolve
+    }))
+
+    renderHook(() => useAppInitialization())
+
+    await waitFor(() => expect(clientMocks.refreshCsrfToken).toHaveBeenCalledTimes(1))
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+
+    resolveCsrf?.()
+    await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(true))
   })
 
   it('preloadModelOptions 失败不阻塞登录流程（isInitialized 仍为 true）', async () => {

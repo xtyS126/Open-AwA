@@ -174,7 +174,6 @@ class StreamOrchestrator:
                         tool_events=state["accumulated_tool_events"] or None,
                     )
         finally:
-            await self._collect_conversation(finalization)
             if finalization.abort_controller is not None:
                 finalization.abort_controller.abort(
                     reason="process_stream_finished",
@@ -204,20 +203,6 @@ class StreamOrchestrator:
             })
         except ImportError:
             pass
-
-    @staticmethod
-    async def _collect_conversation(
-        finalization: StreamFinalizationContext,
-    ) -> None:
-        """
-        采集流式对话数据，采集失败不得破坏清理链路。
-
-        data.collector 模块尚未实现（历史遗留死代码），保留空实现避免每次对话
-        都触发 ImportError WARNING 污染日志。模块就绪后再恢复采集逻辑。
-        """
-        # 预留：未来 data.collector 实现后可通过 finalization 上下文与状态采集
-        # 当前仅作为占位，确保清理链路不被破坏
-        return None
 
     async def handle_tool_calls_in_round(
         self,

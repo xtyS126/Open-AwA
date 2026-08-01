@@ -2,7 +2,7 @@
  * TTS 状态管理（Zustand）。
  * 管理音色选择、合成参数、流式状态、复刻进度。
  */
-import { create } from 'zustand'
+import { createWithEqualityFn } from 'zustand/traditional'
 import type { SpeakerInfo } from '../ttsApi'
 
 interface TtsStore {
@@ -56,7 +56,7 @@ interface TtsStore {
   resetCloneState: () => void
 }
 
-export const useTtsStore = create<TtsStore>((set, get) => ({
+export const useTtsStore = createWithEqualityFn<TtsStore>((set, get) => ({
   speakers: [],
   selectedSpeakerId: 'zh_female_qingxin',
   speakersLoading: false,

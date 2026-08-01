@@ -27,7 +27,6 @@ def _build_manifest(plugin_name: str = "demo_plugin"):
             {"point": "command", "name": "command_ext", "version": "1.0.0", "config": {}},
             {"point": "route", "name": "route_ext", "version": "1.0.0", "config": {}},
             {"point": "event_handler", "name": "event_ext", "version": "1.0.0", "config": {}},
-            {"point": "scheduler", "name": "scheduler_ext", "version": "1.0.0", "config": {}},
             {"point": "middleware", "name": "middleware_ext", "version": "1.0.0", "config": {}},
             {"point": "data_provider", "name": "provider_ext", "version": "1.0.0", "config": {}},
         ],
@@ -77,8 +76,8 @@ def test_extension_registry_register_manifest_and_query_by_point():
 
     registrations = registry.register_manifest("plugin_alpha", manifest)
 
-    assert len(registrations) == 8
-    assert len(registry.list_plugin_extensions("plugin_alpha")) == 8
+    assert len(registrations) == 7
+    assert len(registry.list_plugin_extensions("plugin_alpha")) == 7
 
     for point in ExtensionPointType:
         point_items = registry.list_by_point(point)

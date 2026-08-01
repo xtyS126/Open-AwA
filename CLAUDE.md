@@ -461,8 +461,9 @@ Open-AwA is an AI Agent experimental platform with a **FastAPI backend** and **R
 ### 6.2 Agent Core Flow (AIAgent.process)
 
 ```
-comprehension.py → planner.py → executor.py → feedback.py
+agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 ```
+- `AgentTurnCoordinator` 保留完整用户消息并生成唯一模型执行步骤；不再通过本地关键词分类选择执行分支
 - Conversation history auto-injected from ShortTermMemory (`session_id` key, no manual passing needed)
 - Supports both SSE (HTTP) and WebSocket paths
 - Tools executed with `idempotency_key` for deduplication
@@ -473,7 +474,7 @@ comprehension.py → planner.py → executor.py → feedback.py
 
 | System | Directory | Key Files |
 |--------|-----------|-----------|
-| Agent Core | `backend/core/` | `agent.py`, `comprehension.py`, `planner.py`, `executor.py`, `feedback.py` |
+| Agent Core | `backend/core/` | `agent.py`, `agent_turn_coordinator.py`, `executor.py`, `execution_prompt_builder.py`, `feedback.py` |
 | Plugin System | `backend/plugins/` | `plugin_manager.py`, `plugin_instance.py` (singleton), `base_plugin.py`, `plugin_sandbox.py`, `plugin_lifecycle.py` (state machine), `hot_update_manager.py` (blue-green) |
 | Skill System | `backend/skills/` | `skill_engine.py`, `skill_executor.py`, `skill_registry.py`, `skill_loader.py` |
 | Memory | `backend/memory/` | `manager.py`, `experience_manager.py`, `vector_store_manager.py` |
@@ -738,6 +739,7 @@ git commit -m "[Type] 变更描述"
 - **Conversation history auto-injected**: Agent pulls from ShortTermMemory by `session_id`, don't manually pass
 - **Plugin hot update state is ephemeral**: Snapshots and active/standby slots are in-memory only, lost on restart
 - **Windows ACL restrictions**: Some directories have restrictive permissions; use elevated PowerShell to replace existing files when tools fail with EPERM
+- **测试缓存路径不得越出仓库或跨任务共享**：`backend/pytest.ini` 使用工作区内已忽略的 `.pytest_cache`，`frontend/vite.config.ts` 使用 `frontend/.vite-cache`；从子工作区写 `../../var/cache` 会落到 `D:\代码\var`，共享 `var/cache` 还会在 Windows 触发 ACL 拒绝或文件锁冲突。
 - **PowerShell rg 引号解析**: 复杂正则中混用单双引号会在执行前被 PowerShell 误解析；拆分为固定关键词检查，或先在脚本文件中定义模式再执行。
 - **resolve_max_tool_call_rounds**: 定义在 `executor.py`，`agent.py` 通过 import 引用同一函数，不可重复定义
 - **RBAC 通配符**: `check_permission` 支持 `skill:*` 匹配 `skill:read`，`*` 仅在同段数下生效
@@ -760,7 +762,8 @@ git commit -m "[Type] 变更描述"
 - **WebSocket token 不走 URL**: token 不能通过 URL query 参数传递，避免在日志/历史/Referer 中泄露
 - **CSRF 必须开启**: 防止跨站请求伪造
 - **Terminal/PTY 会话鉴权**: 必须校验用户所有权，防止 IDOR
-- **ACP 子进程环境变量**: 不能继承所有环境变量，保护 SECRET_KEY 等敏感键
+- **ACP 子进程环境变量**: 父进程环境只能按 `acp_host.service._SAFE_INHERITED_ENV_KEYS` 与 `LC_*` 显式白名单继承；Agent 专用变量必须通过 `ACPAgentConfig.env` 明确声明，禁止恢复“仅过滤敏感键、其余全部继承”的黑名单模式
+- **Agent 重试抖动上限**: `RetryPolicy.compute_delay()` 必须对“基础退避 + jitter”最终结果应用 `max_interval` 上限；禁止只封顶基础延迟后再追加抖动，否则 30 秒上限可膨胀到 45 秒
 - **OpenCode ACP 启动与安装**: OpenCode 必须以 `opencode acp` 启动；网页安装仅接受白名单工作目录、固定包名 `opencode-ai@latest` 和显式确认，启动时优先使用项目 `node_modules/.bin/opencode`
 - **base_url 解析优先级**: 使用 `getattr(config, 'base_url', None)` 修复运算符优先级问题
 - **新 provider 创建约束**: `provider` 字段必须非空，`config_id` 仅更新时需要
@@ -776,8 +779,10 @@ git commit -m "[Type] 变更描述"
 - **显式 provider 凭证错误**：模型列表接口收到请求体中的 api_key/api_endpoint 后，远端认证失败必须返回结构化错误；仅后台使用已保存配置时允许回退本地模型列表。
 - **Windows shell 内建命令**：`command_executor.py` 保持 `shell=False`，对 echo/pwd 使用平台内建适配，不得改为 shell=True。
 - **WebSocket/SSE E2E**：使用独立临时数据库、向量路径和端口，避免锁定生产数据库或 Qdrant；WebSocket 必须同时验证 Origin 与子协议 token，SSE 必须检查 text/event-stream 和 [DONE]。
+- **Windows 多服务 E2E 生命周期**：外层服务器包装脚本可能只停止 PowerShell/CMD 包装进程，遗留 Uvicorn 或 Vite 孙进程并让后续验收误复用旧源码；多服务门禁优先使用 Playwright 原生 `webServer`，`reuseExistingServer=false`，结束后必须按端口核对监听 PID 与命令行，只能停止已确认属于本轮测试的进程。
 - **Python 3.12 异步测试事件循环**：测试异步接口必须使用 `pytest.mark.asyncio` 与直接 `await`；禁止在同步测试中调用 `asyncio.get_event_loop().run_until_complete(...)`，因为前序测试关闭默认循环后会出现顺序相关的 `RuntimeError: There is no current event loop`。
 - **CSRF 双提交 token 必须成对签发**：`X-CSRF-Token` 使用响应体中的原始 token，`csrf_access_token` Cookie 保存签名 token；登录和 `/api/auth/csrf-token` 必须通过 `generate_csrf_token_pair(response)` 同时写入两者，不能把签名 Cookie 当作 header token，也不能只轮换 Cookie。
+- **认证状态不得早于 CSRF 初始化发布**：API Key 验证或缓存会话恢复后，必须先等待 `refreshCsrfToken()` 完成再设置 `isAuthenticated=true`；否则 Chat 等认证后立即挂载的组件会先发出状态变更请求，虽可由响应拦截器重试成功，浏览器仍会记录一次 403。
 - **插件热更新不得 deepcopy 运行时实例**：active slot 含 `plugin_instance`、sandbox 和 module 引用，直接 `deepcopy(route["slots"]["active"])` 会触发 `cannot pickle 'module' object`；回滚快照只复制可序列化元数据，运行时对象按引用或显式字段保存。
 - **插件回滚必须兼容异步生命周期**：恢复实例的 `initialize()` 可能返回 awaitable，必须复用 `TransitionExecutor._run_coroutine()` 等现有适配器等待完成并校验返回值；直接调用会产生 `coroutine was never awaited`，且插件会在未初始化完成时被注册。
 - **ACP 全局关闭必须在有效事件循环内创建协程聚合**：`_shutdown_acp_services()` 在没有运行中 loop 时必须通过 `asyncio.run()` 执行内部 async 函数，再在其中创建并等待 `asyncio.gather(...)`；禁止先在同步上下文创建 gather，否则 Python 3.12 会留下 `close_all_sessions` 未 await 协程，破坏 pytest 全局清理。

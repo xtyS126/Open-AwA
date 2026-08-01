@@ -17,7 +17,6 @@ EXTENSION_POINT_VALUES = [
     "command",
     "route",
     "event_handler",
-    "scheduler",
     "middleware",
     "data_provider",
 ]

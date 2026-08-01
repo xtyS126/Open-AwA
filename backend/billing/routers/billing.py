@@ -1235,15 +1235,24 @@ async def delete_provider(
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    删除provider相关对象或持久化记录。
-    实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+    硬删除 Provider 的模型配置与凭据。
+
+    删除前同时检查配置和凭据是否存在，避免“凭据已删除但接口返回 404”的
+    状态与响应不一致。返回的 deleted_count 保持既有语义，仅统计模型配置。
     """
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
-    deleted_count = pricing_manager.delete_provider_configurations(provider_id)
+    configuration_exists = db.query(ModelConfiguration.id).filter(
+        ModelConfiguration.provider == provider_id
+    ).first() is not None
+    credential_exists = db.query(ProviderCredential.id).filter(
+        ProviderCredential.provider == provider_id
+    ).first() is not None
 
-    if deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Provider configuration not found")
+    if not configuration_exists and not credential_exists:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    deleted_count = pricing_manager.delete_provider_configurations(provider_id)
 
     # 提供商被删除后失效对应的远端模型缓存
     _invalidate_provider_models_cache()
@@ -1251,7 +1260,8 @@ async def delete_provider(
     return {
         "success": True,
         "provider": provider_id,
-        "deleted_count": deleted_count
+        "deleted_count": deleted_count,
+        "credential_deleted": credential_exists,
     }
 
 

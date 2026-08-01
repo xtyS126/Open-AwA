@@ -34,7 +34,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^10.1.0",
-    "react-router-dom": "^6.22.0",
+    "react-router-dom": "^6.30.4",
     "react-virtuoso": "^4.18.7",
     "reactflow": "^11.11.4",
     "recharts": "^2.12.0",
@@ -49,6 +49,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.58.2",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/dagre": "^0.7.54",
@@ -61,11 +62,11 @@
     "@types/react-dom": "^18.2.19",
     "@typescript-eslint/eslint-plugin": "^8.59.0",
     "@typescript-eslint/parser": "^8.59.0",
-    "@vitejs/plugin-legacy": "^5.4.3",
-    "@vitejs/plugin-react": "^4.2.1",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@vitejs/plugin-legacy": "^8.2.2",
+    "@vitejs/plugin-react": "^6.0.5",
+    "@vitest/coverage-v8": "^4.1.10",
     "axe-core": "^4.12.0",
-    "electron": "^35.7.5",
+    "electron": "^43.2.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^25.0.1",
     "openapi-typescript": "^7.13.0",
@@ -73,8 +74,12 @@
     "rollup-plugin-visualizer": "^7.0.1",
     "terser": "^5.46.1",
     "typescript": "^5.3.3",
-    "vite": "^5.1.0",
-    "vite-plugin-compression": "^0.5.1",
-    "vitest": "^2.1.8"
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "monaco-editor": {
+      "dompurify": "3.4.12"
+    }
   }
 }

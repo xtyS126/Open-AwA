@@ -1003,16 +1003,6 @@ async def _shutdown_autonomous_mode() -> None:
         logger.warning(f"自主模式关闭异常: {e}")
 
 
-async def _shutdown_data_collector() -> None:
-    """
-    关闭数据收集器。
-
-    data.collector 模块尚未实现（历史遗留死代码），保留空实现避免每次启动
-    与关闭都触发 ImportError WARNING 污染日志。模块就绪后再恢复关闭逻辑。
-    """
-    return None
-
-
 async def _run_optional_startup_step(
     app: FastAPI,
     step_name: str,
@@ -1082,13 +1072,7 @@ async def lifespan(app: FastAPI):
         await _run_optional_startup_step(
             app, "acp_service", lambda: _startup_acp_service(profiler)
         )
-        # 19. 初始化数据收集器
-        # data.collector 模块尚未实现（历史遗留死代码），跳过初始化避免 ImportError WARNING。
-        # 模块就绪后将恢复启动逻辑。
-        logger.bind(event="data_collector_skipped", module="startup").debug(
-            "data.collector 模块未实现，跳过初始化"
-        )
-        # 20. 配置 MCP SSE 传输层 origin 白名单
+        # 19. 配置 MCP SSE 传输层 origin 白名单
         try:
             _startup_mcp_sse_origin(profiler)
         except Exception as exc:
@@ -1124,7 +1108,6 @@ async def lifespan(app: FastAPI):
         ("plugin_system", _shutdown_plugin_system),
         ("autonomous_mode", _shutdown_autonomous_mode),
         ("acp_service", _shutdown_acp_service),
-        ("data_collector", _shutdown_data_collector),
         ("scheduled_task_manager", scheduled_task_manager.stop),
         ("shared_http_client", close_shared_client),
     ):

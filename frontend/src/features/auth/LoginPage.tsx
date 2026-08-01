@@ -43,7 +43,7 @@ function LoginPage() {
       const response = await authAPI.getMe()
       const data = response.data || {}
       // 验证成功后才持久化到 sessionStorage
-      persistApiKey(validApiKey)
+      await persistApiKey(validApiKey)
       setAuth(
         {
           username: data.username || 'admin',

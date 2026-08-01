@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.orm import Session
 
-# Base paths derived from this test file's location
+# 从当前测试文件位置解析后端目录和仓库根目录。
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_REPO_ROOT = os.path.dirname(os.path.dirname(_BACKEND_DIR))
+_REPO_ROOT = os.path.dirname(_BACKEND_DIR)
 
 
 # ---------------------------------------------------------------------------

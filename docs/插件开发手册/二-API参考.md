@@ -73,7 +73,6 @@ def on_error(self, error: Exception, from_state: str, to_state: str) -> None: ..
 | COMMAND | `command` |
 | ROUTE | `route` |
 | EVENT_HANDLER | `event_handler` |
-| SCHEDULER | `scheduler` |
 | MIDDLEWARE | `middleware` |
 | DATA_PROVIDER | `data_provider` |
 
@@ -106,10 +105,13 @@ register_hook(...)
 register_command(...)
 register_route(...)
 register_event_handler(...)
-register_scheduler(...)
 register_middleware(...)
 register_data_provider(...)
 ```
+
+插件协议不提供独立的 `scheduler` 扩展点。需要周期执行插件命令时，使用平台统一的
+`/api/scheduled-tasks` 能力并选择 `plugin_command` 任务类型；调度状态、执行历史和
+重试语义由同一个定时任务管理器维护，避免插件自行创建第二套调度运行时。
 
 ## 3. 动态加载与实例化
 

@@ -40,11 +40,10 @@ class TestAgentInitialization:
     """验证 AIAgent 的初始化流程。"""
 
     def test_agent_init_without_db_session_initializes_all_layers(self):
-        """无 DB 会话时，Agent 应初始化理解/规划/执行/反馈层，但记忆管理器为 None。"""
+        """无 DB 会话时，Agent 应初始化轮次协调、执行和反馈协作者。"""
         agent = AIAgent()
 
-        assert agent.comprehension is not None
-        assert agent.planner is not None
+        assert agent.turn_coordinator is not None
         assert agent.executor is not None
         assert agent.feedback is not None
         assert agent.experience_extractor is not None
@@ -372,9 +371,9 @@ class TestProcessFlow:
 
         monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
         monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
-        monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-        monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-        monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+        monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+        monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+        monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
         monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step)
         monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
         monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
@@ -429,9 +428,9 @@ class TestProcessFlow:
 
         monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
         monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
-        monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-        monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-        monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+        monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+        monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+        monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
         monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step_error)
         monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
         monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
@@ -491,9 +490,9 @@ class TestProcessFlow:
 
         monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
         monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
-        monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-        monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-        monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+        monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+        monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+        monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
         monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step)
         monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
         monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)

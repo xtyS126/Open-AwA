@@ -1,4 +1,5 @@
-import { create } from 'zustand'
+// [Fix] 消费方使用 shallow equalityFn，改用 createWithEqualityFn 消除 zustand 弃用警告
+import { createWithEqualityFn } from 'zustand/traditional';
 import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 import { syncPreferenceToServer } from '@/shared/utils/preferenceSync'
 
@@ -309,7 +310,7 @@ if (typeof document !== 'undefined') {
   applyConfig(getInitialConfig())
 }
 
-export const useThemeStore = create<ThemeState>((set) => ({
+export const useThemeStore = createWithEqualityFn<ThemeState>((set) => ({
   theme: getInitialTheme(),
   config: getInitialConfig(),
 

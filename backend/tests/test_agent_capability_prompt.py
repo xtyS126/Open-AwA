@@ -369,9 +369,9 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
     async def fake_update_memory(user_input, response, context):
         return None
 
-    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
     monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
     monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
     monkeypatch.setattr(

@@ -2,7 +2,7 @@
  * 用户画像 Zustand Store——管理画像事实、统计、提取状态和 UI 状态。
  */
 
-import { create } from 'zustand'
+import { createWithEqualityFn } from 'zustand/traditional'
 import {
   type ProfileFact,
   type ProfileStats,
@@ -58,7 +58,7 @@ interface ProfileState {
   clearError: () => void
 }
 
-export const useProfileStore = create<ProfileState>((set, get) => ({
+export const useProfileStore = createWithEqualityFn<ProfileState>((set, get) => ({
   /* ── 初始状态 ── */
   facts: [],
   factsTotal: 0,

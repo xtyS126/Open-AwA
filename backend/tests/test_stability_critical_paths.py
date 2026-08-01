@@ -50,7 +50,6 @@ async def test_optional_startup_failure_keeps_service_available(monkeypatch: pyt
     monkeypatch.setattr(main, "_shutdown_plugin_system", succeed)
     monkeypatch.setattr(main, "_shutdown_autonomous_mode", succeed)
     monkeypatch.setattr(main, "_shutdown_acp_service", succeed)
-    monkeypatch.setattr(main, "_shutdown_data_collector", succeed)
     monkeypatch.setattr(main.task_runtime, "shutdown", succeed)
     monkeypatch.setattr(main.scheduled_task_manager, "stop", succeed)
     monkeypatch.setattr(main, "close_shared_client", succeed)

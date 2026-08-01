@@ -18,6 +18,7 @@ from typing import Dict, Any, Optional
 from loguru import logger
 from config.settings import settings
 from core.command_platform import resolve_command_for_platform
+from security.command_hard_block import is_hard_blocked_command
 from security.command_validators import ValidationResult, validate_command
 from security.command_whitelist import (
     ALLOWED_COMMANDS,
@@ -292,13 +293,13 @@ def is_path_allowed(
     working_dir: Optional[str] = None,
 ) -> bool:
     """
-    五层路径检查：deny 规则 → 安全性检查 → 内部可编辑 → 工作目录 → 沙箱白名单 → allow 规则 → 默认拒绝。
+    路径检查：deny 规则 → 安全性检查 → 工作目录边界 → 内部可编辑 → 沙箱白名单 → allow 规则 → 默认拒绝。
 
     检查顺序（任一匹配则立即返回）：
         1. deny 规则：匹配则返回 False
         2. 安全性检查（validate_path TOCTOU 防护）：不安全则返回 False
-        3. 内部可编辑路径：匹配则返回 True
-        4. 工作目录检查：在工作目录内则返回 True
+        3. 工作目录边界：显式传入时仅允许该目录内路径
+        4. 内部可编辑路径：未传工作目录时匹配则返回 True
         5. 沙箱白名单：在白名单内则返回 True
         6. allow 规则：匹配则返回 True
         7. 默认拒绝：都不匹配则返回 False
@@ -343,7 +344,11 @@ def is_path_allowed(
     if not validate_path(path_str):
         return False
 
-    # 第 3 层：内部可编辑路径（项目目录等）
+    # 第 3 层：显式工作目录是严格边界，禁止被项目级白名单放宽
+    if working_dir:
+        return _is_path_in_workspace(Path(path_str), Path(working_dir))
+
+    # 第 4 层：内部可编辑路径（项目目录等）
     # 委托给 command_whitelist.is_path_allowed 进行 Path.resolve() + relative_to() 校验
     try:
         resolved = Path(path_str).resolve()
@@ -353,11 +358,6 @@ def is_path_allowed(
     except (ValueError, OSError, RuntimeError):
         # 解析失败，继续后续检查
         pass
-
-    # 第 4 层：工作目录检查
-    if working_dir:
-        if _is_path_in_workspace(Path(path_str), Path(working_dir)):
-            return True
 
     # 第 5 层：沙箱白名单
     try:
@@ -455,9 +455,8 @@ class Sandbox:
             raise SandboxPermissionError("命令列表不能为空")
 
         if settings.AGENT_WORKSPACE_UNRESTRICTED_COMMANDS:
-            hard_blocked = ("rm -rf /", "sudo rm -rf /", "mkfs", "dd if=")
-            normalized = (command_str or " ".join(command_list)).lower()
-            if any(pattern in normalized for pattern in hard_blocked):
+            normalized = command_str or " ".join(command_list)
+            if is_hard_blocked_command(normalized):
                 raise SandboxPermissionError("命令匹配系统级硬阻断规则")
             return
 

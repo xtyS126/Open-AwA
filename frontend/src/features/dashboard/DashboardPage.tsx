@@ -398,7 +398,12 @@ function DashboardPage() {
   if (loading) {
     /* 加载中：使用 Skeleton 模拟统计卡片网格与图表区域，减少布局抖动 */
     return (
-      <div className={styles.dashboardPage}>
+      <div
+        className={styles.dashboardPage}
+        role="region"
+        aria-label="仪表盘内容"
+        tabIndex={0}
+      >
         <div className={styles.pageHeader}>
           <h1 className={styles.pageTitle}>仪表盘</h1>
           <p className={styles.pageSubtitle}>系统运行状态概览</p>
@@ -431,7 +436,12 @@ function DashboardPage() {
   const totalInteractions = stats?.total_interactions || 0
 
   return (
-    <div className={styles.dashboardPage}>
+    <div
+      className={styles.dashboardPage}
+      role="region"
+      aria-label="仪表盘内容"
+      tabIndex={0}
+    >
       {/* 页面标题 */}
       <div className={styles.pageHeader}>
         <h1 className={styles.pageTitle}>仪表盘</h1>

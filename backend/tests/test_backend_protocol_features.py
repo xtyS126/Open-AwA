@@ -43,7 +43,6 @@ def _plan_executor_for_agent(agent: AIAgent) -> PlanExecutor:
     """使用测试替换后的 Agent 协作者构造独立计划执行器。"""
     return PlanExecutor(
         agent.executor,
-        agent.planner,
         agent.feedback,
         agent.execute_skill,
         agent.execute_plugin,
@@ -298,9 +297,9 @@ async def test_ai_agent_process_strips_reasoning_content_when_final_only(monkeyp
     async def fake_retrieve_relevant_experiences(user_input, context):
         return []
 
-    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
     monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step)
     monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
     monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
@@ -371,9 +370,9 @@ async def test_ai_agent_process_injects_db_into_context(monkeypatch):
     async def fake_update_memory(user_input, response, context):
         return None
 
-    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
-    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
-    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
     monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step)
     monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
     monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)

@@ -23,6 +23,8 @@ const modelApiMocks = vi.hoisted(() => ({
   updateConfiguration: vi.fn(),
   saveProviderCredential: vi.fn(),
   getProviderCredential: vi.fn(),
+  getMaskedApiKey: vi.fn(),
+  getPlainApiKey: vi.fn(),
   getProviderCatalog: vi.fn(),
 }))
 
@@ -225,6 +227,20 @@ describe('SettingsPage', () => {
     })
     modelApiMocks.createConfiguration.mockResolvedValue({ data: { success: true } })
     modelApiMocks.saveProviderCredential.mockResolvedValue({ data: { success: true } })
+    modelApiMocks.getMaskedApiKey.mockResolvedValue({
+      data: {
+        masked_api_key: 'sk-t...6789',
+        has_api_key: true,
+        api_key_status: 'active',
+      },
+    })
+    modelApiMocks.getPlainApiKey.mockResolvedValue({
+      data: {
+        api_key: 'sk-test-complete-provider-key-0123456789',
+        has_api_key: true,
+        api_key_status: 'active',
+      },
+    })
     modelApiMocks.getProviderCatalog.mockResolvedValue({
       data: {
         providers: [
@@ -344,7 +360,7 @@ describe('SettingsPage', () => {
     // 等待懒加载的 GeneralTabContainer 完成渲染
     await waitFor(() => {
       expect(screen.getByText('加载远端模型')).toBeInTheDocument()
-    })
+    }, { timeout: 5000 })
 
     fireEvent.click(screen.getByText('加载远端模型'))
 
@@ -367,7 +383,11 @@ describe('SettingsPage', () => {
   it('通用设置支持保存工具回环次数上限', async () => {
     renderSettingsGeneralTab()
 
-    const roundsInput = await screen.findByLabelText('工具回环次数上限') as HTMLInputElement
+    const roundsInput = await screen.findByLabelText(
+      '工具回环次数上限',
+      undefined,
+      { timeout: 5000 },
+    ) as HTMLInputElement
     fireEvent.change(roundsInput, { target: { value: '18' } })
     fireEvent.click(screen.getByText('保存设置'))
 
@@ -375,6 +395,14 @@ describe('SettingsPage', () => {
       const saved = JSON.parse(window.localStorage.getItem('app_settings') || '{}')
       expect(saved.maxToolCallRounds).toBe(18)
     })
+  })
+
+  it('通用设置的主题、语言和输出模式选择框具有可靠名称', async () => {
+    renderSettingsGeneralTab()
+
+    expect(await screen.findByRole('combobox', { name: '主题' }, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '语言' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '输出模式' })).toBeInTheDocument()
   })
 
   it('AI 参数区移除最大 Tokens 输入，并展示模型级计费详情', async () => {
@@ -434,7 +462,47 @@ describe('SettingsPage', () => {
     expect(modelApiMocks.getConfigurations).toHaveBeenCalled()
   })
 
+  it('点击显示后展示完整 API Key 而不是脱敏值', async () => {
+    renderSettingsApiTab()
+
+    fireEvent.click(await screen.findByText('OpenAI', undefined, { timeout: 5000 }))
+    const showButton = await screen.findByRole(
+      'button',
+      { name: '显示' },
+      { timeout: 5000 },
+    )
+    fireEvent.click(showButton)
+
+    await waitFor(() => {
+      expect(modelApiMocks.getPlainApiKey).toHaveBeenCalledWith('openai')
+      expect(
+        screen.getByText('当前密钥: sk-test-complete-provider-key-0123456789'),
+      ).toBeInTheDocument()
+    })
+    expect(screen.queryByText('当前密钥: sk-t...6789')).not.toBeInTheDocument()
+  })
+
   it('在批量删除模型时会自动保存整个供应商配置', async () => {
+    modelApiMocks.getModelsByProvider.mockResolvedValue({
+      data: {
+        success: true,
+        provider: 'openai',
+        source: 'remote',
+        models: [
+          {
+            id: -1,
+            provider: 'openai',
+            model: 'legacy-local-model',
+            input_price: 0,
+            output_price: 0,
+            currency: 'USD',
+            context_window: null,
+          },
+        ],
+        selected_models: ['legacy-local-model'],
+        error: null,
+      },
+    })
     renderSettingsApiTab()
     
     const providerItem = await screen.findByText('OpenAI')

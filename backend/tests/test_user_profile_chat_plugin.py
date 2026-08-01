@@ -4,20 +4,20 @@
 """
 
 import sys
-import os
+from pathlib import Path
 
 import pytest
 
-# 将 plugins 目录添加到搜索路径以便直接导入
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "plugins", "user-profile-chat", "src"))
+# 从仓库根目录解析插件源码，避免重新绑定迁移前的目录层级。
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PLUGIN_SOURCE_ROOT = PROJECT_ROOT / "plugins" / "user-profile-chat" / "src"
+sys.path.insert(0, str(PLUGIN_SOURCE_ROOT))
 
 from plugins.base_plugin import BasePlugin
 
 # 手动导入插件模块（因为插件使用相对 backend 的导入路径）
 import importlib.util
-_plugin_path = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "plugins", "user-profile-chat", "src", "index.py"
-)
+_plugin_path = PLUGIN_SOURCE_ROOT / "index.py"
 _spec = importlib.util.spec_from_file_location("user_profile_chat_plugin", _plugin_path)
 _module = importlib.util.module_from_spec(_spec)
 # 将 backend 的 BasePlugin 注入到模块加载上下文中

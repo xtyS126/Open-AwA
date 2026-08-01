@@ -7,8 +7,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import LoginPage from '@/features/auth/LoginPage'
 import { BrowserRouter } from 'react-router-dom'
 
-const { getMeMock, setAuthMock, setInitializedMock } = vi.hoisted(() => ({
+const { getMeMock, persistApiKeyMock, setAuthMock, setInitializedMock } = vi.hoisted(() => ({
   getMeMock: vi.fn(),
+  persistApiKeyMock: vi.fn(),
   setAuthMock: vi.fn(),
   setInitializedMock: vi.fn(),
 }))
@@ -22,7 +23,7 @@ vi.mock('@/shared/api/api', () => ({
   },
   getApiErrorDetail: vi.fn(),
   setTempApiKey: vi.fn(),
-  persistApiKey: vi.fn(),
+  persistApiKey: persistApiKeyMock,
   clearCachedApiKey: vi.fn(),
 }))
 
@@ -42,6 +43,7 @@ const renderLogin = () => render(<BrowserRouter><LoginPage /></BrowserRouter>)
 describe('LoginPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    persistApiKeyMock.mockResolvedValue(undefined)
   })
 
   // ============ 渲染 ============
@@ -84,6 +86,25 @@ describe('LoginPage', () => {
       expect(setAuthMock).toHaveBeenCalled()
       expect(setInitializedMock).toHaveBeenCalled()
     })
+  })
+
+  it('等待 CSRF 初始化完成后再发布已认证状态', async () => {
+    let resolveCsrf: (() => void) | undefined
+    persistApiKeyMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveCsrf = resolve
+    }))
+    getMeMock.mockResolvedValueOnce({ data: { username: 'admin' } })
+    renderLogin()
+    fireEvent.change(screen.getByLabelText('访问密钥'), {
+      target: { value: 'sk-1234567890abcdef1234567890abcdef' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+
+    await waitFor(() => expect(persistApiKeyMock).toHaveBeenCalledTimes(1))
+    expect(setAuthMock).not.toHaveBeenCalled()
+
+    resolveCsrf?.()
+    await waitFor(() => expect(setAuthMock).toHaveBeenCalledTimes(1))
   })
 
   it('加载中按钮显示"验证中..."并禁用', async () => {

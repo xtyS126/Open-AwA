@@ -38,28 +38,32 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 // mock xterm.js Terminal 类，避免 jsdom 环境的 canvas 缺失
-vi.mock('@xterm/xterm', () => ({
-  Terminal: vi.fn().mockImplementation(() => {
-    const instance = {
-      open: vi.fn(),
-      onData: vi.fn(() => ({ dispose: vi.fn() })),
-      onResize: vi.fn(() => ({ dispose: vi.fn() })),
-      write: vi.fn(),
-      dispose: vi.fn(),
-      loadAddon: vi.fn(),
+vi.mock('@xterm/xterm', () => {
+  class TerminalMock {
+    open = vi.fn()
+    onData = vi.fn(() => ({ dispose: vi.fn() }))
+    onResize = vi.fn(() => ({ dispose: vi.fn() }))
+    write = vi.fn()
+    dispose = vi.fn()
+    loadAddon = vi.fn()
+
+    constructor() {
+      terminalMocks.instances.push(this)
     }
-    terminalMocks.instances.push(instance)
-    return instance
-  }),
-}))
+  }
+
+  return { Terminal: TerminalMock }
+})
 
 // mock FitAddon 类
-vi.mock('@xterm/addon-fit', () => ({
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: vi.fn(),
-    dispose: vi.fn(),
-  })),
-}))
+vi.mock('@xterm/addon-fit', () => {
+  class FitAddonMock {
+    fit = vi.fn()
+    dispose = vi.fn()
+  }
+
+  return { FitAddon: FitAddonMock }
+})
 
 vi.mock('@/shared/api/terminalApi', () => ({
   createPtySession: apiMocks.createPtySession,
@@ -92,7 +96,10 @@ describe('TerminalPane', () => {
     terminalMocks.instances.length = 0
     wsInstances = []
 
-    MockWebSocketCtor = vi.fn().mockImplementation((url: string) => {
+    MockWebSocketCtor = vi.fn(function MockWebSocket(
+      this: MockWebSocketInstance,
+      url: string,
+    ) {
       const inst: MockWebSocketInstance = {
         url,
         readyState: 0, // CONNECTING
@@ -103,8 +110,8 @@ describe('TerminalPane', () => {
         close: vi.fn(),
         send: vi.fn(),
       }
-      wsInstances.push(inst)
-      return inst
+      Object.assign(this, inst)
+      wsInstances.push(this)
     })
     // 暴露 OPEN / CONNECTING 常量，源码中通过 WebSocket.OPEN 比较
     ;(MockWebSocketCtor as unknown as { OPEN: number }).OPEN = 1

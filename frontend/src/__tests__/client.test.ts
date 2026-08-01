@@ -69,3 +69,17 @@ describe('refreshCsrfToken', () => {
     expect(getSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('请求取消分类', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('将 Axios 取消与浏览器 AbortError 识别为预期控制流', async () => {
+    const { isExpectedRequestCancellation } = await import('@/shared/api/client')
+
+    expect(isExpectedRequestCancellation({ code: 'ERR_CANCELED' })).toBe(true)
+    expect(isExpectedRequestCancellation(new DOMException('请求已取消', 'AbortError'))).toBe(true)
+    expect(isExpectedRequestCancellation(new Error('网络失败'))).toBe(false)
+  })
+})

@@ -20,13 +20,12 @@ from core.behavior_logger import behavior_logger
 from core.behavior_recorder import BehaviorRecorder
 from core.budget_tracker import BudgetTracker
 from core.capability_aggregator import CapabilityAggregator
-from core.comprehension import ComprehensionLayer
 from core.content_replacement import ContentReplacementState
 from core.conversation_recorder import conversation_recorder
 from core.executor import ExecutionLayer
 from core.feedback import FeedbackLayer
 from core.plan_executor import PlanExecutor
-from core.planner import PlanningLayer
+from core.agent_turn_coordinator import AgentTurnCoordinator
 from core.soul_state import SoulStateManager
 from core.stream_orchestrator import StreamOrchestrator
 from core.tool_dispatcher import ToolDispatcher
@@ -94,10 +93,9 @@ def _initialize_request_state(agent: Any) -> None:
 
 
 def _initialize_core_layers(agent: Any) -> float:
-    """初始化理解、规划、执行、反馈与经验提取层。"""
+    """初始化轮次协调、执行、反馈与经验提取协作者。"""
     started_at = time.time()
-    agent.comprehension = ComprehensionLayer()
-    agent.planner = PlanningLayer()
+    agent.turn_coordinator = AgentTurnCoordinator()
     agent.executor = ExecutionLayer()
     agent.feedback = FeedbackLayer()
     agent.experience_extractor = ExperienceExtractor()
@@ -149,7 +147,6 @@ def _initialize_runtime_dependencies(
     )
     agent._plan_executor = PlanExecutor(
         agent.executor,
-        agent.planner,
         agent.feedback,
         agent.execute_skill,
         agent.execute_plugin,

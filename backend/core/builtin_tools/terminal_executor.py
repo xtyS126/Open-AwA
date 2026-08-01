@@ -10,6 +10,7 @@ import shlex
 import time
 from typing import Dict, Any, List, Optional
 from loguru import logger
+from security.command_hard_block import is_hard_blocked_command
 
 
 # 禁止执行的危险命令名（完整匹配命令名，非子串匹配）
@@ -103,6 +104,9 @@ class TerminalExecutorSkill:
         多层检查：危险命令名 + 高危路径 + 危险正则模式 + 命令名白名单。
         """
         import re
+        if is_hard_blocked_command(command):
+            logger.warning("命令匹配系统级硬阻断规则")
+            return False
         try:
             cmd_parts = shlex.split(command)
         except ValueError:

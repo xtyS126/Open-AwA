@@ -18,7 +18,6 @@ class PlanExecutor:
     def __init__(
         self,
         executor: Any,
-        planner: Any,
         feedback: Any,
         execute_skill: Callable[..., Awaitable[Dict[str, Any]]],
         execute_plugin: Callable[..., Awaitable[Dict[str, Any]]],
@@ -28,7 +27,6 @@ class PlanExecutor:
         apply_output_mode: Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]],
     ) -> None:
         self._executor = executor
-        self._planner = planner
         self._feedback = feedback
         self._execute_skill = execute_skill
         self._execute_plugin = execute_plugin
@@ -39,18 +37,14 @@ class PlanExecutor:
 
     async def execute_plan(
         self,
+        plan: Dict[str, Any],
         intent: Dict[str, Any],
         entities: Dict[str, Any],
         user_input: str,
         context: Dict[str, Any],
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        """创建计划、执行自动匹配能力，并依次运行计划步骤。"""
-        plan = await self._planner.create_plan(
-            intent=intent,
-            entities=entities,
-            context=context,
-        )
-        logger.debug(f"Created plan: {plan}")
+        """执行自动匹配能力，并依次运行已准备的模型计划。"""
+        logger.debug(f"Executing prepared plan: {plan}")
         execution_context = self.build_execution_context(
             intent,
             entities,

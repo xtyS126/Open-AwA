@@ -92,7 +92,6 @@ bilibili-toolkit-builtin 内置插件，以 vendored 方式将 OpenBiliClaw 完�
 - `danmaku_option`：弹幕 ASS 渲染参数（字体、字号、透明度、描边、轨道高度等）
 - `skip_option`：跳过子任务开关（封面 / 视频 NFO / UP 主 / 弹幕 / 字幕）
 - `concurrent_limit`：并发与限流（video / page / rate_limit / download 分块）
-- `trigger`：调度触发器（interval 固定间隔 / cron 表达式）
 - `video_name` / `page_name` / `video_default_path` / `page_default_path`：Jinja2 路径模板
 - `upper_path` / `nfo_time_type` / `time_format` / `cdn_sorting`：辅助配置
 
@@ -102,8 +101,8 @@ bilibili-toolkit-builtin 内置插件，以 vendored 方式将 OpenBiliClaw 完�
 
 完整下载流水线按以下顺序执行：
 
-1. **订阅扫描**：调度器按 `trigger` 配置定期触发，调用对应订阅源的扫描 API 拉取视频列表，
-   按 `latest_row_at` 增量水位线过滤已处理视频。
+1. **订阅扫描**：手动触发接口或平台统一定时任务调用订阅扫描，按 `latest_row_at`
+   增量水位线过滤已处理视频。
 2. **元数据落库**：视频元信息（bvid / title / cover / upper / pages）写入
    `bilibili_toolkit_videos` 与 `bilibili_toolkit_pages` 表。
 3. **playurl 调用**：对每个分 P 调用 `/x/player/wbi/playurl?bvid=&cid=&qn=127&fnval=4048&fourk=1`
@@ -239,7 +238,7 @@ Alembic 迁移脚本位于 `backend/migrations/versions/`。
 
 ### POST /api/plugins/bilibili-toolkit-builtin/trigger/{id}
 
-手动触发指定订阅的下载任务（不等调度器）。
+手动触发指定订阅的下载任务。
 
 - **路径参数**：`id` 订阅 ID。
 - **响应**：`TriggerResponse`，含 task_id 与触发的视频数。
@@ -267,8 +266,8 @@ Alembic 迁移脚本位于 `backend/migrations/versions/`。
 
 - **请求体**：`Dict[str, Any]`，待更新的配置项。
 - **响应**：更新后的完整配置（敏感字段掩码）。
-- **副作用**：`trigger` 变更时调度器自动重建 Job；`filter_option` / `danmaku_option` 等
-  变更通过 VersionedConfig 立即传播到进行中的下载任务。
+- **副作用**：`filter_option` / `danmaku_option` 等变更通过 VersionedConfig
+  立即传播到进行中的下载任务。
 
 ## Agent 工具
 
@@ -389,16 +388,6 @@ Alembic 迁移脚本位于 `backend/migrations/versions/`。
 | download.concurrency | integer | `4` | 单文件并发分块数 |
 | download.threshold | integer | `20971520` | 启用并发分块的文件大小阈值（字节，默认 20MB） |
 
-### trigger（调度触发器）
-
-下载任务的调度触发器配置，变更后调度器自动重建 Job。
-
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| type | string | `interval` | 触发器类型（interval / cron） |
-| seconds | integer | `1200` | interval 间隔秒数（仅 type=interval 生效，默认 20 分钟） |
-| expr | string | `0 0 * * *` | cron 表达式（仅 type=cron 生效，5 字段：分 时 日 月 周） |
-
 ### 路径模板与辅助配置
 
 | 字段 | 类型 | 默认值 | 说明 |
@@ -447,9 +436,9 @@ curl -H "Authorization: Bearer <token>" \
 curl -H "Authorization: Bearer <token>" \
   http://localhost:8000/api/plugins/bilibili-toolkit-builtin/config
 
-# 更新配置（热更新）
-curl -X PUT -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"trigger":{"type":"interval","seconds":600}}' \
-  http://localhost:8000/api/plugins/bilibili-toolkit-builtin/config
 ```
+
+需要周期下载时，通过 `/api/scheduled-tasks` 创建 `plugin_command` 任务，插件名使用
+`bilibili-toolkit-builtin`，命令名使用 `bilibili_trigger_download`，并在
+`command_params` 中传入 `subscription_id`。平台统一调度器负责持久化、触发与执行历史；
+插件不再维护第二套调度运行时。

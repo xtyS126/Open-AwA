@@ -12,8 +12,6 @@ def make_plan_executor() -> tuple[PlanExecutor, MagicMock, AsyncMock, AsyncMock]
     executor = MagicMock()
     executor.execute_step = AsyncMock()
     executor.retry_step = AsyncMock()
-    planner = MagicMock()
-    planner.create_plan = AsyncMock(return_value={"steps": []})
     feedback = MagicMock()
     feedback.evaluate_result = AsyncMock(return_value={})
     execute_skill = AsyncMock()
@@ -22,7 +20,6 @@ def make_plan_executor() -> tuple[PlanExecutor, MagicMock, AsyncMock, AsyncMock]
     apply_output_mode = MagicMock(side_effect=lambda output, _: output)
     plan_executor = PlanExecutor(
         executor,
-        planner,
         feedback,
         execute_skill,
         execute_plugin,

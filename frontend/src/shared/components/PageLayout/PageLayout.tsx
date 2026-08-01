@@ -23,7 +23,7 @@ export default function PageLayout({
           {secondarySidebar}
         </aside>
       )}
-      <main className={styles['main-content']}>
+      <div className={styles['main-content']}>
         {(title || actions) && (
           <header className={styles['page-header']}>
             {title && <h1 className={styles['page-title']}>{title}</h1>}
@@ -33,7 +33,7 @@ export default function PageLayout({
         <div className={styles['page-body']}>
           {children}
         </div>
-      </main>
+      </div>
     </div>
   )
 }

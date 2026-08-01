@@ -2,7 +2,8 @@
  * Coding 模式 Zustand 状态管理。
  * 管理打开的文件、编辑器状态、Git 信息和 CC 模式。
  */
-import { create } from 'zustand';
+// [Fix] 消费方使用 shallow equalityFn，改用 createWithEqualityFn 消除 zustand 弃用警告
+import { createWithEqualityFn } from 'zustand/traditional';
 
 export interface OpenFile {
   path: string;
@@ -70,7 +71,7 @@ const getLanguage = (filename: string): string => {
   return langMap[ext] || 'plaintext';
 };
 
-export const useCodingStore = create<CodingStore>((set, get) => ({
+export const useCodingStore = createWithEqualityFn<CodingStore>((set, get) => ({
   fileTree: null,
   setFileTree: (tree) => set({ fileTree: tree }),
 
