@@ -3,6 +3,7 @@ import React, { StrictMode } from 'react'
 import { render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '@/App'
+import { router } from '@/router'
 import { resetAppInitializationStateForTests } from '@/shared/hooks/useAppInitialization'
 import { useAuthStore } from '@/shared/store/authStore'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
@@ -20,6 +21,7 @@ const preferenceMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/shared/api/api', () => ({
+  systemAPI: { getInitStatus: vi.fn().mockResolvedValue({ data: { data: { initialized: true } } }) },
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
   weixinAPI: { getConfig: vi.fn().mockResolvedValue({ data: {} }) },
   authAPI: { getMe: authApiMocks.getMe },
@@ -92,5 +94,44 @@ describe('App', () => {
       // App 初始化后 auth store 应完成初始化
       expect(useAuthStore.getState().isInitialized).toBe(true)
     }, { timeout: 5000 })
+  })
+
+  it('未登录根路径重定向到登录页后停止重复解析', async () => {
+    await router.navigate({ to: '/', replace: true })
+    let resolvedCount = 0
+    let unsubscribe = () => {}
+    const runawayNavigation = new Promise<never>((_resolve, reject) => {
+      unsubscribe = router.subscribe('onResolved', () => {
+        resolvedCount += 1
+        if (resolvedCount > 5) {
+          unsubscribe()
+          reject(new Error(`路由重复解析超过上限：${resolvedCount}`))
+        }
+      })
+    })
+
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>
+    )
+
+    try {
+      await Promise.race([
+        (async () => {
+          await waitFor(() => {
+            expect(useAuthStore.getState().isInitialized).toBe(true)
+          }, { timeout: 5000 })
+          await waitFor(() => {
+            expect(router.state.location.pathname).toBe('/login')
+          }, { timeout: 5000 })
+          await new Promise((resolve) => window.setTimeout(resolve, 50))
+        })(),
+        runawayNavigation,
+      ])
+      expect(resolvedCount).toBeLessThanOrEqual(5)
+    } finally {
+      unsubscribe()
+    }
   })
 })

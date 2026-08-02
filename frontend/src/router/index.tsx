@@ -69,7 +69,6 @@ export interface AppRouteDefinition {
  * 集中声明稳定 URL 与页面元素，动态段使用 TanStack Router 的 $param 语法。
  */
 export const routeDefinitions: AppRouteDefinition[] = [
-  { path: '/', element: <Navigate to="/chat" replace /> },
   { path: '/login', element: withPageBoundary('Login', <LoginPage />) },
   { path: '/setup', element: withPageBoundary('Setup', <SetupPage />) },
   { path: '/chat', element: withPageBoundary('Chat', <ChatPage />) },
@@ -108,11 +107,21 @@ const rootRoute = createRootRoute({
   notFoundComponent: () => <Navigate to="/chat" replace />,
 })
 
-const childRoutes = routeDefinitions.map(({ path, element }) => createRoute({
+// 根索引仅建立有效匹配，认证与默认落点统一由 RootGuard 决策。
+const rootIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path,
-  component: () => element,
-}))
+  path: '/',
+  component: () => null,
+})
+
+const childRoutes = [
+  rootIndexRoute,
+  ...routeDefinitions.map(({ path, element }) => createRoute({
+    getParentRoute: () => rootRoute,
+    path,
+    component: () => element,
+  })),
+]
 
 const routeTree = rootRoute.addChildren(childRoutes)
 

@@ -55,6 +55,10 @@ describe('应用路由树', () => {
     expect(new Set(paths).size).toBe(paths.length)
   })
 
+  it('根路径跳转仅由 RootGuard 决策', () => {
+    expect(routeDefinitions.some(({ path }) => path === '/')).toBe(false)
+  })
+
   it('每个页面路由由重定向或页面错误边界承载', () => {
     let navigateCount = 0
     let suspenseWithLazyCount = 0
@@ -80,7 +84,7 @@ describe('应用路由树', () => {
       suspenseWithLazyCount += 1
     }
 
-    expect(navigateCount).toBe(2)
+    expect(navigateCount).toBe(1)
     expect(suspenseWithLazyCount).toBeGreaterThanOrEqual(20)
     expect(devTestRouteCount).toBe(1)
   })

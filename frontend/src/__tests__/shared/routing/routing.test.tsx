@@ -1,6 +1,14 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { useLocation, useNavigate, useParams } from '@/shared/routing'
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from '@tanstack/react-router'
+import { Navigate, useLocation, useNavigate, useParams } from '@/shared/routing'
 import { renderWithRouter } from '@/shared/routing/testing'
 
 function RouteProbe() {
@@ -33,5 +41,34 @@ describe('路由适配层', () => {
 
     expect(await screen.findByLabelText('当前路由')).toHaveTextContent('/chat/new-session?tab=details')
     expect(screen.getByLabelText('会话参数')).toHaveTextContent('new-session')
+  })
+
+  it('声明式重定向完成后不重复解析同一目标', async () => {
+    const rootRoute = createRootRoute({ component: () => <Outlet /> })
+    const sourceRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/source',
+      component: () => <Navigate to="/target" replace />,
+    })
+    const targetRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/target',
+      component: () => <div>目标页面</div>,
+    })
+    const testRouter = createRouter({
+      routeTree: rootRoute.addChildren([sourceRoute, targetRoute]),
+      history: createMemoryHistory({ initialEntries: ['/source'] }),
+    })
+    let resolvedCount = 0
+    const unsubscribe = testRouter.subscribe('onResolved', () => {
+      resolvedCount += 1
+    })
+
+    render(<RouterProvider router={testRouter} />)
+
+    expect(await screen.findByText('目标页面')).toBeInTheDocument()
+    await new Promise((resolve) => window.setTimeout(resolve, 50))
+    unsubscribe()
+    expect(resolvedCount).toBeLessThanOrEqual(2)
   })
 })
