@@ -743,6 +743,7 @@ git commit -m "[Type] 变更描述"
 - **PowerShell rg 引号解析**: 复杂正则中混用单双引号会在执行前被 PowerShell 误解析；拆分为固定关键词检查，或先在脚本文件中定义模式再执行。
 - **resolve_max_tool_call_rounds**: 定义在 `executor.py`，`agent.py` 通过 import 引用同一函数，不可重复定义
 - **ExecutionLayer 必须保持薄兼容门面**：`core/executor.py` 不得超过 420 行，直接方法不得超过 40 行；配置、模型调用、工具执行和步骤执行分别由 `execution_configuration.py`、`execution_model_runtime.py`、`execution_tool_runtime.py`、`execution_step_runtime.py` 承担，协作者禁止反向 import `core.executor`。修改执行链后必须运行 `tests/test_executor_facade_architecture.py`
+- **TanStack Router 根路径只能有一个重定向权威**：`RootGuard` 负责认证状态与默认落点；`/` 索引路由只能建立有效匹配并返回 `null`，禁止再声明 `/ -> /chat` 重定向。否则未登录路径会在 `/login` 与 `/chat` 之间竞争，触发 `Router.Transitioner` 无限更新并使 Vitest worker OOM。修改根路由后必须运行 `src/__tests__/router/RouteGuards.test.tsx`、`src/__tests__/App.test.tsx` 与入口测试。
 - **RBAC 通配符**: `check_permission` 支持 `skill:*` 匹配 `skill:read`，`*` 仅在同段数下生效
 - **登录限流**: 通过 `RateLimitStore` 抽象层管理，`DatabaseRateLimitStore` 使用 `time.time()`（跨 worker 一致），`MemoryRateLimitStore` 使用 `time.monotonic()`（单进程不受时钟跳变影响）
 - **模型参数 or 陷阱**: `getattr(config, "retry_count", 3) or 3` 会将 `0` 误判为未设置，必须使用 `is not None` 检查

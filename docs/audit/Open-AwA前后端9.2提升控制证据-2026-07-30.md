@@ -61,10 +61,10 @@
 
 | 控制 | 状态 | 证据 | 缺口 | 责任模块 |
 | --- | --- | --- | --- | --- |
-| 前端 API 领域拆分 | 通过 | `api.ts` 保持薄聚合，领域模块独立；lint 0 error、生产构建成功、Vitest 97/97 文件和 635/635 项通过 | 无 | `frontend/src/shared/api` |
+| 前端 API 与路由边界 | 通过 | `api.ts` 保持薄聚合，领域模块独立；路由迁移到 TanStack Router 并保留兼容适配层；lint 0 error、0 warning，生产构建成功，Vitest 106/106 文件和 647/647 项通过 | 无 | `frontend/src/shared/api`、`frontend/src/router` |
 | Zustand equality API 迁移 | 通过 | 9 个实际使用 equalityFn 的 store 均改用 `createWithEqualityFn`；专门回归测试通过；浏览器无弃用警告 | 无 | 前端 store |
 | 取消请求与权限 SSE 认证生命周期 | 通过 | Axios 取消与 `AbortError` 回归测试；API Key 登录会在发布认证状态前等待 CSRF 初始化；2 个新增单测先红后绿；真实 Chromium 观察到 ticket 请求同时携带 Authorization、X-CSRF-Token、CSRF Cookie 并返回 200 | EventSource 本身仍需保留卸载 abort 与重连上限 | API client / auth bootstrap |
-| 后端执行层拆分 | 部分通过 | 提示构建已移至 `execution_prompt_builder.py`，定向 52 项通过；`executor.py` 从 3158 行降至约 2630 行 | 仍是过大的兼容门面，流、模型和工具职责尚未全部委托 | `backend/core/executor.py` |
+| 后端执行层拆分 | 通过 | `executor.py` 从 2614 行收敛为 95 行薄兼容门面；配置、模型、工具与步骤执行分别委托给四个单一职责协作者；AST 架构门禁 3/3，直接依赖执行器与 Agent 的组合 177 项通过 | 禁止协作者反向 import `core.executor`，由架构门禁持续防回流 | `backend/core/executor.py` |
 | 插件热更新单一权威 | 通过 | `PluginManager._runtime_routes` 已变为 `HotUpdateManager.runtime_routes` 的委托属性；重启恢复与状态权威测试通过；插件组合 136 项通过 | 继续禁止在 `PluginManager` 恢复第二个状态容器 | 插件系统 |
 | 命令硬阻断单一来源 | 通过 | 新增 `security.command_hard_block`；ACP、Sandbox、内置终端与终端 API 均委托；安全、终端、SSE/WebSocket 共 108 测试通过 | 更广泛的审批型危险命令仍由各入口按职责处理 | 安全系统 |
 | Agent 退避与工具预算有界 | 通过 | RED 复现抖动使 30 秒上限膨胀至 45 秒，修复后最终延迟不超过上限；工具历史预算按模型输入窗口四分之一动态计算；Agent 组合 58 项通过 | 单次工具事件仍有固定展示截断上限，但不替代总上下文预算 | Agent 执行链 |
@@ -72,12 +72,12 @@
 | 记忆去重阈值配置化 | 通过 | 配置已注入，记忆组合 276 项通过 | live chat 首次初始化与长会话尾延迟仍需独立运行证据 | 记忆系统 |
 | Provider 凭据生命周期 | 通过 | 独立凭据硬删除和完整明文读取测试通过；计费、认证、唯一性与端点解析 66 项通过；真实设置页完成显示、删除和后端 404 复核 | 使用隔离伪密钥，未触碰真实凭据 | 计费与设置页 |
 | 显式工作目录沙箱边界 | 通过 | 修复项目级可编辑白名单放宽显式 `working_dir` 的问题；沙箱组合 90 项通过、2 项跳过 | 跳过项保持平台依赖说明 | `backend/security/sandbox.py` |
-| 核心浏览器工作流 | 通过 | 全新隔离服务完成 owner 初始化；non-stream 返回结构化终态；SSE 透传 status、plan、error、DONE；真实 Chromium WebSocket 接受 bearer 子协议并收到 `response_chunk` 与 `response` | 真实模型成功回复仍依赖有效 provider 凭证 | Web 客户端 |
-| 页面语义与真实 axe | 通过 | Chat 会话项已改为同级原生控件；全新 Chromium 中 Chat、Dashboard、Settings 无 serious/critical WCAG 2.2 AA 违规；认证 ticket 同时携带 Authorization、CSRF header/Cookie | 后续页面变更必须持续执行同一门禁 | 公共布局与 Chat 历史侧栏 |
+| 核心浏览器工作流 | 通过 | 全新隔离服务完成 owner 初始化、登录/登出和路由守卫；non-stream、SSE、WebSocket 三传输通过；97 项真实 Chromium 门禁全绿，4 个视口下 Chat、Settings、Dashboard、Plugins、Billing 的页面运行时错误为 0 | 真实模型成功回复仍依赖有效 provider 凭证 | Web 客户端 |
+| 页面语义与真实 axe | 通过 | Chat、Dashboard、Settings 在全新 Chromium 中无 serious/critical WCAG 2.2 AA 违规；认证 ticket 同时携带 Authorization、CSRF header/Cookie；4 个视口下核心页面无水平溢出 | 插件管理页仍记录部分小于 44px 的非阻断触摸目标，继续保留为 UI 预算项 | 公共布局与核心页面 |
 | 成熟组件与冗余退场 | 通过 | 生产只有一个 `AsyncScheduler`；无消费者 `scheduler` 扩展点、Bilibili 私有第二调度器、公开 `trigger` schema、`data.collector` 生命周期占位和预压缩构建副本已物理退役 | 继续由防回流测试阻止旧类型、旧文件和第二权威恢复 | 后端调度 / 插件扩展 / 生命周期 |
 | Agent 单一协调器 | 通过 | `AgentTurnCoordinator` 不再按中文关键词分类或正则抽取实体；旧 `ComprehensionLayer`、`PlanningLayer` 文件、构造和专属测试已删除；Agent 组合 121 项、三传输 4 项通过 | 真实 provider 成功质量与尾延迟仍待有效凭证 | Agent 执行链 |
-| 前端全量测试稳定性 | 通过 | 构造器 mock 已改为 class；目标 3/3；首轮全量出现一次并发型 5 秒瞬态，目标单测 1/1 后第二轮全量 97/97 文件、635/635 项通过 | 保留并发型瞬态为测试稳定性观察项，不通过放宽断言掩盖 | 前端测试 |
-| 供应链发布门禁 | 部分通过 | `npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org` 退出 0，发布依赖为 0 high、2 moderate；完整工具链仍为 4 high、2 moderate，4 high 仅来自读取可信 localhost schema 的 OpenAPI 开发生成器链 | 生成器上游当前只给出破坏性的 7.13→6.7 降级；React Router 7 是 breaking migration。两者进入隔离例外，不能按 10 分计 | 前端工具链 |
+| 前端全量测试稳定性 | 通过 | 根路径双重重定向最小复现曾产生 52 个无限更新错误并使 worker 增长至约 4 GB；RootGuard 收敛为唯一重定向权威后，106/106 文件、647/647 项通过，无 OOM、无限更新或未处理错误 | 保留根索引结构门禁，禁止重新引入第二个根重定向 | 前端测试与路由 |
+| 供应链发布门禁 | 通过 | 完整 `npm audit --audit-level=moderate --registry=https://registry.npmjs.org` 返回 0 vulnerabilities；旧路由包、开发生成器漏洞链及其传递依赖已从 lockfile 移除 | 后续依赖或 lockfile 变化必须重新执行完整审计 | 前端工具链 |
 
 ## 2026-08-01 最终复评分
 
@@ -118,14 +118,45 @@
 - 既有 8000 用户服务始终未停止；未修改或替换 `var/data/openawa.db`、WAL、SHM 与真实凭据。
 - 生产发布依赖审计的既有证据仍为 0 high、2 moderate；完整工具链 4 high、2 moderate 继续按开发生成器隔离例外处理，未执行破坏性强制修复。
 
+## 2026-08-02 增量复评与最终验收
+
+本轮关闭了 2026-08-01 复评中两个最大的可控例外：后端执行器兼容门面和前端完整工具链漏洞；同时清零静态分析告警并修复前端入口测试 OOM。分数仍只计入当前可复现证据，不把缺少 provider 凭证时的结构化错误算作真实模型成功。
+
+| 维度 | 2026-08-01 | 2026-08-02 | 新证据或剩余限制 |
+| --- | ---: | ---: | --- |
+| 后端架构设计 | 9.0 | 9.5 | `executor.py` 为 95 行薄门面，四类职责由独立协作者承担，AST 防回流门禁 3/3 |
+| 前端架构设计 | 9.2 | 9.5 | 领域 API 保持薄聚合；路由迁移到成熟路由器并保留兼容层；根路径只有一个重定向权威 |
+| Agent 核心能力 | 9.2 | 9.2 | 单一协调器和三传输继续通过；真实 provider 成功质量仍待凭证 |
+| 记忆系统 | 9.4 | 9.4 | 既有去重与隔离证据保持；live chat 尾延迟未新增长期证据 |
+| 插件系统 | 9.2 | 9.2 | 单一热更新与调度权威保持，未恢复已退役冗余 |
+| ACP 协议集成 | 9.2 | 9.2 | 最小环境与协议降级证据保持 |
+| 安全体系 | 9.5 | 9.5 | 共享硬阻断、CSRF、Origin、隔离目录和凭据边界保持 |
+| 计费系统 | 9.2 | 9.2 | Provider 凭据生命周期证据保持 |
+| 测试质量 | 9.3 | 9.5 | 后端 4417 passed、7 skipped；前端 647/647；真实 Chromium 97/97；run-all 9/10，唯一失败为隔离环境缺少模型凭证 |
+| 文档完整性 | 9.2 | 9.3 | 历史基线、控制证据、关闭项、阻塞项和当前验证结果已互相链接 |
+| UI/UX 设计 | 9.2 | 9.2 | 多视口核心页面通过；插件管理页仍有小于 44px 的触摸目标观察项 |
+| 可访问性 | 9.2 | 9.4 | Chat、Dashboard、Settings 的 serious/critical WCAG 2.2 AA 违规为 0，多视口页面错误为 0 |
+| 性能与稳定性 | 9.2 | 9.4 | 修复根路由无限更新和约 4 GB OOM；全量 Vitest 23.52 秒完成；大分块和长期运行仍是观察项 |
+| 代码质量 | 9.1 | 9.6 | 执行器薄门面、ESLint 53 降至 0、无新增 `any`/规则降级/suppression，`git diff --check` 通过 |
+| 实战用户体验 | 9.3 | 9.4 | 初始化、认证、守卫、核心页面、三传输和移动视口真实通过；真实模型成功回复仍待有效凭证 |
+| **综合加权** | **9.24** | **9.36** | 按原报告 15 维权重计算为 9.358；真实 provider、长稳证据、触摸目标和大分块继续阻断 10 分 |
+
+本轮实时验证证据：
+
+- 后端执行器架构门禁 `3 passed`；后端代码在执行器提交后未再变化，既有 8 组全量证据为 4417 passed、7 skipped、0 failed。
+- `npm run lint` 为 0 error、0 warning；`npm run typecheck`、`npm run build` 均通过；完整 `npm audit --audit-level=moderate` 为 0 vulnerabilities。
+- 前端全量为 106 个测试文件、647 项测试全部通过；原 OOM 的 `main.test.tsx` 与 `App.a11y.test.tsx` 独立通过。
+- 隔离后端 `18088` 与前端 `15181` 上真实 Chromium 97/97：首次初始化、认证与守卫、non-stream、SSE、WebSocket、CSRF、axe、多视口页面错误和水平溢出门禁全部通过。
+- 内置 `run-all` 在另一全新隔离实例中为 9/10；唯一失败为 `chat-nonstream` 的 `llm_api_key_missing`，其余 9 个服务、诊断与生命周期场景通过。该结果保留为外部凭据阻塞，不伪造成功。
+- 用户服务端口 `8000` 全程保持停止；隔离端口 `18088/15181/18090/15183` 均在测试后释放，未修改或替换 `var/data/openawa.db`、WAL、SHM、向量库与真实凭据。
+
 ## 例外登记
 
 | 例外 | 剩余风险 | 补偿控制 | 接受权限 | 到期时间 | 刷新触发 |
 | --- | --- | --- | --- | --- | --- |
 | 真实模型调用依赖有效 provider 凭证 | 无法证明真实 LLM 回复质量和尾延迟 | 验证无凭证错误路径、SSE 协议与取消；有凭证时必须补跑真实对话 | 项目所有者 | 2026-08-06 | 检测到可调用 provider 或凭证变化 |
-| 后端执行层仍偏大 | `executor.py` 约 2630 行，后端架构和代码质量不能按满分计 | 保持兼容门面并继续纯移动式委托，不在拆分时改变业务语义 | 后端架构门禁 | 2026-08-04 | 核心执行链变更 |
-| 前端完整工具链 4 high、2 moderate | 4 high 为开发期生成器 DoS 链，2 moderate 为 React Router 6；生产发布依赖没有 high | 发布安装 omits dev 并以 high 为失败阈值；生成器只读取可信 localhost schema；不做破坏性降级或 `audit fix --force` | 供应链门禁 | 2026-08-04 | lockfile、生成器或路由器变更 |
 | Vite 大块与 TTS 混合导入警告 | 仍有大于 300 kB 的 Markdown、Recharts、Terminal 等分块 | 生产构建成功；压缩由 Nginx 在线处理；后续单独做分块预算治理 | 前端性能门禁 | 2026-08-05 | bundler 配置或依赖变化 |
+| 移动端插件管理触摸目标预算 | 真实 Chromium 在 `/plugins/manage` 记录 32 个小于 44px 的候选目标，其中包含侧栏项和图标按钮 | 页面无水平溢出、关键 UI 可见且自动化门禁通过；后续单独收紧触摸目标断言并修复候选控件 | 前端 UI 门禁 | 2026-08-06 | 移动布局或导航变更 |
 | 后端第 5 测试组偏慢 | 该组 703 项耗时约 400 秒，拖慢反馈 | 保留全量通过结果；单独分析慢测试，不通过放宽业务超时或限流语义提速 | 后端测试门禁 | 2026-08-04 | 测试配置、限流或慢场景变更 |
 
 ## 证据包目录
