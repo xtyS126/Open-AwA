@@ -120,7 +120,7 @@ export function useSubagentSync({
         merge_with_last_assistant: true,
       },
     })
-  }, [])
+  }, [handleSendRef])
 
   /** 聚合已完成的子代理输出，触发续写 */
   const aggregateSubagentOutputs = useCallback(async (
@@ -215,7 +215,7 @@ export function useSubagentSync({
       }
       void aggregateSubagentOutputsRef.current(assistantMessageId, pendingSubagents)
     }, 80)
-  }, [clearSubagentAggregationTimer])
+  }, [clearSubagentAggregationTimer, messageMetaRef])
 
   /** 安排子代理超时检测，超时后标记失败并触发聚合 */
   const scheduleSubagentTimeout = useCallback((assistantMessageId: string, agentId: string, agentType?: string) => {

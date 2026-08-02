@@ -2,8 +2,9 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useWechatConfig } from '../useWechatConfig'
 import { weixinAPI } from '@/shared/api/api'
+import type { WeixinAutoReplyRule } from '@/shared/api/api'
 
-// Mock weixinAPI
+// 模拟微信 API
 vi.mock('@/shared/api/api', () => ({
   weixinAPI: {
     getConfig: vi.fn(),
@@ -29,7 +30,7 @@ vi.mock('@/shared/api/api', () => ({
   }
 }))
 
-// Mock appLogger
+// 模拟应用日志器
 vi.mock('@/shared/utils/logger', () => ({
   appLogger: {
     info: vi.fn(),
@@ -38,9 +39,22 @@ vi.mock('@/shared/utils/logger', () => ({
   }
 }))
 
-// Mock URL.createObjectURL
+// 模拟对象 URL 接口
 global.URL.createObjectURL = vi.fn()
 global.URL.revokeObjectURL = vi.fn()
+
+const mockRule: WeixinAutoReplyRule = {
+  id: 1,
+  user_id: 'test-user',
+  rule_name: '测试规则',
+  match_type: 'keyword',
+  match_pattern: 'hello',
+  reply_content: 'hi',
+  is_active: true,
+  priority: 0,
+  created_at: '2026-08-02T00:00:00Z',
+  updated_at: '2026-08-02T00:00:00Z',
+}
 
 describe('useWechatConfig', () => {
   beforeEach(() => {
@@ -173,7 +187,7 @@ describe('useWechatConfig', () => {
     })
 
     await act(async () => {
-      await result.current.handleSaveWeixinConfig({ preventDefault: vi.fn() } as any)
+      await result.current.handleSaveWeixinConfig()
     })
 
     expect(weixinAPI.saveConfig).toHaveBeenCalled()
@@ -208,7 +222,7 @@ describe('useWechatConfig', () => {
   })
 
   it('should handle save rules', async () => {
-    vi.mocked(weixinAPI.createRule).mockResolvedValue({ data: { id: 1 } } as any)
+    vi.mocked(weixinAPI.createRule).mockResolvedValue({ data: mockRule })
     const { result } = renderHook(() => useWechatConfig())
     await waitFor(() => {
       expect(result.current.loadingWeixin).toBe(false)
@@ -273,14 +287,14 @@ describe('useWechatConfig', () => {
   })
 
   it('should handle toggle rule active', async () => {
-    vi.mocked(weixinAPI.updateRule).mockResolvedValue({ data: { id: 1 } } as any)
+    vi.mocked(weixinAPI.updateRule).mockResolvedValue({ data: mockRule })
     const { result } = renderHook(() => useWechatConfig())
     await waitFor(() => {
       expect(result.current.loadingWeixin).toBe(false)
     })
 
     await act(async () => {
-      await result.current.handleToggleRuleActive({ id: 1, is_active: true } as any)
+      await result.current.handleToggleRuleActive(mockRule)
     })
 
     expect(weixinAPI.updateRule).toHaveBeenCalledWith(1, { is_active: false })
@@ -288,7 +302,7 @@ describe('useWechatConfig', () => {
 
   it('should handle restore default rules', async () => {
     window.confirm = vi.fn().mockReturnValue(true)
-    vi.mocked(weixinAPI.createRule).mockResolvedValue({ data: { id: 1 } } as any)
+    vi.mocked(weixinAPI.createRule).mockResolvedValue({ data: mockRule })
     const { result } = renderHook(() => useWechatConfig())
     await waitFor(() => {
       expect(result.current.loadingWeixin).toBe(false)
@@ -327,36 +341,36 @@ describe('useWechatConfig', () => {
       expect(result.current.loadingWeixin).toBe(false)
     })
 
-    // Set invalid base URL
+    // 设置无效的基础地址
     await act(async () => {
       result.current.setWeixinConfig(prev => ({ ...prev, base_url: 'invalid-url' }))
     })
     
-    // Save should fail validation
+    // 保存操作应被校验拒绝
     await act(async () => {
-      await result.current.handleSaveWeixinConfig({ preventDefault: vi.fn() } as any)
+      await result.current.handleSaveWeixinConfig()
     })
     
     expect(result.current.message?.text).toContain('Base URL 必须以 http:// 或 https:// 开头')
 
-    // Set valid but missing account_id
+    // 设置有效地址但缺少账号标识
     await act(async () => {
       result.current.setWeixinConfig(prev => ({ ...prev, base_url: 'http://test.com', account_id: '' }))
     })
     
     await act(async () => {
-      await result.current.handleSaveWeixinConfig({ preventDefault: vi.fn() } as any)
+      await result.current.handleSaveWeixinConfig()
     })
     
     expect(result.current.message?.text).toContain('微信配置不完整，account_id 和 token 为必填项')
 
-    // Set invalid timeout
+    // 设置无效超时时间
     await act(async () => {
       result.current.setWeixinConfig(prev => ({ ...prev, account_id: 'test', timeout_seconds: 0 }))
     })
 
     await act(async () => {
-      await result.current.handleSaveWeixinConfig({ preventDefault: vi.fn() } as any)
+      await result.current.handleSaveWeixinConfig()
     })
     
     expect(result.current.message?.text).toContain('超时时间必须是大于 0 的整数')
@@ -384,7 +398,7 @@ describe('useWechatConfig', () => {
     })
 
     await act(async () => {
-      await result.current.handleSaveWeixinConfig({ preventDefault: vi.fn() } as any)
+      await result.current.handleSaveWeixinConfig()
     })
 
     expect(result.current.message?.text).toBe('微信通讯配置保存失败')

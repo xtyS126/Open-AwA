@@ -65,7 +65,7 @@ export default function PluginCommandSelector({
       )
       if (found) onSelect(found)
     }
-  }, [selectedPluginName, selectedCommandName, commands])
+  }, [selectedPluginName, selectedCommandName, commands, onSelect])
 
   // 按插件分组命令
   const grouped = useCallback(() => {

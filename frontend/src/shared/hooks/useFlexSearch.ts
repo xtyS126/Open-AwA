@@ -6,7 +6,7 @@
  * 作者: nextapps-de/Thomas Wilkerling
  * 许可: Apache-2.0
  */
-import { useRef, useCallback, useState } from 'react'
+import { useRef, useCallback, useMemo, useState } from 'react'
 
 /* FlexSearch实例类型（动态导入以避免构建依赖） */
 interface FlexSearchIndex {
@@ -229,7 +229,12 @@ export function useFlexSearch(
   const [docCount, setDocCount] = useState(0)
   const [isReady, setIsReady] = useState(false)
 
-  const tokenize = options.tokenize || (options.cjk !== false ? chineseTokenizer : (text: string) => text.toLowerCase().split(/\s+/))
+  const tokenize = useMemo(
+    () => options.tokenize || (options.cjk !== false
+      ? chineseTokenizer
+      : (text: string) => text.toLowerCase().split(/\s+/)),
+    [options.tokenize, options.cjk]
+  )
 
   const init = useCallback(async () => {
     if (indexRef.current) return

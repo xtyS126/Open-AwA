@@ -1,7 +1,7 @@
 /**
  * 工作区管理页面 — 多智能体工作区的创建、切换和管理。
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { shallow } from 'zustand/shallow';
 import { useWorkspaceStore, type Workspace } from './store/workspaceStore';
 import { workspaceApi } from './workspaceApi';
@@ -38,7 +38,7 @@ const WorkspacePage: React.FC = () => {
   const [createType, setCreateType] = useState('default');
   const [error, setError] = useState('');
 
-  const loadWorkspaces = async () => {
+  const loadWorkspaces = useCallback(async () => {
     try {
       setLoading(true);
       const data = await workspaceApi.list();
@@ -48,11 +48,11 @@ const WorkspacePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setWorkspaces]);
 
   useEffect(() => {
     loadWorkspaces();
-  }, []);
+  }, [loadWorkspaces]);
 
   const handleCreate = async () => {
     if (!createName.trim()) {

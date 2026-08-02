@@ -2,7 +2,6 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MessageList } from '@/features/chat/components/MessageList'
-import { useI18nStore } from '@/i18n'
 import type { ChatMessage as ChatMessageType } from '@/features/chat/types'
 
 vi.mock('@/i18n', () => ({
@@ -21,7 +20,9 @@ function createI18nStoreMock() {
     }
   }
   // 支持选择器模式 useI18nStore(s => s.t) 和全量订阅 useI18nStore()
-  const mockFn: any = (selector?: (s: typeof store) => unknown) => selector ? selector(store) : store
+  const mockFn = (selector?: (state: typeof store) => unknown): unknown => (
+    selector ? selector(store) : store
+  )
   return mockFn
 }
 
@@ -32,11 +33,23 @@ import React from 'react'
 vi.mock('react-virtuoso', async () => {
   // 使用 vi.importActual 获取真实的 react 模块，避免使用被禁止的 require() 语法
   const ReactMock = await vi.importActual<typeof import('react')>('react')
-  const VirtuosoMock = ReactMock.forwardRef(({ data, itemContent, components }: any, ref: any) => {
+  interface MockVirtuosoProps {
+    data?: ChatMessageType[]
+    itemContent?: (index: number, item: ChatMessageType) => React.ReactNode
+    components?: {
+      Footer?: React.ComponentType
+    }
+  }
+
+  const VirtuosoMock = ReactMock.forwardRef<HTMLDivElement, MockVirtuosoProps>(({
+    data = [],
+    itemContent = () => null,
+    components,
+  }, ref) => {
     const Footer = components?.Footer || (() => null)
     return (
       <div data-testid="mock-virtuoso" ref={ref}>
-        {data.map((item: any, index: number) => (
+        {data.map((item, index) => (
           <div key={index} data-testid={`virtuoso-item-${index}`}>
             {itemContent(index, item)}
           </div>

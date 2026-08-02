@@ -51,7 +51,7 @@ export default function TaskParameterPanel({
     if (Object.keys(defaults).length > 0) {
       setValues((prev) => ({ ...defaults, ...prev }))
     }
-  }, [parameters, initialValues])
+  }, [fields, initialValues])
 
   const handleChange = (key: string, value: unknown) => {
     const next = { ...values, [key]: value }

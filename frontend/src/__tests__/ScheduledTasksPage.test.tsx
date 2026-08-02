@@ -2,11 +2,11 @@
  * ScheduledTasksPage 测试套件 — 定时任务管理页面的渲染和交互测试
  */
 import '@testing-library/jest-dom/vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import ScheduledTasksPage from '@/features/scheduledTasks/ScheduledTasksPage'
 import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
-import type { ScheduledTask, ScheduledTaskExecution } from '@/shared/api/api'
+import type { ScheduledTask } from '@/shared/api/api'
 
 const { getAllMock, getExecutionsMock } = vi.hoisted(() => ({
   getAllMock: vi.fn(),
@@ -81,10 +81,6 @@ function createMockTask(overrides: Partial<ScheduledTask> = {}): ScheduledTask {
     daily_time: null,
     ...overrides,
   }
-}
-
-function createEmptyExecutions(): ScheduledTaskExecution[] {
-  return []
 }
 
 describe('ScheduledTasksPage', () => {

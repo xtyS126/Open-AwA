@@ -116,8 +116,6 @@ describe('PermissionDialog', () => {
       />
     )
 
-    // 点击 overlay 关闭
-    const overlay = screen.getByText('权限请求').closest('div')
     // 寻找 overlay (最外层 div)
     const dialog = document.querySelector('[class*="overlay"]')
     if (dialog) {

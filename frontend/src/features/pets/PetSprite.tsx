@@ -185,7 +185,6 @@ export default function PetSprite({
 
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canDraw, imageStatus, pet.id, pet.frame_width, pet.frame_height, pet.columns, pet.animations, animationName, scale, prefersReducedMotion])
 
   const showOverlay = !canDraw || imageStatus !== 'ready'

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import WechatConfigModule from '../WechatConfigModule'
 import { useWechatConfig } from '../useWechatConfig'
@@ -16,12 +16,14 @@ vi.mock('../WechatMultimediaPanel', () => ({
   default: () => null,
 }))
 
-// Mock the hook
+// 模拟配置 Hook
 vi.mock('../useWechatConfig', () => ({
   useWechatConfig: vi.fn()
 }))
 
-const mockHookReturn = {
+type WechatConfigHookReturn = ReturnType<typeof useWechatConfig>
+
+const mockHookReturn: WechatConfigHookReturn = {
   message: null,
   weixinConfig: { account_id: 'test', token: 'token' },
   setWeixinConfig: vi.fn(),
@@ -55,6 +57,8 @@ const mockHookReturn = {
   setEditBotType: vi.fn(),
   editChannelVersion: '',
   setEditChannelVersion: vi.fn(),
+  editAutoStartReply: false,
+  setEditAutoStartReply: vi.fn(),
   savingParams: false,
   rules: [],
   loadingRules: false,
@@ -98,7 +102,7 @@ const mockHookReturn = {
 describe('WechatConfigModule', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(useWechatConfig).mockReturnValue(mockHookReturn as any)
+    vi.mocked(useWechatConfig).mockReturnValue(mockHookReturn)
   })
 
   it('renders without crashing', () => {
@@ -129,7 +133,7 @@ describe('WechatConfigModule', () => {
       loadingBinding: true,
       loadingAutoReplyStatus: true,
       loadingRules: true
-    } as any)
+    })
     render(<WechatConfigModule />)
     expect(screen.getByText('加载配置中...')).toBeInTheDocument()
   })
@@ -137,7 +141,7 @@ describe('WechatConfigModule', () => {
   it('handles edit and save rule', () => {
     render(<WechatConfigModule />)
     
-    // Check if adding new rule works
+    // 验证新增规则入口可用
     const addBtn = screen.getByText('添加规则')
     fireEvent.click(addBtn)
     expect(mockHookReturn.setEditingRule).toHaveBeenCalled()
@@ -149,7 +153,7 @@ describe('WechatConfigModule', () => {
       currentBindingStatus: 'unbound',
       qrStatus: 'waiting',
       qrCodeUrl: 'http://test-qr'
-    } as any)
+    })
     render(<WechatConfigModule />)
     
     expect(screen.getByText('获取登录二维码')).toBeInTheDocument()
@@ -162,7 +166,7 @@ describe('WechatConfigModule', () => {
       autoReplyStatus: { auto_reply_running: true, binding_ready: true },
       canStartAutoReply: false,
       canStopAutoReply: true
-    } as any)
+    })
     
     render(<WechatConfigModule />)
     

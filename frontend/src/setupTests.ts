@@ -9,29 +9,29 @@ useI18nStore.setState({ locale: 'zh-CN' })
 if (typeof indexedDB === 'undefined') {
   // idb 库引用了这些全局类，须在 indexedDB 之前定义
   class MockIDBRequest extends EventTarget {
-    result: any = undefined
+    result: unknown = undefined
     error: DOMException | null = null
-    source: any = null
-    transaction: any = null
+    source: IDBObjectStore | IDBIndex | IDBCursor | null = null
+    transaction: IDBTransaction | null = null
     readyState = 'done'
-    onsuccess: ((this: any, ev: Event) => any) | null = null
-    onerror: ((this: any, ev: Event) => any) | null = null
-    onblocked: ((this: any, ev: Event) => any) | null = null
+    onsuccess: ((this: MockIDBRequest, event: Event) => unknown) | null = null
+    onerror: ((this: MockIDBRequest, event: Event) => unknown) | null = null
+    onblocked: ((this: MockIDBRequest, event: Event) => unknown) | null = null
   }
-  ;(globalThis as any).IDBRequest = MockIDBRequest
-  ;(globalThis as any).IDBOpenDBRequest = MockIDBRequest
-  ;(globalThis as any).IDBDatabase = class MockIDBDatabase extends EventTarget {}
-  ;(globalThis as any).IDBTransaction = class MockIDBTransaction extends EventTarget {}
-  ;(globalThis as any).IDBObjectStore = class MockIDBObjectStore {}
-  ;(globalThis as any).IDBIndex = class MockIDBIndex {}
-  ;(globalThis as any).IDBKeyRange = class MockIDBKeyRange {
+  globalThis.IDBRequest = MockIDBRequest as unknown as typeof IDBRequest
+  globalThis.IDBOpenDBRequest = MockIDBRequest as unknown as typeof IDBOpenDBRequest
+  globalThis.IDBDatabase = class MockIDBDatabase extends EventTarget {} as unknown as typeof IDBDatabase
+  globalThis.IDBTransaction = class MockIDBTransaction extends EventTarget {} as unknown as typeof IDBTransaction
+  globalThis.IDBObjectStore = class MockIDBObjectStore {} as unknown as typeof IDBObjectStore
+  globalThis.IDBIndex = class MockIDBIndex {} as unknown as typeof IDBIndex
+  globalThis.IDBKeyRange = class MockIDBKeyRange {
     static only() { return {} }
     static lowerBound() { return {} }
     static upperBound() { return {} }
     static bound() { return {} }
-  }
-  ;(globalThis as any).IDBCursor = class MockIDBCursor {}
-  ;(globalThis as any).IDBCursorWithValue = class MockIDBCursorWithValue {}
+  } as unknown as typeof IDBKeyRange
+  globalThis.IDBCursor = class MockIDBCursor {} as unknown as typeof IDBCursor
+  globalThis.IDBCursorWithValue = class MockIDBCursorWithValue {} as unknown as typeof IDBCursorWithValue
 
   const idbRequestFail = () => {
     const request = new MockIDBRequest()
@@ -40,17 +40,17 @@ if (typeof indexedDB === 'undefined') {
       request.readyState = 'done'
       request.error = new DOMException('IndexedDB 在测试环境中不可用', 'UnknownError')
       if (request.onerror) {
-        request.onerror({ target: request, type: 'error' } as any)
+        request.onerror.call(request, new Event('error'))
       }
     }, 0)
     return request
   }
-  ;(globalThis as any).indexedDB = {
+  globalThis.indexedDB = {
     open: idbRequestFail,
     deleteDatabase: () => idbRequestFail(),
     cmp: () => 0,
     databases: () => Promise.resolve([]),
-  }
+  } as unknown as IDBFactory
 }
 
 if (!HTMLElement.prototype.scrollIntoView) {
@@ -65,7 +65,7 @@ if (!HTMLElement.prototype.scrollTo) {
 // jsdom 的 window.scrollTo 仅抛出未实现错误，路由滚动恢复测试需要稳定空实现。
 window.scrollTo = function() {}
 
-// Ensure a #root element exists for main.tsx bootstrap
+// 确保 main.tsx 启动时存在 #root 元素
 if (!document.getElementById('root')) {
   const root = document.createElement('div')
   root.id = 'root'

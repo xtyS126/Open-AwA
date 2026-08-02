@@ -137,7 +137,7 @@ function SkillsPage() {
     retry: false,
   })
 
-  const skills = skillsQuery.data ?? []
+  const skills = useMemo(() => skillsQuery.data ?? [], [skillsQuery.data])
   const loading = skillsQuery.isLoading
   const loadError = skillsQuery.error
     ? getErrorMessage(skillsQuery.error, '加载技能列表失败，请稍后重试')

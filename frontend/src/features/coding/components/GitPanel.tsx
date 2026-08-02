@@ -1,7 +1,7 @@
 /**
  * Git 面板组件 — 显示 Git 状态、更改和基本操作。
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { shallow } from 'zustand/shallow';
 import { useCodingStore } from '../store/codingStore';
 import { codingApi, type GitLogItem } from '../codingApi';
@@ -25,7 +25,7 @@ const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
   const [log, setLog] = useState<GitLogItem[]>([]);
   const [activeTab, setActiveTab] = useState<'changes' | 'log'>('changes');
 
-  const loadStatus = async () => {
+  const loadStatus = useCallback(async () => {
     try {
       setLoading(true);
       const status = await codingApi.gitStatus(projectDir || undefined);
@@ -46,11 +46,11 @@ const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectDir, setGitStatus]);
 
   useEffect(() => {
     loadStatus();
-  }, [projectDir]);
+  }, [loadStatus]);
 
   const handleCommit = async () => {
     if (!commitMsg.trim()) return;

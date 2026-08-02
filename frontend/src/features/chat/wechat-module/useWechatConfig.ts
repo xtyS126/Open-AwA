@@ -431,7 +431,7 @@ export function useWechatConfig() {
       clearQrPolling()
       clearQrImage()
     }
-  }, [loadWeixinConfig, loadBindingInfo, loadAutoReplyStatus, loadParamsConfig, clearQrPolling, clearQrImage])
+  }, [loadWeixinConfig, loadBindingInfo, loadAutoReplyStatus, loadParamsConfig, loadRules, clearQrPolling, clearQrImage])
 
   const handleUnbind = async () => {
     setUnbinding(true)
