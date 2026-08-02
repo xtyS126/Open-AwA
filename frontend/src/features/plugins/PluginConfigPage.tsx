@@ -1,5 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from '@/shared/routing'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import ConfirmDialog from '@/shared/components/ConfirmDialog/ConfirmDialog'
 import { useToast } from '@/shared/components/Toast'

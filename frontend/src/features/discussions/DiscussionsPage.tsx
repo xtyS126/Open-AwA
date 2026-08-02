@@ -10,7 +10,7 @@
  * 列表使用 useMemo 缓存排序结果。
  */
 import React, { useEffect, useMemo, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from '@/shared/routing'
 import { Plus, RefreshCw, MessagesSquare } from 'lucide-react'
 import { EmptyState, Button } from '@/shared/components/ui'
 import { useI18nStore } from '@/i18n'

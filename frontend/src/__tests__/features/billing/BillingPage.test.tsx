@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import BillingPage from '@/features/billing/BillingPage'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
 import { useAuthStore } from '@/shared/store/authStore'
 import { BILLING_USAGE_UPDATED_EVENT } from '@/shared/events/billingEvents'
 

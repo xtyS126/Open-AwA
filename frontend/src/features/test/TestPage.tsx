@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate, Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from '@/shared/routing'
 import {
   Activity, ShieldCheck, ShieldX, Server, Globe,
   RefreshCw, CheckCircle2, XCircle, AlertTriangle,

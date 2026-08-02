@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import UserCenterPage from '@/features/user/UserCenterPage'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
 import type { UserProfile, LoginDeviceItem } from '@/shared/api/api'
 
 const { getProfileMock, getDevicesMock, logoutMock } = vi.hoisted(() => ({

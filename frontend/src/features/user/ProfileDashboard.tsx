@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@/shared/routing'
 import {
   RefreshCw, Edit3, Download, Trash2, TrendingUp,
   PieChart, Clock, Activity, Loader2, Sparkles,

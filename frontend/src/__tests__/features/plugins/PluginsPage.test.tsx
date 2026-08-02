@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PluginsPage from '@/features/plugins/PluginsPage'
@@ -10,8 +10,8 @@ import { getPlugins, searchPlugins, installPlugin, getPluginRating } from '@/fea
 // 拦截 useNavigate，便于在内置插件"设置"按钮跳转测试中断言路由
 const mockNavigate = vi.fn()
 
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+vi.mock('@/shared/routing', async () => {
+  const actual = await vi.importActual<typeof import('@/shared/routing')>('@/shared/routing')
   return {
     ...actual,
     useNavigate: () => mockNavigate,

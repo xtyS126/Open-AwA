@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@/shared/routing'
 import { systemAPI } from '@/shared/api/api'
 import type { SystemInitRequest } from '@/shared/api/api'
 import { refreshInitCsrfToken } from '@/shared/api/client'

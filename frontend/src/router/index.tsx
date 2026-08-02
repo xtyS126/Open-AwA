@@ -1,10 +1,14 @@
 import React, { Suspense } from 'react'
-import { createBrowserRouter, Navigate } from 'react-router-dom'
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from '@tanstack/react-router'
+import { Navigate } from '@/shared/routing'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
 import { DevTestRoute, RootGuard } from './RouteGuards'
 
-// P2: 页面组件懒加载，减少主包体积
 const LoginPage = React.lazy(() => import('@/features/auth/LoginPage'))
 const SetupPage = React.lazy(() => import('@/features/setup/SetupPage'))
 const ChatPage = React.lazy(() => import('@/features/chat/ChatPage'))
@@ -33,112 +37,83 @@ const DiscussionsPage = React.lazy(() => import('@/features/discussions/Discussi
 const UserProfilePage = React.lazy(() => import('@/features/user-profile/UserProfilePage'))
 const PetsPage = React.lazy(() => import('@/features/pets/PetsPage'))
 
-// 统一的页面级 Suspense fallback：路由懒加载期间的占位骨架
-// 使用设计令牌保持与全局间距体系一致
-const PageSkeleton = () => (
-  <div
-    style={{
-      padding: 'var(--space-4)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 'var(--space-3)',
-    }}
-  >
-    <Skeleton.Paragraph lines={4} />
-  </div>
-)
-
-// 用 Suspense 包裹懒加载页面元素，提供统一的 PageSkeleton fallback
-// Suspense 置于 ErrorBoundary 内部：ErrorBoundary 仍可捕获页面渲染异常与 fallback 渲染异常
-const withSuspense = (element: React.ReactNode) => (
-  <Suspense fallback={<PageSkeleton />}>{element}</Suspense>
-)
-
-// React Router v7 迁移准备的 future flags
-// 全部启用以消除运行时弃用警告，并为后续升级到 React Router v7 做准备
-// 注意：v7_startTransition 属于 react-router FutureConfig，需通过 RouterProvider 的 future prop 传递，
-// 不能放在 createBrowserRouter 的 future 配置中（后者属于 @remix-run/router FutureConfig）。
-// 参考：https://reactrouter.com/v6/upgrading/future
-const routerFutureConfig = {
-  v7_relativeSplatPath: true,
-  // 表单 method 大小写归一化：将来 v7 默认行为
-  v7_normalizeFormMethod: true,
-  // fetcher 在 unmount 后仍保持挂载，避免 navigation 中断时丢失数据
-  v7_fetcherPersist: true,
-  // 路由 hydration 支持部分 hydration，减少首屏水量
-  v7_partialHydration: true,
-  // 跳过 loader 中的 action 重验证，减少重复请求
-  v7_skipActionErrorRevalidation: true,
+function PageSkeleton() {
+  return (
+    <div
+      style={{
+        padding: 'var(--space-4)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-3)',
+      }}
+    >
+      <Skeleton.Paragraph lines={4} />
+    </div>
+  )
 }
 
-// RouterProvider 级别的 v7 future flags（react-router FutureConfig）
-export const routerProviderFutureConfig = {
-  v7_startTransition: true,
+function withSuspense(element: React.ReactNode) {
+  return <Suspense fallback={<PageSkeleton />}>{element}</Suspense>
 }
 
-// 用 createBrowserRouter 定义路由表（data router API）
-// URL 结构与重构前完全一致，所有路由路径未变
-// 根路由 element 为 RootGuard，由其根据认证状态决定渲染 AppShell 或重定向
-//
-// P2 路由懒加载策略：
-// - 所有 page 组件采用 React.lazy 懒加载，缩减首屏 JS 体积
-// - 每个路由 element 用 Suspense + PageSkeleton 包裹，加载期间显示骨架屏
-// - 守卫组件（RootGuard/DevTestRoute）保留直接导入，确保首屏立即可用
-//
-// P2 hover prefetch（暂未启用）：如需在侧边栏菜单项 hover 时预加载对应 chunk，
-// 可在 Sidebar 菜单项上添加 onMouseEnter 回调触发对应页面模块的 import() 预加载，
-// 利用浏览器空闲时间提前下载，进一步降低首次导航延迟
-export const router = createBrowserRouter(
-  [
-    {
-      path: '/',
-      element: <RootGuard />,
-      children: [
-        // 已认证访问 / 时跳转到 /chat（在 RootGuard 中处理）
-        { index: true, element: <Navigate to="/chat" replace /> },
-        { path: 'login', element: <ErrorBoundary name="Login">{withSuspense(<LoginPage />)}</ErrorBoundary> },
-        // 首次部署初始化引导页（系统未初始化时 RootGuard 自动重定向到此）
-        { path: 'setup', element: <ErrorBoundary name="Setup">{withSuspense(<SetupPage />)}</ErrorBoundary> },
-        { path: 'chat', element: <ErrorBoundary name="Chat">{withSuspense(<ChatPage />)}</ErrorBoundary> },
-        { path: 'chat/:conversationId', element: <ErrorBoundary name="Chat">{withSuspense(<ChatPage />)}</ErrorBoundary> },
-        { path: 'dashboard', element: <ErrorBoundary name="Dashboard">{withSuspense(<DashboardPage />)}</ErrorBoundary> },
-        { path: 'settings', element: <ErrorBoundary name="Settings">{withSuspense(<SettingsPage />)}</ErrorBoundary> },
-        { path: 'skills', element: <ErrorBoundary name="Skills">{withSuspense(<SkillsPage />)}</ErrorBoundary> },
-        { path: 'skills/market', element: <ErrorBoundary name="SkillMarket">{withSuspense(<SkillMarketPage />)}</ErrorBoundary> },
-        { path: 'scheduled-tasks', element: <ErrorBoundary name="ScheduledTasks">{withSuspense(<ScheduledTasksPage />)}</ErrorBoundary> },
-        {
-          path: 'plugins',
-          children: [
-            { index: true, element: <Navigate to="manage" replace /> },
-            { path: 'manage', element: <ErrorBoundary name="Plugins">{withSuspense(<PluginsPage />)}</ErrorBoundary> },
-            { path: 'config/:pluginId', element: <ErrorBoundary name="PluginConfig">{withSuspense(<PluginConfigPage />)}</ErrorBoundary> },
-          ],
-        },
-        { path: 'memory', element: <ErrorBoundary name="Memory">{withSuspense(<MemoryPage />)}</ErrorBoundary> },
-        { path: 'experience', element: <ErrorBoundary name="Experience">{withSuspense(<ExperiencePage hideHeader />)}</ErrorBoundary> },
-        { path: 'billing', element: <ErrorBoundary name="Billing">{withSuspense(<BillingPage />)}</ErrorBoundary> },
-        { path: 'user', element: <ErrorBoundary name="UserCenter">{withSuspense(<UserCenterPage />)}</ErrorBoundary> },
-        { path: 'user-profile', element: <ErrorBoundary name="UserProfile">{withSuspense(<UserProfilePage />)}</ErrorBoundary> },
-        { path: 'dev/test', element: <ErrorBoundary name="Test"><DevTestRoute /></ErrorBoundary> },
-        { path: 'workspace', element: <ErrorBoundary name="Workspace">{withSuspense(<WorkspacePage />)}</ErrorBoundary> },
-        { path: 'coding', element: <ErrorBoundary name="Coding">{withSuspense(<CodingPage />)}</ErrorBoundary> },
-        { path: 'inbox', element: <ErrorBoundary name="Inbox">{withSuspense(<InboxPage />)}</ErrorBoundary> },
-        { path: 'roles', element: <ErrorBoundary name="Roles">{withSuspense(<RolesPage />)}</ErrorBoundary> },
-        { path: 'role-market', element: <ErrorBoundary name="RoleMarket">{withSuspense(<RoleMarketPage />)}</ErrorBoundary> },
-        { path: 'tts', element: <ErrorBoundary name="Tts">{withSuspense(<TtsPage />)}</ErrorBoundary> },
-        { path: 'im', element: <ErrorBoundary name="ImChannels">{withSuspense(<ImChannelsPage />)}</ErrorBoundary> },
-        { path: 'workflows', element: <ErrorBoundary name="Workflow">{withSuspense(<WorkflowPage />)}</ErrorBoundary> },
-        { path: 'subagents', element: <ErrorBoundary name="SubAgents">{withSuspense(<SubAgentPage />)}</ErrorBoundary> },
-        { path: 'vibe-coding', element: <ErrorBoundary name="VibeCoding">{withSuspense(<VibeCodingPage />)}</ErrorBoundary> },
-        { path: 'discussions', element: <ErrorBoundary name="Discussions">{withSuspense(<DiscussionsPage />)}</ErrorBoundary> },
-        { path: 'discussions/:id', element: <ErrorBoundary name="Discussions">{withSuspense(<DiscussionsPage />)}</ErrorBoundary> },
-        { path: 'pets', element: <ErrorBoundary name="Pets">{withSuspense(<PetsPage />)}</ErrorBoundary> },
-        // 兜底：未匹配路径重定向到 /chat（保持用户体验友好，URL 不变）
-        { path: '*', element: <Navigate to="/chat" replace /> },
-      ],
-    },
-  ],
-  {
-    future: routerFutureConfig,
-  },
-)
+function withPageBoundary(name: string, element: React.ReactNode) {
+  return <ErrorBoundary name={name}>{withSuspense(element)}</ErrorBoundary>
+}
+
+export interface AppRouteDefinition {
+  path: string
+  element: React.ReactElement
+}
+
+/**
+ * 集中声明稳定 URL 与页面元素，动态段使用 TanStack Router 的 $param 语法。
+ */
+export const routeDefinitions: AppRouteDefinition[] = [
+  { path: '/', element: <Navigate to="/chat" replace /> },
+  { path: '/login', element: withPageBoundary('Login', <LoginPage />) },
+  { path: '/setup', element: withPageBoundary('Setup', <SetupPage />) },
+  { path: '/chat', element: withPageBoundary('Chat', <ChatPage />) },
+  { path: '/chat/$conversationId', element: withPageBoundary('Chat', <ChatPage />) },
+  { path: '/dashboard', element: withPageBoundary('Dashboard', <DashboardPage />) },
+  { path: '/settings', element: withPageBoundary('Settings', <SettingsPage />) },
+  { path: '/skills', element: withPageBoundary('Skills', <SkillsPage />) },
+  { path: '/skills/market', element: withPageBoundary('SkillMarket', <SkillMarketPage />) },
+  { path: '/scheduled-tasks', element: withPageBoundary('ScheduledTasks', <ScheduledTasksPage />) },
+  { path: '/plugins', element: <Navigate to="/plugins/manage" replace /> },
+  { path: '/plugins/manage', element: withPageBoundary('Plugins', <PluginsPage />) },
+  { path: '/plugins/config/$pluginId', element: withPageBoundary('PluginConfig', <PluginConfigPage />) },
+  { path: '/memory', element: withPageBoundary('Memory', <MemoryPage />) },
+  { path: '/experience', element: withPageBoundary('Experience', <ExperiencePage hideHeader />) },
+  { path: '/billing', element: withPageBoundary('Billing', <BillingPage />) },
+  { path: '/user', element: withPageBoundary('UserCenter', <UserCenterPage />) },
+  { path: '/user-profile', element: withPageBoundary('UserProfile', <UserProfilePage />) },
+  { path: '/dev/test', element: <ErrorBoundary name="Test"><DevTestRoute /></ErrorBoundary> },
+  { path: '/workspace', element: withPageBoundary('Workspace', <WorkspacePage />) },
+  { path: '/coding', element: withPageBoundary('Coding', <CodingPage />) },
+  { path: '/inbox', element: withPageBoundary('Inbox', <InboxPage />) },
+  { path: '/roles', element: withPageBoundary('Roles', <RolesPage />) },
+  { path: '/role-market', element: withPageBoundary('RoleMarket', <RoleMarketPage />) },
+  { path: '/tts', element: withPageBoundary('Tts', <TtsPage />) },
+  { path: '/im', element: withPageBoundary('ImChannels', <ImChannelsPage />) },
+  { path: '/workflows', element: withPageBoundary('Workflow', <WorkflowPage />) },
+  { path: '/subagents', element: withPageBoundary('SubAgents', <SubAgentPage />) },
+  { path: '/vibe-coding', element: withPageBoundary('VibeCoding', <VibeCodingPage />) },
+  { path: '/discussions', element: withPageBoundary('Discussions', <DiscussionsPage />) },
+  { path: '/discussions/$id', element: withPageBoundary('Discussions', <DiscussionsPage />) },
+  { path: '/pets', element: withPageBoundary('Pets', <PetsPage />) },
+]
+
+const rootRoute = createRootRoute({
+  component: RootGuard,
+  notFoundComponent: () => <Navigate to="/chat" replace />,
+})
+
+const childRoutes = routeDefinitions.map(({ path, element }) => createRoute({
+  getParentRoute: () => rootRoute,
+  path,
+  component: () => element,
+}))
+
+const routeTree = rootRoute.addChildren(childRoutes)
+
+export const router = createRouter({ routeTree })

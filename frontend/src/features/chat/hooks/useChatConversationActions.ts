@@ -16,7 +16,7 @@
  * - 删除/批量删除前先计算 nextCandidate，避免 UI 空白
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@/shared/routing'
 import { chatAPI, conversationAPI } from '@/shared/api/api'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { appLogger } from '@/shared/utils/logger'

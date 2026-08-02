@@ -5,7 +5,7 @@ import legacy from '@vitejs/plugin-legacy'
 import { visualizer } from 'rollup-plugin-visualizer'
 
 const manualChunkGroups: Record<string, string[]> = {
-  react: ['react', 'react-dom', 'react-router-dom'],
+  react: ['react', 'react-dom', '@tanstack/react-router'],
   core: ['zustand', 'axios'],
   query: ['@tanstack/react-query'],
   virtuoso: ['react-virtuoso'],

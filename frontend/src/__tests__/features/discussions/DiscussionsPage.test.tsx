@@ -15,7 +15,10 @@
  */
 import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import {
+  RouterTestProvider as MemoryRouter,
+  renderWithRouter,
+} from '@/shared/routing/testing'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import DiscussionsPage from '@/features/discussions/DiscussionsPage'
 import { useDiscussionStore } from '@/features/discussions/store/discussionStore'
@@ -425,13 +428,10 @@ describe('DiscussionsPage', () => {
     })
 
     it('selects task by url param', async () => {
-      render(
-        <MemoryRouter initialEntries={['/discussions/task-from-url']}>
-          <Routes>
-            <Route path="/discussions/:id" element={<DiscussionsPage />} />
-          </Routes>
-        </MemoryRouter>
-      )
+      renderWithRouter(<DiscussionsPage />, {
+        initialEntry: '/discussions/task-from-url',
+        routePath: '/discussions/$id',
+      })
 
       // 路由参数触发 selectTask -> getDiscussionDetail
       await waitFor(() => {

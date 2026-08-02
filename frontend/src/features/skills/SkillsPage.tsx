@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@/shared/routing'
 import { useQuery } from '@tanstack/react-query'
 import {
   Search,

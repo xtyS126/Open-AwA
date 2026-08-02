@@ -1,6 +1,4 @@
 import '@testing-library/jest-dom'
-import { createElement } from 'react'
-import { vi } from 'vitest'
 
 // 确保 i18n store 在测试环境中正确初始化（zh-CN）
 import { useI18nStore } from '@/i18n'
@@ -55,29 +53,6 @@ if (typeof indexedDB === 'undefined') {
   }
 }
 
-const routerFutureConfig = {
-  v7_startTransition: true,
-  v7_relativeSplatPath: true,
-};
-
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
-
-  return {
-    ...actual,
-    BrowserRouter: ({ future, ...props }: React.ComponentProps<typeof actual.BrowserRouter>) =>
-      createElement(actual.BrowserRouter, {
-        ...props,
-        future: future ?? routerFutureConfig,
-      }),
-    MemoryRouter: ({ future, ...props }: React.ComponentProps<typeof actual.MemoryRouter>) =>
-      createElement(actual.MemoryRouter, {
-        ...props,
-        future: future ?? routerFutureConfig,
-      }),
-  };
-});
-
 if (!HTMLElement.prototype.scrollIntoView) {
   HTMLElement.prototype.scrollIntoView = function() {};
 }
@@ -86,6 +61,9 @@ if (!HTMLElement.prototype.scrollIntoView) {
 if (!HTMLElement.prototype.scrollTo) {
   HTMLElement.prototype.scrollTo = function() {};
 }
+
+// jsdom 的 window.scrollTo 仅抛出未实现错误，路由滚动恢复测试需要稳定空实现。
+window.scrollTo = function() {}
 
 // Ensure a #root element exists for main.tsx bootstrap
 if (!document.getElementById('root')) {

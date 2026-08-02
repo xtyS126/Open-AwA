@@ -3,7 +3,7 @@
  * 仅负责 Tab 切换和 URL 同步，不包含任何 Tab 专属状态或 API 调用逻辑
  */
 import { useCallback, useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from '@/shared/routing'
 import {
   Settings as SettingsIcon,
   ShieldAlert,

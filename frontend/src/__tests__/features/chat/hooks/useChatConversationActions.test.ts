@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { createElement, StrictMode, type ReactNode } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { RouterTestProvider as MemoryRouter } from '@/shared/routing/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // 使用 vi.hoisted 提前建立 mock 引用

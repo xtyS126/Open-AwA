@@ -17,7 +17,7 @@
  */
 import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import VibeCodingPage from '@/features/vibe-coding/VibeCodingPage'
 

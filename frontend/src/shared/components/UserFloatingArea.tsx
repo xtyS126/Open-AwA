@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@/shared/routing'
 import { LogOut } from 'lucide-react'
 import { shallow } from 'zustand/shallow'
 import { useAuthStore } from '@/shared/store/authStore'

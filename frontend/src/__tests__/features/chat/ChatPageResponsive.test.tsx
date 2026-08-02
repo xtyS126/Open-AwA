@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
 import ChatPage from '@/features/chat/ChatPage'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { useModelStore } from '@/features/chat/store/modelStore'

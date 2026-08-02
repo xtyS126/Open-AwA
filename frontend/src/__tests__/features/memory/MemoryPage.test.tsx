@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MemoryPage from '@/features/memory/MemoryPage'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
 
 const { getShortTermMock, getLongTermMock, getRecordsPreviewMock } = vi.hoisted(() => ({
   getShortTermMock: vi.fn(),

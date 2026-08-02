@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { render } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import SkillModal from '@/features/skills/SkillModal'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
 
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },

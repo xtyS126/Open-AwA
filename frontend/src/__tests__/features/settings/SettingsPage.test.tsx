@@ -1,11 +1,11 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsPage from '@/features/settings/SettingsPage'
 import { useModelStore } from '@/features/chat/store/modelStore'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 import { useSharedSettingsStore } from '@/features/settings/hooks/useSharedSettingsStore'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { renderWithRouter } from '@/shared/routing/testing'
 
 const modelApiMocks = vi.hoisted(() => ({
   getConfigurations: vi.fn(),
@@ -75,23 +75,15 @@ vi.mock('@/features/settings/modelsApi', () => ({
 }))
 
 describe('SettingsPage', () => {
-  const renderSettingsApiTab = () =>
-    render(
-      <MemoryRouter initialEntries={['/settings?tab=api']}>
-        <Routes>
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
-      </MemoryRouter>
-    )
+  const renderSettingsApiTab = () => renderWithRouter(<SettingsPage />, {
+    initialEntry: '/settings?tab=api',
+    routePath: '/settings',
+  })
 
-  const renderSettingsGeneralTab = () =>
-    render(
-      <MemoryRouter initialEntries={['/settings']}>
-        <Routes>
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
-      </MemoryRouter>
-    )
+  const renderSettingsGeneralTab = () => renderWithRouter(<SettingsPage />, {
+    initialEntry: '/settings',
+    routePath: '/settings',
+  })
 
   beforeEach(() => {
     vi.clearAllMocks()

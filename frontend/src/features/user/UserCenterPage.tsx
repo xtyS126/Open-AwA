@@ -2,7 +2,7 @@
  * 用户中心统一页面 —— 合并个人信息、画像总览、事实管理、洋葱画像四个 Tab。
  */
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@/shared/routing'
 import {
   Monitor, Camera, Loader2, AlertCircle, BarChart3,
   Plus, Check, X, Edit3, Trash2, Search, Save, User, Layers, FileText,

@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation } from '@/shared/routing'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
 
 // P2: Sidebar 懒加载，减少主包体积

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { renderWithRouter } from '@/shared/routing/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PluginConfigPage from '@/features/plugins/PluginConfigPage'
 
@@ -21,13 +21,10 @@ vi.mock('@/features/plugins/hooks', () => ({
 }))
 
 function renderPage() {
-  return render(
-    <MemoryRouter initialEntries={['/plugins/config/plugin-1']}>
-      <Routes>
-        <Route path="/plugins/config/:pluginId" element={<PluginConfigPage />} />
-      </Routes>
-    </MemoryRouter>,
-  )
+  return renderWithRouter(<PluginConfigPage />, {
+    initialEntry: '/plugins/config/plugin-1',
+    routePath: '/plugins/config/$pluginId',
+  })
 }
 
 describe('PluginConfigPage', () => {

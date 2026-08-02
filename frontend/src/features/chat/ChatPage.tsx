@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from '@/shared/routing'
 import { PanelLeft } from 'lucide-react'
 import { chatAPI, diaryAPI } from '@/shared/api/api'
 import { useConversationHistory } from '@/features/chat/hooks/useConversationHistory'

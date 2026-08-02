@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import ScheduledTasksPage from '@/features/scheduledTasks/ScheduledTasksPage'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
 import type { ScheduledTask, ScheduledTaskExecution } from '@/shared/api/api'
 
 const { getAllMock, getExecutionsMock } = vi.hoisted(() => ({

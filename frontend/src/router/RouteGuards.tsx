@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react'
-import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from '@/shared/routing'
 import { useAuthStore } from '@/shared/store/authStore'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
 import { SkipLink } from '@/shared/components/SkipLink/SkipLink'

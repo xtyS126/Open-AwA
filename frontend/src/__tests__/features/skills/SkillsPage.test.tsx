@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SkillsPage from '@/features/skills/SkillsPage'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterTestProvider as BrowserRouter } from '@/shared/routing/testing'
 
 const { getAllMock } = vi.hoisted(() => ({
   getAllMock: vi.fn(),

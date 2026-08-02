@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation } from '@/shared/routing'
 import {
   MessageSquare, LayoutDashboard, CreditCard, Zap,
   Clock, Blocks, Brain, Settings, Award, Radio,

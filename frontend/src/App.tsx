@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { RouterProvider } from 'react-router-dom'
+import { RouterProvider } from '@tanstack/react-router'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { appLogger } from '@/shared/utils/logger'
 import { useAppInitialization } from '@/shared/hooks/useAppInitialization'
 import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { mark } from '@/shared/perf/metrics'
-import { router, routerProviderFutureConfig } from '@/router'
+import { router } from '@/router'
 
 function App() {
   // 使用选择器精确订阅，避免整个 store 变化触发重渲染
@@ -53,8 +53,8 @@ function App() {
       extra: { path: lastPath },
     })
 
-    const unsubscribe = router.subscribe((state) => {
-      const currentPath = state.location.pathname
+    const unsubscribe = router.subscribe('onResolved', (event) => {
+      const currentPath = event.toLocation.pathname
       if (currentPath !== lastPath) {
         lastPath = currentPath
         appLogger.info({
@@ -71,10 +71,9 @@ function App() {
   }, [])
 
   // P0: 始终渲染 RouterProvider，由 RootGuard 内部根据认证状态决定具体内容
-  // future: 启用 v7_startTransition flag 消除弃用警告
   return (
     <ErrorBoundary name="Root">
-      <RouterProvider router={router} future={routerProviderFutureConfig} />
+      <RouterProvider router={router} />
     </ErrorBoundary>
   )
 }
