@@ -18,6 +18,30 @@ const { getShortTermMock, getLongTermMock, getRecordsPreviewMock, vectorSearchMo
   runConsolidationMock: vi.fn(),
 }))
 
+vi.mock('@/shared/api/vectorModelsApi', () => ({
+  vectorModelsAPI: {
+    getRegistry: vi.fn().mockResolvedValue({ data: { data: { models: [] } } }),
+    getConfig: vi.fn().mockResolvedValue({
+      data: {
+        data: {
+          embedding_provider: 'auto',
+          embedding_model: '',
+          embedding_api_key: '',
+          embedding_api_endpoint: '',
+          rerank_provider: 'off',
+          rerank_model: '',
+          rerank_api_key: '',
+          rerank_api_endpoint: '',
+          model_download_source: 'modelscope',
+        },
+      },
+    }),
+    updateConfig: vi.fn().mockResolvedValue({ data: { success: true } }),
+    downloadModel: vi.fn().mockResolvedValue({ data: { success: true, task: 't1' } }),
+    getDownloadStatus: vi.fn().mockResolvedValue({ data: { data: { tasks: {} } } }),
+  },
+}))
+
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
   weixinAPI: { getConfig: vi.fn().mockResolvedValue({ data: {} }) },

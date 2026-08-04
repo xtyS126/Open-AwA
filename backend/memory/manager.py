@@ -71,7 +71,63 @@ class MemoryManager:
         # 注入回调签名：async def merge(existing: str, new: str) -> str
         # 未注入时回退到确定性合并（去重后拼接），保证测试与离线场景可重现
         self._llm_merge_callback: Optional[Callable[[str, str], Awaitable[str]]] = None
+        # Spec memory-model-config-chain：检索重排器（可选，未配置/加载失败时为 None）
+        self._reranker = None
+        self._reranker_lock = Lock()
         logger.info("MemoryManager initialized")
+
+    def _get_reranker(self):
+        """
+        懒加载检索重排器（Spec memory-model-config-chain）。
+
+        重排器加载失败时记录警告并返回 None（检索退回融合排序），
+        不阻塞记忆检索主流程。
+        """
+        if self._reranker is not None:
+            return self._reranker
+        with self._reranker_lock:
+            if self._reranker is not None:
+                return self._reranker
+            try:
+                from memory.reranker import create_reranker
+
+                self._reranker = create_reranker()
+            except Exception as exc:
+                logger.opt(exception=True).warning(f"重排器初始化失败（检索退回融合排序）: {exc}")
+                self._reranker = None
+            return self._reranker
+
+    async def _apply_rerank(
+        self,
+        query: str,
+        memories: List[LongTermMemory],
+        limit: int,
+    ) -> List[LongTermMemory]:
+        """
+        对混合检索候选做二次相关性重排（Spec memory-model-config-chain）。
+
+        重排分数与融合分数独立：候选数量大于 1 且重排器可用时，
+        按重排分数重新排序后截断到 limit；否则原样返回。
+        """
+        reranker = self._get_reranker()
+        if reranker is None or len(memories) <= 1:
+            return memories
+        try:
+            scores = await reranker.rerank(query, [m.content for m in memories])
+            if len(scores) != len(memories):
+                logger.warning(
+                    f"重排分数数量不匹配（{len(scores)} != {len(memories)}），跳过重排"
+                )
+                return memories
+            paired = sorted(
+                zip(memories, scores), key=lambda item: item[1], reverse=True
+            )
+            return [memory for memory, _ in paired[:limit]]
+        except Exception as exc:
+            logger.opt(exception=True).warning(
+                f"重排执行失败（检索退回融合排序）: {exc}"
+            )
+            return memories
 
     def set_llm_merge_callback(self, callback: Callable[[str, str], Awaitable[str]]) -> None:
         """
@@ -1512,7 +1568,14 @@ class MemoryManager:
             key=lambda item: (item[0], item[1].quality_score, item[1].importance, item[1].access_count),
             reverse=True,
         )
-        ranked_memories = [memory for _, memory in combined[:limit]]
+        # Spec memory-model-config-chain：候选数放宽到 3 倍供重排器二次排序，
+        # 未配置重排器时与旧行为一致（截断到 limit）
+        rerank_candidate_limit = limit * 3
+        ranked_memories = [memory for _, memory in combined[:rerank_candidate_limit]]
+        if len(ranked_memories) > limit:
+            ranked_memories = await self._apply_rerank(
+                normalized_query, ranked_memories, limit
+            )
         # PERF-10: 批量更新访问记录，将 N 次 DB 调用合并为 1 次批量 UPDATE
         if ranked_memories:
             await asyncio.to_thread(

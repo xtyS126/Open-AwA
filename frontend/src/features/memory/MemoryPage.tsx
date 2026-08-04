@@ -25,6 +25,7 @@ import { getErrorMessage } from '@/shared/utils/errorMessages'
 import { Toggle } from '@/shared/components/ui'
 import { useI18nStore } from '@/i18n'
 import ShortTermMemoryList from './ShortTermMemoryList'
+import VectorModelConfigCard from './VectorModelConfigCard'
 import styles from './MemoryPage.module.css'
 
 /* ============================================================
@@ -1025,6 +1026,9 @@ function MemoryPage() {
               </div>
             </div>
           </div>
+
+          {/* 向量模型配置 —— Spec memory-model-config-chain：本地/云端选择 + 下载 */}
+          <VectorModelConfigCard />
 
           {/* Hybrid Search 配置 —— Spec memory-experience-redesign：滑块真实生效 */}
           <div className={styles.sidebarCard}>

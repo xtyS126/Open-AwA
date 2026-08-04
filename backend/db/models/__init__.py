@@ -155,6 +155,7 @@ from db.models.bilibili_toolkit import (
 )
 
 from db.models.event_log import EventLog
+from db.models.vector_model import VectorModelConfig  # noqa: E402
 from db.permission_models import PermissionSaved  # noqa: E402
 
 

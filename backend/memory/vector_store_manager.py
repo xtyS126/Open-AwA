@@ -12,6 +12,7 @@ import hashlib
 import math
 import os
 import re
+import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
@@ -144,22 +145,89 @@ class OpenAIEmbeddingProvider:
         return [item.get("embedding", []) for item in data]
 
 
+class CloudEmbeddingProvider:
+    """
+    基于 OpenAI 兼容 Embeddings API 的云端嵌入提供方。
+
+    支持多模态模型（如 Qwen3-VL-Embedding，DashScope / vLLM 兼容接口）：
+    input 数组元素可为纯文本字符串，或含图像的多模态对象
+    （{"content": [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}]}）。
+    """
+
+    provider_name = "cloud"
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "text-embedding-3-small",
+        endpoint: str = "",
+        timeout: float = 60.0,
+    ):
+        self.api_key = api_key
+        self.model = model
+        self.endpoint = endpoint or "https://api.openai.com/v1/embeddings"
+        self.timeout = timeout
+
+    @property
+    def dimension(self) -> Optional[int]:
+        """云端模型维度未知，由 collection 探测决定。"""
+        return None
+
+    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        """文本嵌入（OpenAI 兼容：input 为字符串数组）。"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "input": texts,
+                },
+                timeout=self.timeout,
+            )
+        response.raise_for_status()
+        payload = response.json()
+        data = sorted(payload.get("data", []), key=lambda item: item.get("index", 0))
+        return [item.get("embedding", []) for item in data]
+
+    async def embed_inputs(self, inputs: List[Any]) -> List[List[float]]:
+        """
+        多模态嵌入：input 元素可为字符串或多模态内容对象。
+        纯文本场景与 embed_texts 行为一致；多模态场景（Qwen3-VL-Embedding）
+        由服务端（DashScope / vLLM）按 OpenAI 兼容格式解析。
+        """
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "input": inputs,
+                },
+                timeout=self.timeout,
+            )
+        response.raise_for_status()
+        payload = response.json()
+        data = sorted(payload.get("data", []), key=lambda item: item.get("index", 0))
+        return [item.get("embedding", []) for item in data]
+
+
 class SentenceTransformerEmbeddingProvider:
     """
     基于 sentence-transformers 的本地嵌入提供方。
 
-    模型下载策略：优先从 HuggingFace 下载，网络不可达时自动降级到
-    魔搭社区（ModelScope）下载，适配国内网络环境。
+    模型下载策略（Spec memory-model-config-chain）：默认优先从魔搭社区
+    （ModelScope）下载（国内网络友好），失败后降级 HuggingFace，最后兜底
+    本地缓存；下载源可通过 MODEL_DOWNLOAD_SOURCE 切换为 huggingface。
     """
 
     provider_name = "sentence-transformers"
-
-    # HuggingFace → ModelScope 模型名称映射
-    _MODELSCOPE_MODEL_MAP: Dict[str, str] = {
-        "all-MiniLM-L6-v2": "sentence-transformers/all-MiniLM-L6-v2",
-        "all-mpnet-base-v2": "sentence-transformers/all-mpnet-base-v2",
-        "paraphrase-multilingual-MiniLM-L12-v2": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-    }
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         try:
@@ -170,6 +238,22 @@ class SentenceTransformerEmbeddingProvider:
         self.model_name = model_name
         self._model = None  # 延迟加载
         self._SentenceTransformer = SentenceTransformer
+        # 按注册表解析 ModelScope / HuggingFace 仓库 ID
+        from memory.model_registry import get_embedding_spec
+
+        spec = get_embedding_spec(model_name)
+        self._modelscope_id = (spec.modelscope_id if spec else "") or (
+            f"sentence-transformers/{model_name}"
+        )
+        self._huggingface_id = (spec.huggingface_id if spec else "") or model_name
+
+    @property
+    def dimension(self) -> Optional[int]:
+        """本地模型维度由注册表提供，未注册模型返回 None（运行时探测）。"""
+        from memory.model_registry import get_embedding_spec
+
+        spec = get_embedding_spec(self.model_name)
+        return spec.dimension if spec else None
 
     def _try_download_from_modelscope(self) -> Optional[str]:
         """
@@ -182,50 +266,85 @@ class SentenceTransformerEmbeddingProvider:
             logger.debug("modelscope 未安装，跳过魔搭社区下载")
             return None
 
-        ms_model_name = self._MODELSCOPE_MODEL_MAP.get(
-            self.model_name,
-            f"sentence-transformers/{self.model_name}",
-        )
         try:
-            local_path = snapshot_download(ms_model_name)
-            logger.info(f"从魔搭社区下载模型成功: {ms_model_name} -> {local_path}")
+            local_path = snapshot_download(self._modelscope_id)
+            logger.info(f"从魔搭社区下载模型成功: {self._modelscope_id} -> {local_path}")
             return local_path
         except Exception as exc:
-            logger.warning(f"从魔搭社区下载模型失败 ({ms_model_name}): {exc}")
+            logger.warning(f"从魔搭社区下载模型失败 ({self._modelscope_id}): {exc}")
+            return None
+
+    def _try_download_from_huggingface(self) -> Optional[str]:
+        """
+        尝试从 HuggingFace 下载模型，返回本地路径。
+        下载失败时返回 None。
+        """
+        try:
+            from huggingface_hub import snapshot_download as hf_snapshot_download
+        except ImportError:
+            logger.debug("huggingface_hub 未安装，跳过 HuggingFace 下载")
+            return None
+
+        try:
+            local_path = hf_snapshot_download(self._huggingface_id)
+            logger.info(f"从 HuggingFace 下载模型成功: {self._huggingface_id} -> {local_path}")
+            return local_path
+        except Exception as exc:
+            logger.warning(f"从 HuggingFace 下载模型失败 ({self._huggingface_id}): {exc}")
             return None
 
     def _find_cached_model_path(self) -> Optional[str]:
-        """查找项目模型目录中已完整下载的模型快照，优先完全离线加载。"""
+        """
+        查找项目模型目录中已完整下载的模型快照，优先完全离线加载。
+
+        兼容两类缓存布局：
+        1. sentence_transformers 目录（models--<org>--<name> 布局，HF 风格）
+        2. modelscope 缓存目录（hub/<org>/<name> 布局）
+        """
         normalized_name = self.model_name.replace("/", "--")
+        hf_org = self._huggingface_id.split("/")[0] if "/" in self._huggingface_id else "sentence-transformers"
         candidates = (
             os.path.join(
                 _MODELS_DIR,
                 "sentence_transformers",
-                f"models--sentence-transformers--{normalized_name}",
+                f"models--{hf_org}--{normalized_name}",
                 "snapshots",
             ),
             os.path.join(
                 _MODELS_DIR,
                 "huggingface",
                 "hub",
-                f"models--sentence-transformers--{normalized_name}",
+                f"models--{hf_org}--{normalized_name}",
                 "snapshots",
+            ),
+            os.path.join(
+                _MODELS_DIR,
+                "modelscope",
+                "models",
+                self._modelscope_id,
             ),
         )
         for snapshots_dir in candidates:
             if not os.path.isdir(snapshots_dir):
                 continue
-            for snapshot_name in sorted(os.listdir(snapshots_dir), reverse=True):
-                snapshot_path = os.path.join(snapshots_dir, snapshot_name)
-                if os.path.isfile(os.path.join(snapshot_path, "config.json")):
-                    return snapshot_path
+            if "snapshots" in snapshots_dir:
+                # HF 风格：snapshots/<hash>/config.json
+                for snapshot_name in sorted(os.listdir(snapshots_dir), reverse=True):
+                    snapshot_path = os.path.join(snapshots_dir, snapshot_name)
+                    if os.path.isfile(os.path.join(snapshot_path, "config.json")):
+                        return snapshot_path
+            else:
+                # ModelScope 风格：hub/<org>/<name>/ 下直接是模型文件
+                if os.path.isfile(os.path.join(snapshots_dir, "config.json")):
+                    return snapshots_dir
         return None
 
     def _ensure_model(self):
         """
-        延迟初始化模型，按优先级尝试下载：
-        1. HuggingFace（默认源）
-        2. 魔搭社区 ModelScope（国内网络降级）
+        延迟初始化模型，按优先级尝试加载（Spec memory-model-config-chain）：
+        1. 本地缓存（离线优先）
+        2. 默认下载源 ModelScope（国内网络友好），失败后降级 HuggingFace
+        （MODEL_DOWNLOAD_SOURCE=huggingface 时交换 2/3 顺序）
         """
         if self._model is not None:
             return
@@ -240,23 +359,28 @@ class SentenceTransformerEmbeddingProvider:
             logger.info(f"从本地缓存加载嵌入模型成功: {self.model_name} -> {cached_model_path}")
             return
 
-        # 优先尝试 HuggingFace
-        try:
-            self._model = self._SentenceTransformer(self.model_name, cache_folder=_cache_dir)
-            logger.info(f"从 HuggingFace 加载模型成功: {self.model_name} -> {_cache_dir}")
-            return
-        except Exception as hf_exc:
-            logger.warning(f"从 HuggingFace 下载模型失败 ({self.model_name}): {hf_exc}")
+        from config.settings import settings as _settings
 
-        # 降级：尝试从魔搭社区下载
-        local_path = self._try_download_from_modelscope()
-        if local_path:
-            self._model = self._SentenceTransformer(local_path, cache_folder=_cache_dir)
-            return
+        preferred_source = (_settings.MODEL_DOWNLOAD_SOURCE or "modelscope").strip().lower()
+        downloaders = [
+            ("modelscope", self._try_download_from_modelscope),
+            ("huggingface", self._try_download_from_huggingface),
+        ]
+        if preferred_source != "modelscope":
+            # 显式切到 HuggingFace 优先
+            downloaders.reverse()
 
-        # 两处都失败
+        for source_name, downloader in downloaders:
+            local_path = downloader()
+            if local_path:
+                self._model = self._SentenceTransformer(local_path, cache_folder=_cache_dir)
+                logger.info(
+                    f"从 {source_name} 下载并加载嵌入模型成功: {self.model_name} -> {local_path}"
+                )
+                return
+
         raise RuntimeError(
-            f"无法加载模型 {self.model_name}，HuggingFace 和 ModelScope 均下载失败。"
+            f"无法加载模型 {self.model_name}，ModelScope 和 HuggingFace 均下载失败。"
             f"请检查网络连接，或安装 modelscope: pip install modelscope"
         )
 
@@ -269,44 +393,66 @@ class SentenceTransformerEmbeddingProvider:
 
 def create_embedding_provider(provider_type: Optional[str] = None) -> EmbeddingProvider:
     """
-    根据配置选择可用的嵌入提供方。
-    优先级：显式配置 > OpenAI > sentence-transformers > 哈希兜底。
+    根据配置选择可用的嵌入提供方（Spec memory-model-config-chain）。
+
+    配置优先级：
+    1. 显式 provider_type 参数（MemoryManager 注入）
+    2. settings.MEMORY_EMBEDDING_PROVIDER（local | cloud | hash | 空=自动）
+    3. 注册表模型名解析：MEMORY_EMBEDDING_MODEL 指定注册表内模型时按 kind 决定
+
+    local：sentence-transformers 本地推理（ModelScope 默认下载链）
+    cloud：OpenAI 兼容 Embeddings API（支持 Qwen3-VL-Embedding 多模态）
+    hash：无语义降级（开发/测试兜底）
     """
-    normalized = str(
-        provider_type
-        or os.getenv("MEMORY_EMBEDDING_PROVIDER", "")
-    ).strip().lower()
+    from config.settings import settings as _settings
+    from memory.model_registry import (
+        default_embedding_model,
+        get_embedding_spec,
+    )
 
-    if normalized in {"openai"}:
-        secret = settings.OPENAI_API_KEY
-        api_key = secret.get_secret_value() if secret else ""
+    normalized = str(provider_type or _settings.MEMORY_EMBEDDING_PROVIDER or "").strip().lower()
+    model_name = (_settings.MEMORY_EMBEDDING_MODEL or "").strip()
+
+    # 注册表模型名优先决定 provider 类型（云端模型名 → cloud）
+    spec = get_embedding_spec(model_name) if model_name else None
+    if spec is not None and not normalized:
+        normalized = spec.kind
+
+    if normalized in {"cloud", "openai"}:
+        api_key = _settings.MEMORY_EMBEDDING_API_KEY or ""
         if not api_key:
-            raise RuntimeError("OpenAI 嵌入模式已启用，但未配置 OPENAI_API_KEY")
-        return OpenAIEmbeddingProvider(api_key=api_key)
-
-    if normalized in {"sentence-transformers", "local"}:
-        model_name = os.getenv("MEMORY_LOCAL_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-        return SentenceTransformerEmbeddingProvider(model_name=model_name)
+            secret = _settings.OPENAI_API_KEY
+            api_key = secret.get_secret_value() if secret else ""
+        if not api_key:
+            raise RuntimeError("云端嵌入模式已启用，但未配置 MEMORY_EMBEDDING_API_KEY 或 OPENAI_API_KEY")
+        cloud_model = model_name or default_embedding_model("cloud")
+        return CloudEmbeddingProvider(
+            api_key=api_key,
+            model=cloud_model,
+            endpoint=_settings.MEMORY_EMBEDDING_API_ENDPOINT or "",
+        )
 
     if normalized in {"hash", "simple"}:
         return HashEmbeddingProvider()
 
-    secret = settings.OPENAI_API_KEY
-    api_key = secret.get_secret_value() if secret else ""
-    if api_key:
-        return OpenAIEmbeddingProvider(api_key=api_key)
+    # local（默认）与自动路径：sentence-transformers 本地推理
+    local_model = model_name or (
+        _settings.MEMORY_LOCAL_EMBEDDING_MODEL or default_embedding_model("local")
+    )
+    if normalized in {"local", "sentence-transformers"} or not normalized:
+        try:
+            return SentenceTransformerEmbeddingProvider(model_name=local_model)
+        except RuntimeError as exc:
+            if normalized:
+                # 显式选择 local 但依赖缺失时直接报错，不静默降级
+                raise
+            logger.warning(
+                f"sentence-transformers 不可用，自动降级到 Hash 嵌入模式；"
+                f"向量检索质量将下降。原因: {exc}"
+            )
+            return HashEmbeddingProvider()
 
-    # 自动降级路径：未显式配置且无 OpenAI Key 时优先尝试本地 sentence-transformers，
-    # 若依赖未安装则降级到 Hash 嵌入，避免 MemoryManager 初始化失败阻塞核心对话功能。
-    model_name = os.getenv("MEMORY_LOCAL_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-    try:
-        return SentenceTransformerEmbeddingProvider(model_name=model_name)
-    except RuntimeError as exc:
-        logger.warning(
-            f"sentence-transformers 不可用，自动降级到 Hash 嵌入模式；"
-            f"向量检索质量将下降。原因: {exc}"
-        )
-        return HashEmbeddingProvider()
+    raise ValueError(f"未知的嵌入提供方类型: {normalized}")
 
 
 def _tokenize(text: str) -> List[str]:
@@ -407,6 +553,10 @@ class VectorStoreManager:
 
         # 嵌入式 Qdrant，数据持久化到本地路径
         self.client = QdrantClient(path=self.persist_directory)
+        # qdrant_client 本地模式内部使用单个 SQLite 连接，多线程并发访问会触发
+        # sqlite3.OperationalError: cannot start a transaction within a transaction
+        # 通过 threading.Lock 串行化所有 client 操作，确保事务不嵌套
+        self._client_lock = threading.Lock()
         self._ensure_collection()
 
         logger.info(
@@ -418,14 +568,20 @@ class VectorStoreManager:
         """
         确保 Qdrant collection 存在；若不存在则按嵌入维度创建，并配置 dense + sparse 双向量字段。
         """
-        if self.client.collection_exists(self.collection_name):
-            return
+        with self._client_lock:
+            if self.client.collection_exists(self.collection_name):
+                return
 
-        dimension = _detect_dense_dimension(self.embedding_provider)
-        self._create_collection(self.collection_name, dimension)
+            dimension = _detect_dense_dimension(self.embedding_provider)
+            self._create_collection_locked(self.collection_name, dimension)
 
     def _create_collection(self, collection_name: str, dimension: int) -> None:
-        """按指定稠密向量维度创建带稀疏向量的 collection。"""
+        """按指定稠密向量维度创建带稀疏向量的 collection（加锁版本）。"""
+        with self._client_lock:
+            self._create_collection_locked(collection_name, dimension)
+
+    def _create_collection_locked(self, collection_name: str, dimension: int) -> None:
+        """创建 collection 的内部实现，调用方必须已持有 _client_lock。"""
         self.client.create_collection(
             collection_name=collection_name,
             vectors_config={
@@ -442,7 +598,8 @@ class VectorStoreManager:
     def _get_dense_dimension(self, collection_name: str) -> Optional[int]:
         """读取 collection 的稠密向量维度，旧格式或读取失败时返回 None。"""
         try:
-            collection = self.client.get_collection(collection_name)
+            with self._client_lock:
+                collection = self.client.get_collection(collection_name)
             vectors = collection.config.params.vectors
             vector_params = vectors.get(DENSE_VECTOR_NAME) if isinstance(vectors, dict) else None
             dimension = getattr(vector_params, "size", None)
@@ -469,7 +626,7 @@ class VectorStoreManager:
         compatible_collection = f"{self._base_collection_name}__d{dimension}"
         self.collection_name = compatible_collection
 
-        if self.client.collection_exists(compatible_collection):
+        if self._collection_exists_locked(compatible_collection):
             compatible_dimension = self._get_dense_dimension(compatible_collection)
             if compatible_dimension != dimension:
                 raise RuntimeError(
@@ -489,6 +646,11 @@ class VectorStoreManager:
         ).warning(
             "检测到嵌入维度变更，已切换到兼容 collection；旧 collection 保留，未删除用户数据"
         )
+
+    def _collection_exists_locked(self, collection_name: str) -> bool:
+        """检查 collection 是否存在（加锁）。"""
+        with self._client_lock:
+            return self.client.collection_exists(collection_name)
 
     @property
     def provider_name(self) -> str:
@@ -539,28 +701,30 @@ class VectorStoreManager:
         }
         payload.update(self._sanitize_metadata(metadata))
 
-        self.client.upsert(
-            collection_name=self.collection_name,
-            points=[
-                models.PointStruct(
-                    id=int(memory_id),
-                    vector={
-                        DENSE_VECTOR_NAME: vector,
-                        SPARSE_VECTOR_NAME: sparse_vector,
-                    },
-                    payload=payload,
-                )
-            ],
-        )
+        with self._client_lock:
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=[
+                    models.PointStruct(
+                        id=int(memory_id),
+                        vector={
+                            DENSE_VECTOR_NAME: vector,
+                            SPARSE_VECTOR_NAME: sparse_vector,
+                        },
+                        payload=payload,
+                    )
+                ],
+            )
 
     def delete_memory(self, memory_id: int) -> None:
         """
         删除一条向量记忆记录。
         """
-        self.client.delete(
-            collection_name=self.collection_name,
-            points_selector=models.PointIdsList(points=[int(memory_id)]),
-        )
+        with self._client_lock:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=models.PointIdsList(points=[int(memory_id)]),
+            )
 
     def update_memory_metadata(self, memory_id: int, **fields: Any) -> None:
         """
@@ -573,11 +737,12 @@ class VectorStoreManager:
 
         # Qdrant 不允许设置 None 值，若需删除字段应使用 delete_payload；此处仅做覆盖更新
         try:
-            self.client.set_payload(
-                collection_name=self.collection_name,
-                payload=sanitized,
-                points=[int(memory_id)],
-            )
+            with self._client_lock:
+                self.client.set_payload(
+                    collection_name=self.collection_name,
+                    payload=sanitized,
+                    points=[int(memory_id)],
+                )
         except KeyError:
             # 数据库中可能存在尚未写入向量库的历史记忆，不能因此阻断记忆列表接口。
             logger.warning(
@@ -623,28 +788,29 @@ class VectorStoreManager:
         sparse_vector = compute_sparse_vector(query_text)
 
         # 单次调用 Qdrant 原生混合检索：prefetch 双路召回 + RRF 融合
-        response = self.client.query_points(
-            collection_name=self.collection_name,
-            prefetch=[
-                models.Prefetch(
-                    query=dense_vector,
-                    using=DENSE_VECTOR_NAME,
-                    limit=max(limit * 3, 20),
-                    filter=query_filter,
-                ),
-                models.Prefetch(
-                    query=sparse_vector,
-                    using=SPARSE_VECTOR_NAME,
-                    limit=max(limit * 3, 20),
-                    filter=query_filter,
-                ),
-            ],
-            query=models.FusionQuery(fusion=models.Fusion.RRF),
-            query_filter=query_filter,
-            limit=limit,
-            with_payload=True,
-            with_vectors=False,
-        )
+        with self._client_lock:
+            response = self.client.query_points(
+                collection_name=self.collection_name,
+                prefetch=[
+                    models.Prefetch(
+                        query=dense_vector,
+                        using=DENSE_VECTOR_NAME,
+                        limit=max(limit * 3, 20),
+                        filter=query_filter,
+                    ),
+                    models.Prefetch(
+                        query=sparse_vector,
+                        using=SPARSE_VECTOR_NAME,
+                        limit=max(limit * 3, 20),
+                        filter=query_filter,
+                    ),
+                ],
+                query=models.FusionQuery(fusion=models.Fusion.RRF),
+                query_filter=query_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+            )
 
         hits: List[VectorSearchHit] = []
         for point in response.points:
@@ -696,25 +862,27 @@ class VectorStoreManager:
         """
         返回向量库中满足条件的记录数量。
         """
-        if user_id is None and include_archived:
+        with self._client_lock:
+            if user_id is None and include_archived:
+                return int(self.client.count(
+                    collection_name=self.collection_name,
+                    count_filter=None,
+                    exact=True,
+                ).count)
+
+            count_filter = self._build_filter(user_id=user_id, include_archived=include_archived)
             return int(self.client.count(
                 collection_name=self.collection_name,
-                count_filter=None,
+                count_filter=count_filter,
                 exact=True,
             ).count)
-
-        count_filter = self._build_filter(user_id=user_id, include_archived=include_archived)
-        return int(self.client.count(
-            collection_name=self.collection_name,
-            count_filter=count_filter,
-            exact=True,
-        ).count)
 
     def close(self) -> None:
         """
         关闭 Qdrant 客户端，释放本地文件锁。
         """
         try:
-            self.client.close()
+            with self._client_lock:
+                self.client.close()
         except Exception as exc:
             logger.warning(f"关闭 Qdrant 客户端时出现异常: {exc}")

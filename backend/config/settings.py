@@ -205,6 +205,26 @@ class Settings(BaseSettings):
     # 巩固 LLM 单次调用最大 token 数
     CONSOLIDATION_EXTRACT_MAX_TOKENS: int = 2048
 
+    # 向量模型配置（Spec memory-model-config-chain）
+    # 嵌入提供方：local（本地 sentence-transformers）| cloud（OpenAI 兼容 API）| hash（降级）| 空=自动
+    MEMORY_EMBEDDING_PROVIDER: str = ""
+    # 嵌入模型名（本地用 sentence-transformers 模型名，云端用 API 模型名；空=注册表默认）
+    MEMORY_EMBEDDING_MODEL: str = ""
+    # 云端嵌入 API 配置（OpenAI 兼容 /embeddings 接口）
+    MEMORY_EMBEDDING_API_KEY: str = ""
+    MEMORY_EMBEDDING_API_ENDPOINT: str = ""
+    # 重排提供方：local（本地 CrossEncoder）| cloud（API）| off（关闭）
+    MEMORY_RERANK_PROVIDER: str = ""
+    # 重排模型名（本地用 cross-encoder 模型名，云端用 API 模型名；空=注册表默认）
+    MEMORY_RERANK_MODEL: str = ""
+    # 云端重排 API 配置
+    MEMORY_RERANK_API_KEY: str = ""
+    MEMORY_RERANK_API_ENDPOINT: str = ""
+    # 模型下载源：modelscope（默认，国内网络友好）| huggingface
+    MODEL_DOWNLOAD_SOURCE: str = "modelscope"
+    # 本地嵌入模型名（兼容旧配置 MEMORY_LOCAL_EMBEDDING_MODEL）
+    MEMORY_LOCAL_EMBEDDING_MODEL: str = ""
+
     # 受信代理 IP/CIDR 列表，用逗号分隔。仅来自这些代理的 X-Forwarded-For / X-Real-IP 头会被信任。
     # 默认信任本地回环和私有地址段（适用于单机部署和 Docker 网络）。
     TRUSTED_PROXIES: str = "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"

@@ -4,10 +4,10 @@
 """
 
 import asyncio
+import threading
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
-from typing import Any, Dict, Optional
-from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 from sqlalchemy import func
@@ -17,8 +17,8 @@ from core.litellm_adapter import litellm_check_provider_connection, litellm_list
 from core.failover import get_failover_manager
 from config.settings import settings
 from billing.pricing_manager import PricingManager
-from billing.models import ModelConfiguration, ProviderCredential
-from db.models import LLMUsage
+from billing.models import ModelConfiguration
+from db.models import LLMUsage, User, VectorModelConfig
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -61,7 +61,7 @@ async def get_providers_status(
 
     # 从数据库获取所有不同的 provider 配置
     configs = db.query(ModelConfiguration).filter(
-        ModelConfiguration.is_active == True
+        ModelConfiguration.is_active
     ).all()
 
     # 按 provider 分组，每个 provider 取第一个配置
@@ -309,7 +309,7 @@ async def get_llm_registry(
     # 查询所有活跃的模型配置
     configs = (
         db.query(ModelConfiguration)
-        .filter(ModelConfiguration.is_active == True)
+        .filter(ModelConfiguration.is_active)
         .all()
     )
     # 按 provider 分组，收集每个 provider 下的模型列表
@@ -433,10 +433,10 @@ async def get_llm_usage(
             func.sum(LLMUsage.cost).label("total_cost"),
             func.avg(LLMUsage.latency_ms).label("avg_latency_ms"),
             func.sum(
-                func.case((LLMUsage.success == True, 1), else_=0)
+                func.case((LLMUsage.success, 1), else_=0)
             ).label("success_count"),
             func.sum(
-                func.case((LLMUsage.success == False, 1), else_=0)
+                func.case((not LLMUsage.success, 1), else_=0)
             ).label("failure_count"),
         )
     )
@@ -487,3 +487,247 @@ async def get_llm_usage(
         },
         "message": "LLM 用量统计",
     }
+
+
+# ===========================================================================
+# 向量模型管理与配置（Spec memory-model-config-chain）
+# 端点前缀：/api/models/vector/*
+# ===========================================================================
+
+
+class DownloadState:
+    """进程内下载状态：单模型同时只允许一个下载任务。"""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._tasks: dict = {}
+
+    def start(self, key: str) -> bool:
+        with self._lock:
+            if key in self._tasks:
+                return False
+            self._tasks[key] = {"status": "downloading", "progress": 0.0, "error": None}
+            return True
+
+    def finish(self, key: str, error: Optional[str] = None) -> None:
+        with self._lock:
+            self._tasks[key] = {
+                "status": "failed" if error else "completed",
+                "progress": 100.0 if not error else 0.0,
+                "error": error,
+            }
+
+    def list(self) -> List[dict]:
+        with self._lock:
+            return [dict(v) for v in self._tasks.values()]
+
+
+download_states = DownloadState()
+
+
+class ModelDownloadRequest(BaseModel):
+    """模型下载请求体。"""
+
+    model: str = Field(..., description="注册表内模型名")
+    kind: str = Field(default="embedding", description="模型类型：embedding | rerank")
+
+
+class VectorModelConfigRequest(BaseModel):
+    """向量模型配置请求体（全部可选，仅更新提供的字段）。"""
+
+    embedding_provider: Optional[str] = None  # local | cloud | hash
+    embedding_model: Optional[str] = None
+    embedding_api_key: Optional[str] = None
+    embedding_api_endpoint: Optional[str] = None
+    rerank_provider: Optional[str] = None  # local | cloud | off
+    rerank_model: Optional[str] = None
+    rerank_api_key: Optional[str] = None
+    rerank_api_endpoint: Optional[str] = None
+    model_download_source: Optional[str] = None  # modelscope | huggingface
+
+
+def model_downloaded_path(modelscope_id: str) -> bool:
+    """检查本地模型是否已下载（缓存目录存在 config.json 即视为已下载）。"""
+    from config.runtime_paths import DATA_DIR
+
+    models_dir = DATA_DIR / "models"
+    normalized = modelscope_id.replace("/", "--")
+    hf_org = modelscope_id.split("/")[0] if "/" in modelscope_id else "sentence-transformers"
+    candidates = (
+        models_dir / "sentence_transformers" / f"models--{hf_org}--{normalized}" / "snapshots",
+        models_dir / "modelscope" / "models" / modelscope_id,
+    )
+    for base in candidates:
+        if not base.is_dir():
+            continue
+        if base.name == "snapshots":
+            for snapshot in base.iterdir():
+                if (snapshot / "config.json").is_file():
+                    return True
+        elif (base / "config.json").is_file():
+            return True
+    return False
+
+
+def build_vector_registry() -> List[dict]:
+    """构建注册表响应：嵌入 + 重排模型，附下载状态。"""
+    from memory.model_registry import EMBEDDING_MODELS, RERANK_MODELS
+
+    items: List[dict] = []
+    for spec in EMBEDDING_MODELS.values():
+        items.append({
+            "name": spec.name,
+            "kind": spec.kind,
+            "label": spec.label,
+            "description": spec.description,
+            "model_type": "embedding",
+            "dimension": spec.dimension,
+            "capabilities": spec.capabilities,
+            "downloaded": spec.kind == "cloud" or model_downloaded_path(spec.modelscope_id),
+        })
+    for spec in RERANK_MODELS.values():
+        items.append({
+            "name": spec.name,
+            "kind": spec.kind,
+            "label": spec.label,
+            "description": spec.description,
+            "model_type": "rerank",
+            "dimension": None,
+            "capabilities": spec.capabilities,
+            "downloaded": spec.kind == "cloud" or model_downloaded_path(spec.modelscope_id),
+        })
+    return items
+
+
+def download_model_sync(model_name: str, modelscope_id: str, huggingface_id: str) -> None:
+    """同步执行模型下载（线程池中运行）：默认 ModelScope → HuggingFace 降级。"""
+    source = (settings.MODEL_DOWNLOAD_SOURCE or "modelscope").strip().lower()
+    if source == "huggingface":
+        try:
+            from huggingface_hub import snapshot_download
+
+            snapshot_download(huggingface_id)
+            return
+        except Exception as exc:
+            logger.warning(f"HuggingFace 下载失败，降级 ModelScope: {exc}")
+    try:
+        from modelscope import snapshot_download
+
+        snapshot_download(modelscope_id)
+        return
+    except Exception as exc:
+        if source == "modelscope":
+            logger.warning(f"ModelScope 下载失败，降级 HuggingFace: {exc}")
+            try:
+                from huggingface_hub import snapshot_download
+
+                snapshot_download(huggingface_id)
+                return
+            except Exception as hf_exc:
+                raise RuntimeError(
+                    f"模型 {model_name} 下载失败（ModelScope 与 HuggingFace 均失败）: {hf_exc}"
+                ) from hf_exc
+        raise RuntimeError(f"模型 {model_name} 下载失败: {exc}") from exc
+
+
+@router.get("/vector/registry")
+async def get_vector_model_registry(
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Spec memory-model-config-chain：注册表 + 下载状态。"""
+    return {"success": True, "data": {"models": build_vector_registry()}}
+
+
+@router.post("/vector/download")
+async def download_vector_model(
+    request: ModelDownloadRequest,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Spec memory-model-config-chain：触发模型下载（后台任务不阻塞请求）。"""
+    from memory.model_registry import get_embedding_spec, get_rerank_spec
+
+    model_name = request.model.strip()
+    kind = request.kind.strip().lower()
+
+    spec = get_embedding_spec(model_name) if kind == "embedding" else get_rerank_spec(model_name)
+    if spec is None or spec.kind != "local":
+        raise HTTPException(
+            status_code=404,
+            detail=f"模型 {model_name} 不在本地注册表中（kind={kind}）",
+        )
+
+    task_key = f"{kind}:{model_name}"
+    if not download_states.start(task_key):
+        raise HTTPException(status_code=409, detail=f"模型 {model_name} 正在下载中")
+
+    async def _run_download() -> None:
+        try:
+            await asyncio.to_thread(
+                download_model_sync, model_name, spec.modelscope_id, spec.huggingface_id
+            )
+            download_states.finish(task_key)
+        except Exception as exc:
+            logger.opt(exception=True).error(f"模型下载失败 {model_name}: {exc}")
+            download_states.finish(task_key, error=str(exc))
+
+    asyncio.create_task(_run_download())
+    return {"success": True, "message": f"模型 {model_name} 下载任务已启动", "task": task_key}
+
+
+@router.get("/vector/download/status")
+async def get_vector_download_status(
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Spec memory-model-config-chain：下载进度查询。"""
+    return {"success": True, "data": {"tasks": download_states.list()}}
+
+
+@router.get("/vector/config")
+async def get_vector_model_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Spec memory-model-config-chain：读取当前生效配置（DB 叠加 settings）。"""
+    rows = db.query(VectorModelConfig).all()
+    stored = {row.key: row.value for row in rows}
+    resolved = {
+        "embedding_provider": stored.get("embedding_provider") or settings.MEMORY_EMBEDDING_PROVIDER or "auto",
+        "embedding_model": stored.get("embedding_model") or settings.MEMORY_EMBEDDING_MODEL or "",
+        "embedding_api_key": stored.get("embedding_api_key") or settings.MEMORY_EMBEDDING_API_KEY or "",
+        "embedding_api_endpoint": stored.get("embedding_api_endpoint") or settings.MEMORY_EMBEDDING_API_ENDPOINT or "",
+        "rerank_provider": stored.get("rerank_provider") or settings.MEMORY_RERANK_PROVIDER or "off",
+        "rerank_model": stored.get("rerank_model") or settings.MEMORY_RERANK_MODEL or "",
+        "rerank_api_key": stored.get("rerank_api_key") or settings.MEMORY_RERANK_API_KEY or "",
+        "rerank_api_endpoint": stored.get("rerank_api_endpoint") or settings.MEMORY_RERANK_API_ENDPOINT or "",
+        "model_download_source": stored.get("model_download_source") or settings.MODEL_DOWNLOAD_SOURCE or "modelscope",
+    }
+    return {"success": True, "data": resolved}
+
+
+@router.put("/vector/config")
+async def update_vector_model_config(
+    request: VectorModelConfigRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Spec memory-model-config-chain：写入配置（key-value 持久化，API Key 密文存储）。"""
+    from config.security import encrypt_secret_value
+
+    secret_keys = {"embedding_api_key", "rerank_api_key"}
+    payload = request.model_dump(exclude_unset=True)
+    for key, value in payload.items():
+        if value is None:
+            continue
+        stored_value = str(value)
+        if key in secret_keys and stored_value and not stored_value.startswith("enc:"):
+            stored_value = encrypt_secret_value(stored_value)
+        row = db.query(VectorModelConfig).filter(VectorModelConfig.key == key).first()
+        if row is None:
+            row = VectorModelConfig(key=key, value=stored_value)
+            db.add(row)
+        else:
+            row.value = stored_value
+    db.commit()
+
+    logger.info(f"向量模型配置已更新: {sorted(payload.keys())}")
+    return {"success": True, "message": "向量模型配置已更新"}

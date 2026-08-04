@@ -195,7 +195,7 @@ def test_working_memory_store_eviction_and_access_patterns():
     assert store.stats(None)["capacity"] == 2
 
 
-async def test_vector_embedding_providers_and_factory(monkeypatch):
+async def test_vector_embedding_providers_and_factory(monkeypatch, tmp_path):
     """
     验证哈希、OpenAI、本地 sentence-transformers 以及工厂分支逻辑。
     """
@@ -248,6 +248,16 @@ async def test_vector_embedding_providers_and_factory(monkeypatch):
             return FakeEncodedVectors()
 
     monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=FakeSentenceTransformer))
+    # Spec memory-model-config-chain：无本地缓存时加载链会触发真实下载（ModelScope/HF），
+    # 测试用临时快照目录模拟缓存命中，跳过网络下载
+    fake_snapshot = tmp_path / "fake-snapshot"
+    fake_snapshot.mkdir()
+    (fake_snapshot / "config.json").write_text("{}")
+    monkeypatch.setattr(
+        SentenceTransformerEmbeddingProvider,
+        "_find_cached_model_path",
+        lambda self: str(fake_snapshot),
+    )
     local_provider = SentenceTransformerEmbeddingProvider("fake-model")
     assert (await local_provider.embed_texts(["a", "b"])) == [[1.0, 2.0], [3.0, 4.0]]
 
@@ -260,7 +270,11 @@ async def test_vector_embedding_providers_and_factory(monkeypatch):
             return "secret"
 
     monkeypatch.setattr("memory.vector_store_manager.settings.OPENAI_API_KEY", Secret(), raising=False)
-    assert isinstance(create_embedding_provider("openai"), OpenAIEmbeddingProvider)
+    # Spec memory-model-config-chain：openai 统一归入云端 provider（CloudEmbeddingProvider）
+    from memory.vector_store_manager import CloudEmbeddingProvider
+
+    assert isinstance(create_embedding_provider("openai"), CloudEmbeddingProvider)
+    assert isinstance(create_embedding_provider("cloud"), CloudEmbeddingProvider)
     assert isinstance(create_embedding_provider("hash"), HashEmbeddingProvider)
     assert isinstance(create_embedding_provider("local"), SentenceTransformerEmbeddingProvider)
 

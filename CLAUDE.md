@@ -514,7 +514,23 @@ agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 
 > 记忆写入契约：**长期记忆只存 LLM 提炼后的高价值信息（≤200 字事实/偏好/决策）**。`core/feedback.py` 关键词路径与 `consolidation_runner.py` 均经 `extractor.py` 的 LLM 提炼后入库，禁止把对话原文直接写入长期记忆。短期记忆（对话原文）仅用于会话上下文注入与巩固提炼的原料。
 
-### 6.5 Frontend Structure
+### 6.5 向量模型配置（Spec memory-model-config-chain）
+
+嵌入/重排模型支持本地与云端双模式，模型注册表定义于 `memory/model_registry.py`：
+
+| 类型 | 本地模型（ModelScope 默认下载） | 云端模型（OpenAI 兼容 API） |
+|------|------|------|
+| 嵌入 | `all-MiniLM-L6-v2`（384 维）、`bge-small-zh-v1.5`（512 维，中文推荐）、`bge-m3`（1024 维） | `Qwen3-VL-Embedding`（多模态）、`text-embedding-3-small` |
+| 重排 | `ms-marco-MiniLM-L6-v2`（CrossEncoder）、`bge-reranker-v2-m3` | `Qwen3-VL-Reranker`（多模态） |
+
+- **加载链**（本地模型）：本地缓存 → ModelScope（默认源，国内网络友好）→ HuggingFace 降级；`MODEL_DOWNLOAD_SOURCE=huggingface` 可切换
+- **配置项**（settings 或 DB `vector_model_config` 表，DB 优先）：`MEMORY_EMBEDDING_PROVIDER`（local/cloud/hash）、`MEMORY_EMBEDDING_MODEL`、`MEMORY_EMBEDDING_API_KEY/ENDPOINT`、`MEMORY_RERANK_PROVIDER`（local/cloud/off）、`MEMORY_RERANK_MODEL`、`MEMORY_RERANK_API_KEY/ENDPOINT`
+- **模型端点**：`GET /api/models/vector/registry`（注册表+下载状态）、`POST /api/models/vector/download`（后台下载）、`GET /api/models/vector/download/status`、`GET/PUT /api/models/vector/config`
+- **检索接入**：`MemoryManager.search_memories` 混合检索（BM25+向量融合）后，配置了重排器时对 3 倍候选做二次相关性重排再截断；未配置或重排失败时静默退回融合排序
+- **多模态**：`CloudEmbeddingProvider.embed_inputs` 支持文本+图像输入（DashScope/vLLM 兼容格式）；`CloudReranker` 请求结构 `{model, query, documents}`，响应兼容 `{results: [{index, relevance_score}]}`
+- **前端**：MemoryPage 侧栏"向量模型配置"卡片（模型选择/下载按钮/云端 API 配置/下载源/保存）
+
+### 6.6 Frontend Structure
 
 - `src/features/` — Feature modules (chat, dashboard, skills, plugins, memory, billing, experiences, settings, scheduledTasks, auth, user, agents, coding, workspace, inbox, tts, search, test)
 - `src/shared/` — Shared: `api/`, `components/`, `store/`, `hooks/`, `types/`, `utils/`
@@ -523,7 +539,7 @@ agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 - State: Zustand stores (`useAuthStore`, `useChatStore`, `useThemeStore`)
 - API: Axios with `withCredentials` for Cookie-based auth; path alias `@/` → `src/`
 
-### 6.6 Frontend Component Architecture Pattern
+### 6.7 Frontend Component Architecture Pattern
 
 Feature modules follow a layered pattern to avoid circular dependencies and enable lazy loading:
 
