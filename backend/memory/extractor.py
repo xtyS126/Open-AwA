@@ -185,9 +185,15 @@ def _resolve_llm_config(session_factory, preferred_provider: str, preferred_mode
             model = model or config.model
             api_endpoint = config.api_endpoint
 
-            # 解密 API Key：优先 ModelConfiguration.api_key，回退到 ProviderCredential
+            # 解密 API Key：优先 ModelConfiguration.api_key，回退到 ProviderCredential；
+            # api_endpoint 同样从 credential 回退（model_configurations 可能未冗余 endpoint）
             raw_key = config.api_key or ""
             api_key = ""
+            cred = None
+            try:
+                cred = pricing_manager.get_provider_credential(provider)
+            except Exception as exc:
+                logger.warning(f"巩固提炼解析 ProviderCredential 失败 provider={provider}: {exc}")
             if raw_key:
                 if raw_key.startswith("enc:"):
                     # 旧算法密文，跳过（与 executor 行为一致）
@@ -196,18 +202,16 @@ def _resolve_llm_config(session_factory, preferred_provider: str, preferred_mode
                     )
                 else:
                     api_key = decrypt_secret_value(raw_key)
-            if not api_key:
-                try:
-                    cred = pricing_manager.get_provider_credential(provider)
-                    if cred and cred.api_key:
-                        if cred.api_key.startswith("enc:"):
-                            logger.warning(
-                                f"巩固提炼模型 {provider}/{model} 的 ProviderCredential api_key 为旧算法密文，已跳过"
-                            )
-                        else:
-                            api_key = decrypt_secret_value(cred.api_key)
-                except Exception as exc:
-                    logger.warning(f"巩固提炼解析 ProviderCredential 失败 provider={provider}: {exc}")
+            if not api_key and cred and cred.api_key:
+                if cred.api_key.startswith("enc:"):
+                    logger.warning(
+                        f"巩固提炼模型 {provider}/{model} 的 ProviderCredential api_key 为旧算法密文，已跳过"
+                    )
+                else:
+                    api_key = decrypt_secret_value(cred.api_key)
+            # endpoint 回退：config.api_endpoint 为空时使用 ProviderCredential.api_endpoint
+            if not api_endpoint and cred and cred.api_endpoint:
+                api_endpoint = cred.api_endpoint
 
             if not api_key:
                 logger.warning(

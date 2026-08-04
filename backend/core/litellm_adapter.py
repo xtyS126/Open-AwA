@@ -12,6 +12,7 @@ LiteLLM 统一调用适配层。
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 import time
 from datetime import datetime, timezone
@@ -21,6 +22,10 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 from loguru import logger
 
 from config.logging import generate_request_id, get_request_id
+
+# 默认使用 LiteLLM 随包价格表，避免离线环境启动时请求 GitHub 并等待 DNS 超时。
+# 显式环境变量仍可覆盖该默认值，以便需要远程更新价格表的部署自行启用。
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 # LiteLLM 依赖检测
 _LITELLM_AVAILABLE = False
@@ -1125,8 +1130,9 @@ async def litellm_chat_completion(
                 try:
                     response.close()
                 except Exception:
-                    logger.bind(module="litellm_adapter", event="response_close_error").warning(
-                        "关闭 HTTP 响应失败"
+                    # 响应清理失败不影响已获取的结果，降级为 debug 避免每次调用产生噪音
+                    logger.bind(module="litellm_adapter", event="response_close_error").debug(
+                        "关闭 HTTP 响应失败（结果已获取，忽略）"
                     )
 
         if attempt < num_retries:

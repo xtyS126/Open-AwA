@@ -169,7 +169,17 @@ class ConsolidationRunner:
             成功写入长期记忆的条数（0 表示跳过）。
         """
         if self._extract_callback is None:
+            logger.bind(
+                event="immediate_extract_no_callback",
+                module="memory",
+                user_id=user_id,
+            ).warning("即时提炼跳过：未注入提炼回调")
             return 0
+        logger.bind(
+            event="immediate_extract_start",
+            module="memory",
+            user_id=user_id,
+        ).info(f"即时提炼触发 user_id={user_id}")
         try:
             messages_for_llm = [
                 {
