@@ -530,6 +530,37 @@ def _detect_dense_dimension(provider: EmbeddingProvider) -> int:
         raise RuntimeError(f"探测嵌入模型维度失败，拒绝使用不确定维度创建向量库: {exc}") from exc
 
 
+def _sync_vector_model_config_from_db() -> None:
+    """
+    将 DB vector_model_config 表配置同步到 settings（Spec memory-model-config-chain）。
+
+    前端通过 PUT /api/models/vector/config 持久化的模型选择（embedding/rerank provider、
+    模型名、API Key/Endpoint、下载源）在服务初始化时叠加到 settings 之上，
+    使 MemoryManager/VectorStoreManager 创建 provider 时读到最新配置。
+
+    DB 键（小写）映射到 settings 字段（大写前缀 MEMORY_）；同步失败仅记录警告，
+    不影响向量存储初始化（回退 env 默认值）。
+    """
+    try:
+        from db.models import SessionLocal, VectorModelConfig
+
+        with SessionLocal() as db:
+            rows = db.query(VectorModelConfig).all()
+        if not rows:
+            return
+        for row in rows:
+            field_name = f"MEMORY_{row.key.upper()}"
+            if hasattr(settings, field_name):
+                setattr(settings, field_name, row.value)
+        logger.info(
+            f"已从 DB 同步向量模型配置: {sorted(row.key for row in rows)}"
+        )
+    except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"向量模型配置同步失败（回退 env 默认值）: {exc}"
+        )
+
+
 class VectorStoreManager:
     """
     Qdrant 向量存储封装。
@@ -544,6 +575,9 @@ class VectorStoreManager:
         provider_type: Optional[str] = None,
         embedding_provider: Optional[EmbeddingProvider] = None,
     ):
+        # Spec memory-model-config-chain：先同步 DB 持久化配置（vector_model_config 表）
+        # 到 settings，使前端保存的模型选择在服务初始化时生效（DB 优先于 env）
+        _sync_vector_model_config_from_db()
         self.persist_directory = persist_directory or settings.VECTOR_DB_PATH
         os.makedirs(self.persist_directory, exist_ok=True)
 

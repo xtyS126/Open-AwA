@@ -391,6 +391,7 @@ async def run_consolidation(
 )
 async def search_memories(
     query: str,
+    limit: int = Query(10, ge=1, le=50, description="返回数量上限"),
     include_archived: bool = Query(False, description="是否包含已归档记忆"),
     layer: Optional[str] = Query(None, description="记忆层级过滤：core（核心事实）/episodic（情景记忆）/semantic（语义知识）/working（工作记忆）"),
     manager: MemoryManager = Depends(get_memory_manager),
@@ -399,6 +400,7 @@ async def search_memories(
     # 执行搜索，获取候选记忆列表（含关键词检索 + 向量检索的混合排序结果）
     results = await manager.search_memories(
         query=query,
+        limit=limit,
         user_id=str(current_user.id),
         include_archived=include_archived,
         use_vector=True,
