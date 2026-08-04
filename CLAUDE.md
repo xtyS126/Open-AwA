@@ -477,7 +477,7 @@ agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 | Agent Core | `backend/core/` | `agent.py`, `agent_turn_coordinator.py`, `executor.py`（兼容门面）, `execution_configuration.py`, `execution_model_runtime.py`, `execution_tool_runtime.py`, `execution_step_runtime.py`, `execution_prompt_builder.py`, `feedback.py` |
 | Plugin System | `backend/plugins/` | `plugin_manager.py`, `plugin_instance.py` (singleton), `base_plugin.py`, `plugin_sandbox.py`, `plugin_lifecycle.py` (state machine), `hot_update_manager.py` (blue-green) |
 | Skill System | `backend/skills/` | `skill_engine.py`, `skill_executor.py`, `skill_registry.py`, `skill_loader.py` |
-| Memory | `backend/memory/` | `manager.py`, `experience_manager.py`, `vector_store_manager.py` |
+| Memory | `backend/memory/` | `manager.py`, `consolidation_runner.py`, `extractor.py`, `experience_manager.py`, `vector_store_manager.py`, `decay.py`, `auto_dream.py` |
 | Billing | `backend/billing/` | `tracker.py`, `pricing_manager.py`, `engine.py`, `calculator.py` |
 | MCP Protocol | `backend/mcp/` | `client.py`, `manager.py` (thread-safe singleton), `transport.py`, `protocol.py` |
 | Security | `backend/security/` | `rbac.py`, `audit.py`, `permission.py`, `sandbox.py` |
@@ -491,7 +491,30 @@ agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 | System Diagnostics | `backend/api/routes/` | `system.py` (health checks), `test_runner.py` (10 scenario E2E tests) |
 | ACP Vibe Coding | `backend/acp_host/` | `core.py` (dataclasses + exceptions), `client.py` (ACPHostedClient), `service.py` (ACPService singleton), `permissions.py` (hard-block policy), `tool_adapter.py`, `agents/` (4 built-in agents) |
 
-### 6.4 Frontend Structure
+### 6.4 Memory API（记忆系统端点速查，Spec memory-experience-redesign）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/memory/long-term` | 长期记忆列表（含 `source_type`/`memory_layer`/`state` 元数据） |
+| POST | `/api/memory/long-term` | 手动新增长期记忆 |
+| DELETE | `/api/memory/long-term/{id}` | 删除长期记忆 |
+| POST | `/api/memory/long-term/{id}/validate` | 用户"准确"验证：state→validated，confidence 提升至 0.9 |
+| POST | `/api/memory/long-term/{id}/deprecate` | 用户"不准确"主动遗忘：state→deprecated（软删除） |
+| GET | `/api/memory/short-term` | 按 session 分组的短期记忆（对话原文） |
+| GET | `/api/memory/short-term/{session_id}` | 指定会话短期记忆 |
+| GET | `/api/memory/short-term/recent` | 最近 N 条短期记忆（新对话上下文恢复） |
+| GET | `/api/memory/search` | 关键词+向量混合搜索（`?query=`，`layer` 可过滤） |
+| POST | `/api/memory/vector-search` | 混合检索，可传 `keyword_weight`/`vector_weight` |
+| GET | `/api/memory/quality` | 记忆质量批量报告（低置信度/待验证） |
+| GET | `/api/memory/stats` | 记忆统计（total/active/archived/平均置信度/向量数/分层） |
+| POST | `/api/memory/consolidation/run` | 手动触发巩固（短期→长期 LLM 提炼，force 模式） |
+| GET | `/api/memory/decay-config` | 查询记忆衰减配置（按层级） |
+| PUT | `/api/memory/decay-config` | 更新记忆衰减配置（半衰期/阈值/开关） |
+| POST | `/api/memory/archive` | 按时间/重要度/低质量批量归档 |
+
+> 记忆写入契约：**长期记忆只存 LLM 提炼后的高价值信息（≤200 字事实/偏好/决策）**。`core/feedback.py` 关键词路径与 `consolidation_runner.py` 均经 `extractor.py` 的 LLM 提炼后入库，禁止把对话原文直接写入长期记忆。短期记忆（对话原文）仅用于会话上下文注入与巩固提炼的原料。
+
+### 6.5 Frontend Structure
 
 - `src/features/` — Feature modules (chat, dashboard, skills, plugins, memory, billing, experiences, settings, scheduledTasks, auth, user, agents, coding, workspace, inbox, tts, search, test)
 - `src/shared/` — Shared: `api/`, `components/`, `store/`, `hooks/`, `types/`, `utils/`
@@ -500,7 +523,7 @@ agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 - State: Zustand stores (`useAuthStore`, `useChatStore`, `useThemeStore`)
 - API: Axios with `withCredentials` for Cookie-based auth; path alias `@/` → `src/`
 
-### 6.5 Frontend Component Architecture Pattern
+### 6.6 Frontend Component Architecture Pattern
 
 Feature modules follow a layered pattern to avoid circular dependencies and enable lazy loading:
 
@@ -741,6 +764,10 @@ git commit -m "[Type] 变更描述"
 - **Windows ACL restrictions**: Some directories have restrictive permissions; use elevated PowerShell to replace existing files when tools fail with EPERM
 - **测试缓存路径不得越出仓库或跨任务共享**：`backend/pytest.ini` 使用工作区内已忽略的 `.pytest_cache`，`frontend/vite.config.ts` 使用 `frontend/.vite-cache`；从子工作区写 `../../var/cache` 会落到 `D:\代码\var`，共享 `var/cache` 还会在 Windows 触发 ACL 拒绝或文件锁冲突。
 - **PowerShell rg 引号解析**: 复杂正则中混用单双引号会在执行前被 PowerShell 误解析；拆分为固定关键词检查，或先在脚本文件中定义模式再执行。
+- **共享向量运行时必须在 lifespan 预热**：仅在 `api/routes/chat.py` 的聊天入口调用 `prewarm_agent_memory()` 不足以保护先访问记忆页的场景；`main.py` 必须在 `yield` 前通过可降级启动步骤预热 `MemoryManager` 共享向量存储。定位方法：日志中首个 `/api/memory/long-term` 在 `VectorStoreManager initialized` 前等待 15 秒以上；修复方向：复用 `core/agent_runtime_warmup.py`，禁止用调大 Axios timeout 掩盖冷启动。
+- **Vite API 代理目标不得重复携带 `/api`**：浏览器请求已使用 `/api/*`，若 `OPENAWA_API_PROXY_TARGET` 配成 `http://host:port/api`，Vite 会向后端发送 `/api/api/*` 并产生伪 404；`frontend/vite.config.ts` 必须规范化目标为后端 origin，修改代理配置后运行 `viteConfigRetirement.test.ts`。
+- **sharedApi 业务路径不得重复携带 `/api`**：`sharedApi` 的 `baseURL` 已包含 `/api`，业务模块常量必须从领域路径开始（如 `/soul`），禁止写成 `/api/soul`；定位方法：浏览器网络记录出现同源 `/api/api/*`，而前端错误日志只展示调用参数 `/api/*`。修复后必须同时校验真实请求 URL、后端统一响应的 `data` 解包以及写接口路径和载荷。
+- **离线启动默认使用 LiteLLM 本地价格表**：`core/litellm_adapter.py` 必须在导入 `litellm` 前默认设置 `LITELLM_LOCAL_MODEL_COST_MAP=True`，避免无法访问 GitHub 时 DNS 失败与 5 秒远程价格表回退；显式部署环境变量仍可覆盖默认值。
 - **resolve_max_tool_call_rounds**: 定义在 `executor.py`，`agent.py` 通过 import 引用同一函数，不可重复定义
 - **ExecutionLayer 必须保持薄兼容门面**：`core/executor.py` 不得超过 420 行，直接方法不得超过 40 行；配置、模型调用、工具执行和步骤执行分别由 `execution_configuration.py`、`execution_model_runtime.py`、`execution_tool_runtime.py`、`execution_step_runtime.py` 承担，协作者禁止反向 import `core.executor`。修改执行链后必须运行 `tests/test_executor_facade_architecture.py`
 - **TanStack Router 根路径只能有一个重定向权威**：`RootGuard` 负责认证状态与默认落点；`/` 索引路由只能建立有效匹配并返回 `null`，禁止再声明 `/ -> /chat` 重定向。否则未登录路径会在 `/login` 与 `/chat` 之间竞争，触发 `Router.Transitioner` 无限更新并使 Vitest worker OOM。修改根路由后必须运行 `src/__tests__/router/RouteGuards.test.tsx`、`src/__tests__/App.test.tsx` 与入口测试。
@@ -807,6 +834,14 @@ git commit -m "[Type] 变更描述"
 - **pytest 文件日志必须隔离到临时目录**：测试收集前设置独立 `LOG_DIR`，避免测试写入真实 `var/logs`、持有用户日志句柄或因 Windows 文件锁导致回归不稳定。
 - **Sandbox 必须先校验原始命令再解析平台可执行文件**：权限、白名单和危险模式检查必须发生在 Windows/POSIX executable resolution 之前，禁止让危险命令借“command not found”绕过安全拒绝。
 - **旧 code-audit 脚本已移除**：`scripts/code-audit.ps1` 已由提交 `489446ee` 删除；当前 Agent 架构验证使用任务文件 Ruff、`git diff --check`、`tests/test_agent_architecture.py`、目标回归、完整分组 pytest 和隔离 E2E，不得把缺失旧脚本误判为产品失败。
+
+## 19.3 2026-08-04 记忆体验重设计新增陷阱
+
+- **长期记忆禁止直存对话原文**：`core/feedback.py` 关键词即时路径必须经 `ConsolidationRunner.extract_turn_async` 后台 LLM 提炼（≤200 字事实 + 模型评估 importance/source_type）后入库；原文只允许存在于短期记忆层。定位方法：长期记忆列表出现 `User asked: ...` 前缀或 importance 恒为 0.7 的内容；修复方向：检查 feedback `_should_persist` 分支是否又恢复了 `persist_content` 原文直存。
+- **手动巩固在 LLM 不可用时仍推进 watermark**：`POST /api/memory/consolidation/run`（以及自动巩固）在未配置提炼模型时返回 `extracted=0` 但仍持久化 fingerprint 并推进 watermark（防死循环的设计行为）；测试环境手动触发会永久消耗真实短期记忆的提炼机会。定位方法：consolidation/run 返回 processed>0 且 extracted=0；修复方向：验证链路避免在无 LLM 配置环境触发，或为 force 路径增加 dry-run。
+- **mock ConsolidationRunner 必须设置整数阈值**：测试注入 `FeedbackLayer.set_consolidation_runner` 的 mock 必须设置 `_conversation_threshold=10` 与 `increment_conversation_count` 返回值，否则 `_trigger_consolidation_check_async` 中 `count >= threshold` 对 MagicMock 比较抛 TypeError。
+- **前端 React Hooks 不得在 early return 之后声明**：MemoryPage 等组件的 useMemo/useCallback 必须在 loading early return 之前声明，否则数据到达后首帧渲染 Hook 数量不一致，触发 "Rendered more hooks than during the previous render"。
+- **真实库上验证状态变更 API 后必须恢复**：用 `validate`/`deprecate` 做连通性验证会真实修改用户记忆状态（validated/deprecated），验证后须将 `state`/`archive_status` 恢复为 `active` 并还原 confidence 原值（SQLite 直改可行；Qdrant 元数据被服务锁定，可用 `archive_long_term_memory(id, "active")` 或接受向量侧差异）。
 
 ## 20. API Path Prefix
 

@@ -389,8 +389,8 @@ async def test_llm_extract_failure_does_not_block_watermark_advance():
     And fingerprint 表已记录（避免下次重试时重复调用 LLM）
     """
     runner, manager, factory, _ = _build_runner()
-    m1 = _insert_short_term_memory(factory, "消息 1", role="user")
-    m2 = _insert_short_term_memory(factory, "消息 2", role="user")
+    _insert_short_term_memory(factory, "消息 1", role="user")
+    _insert_short_term_memory(factory, "消息 2", role="user")
 
     async def extract_callback(messages, user_id):
         raise RuntimeError("LLM 服务不可用")
@@ -765,3 +765,129 @@ async def test_no_callback_skips_llm_but_advances_watermark():
             ConsolidationFingerprint.user_id == "user-1",
         ).all()
         assert len(fps) == 2
+
+
+# ---------------------------------------------------------------------------
+# Spec memory-experience-redesign：extract_turn_async 即时提炼
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extract_turn_async_persists_extracted_memories():
+    """
+    场景：关键词命中后调用 extract_turn_async 即时提炼。
+
+    Given 注入 mock 提炼回调（返回 2 条提炼结果）
+    When 调用 extract_turn_async("请记住我喜欢 Python", "好的", "user-1")
+    Then 返回 2（写入条数）
+    And 长期记忆表存在 2 条提炼内容（不含原文）
+    And 每条含 LLM 评估的 importance 与 source_type
+    """
+    runner, manager, factory, _ = _build_runner(with_constant=False)
+
+    async def _fake_callback(messages, user_id):
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "请记住我喜欢 Python"
+        assert messages[1]["role"] == "assistant"
+        return [
+            {
+                "content": "用户喜欢 Python 编程语言",
+                "importance": 0.8,
+                "source_type": "preference",
+                "source_short_term_memory_id": None,
+            },
+            {
+                "content": "用户偏好使用虚拟环境管理依赖",
+                "importance": 0.6,
+                "source_type": "knowledge",
+                "source_short_term_memory_id": None,
+            },
+        ]
+
+    runner.set_extract_callback(_fake_callback)
+
+    count = await runner.extract_turn_async(
+        "请记住我喜欢 Python", "好的", "user-1", "default"
+    )
+
+    assert count == 2
+    with factory() as db:
+        memories = db.query(LongTermMemory).filter(
+            LongTermMemory.user_id == "user-1"
+        ).all()
+        contents = [m.content for m in memories]
+        assert "用户喜欢 Python 编程语言" in contents
+        assert "用户偏好使用虚拟环境管理依赖" in contents
+        # 原文不落库
+        assert not any("请记住我喜欢 Python" in c for c in contents)
+        memories_by_content = {m.content: m for m in memories}
+        assert memories_by_content["用户喜欢 Python 编程语言"].importance == 0.8
+        assert memories_by_content["用户喜欢 Python 编程语言"].source_type == "preference"
+
+
+@pytest.mark.asyncio
+async def test_extract_turn_async_failure_skips_without_original():
+    """
+    场景：LLM 提炼失败（回调抛异常）时静默跳过。
+
+    Given 注入抛异常的 mock 回调
+    When 调用 extract_turn_async
+    Then 返回 0（不抛异常）
+    And 长期记忆表为空（原文不落库）
+    """
+    runner, manager, factory, _ = _build_runner()
+
+    async def _failing_callback(messages, user_id):
+        raise RuntimeError("LLM 不可用")
+
+    runner.set_extract_callback(_failing_callback)
+
+    count = await runner.extract_turn_async("请记住 X", "好的", "user-1")
+
+    assert count == 0
+    with factory() as db:
+        assert db.query(LongTermMemory).filter(
+            LongTermMemory.user_id == "user-1"
+        ).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_extract_turn_async_without_callback_returns_zero():
+    """
+    场景：未注入提炼回调时直接跳过。
+
+    Given runner 未 set_extract_callback
+    When 调用 extract_turn_async
+    Then 返回 0 且不抛异常
+    """
+    runner, manager, factory, _ = _build_runner()
+
+    count = await runner.extract_turn_async("请记住 X", "好的", "user-1")
+
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_extract_turn_async_empty_result_skips():
+    """
+    场景：LLM 提炼返回空数组（无高价值内容）时不写入。
+
+    Given 注入返回 [] 的 mock 回调
+    When 调用 extract_turn_async
+    Then 返回 0
+    And 长期记忆表为空
+    """
+    runner, manager, factory, _ = _build_runner()
+
+    async def _empty_callback(messages, user_id):
+        return []
+
+    runner.set_extract_callback(_empty_callback)
+
+    count = await runner.extract_turn_async("今天天气不错", "是的", "user-1")
+
+    assert count == 0
+    with factory() as db:
+        assert db.query(LongTermMemory).filter(
+            LongTermMemory.user_id == "user-1"
+        ).count() == 0

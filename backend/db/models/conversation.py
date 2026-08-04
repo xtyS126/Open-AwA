@@ -112,6 +112,18 @@ class LongTermMemory(Base):
     # consolidation_runner 从短期记忆提炼高价值信息时，记录来源 ID 便于追溯
     extracted_from: Mapped[Optional[List[int]]] = mapped_column(JSON, nullable=True, comment="来源短期记忆 ID 列表")
 
+    @property
+    def source_type(self) -> str:
+        """
+        记忆来源类型（Spec memory-experience-redesign）。
+
+        source_type 存储于 memory_metadata 中（无独立列），此处以 property
+        暴露，供 Pydantic LongTermMemoryResponse 经 from_attributes 读取。
+        历史数据缺省回退 "manual"。
+        """
+        metadata = self.memory_metadata or {}
+        return str(metadata.get("source_type") or "manual")
+
     __table_args__ = (
         Index("ix_ltm_ws_archive", "workspace_id", "archive_status"),
         Index("ix_ltm_user_layer", "user_id", "memory_layer"),

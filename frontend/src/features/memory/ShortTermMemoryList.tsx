@@ -332,7 +332,7 @@ function ShortTermMemoryList({ initialLimit = 50 }: ShortTermMemoryListProps) {
       {/* 顶部：标题 + 搜索框 + 刷新 */}
       <div className={styles.header}>
         <div className={styles.headerTop}>
-          <h2 className={styles.title}>短期记忆</h2>
+          <h2 className={styles.title}>对话记录（短期记忆）</h2>
           <div className={styles.headerActions}>
             <span className={styles.countBadge}>共 {memories.length} 条 / {sessionGroups.length} 个会话</span>
             <button
@@ -346,6 +346,9 @@ function ShortTermMemoryList({ initialLimit = 50 }: ShortTermMemoryListProps) {
             </button>
           </div>
         </div>
+        <p className={styles.subtitleHint}>
+          短期记忆是对话原文，供 AI 恢复会话上下文使用，不参与语义检索
+        </p>
         <div className={styles.searchWrap}>
           <span className={styles.searchIcon}>
             <SearchIcon />

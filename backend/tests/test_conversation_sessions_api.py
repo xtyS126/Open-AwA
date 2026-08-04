@@ -2,7 +2,6 @@
 会话聚合与会话接口回归测试，覆盖会话归属修复与前端依赖的 CRUD 契约。
 """
 
-import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -105,7 +104,12 @@ def _test_client():
 
 @pytest.mark.asyncio
 async def test_feedback_layer_forwards_user_id_to_memory_manager():
-    """反馈层写入记忆时应保留当前用户标识。"""
+    """
+    反馈层写入记忆时应保留当前用户标识。
+
+    Spec memory-experience-redesign：关键词命中后长期记忆写入改为后台
+    提炼触发（原文不再直存），user_id 经 extract_turn_async 透传。
+    """
 
     class StubMemoryManager:
         def __init__(self):
@@ -118,21 +122,47 @@ async def test_feedback_layer_forwards_user_id_to_memory_manager():
         async def add_long_term_memory(self, **kwargs):
             self.long_calls.append(kwargs)
 
+    class StubRunner:
+        """记录即时提炼调用（含 user_id 透传）。"""
+
+        _conversation_threshold = 10
+
+        def __init__(self):
+            self.extract_calls = []
+
+        def increment_conversation_count(self, user_id, workspace_id="default"):
+            return 5
+
+        async def extract_turn_async(self, user_input, response, user_id, workspace_id="default"):
+            self.extract_calls.append(
+                {"user_input": user_input, "response": response, "user_id": user_id}
+            )
+            return 1
+
     memory_manager = StubMemoryManager()
+    runner = StubRunner()
     feedback_layer = FeedbackLayer()
     feedback_layer.set_memory_manager(memory_manager)
+    feedback_layer.set_consolidation_runner(runner)
 
     await feedback_layer.update_memory(
         user_input="请记住我的偏好",
         response="好的，我会记住这个重要偏好。",
         context={"session_id": "session-feedback", "user_id": "user-1"},
     )
+    # 让后台 create_task 有执行机会
+    import asyncio
+
+    await asyncio.sleep(0)
 
     assert len(memory_manager.short_calls) == 2
     assert memory_manager.short_calls[0]["user_id"] == "user-1"
     assert memory_manager.short_calls[1]["user_id"] == "user-1"
-    assert len(memory_manager.long_calls) == 1
-    assert memory_manager.long_calls[0]["user_id"] == "user-1"
+    # 原文不再直存长期记忆；提炼触发携带 user_id
+    assert len(memory_manager.long_calls) == 0
+    assert len(runner.extract_calls) == 1
+    assert runner.extract_calls[0]["user_id"] == "user-1"
+    assert runner.extract_calls[0]["user_input"] == "请记住我的偏好"
 
 
 def test_ensure_conversation_reuses_existing_session_when_user_id_missing():

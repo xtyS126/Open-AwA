@@ -10913,6 +10913,21 @@ export interface components {
             memory_metadata: {
                 [key: string]: unknown;
             };
+            /**
+             * Source Type
+             * @description 记忆来源类型（llm_extracted/user_input/manual/plugin）
+             */
+            source_type: string;
+            /**
+             * Memory Layer
+             * @description 记忆层级（core/episodic/semantic/working）
+             */
+            memory_layer: string;
+            /**
+             * State
+             * @description 状态机（active/validated/archived/deprecated）
+             */
+            state: string;
         };
         /**
          * MCPServerCreate

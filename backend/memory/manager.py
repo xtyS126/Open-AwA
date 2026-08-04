@@ -1659,6 +1659,59 @@ class MemoryManager:
                 )
             return True
 
+    async def validate_long_term_memory(self, memory_id: int) -> bool:
+        """
+        用户确认单条长期记忆准确（Spec memory-experience-redesign）。
+
+        将状态晋升为 ``validated``（四状态机语义：用户确认后不再被定期归档
+        评估降级），confidence 提升至 0.9（与 state 模型注释一致），并同步
+        向量库元数据。对应 OpenBiliClaw 调研中的"准/不准"用户验证闭环。
+
+        Args:
+            memory_id: 长期记忆 ID。
+
+        Returns:
+            ``True`` 表示晋升成功，``False`` 表示记忆不存在。
+        """
+        result = await asyncio.to_thread(
+            self._validate_long_term_memory_sync,
+            memory_id,
+        )
+        if result:
+            logger.info(f"Validated long-term memory {memory_id}")
+        return result
+
+    def _validate_long_term_memory_sync(self, memory_id: int) -> bool:
+        """同步晋升单条长期记忆为 validated 状态。"""
+        with self.session_factory() as db:
+            memory = db.query(LongTermMemory).filter(
+                LongTermMemory.id == memory_id
+            ).first()
+            if memory is None:
+                return False
+            if getattr(memory, "state", None) == "validated":
+                # 已是目标状态，无需重复写入
+                return True
+            memory.state = "validated"
+            # validated 语义：用户确认后 confidence 提升至 0.9
+            memory.confidence = max(0.9, float(memory.confidence or 0))
+            memory.archive_status = "active"
+            memory.last_access = self._ensure_aware_datetime(datetime.now(timezone.utc))
+            db.commit()
+            # 同步向量库元数据，保证检索排序一致
+            try:
+                self.vector_store.update_memory_metadata(
+                    memory_id,
+                    state="validated",
+                    archive_status="active",
+                    confidence=memory.confidence,
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"向量库验证元数据同步失败 memory_id={memory_id}: {exc}"
+                )
+            return True
+
     async def archive_long_term_memory(
         self,
         memory_id: int,

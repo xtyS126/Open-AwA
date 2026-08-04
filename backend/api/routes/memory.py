@@ -4,6 +4,7 @@
 
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,7 +17,6 @@ from api.schemas import (
     LongTermMemoryResponse,
     MemoryArchiveRequest,
     MemoryQualityResponse,
-    MemoryStatsResponse,
     MemoryVectorSearchRequest,
     ShortTermMemoryCreate,
     ShortTermMemoryResponse,
@@ -278,6 +278,111 @@ async def delete_long_term_memory(
     return {"message": "Memory deleted successfully"}
 
 
+def _get_owned_memory_or_404(
+    db: Session, memory_id: int, user_id: str
+) -> LongTermMemory:
+    """
+    查询当前用户的单条长期记忆，不存在或非本人所有时抛 404/403。
+
+    Spec memory-experience-redesign：validate/deprecate 共用所有权校验，
+    防止越权操作他人记忆。
+    """
+    memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+    if not memory:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    if memory.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Access denied: memory does not belong to current user")
+    return memory
+
+
+@router.post(
+    "/long-term/{memory_id}/validate",
+    summary="确认长期记忆准确",
+    description="用户确认该记忆准确，状态晋升为 validated，confidence 提升至 0.9，不再参与定期归档。",
+)
+async def validate_long_term_memory(
+    memory_id: int,
+    manager: MemoryManager = Depends(get_memory_manager),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Spec memory-experience-redesign：用户"准确"验证闭环。"""
+    db = manager.session_factory()
+    try:
+        _get_owned_memory_or_404(db, memory_id, str(current_user.id))
+    finally:
+        db.close()
+    success = await manager.validate_long_term_memory(memory_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"ok": True, "message": "Memory validated", "memory_id": memory_id, "state": "validated"}
+
+
+@router.post(
+    "/long-term/{memory_id}/deprecate",
+    summary="主动遗忘长期记忆",
+    description="用户主动遗忘该记忆，状态置为 deprecated，不再注入 LLM 上下文也不再被检索返回，数据保留审计。",
+)
+async def deprecate_long_term_memory(
+    memory_id: int,
+    manager: MemoryManager = Depends(get_memory_manager),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Spec memory-experience-redesign：用户"不准确"验证闭环（软删除）。"""
+    db = manager.session_factory()
+    try:
+        _get_owned_memory_or_404(db, memory_id, str(current_user.id))
+    finally:
+        db.close()
+    success = await manager.archive_long_term_memory(memory_id, archive_status="deprecated")
+    if not success:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"ok": True, "message": "Memory deprecated", "memory_id": memory_id, "state": "deprecated"}
+
+
+@router.post(
+    "/consolidation/run",
+    summary="手动触发记忆巩固",
+    description="立即执行短期记忆 → 长期记忆的 LLM 提炼巩固（force 模式），返回处理统计。",
+)
+async def run_consolidation(
+    manager: MemoryManager = Depends(get_memory_manager),
+    current_user: User = Depends(get_current_user),
+    workspace_id: str = "default",
+) -> Dict[str, Any]:
+    """Spec memory-experience-redesign：手动触发巩固（复用 ConsolidationRunner.force）。"""
+    # 与 agent_runtime 注入方式保持一致：独立 session 工厂 + 显式提炼回调
+    from config.settings import settings
+    from memory.consolidation_runner import ConsolidationRunner
+    from memory.extractor import make_default_extract_callback
+
+    runner = ConsolidationRunner(
+        manager,
+        SessionLocal,
+        conversation_threshold=settings.CONSOLIDATION_CONVERSATION_THRESHOLD,
+        batch_size=settings.CONSOLIDATION_BATCH_SIZE,
+    )
+    runner.set_extract_callback(
+        make_default_extract_callback(
+            SessionLocal,
+            provider=settings.CONSOLIDATION_EXTRACT_PROVIDER or None,
+            model=settings.CONSOLIDATION_EXTRACT_MODEL or None,
+        )
+    )
+    try:
+        return await runner.run_if_due(
+            user_id=str(current_user.id),
+            force=True,
+            workspace_id=workspace_id,
+        )
+    except Exception as exc:
+        logger.warning(f"手动巩固执行异常（已捕获，不抛 500）: {exc}")
+        return {
+            "triggered": True,
+            "success": False,
+            "error": str(exc)[:500],
+        }
+
+
 @router.get(
     "/search",
     response_model=List[LongTermMemoryResponse],
@@ -415,6 +520,37 @@ class MemoryDecayConfigRequest(BaseModel):
     half_life_days: int = Field(default=30, ge=1, le=3650, description="半衰期（天）")
     threshold: float = Field(default=0.1, ge=0.0, le=1.0, description="衰减阈值（低于此值归档）")
     enabled: bool = Field(default=True, description="是否启用衰减")
+
+
+@router.get(
+    "/decay-config",
+    summary="查询记忆衰减配置",
+    description="返回各层级的衰减配置（未配置的层级返回默认值）。",
+)
+async def get_decay_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Spec memory-experience-redesign：前端开关回显真实配置。"""
+    rows = db.query(MemoryDecayConfig).all()
+    # 按 layer 组织，未配置的层级给默认值（与 MemoryDecayConfigRequest 默认一致）
+    defaults = {
+        "decay_function": "exponential",
+        "half_life_days": 30,
+        "threshold": 0.1,
+        "enabled": True,
+    }
+    result: Dict[str, Any] = {}
+    for layer in ("core", "episodic", "semantic", "working"):
+        config = next((r for r in rows if r.layer == layer), None)
+        result[layer] = {
+            "layer": layer,
+            "decay_function": config.decay_function if config else defaults["decay_function"],
+            "half_life_days": config.half_life_days if config else defaults["half_life_days"],
+            "threshold": config.threshold if config else defaults["threshold"],
+            "enabled": config.enabled if config else defaults["enabled"],
+        }
+    return {"success": True, "data": result}
 
 
 @router.put(

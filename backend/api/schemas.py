@@ -205,7 +205,13 @@ class LongTermMemoryResponse(MemoryBase):
     quality_score: float
     archive_status: str
     memory_metadata: Dict[str, Any]
-    
+    # Spec memory-experience-redesign：向前端暴露真实元数据
+    # source_type 由 LongTermMemory.source_type property 提供（自 memory_metadata 读取，
+    # 历史数据缺省回退 manual）；memory_layer / state 为 ORM 顶层字段，均经 from_attributes 注入
+    source_type: str = Field(default="manual", description="记忆来源类型（llm_extracted/user_input/manual/plugin）")
+    memory_layer: str = Field(default="semantic", description="记忆层级（core/episodic/semantic/working）")
+    state: str = Field(default="active", description="状态机（active/validated/archived/deprecated）")
+
     class Config:
         """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
         from_attributes = True

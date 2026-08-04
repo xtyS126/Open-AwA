@@ -150,6 +150,72 @@ class ConsolidationRunner:
                 "error": str(exc),
             }
 
+    async def extract_turn_async(
+        self,
+        user_input: str,
+        response: str,
+        user_id: str,
+        workspace_id: str = "default",
+    ) -> int:
+        """
+        关键词即时路径：将单轮对话异步提交 LLM 提炼后写入长期记忆。
+
+        与 :meth:`_consolidate` 的区别：输入来自内存中的本轮对话（尚未
+        落库为短期记忆），输出直接调用 add_long_term_memory。提炼失败或
+        无价值内容时静默跳过、不落原文，由 feedback.py 以 create_task
+        后台调用，不阻塞对话主流程。
+
+        Returns:
+            成功写入长期记忆的条数（0 表示跳过）。
+        """
+        if self._extract_callback is None:
+            return 0
+        try:
+            messages_for_llm = [
+                {
+                    "id": None,
+                    "role": "user",
+                    "content": (user_input or "")[: self.SHORT_TERM_CONTENT_TRUNCATE],
+                    "session_id": None,
+                },
+                {
+                    "id": None,
+                    "role": "assistant",
+                    "content": (response or "")[: self.SHORT_TERM_CONTENT_TRUNCATE],
+                    "session_id": None,
+                },
+            ]
+            extracted = await self._extract_callback(messages_for_llm, user_id)
+        except Exception as exc:
+            logger.bind(
+                event="immediate_extract_failed",
+                module="memory",
+                user_id=user_id,
+            ).warning(f"即时提炼失败，跳过本轮持久化: {exc}")
+            return 0
+
+        count = 0
+        for item in extracted or []:
+            content = str(item.get("content", "")).strip()
+            if not content or len(content) > self.memory_manager._MAX_LONG_TERM_CONTENT_CHARS:
+                continue
+            try:
+                await self.memory_manager.add_long_term_memory(
+                    content=content,
+                    importance=float(item.get("importance", 0.5)),
+                    user_id=user_id,
+                    source_type=item.get("source_type", "llm_extracted"),
+                    workspace_id=workspace_id,
+                )
+                count += 1
+            except Exception as exc:
+                logger.bind(
+                    event="immediate_extract_add_failed",
+                    module="memory",
+                    user_id=user_id,
+                ).warning(f"即时提炼写入单条失败（跳过）: {exc}")
+        return count
+
     def increment_conversation_count(
         self,
         user_id: str,

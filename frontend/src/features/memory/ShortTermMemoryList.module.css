@@ -30,6 +30,14 @@
   margin: 0;
 }
 
+/* Spec memory-experience-redesign：对话原文定位澄清 */
+.subtitleHint {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  line-height: var(--leading-snug);
+}
+
 .headerActions {
   display: flex;
   align-items: center;

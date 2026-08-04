@@ -236,47 +236,66 @@ class TestUpdateMemoryPersistence:
         self.mock_memory_manager.append_to_last_assistant_memory = AsyncMock()
         self.mock_memory_manager.add_long_term_memory = AsyncMock()
         self.feedback.set_memory_manager(self.mock_memory_manager)
+        # Spec memory-experience-redesign：注入 mock 巩固运行器验证即时提炼触发
+        self.mock_runner = MagicMock()
+        self.mock_runner._conversation_threshold = 10
+        self.mock_runner.increment_conversation_count = MagicMock(return_value=5)
+        self.mock_runner.extract_turn_async = AsyncMock(return_value=1)
+        self.feedback.set_consolidation_runner(self.mock_runner)
 
-    def test_user_preference_triggers_long_term_memory(self):
-        """用户输入含"偏好"时触发长期记忆写入，且内容优先使用 user_input"""
-        asyncio.run(self.feedback.update_memory(
+    async def test_user_preference_triggers_immediate_extract(self):
+        """用户输入含"偏好"时触发后台即时提炼，不再原文直存长期记忆"""
+        await self.feedback.update_memory(
             user_input="请记住我的偏好：我喜欢Python",
             response="好的，我知道了",
             context={"user_id": "test_user", "session_id": "test_session"},
-        ))
+        )
+        # 让后台 create_task 有执行机会（AsyncMock 立即完成）
+        await asyncio.sleep(0)
 
-        # 验证长期记忆被调用
-        assert self.mock_memory_manager.add_long_term_memory.called, "长期记忆应被调用"
-        call_args = self.mock_memory_manager.add_long_term_memory.call_args
-        content = call_args.kwargs.get("content") or (call_args.args[0] if call_args.args else None)
-        # 用户输入含偏好关键词，content 应为 user_input 本身
-        assert "请记住我的偏好" in content
-        assert "我喜欢Python" in content
+        # 后台提炼被触发，且携带本轮对话与用户 ID（位置参数：user_input/response/user_id/workspace_id）
+        assert self.mock_runner.extract_turn_async.called, "后台即时提炼应被触发"
+        call_args = self.mock_runner.extract_turn_async.call_args
+        assert "我喜欢Python" in call_args.args[0]
+        assert call_args.args[2] == "test_user"
+        # 原文不再直存长期记忆（由提炼结果决定是否写入）
+        assert not self.mock_memory_manager.add_long_term_memory.called, "原文不应直存长期记忆"
 
-    def test_response_only_keyword_uses_dialog_format(self):
-        """仅 response 含关键词时使用对话拼接格式"""
-        asyncio.run(self.feedback.update_memory(
+    async def test_response_only_keyword_triggers_immediate_extract(self):
+        """仅 response 含关键词时同样触发后台即时提炼"""
+        await self.feedback.update_memory(
             user_input="今天的会议内容",
             response="我会记住这次会议的重要决定",
             context={"user_id": "test_user", "session_id": "test_session"},
-        ))
+        )
+        await asyncio.sleep(0)
 
-        assert self.mock_memory_manager.add_long_term_memory.called
-        call_args = self.mock_memory_manager.add_long_term_memory.call_args
-        content = call_args.kwargs.get("content")
-        # response 含关键词，使用对话拼接格式
-        assert "User asked: 今天的会议内容" in content
-        assert "Assistant responded:" in content
+        assert self.mock_runner.extract_turn_async.called, "response 含关键词也应触发即时提炼"
+        call_args = self.mock_runner.extract_turn_async.call_args
+        assert call_args.args[0] == "今天的会议内容"
+        assert not self.mock_memory_manager.add_long_term_memory.called
 
-    def test_neutral_dialog_no_persistence(self):
+    async def test_keyword_without_runner_skips_persistence(self):
+        """未注入巩固运行器时，关键词命中静默跳过长期记忆写入（不落原文）"""
+        self.feedback.set_consolidation_runner(None)
+        await self.feedback.update_memory(
+            user_input="请记住我的偏好：我喜欢Python",
+            response="好的",
+            context={"user_id": "test_user", "session_id": "test_session"},
+        )
+
+        assert not self.mock_memory_manager.add_long_term_memory.called, "未注入 runner 时不应直存原文"
+
+    async def test_neutral_dialog_no_persistence(self):
         """中性对话不触发长期记忆写入"""
-        asyncio.run(self.feedback.update_memory(
+        await self.feedback.update_memory(
             user_input="今天天气如何",
             response="今天天气不错",
             context={"user_id": "test_user", "session_id": "test_session"},
-        ))
+        )
 
         assert not self.mock_memory_manager.add_long_term_memory.called, "中性对话不应触发长期记忆"
+        assert not self.mock_runner.extract_turn_async.called, "中性对话不应触发即时提炼"
 
     def test_short_term_memory_always_called(self):
         """短期记忆始终被调用（用户+助手两条）"""

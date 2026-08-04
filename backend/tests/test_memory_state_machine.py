@@ -561,3 +561,95 @@ async def test_memory_forget_tool_returns_error_for_nonexistent(monkeypatch):
 
     assert result["success"] is False
     assert "不存在" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# Spec memory-experience-redesign：validate 用户验证闭环
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_validate_sets_state_validated_and_confidence():
+    """
+    场景：用户点击"准确"按钮调用 validate_long_term_memory。
+
+    Given DB 中存在一条 state="active"、confidence=0.6 的记忆
+    When 调用 validate_long_term_memory(memory_id)
+    Then state="validated"、archive_status="active"、confidence 提升至 0.9
+    And 向量库 update_memory_metadata 传入 state="validated"
+    """
+    manager, factory, fake_store = _build_manager()
+    memory_id = _insert_memory(
+        factory, state="active", archive_status="active", confidence=0.6
+    )
+
+    result = await manager.validate_long_term_memory(memory_id)
+
+    assert result is True
+    with factory() as db:
+        memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+        assert memory.state == "validated"
+        assert memory.archive_status == "active"
+        assert memory.confidence == 0.9
+
+    assert any(
+        mid == memory_id and kwargs.get("state") == "validated"
+        for mid, kwargs in fake_store.metadata_updates
+    ), f"向量库应同步 state=validated, 实际: {fake_store.metadata_updates}"
+
+
+@pytest.mark.asyncio
+async def test_validate_keeps_higher_confidence():
+    """
+    场景：记忆 confidence 已高于 0.9 时，验证不降级。
+
+    Given DB 中存在一条 confidence=0.95 的记忆
+    When 调用 validate_long_term_memory(memory_id)
+    Then state="validated" 且 confidence 保持 0.95
+    """
+    manager, factory, _ = _build_manager()
+    memory_id = _insert_memory(
+        factory, state="active", confidence=0.95
+    )
+
+    await manager.validate_long_term_memory(memory_id)
+
+    with factory() as db:
+        memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+        assert memory.state == "validated"
+        assert memory.confidence == 0.95
+
+
+@pytest.mark.asyncio
+async def test_validate_missing_memory_returns_false():
+    """
+    场景：验证不存在的记忆 ID。
+
+    When 调用 validate_long_term_memory(memory_id=99999)
+    Then 返回 False（不抛异常）
+    """
+    manager, _, _ = _build_manager()
+    result = await manager.validate_long_term_memory(99999)
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_validate_idempotent():
+    """
+    场景：已 validated 的记忆再次验证。
+
+    Given DB 中存在一条 state="validated" 的记忆
+    When 再次调用 validate_long_term_memory
+    Then 返回 True 且状态不变（幂等）
+    """
+    manager, factory, _ = _build_manager()
+    memory_id = _insert_memory(
+        factory, state="validated", confidence=0.9
+    )
+
+    result = await manager.validate_long_term_memory(memory_id)
+
+    assert result is True
+    with factory() as db:
+        memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+        assert memory.state == "validated"

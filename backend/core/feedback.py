@@ -212,29 +212,14 @@ class FeedbackLayer:
             # 同时检查用户输入与助手响应：用户主动声明偏好（如"请记住我喜欢 Python"）时
             # 助手回复可能不含关键词，必须以 user_input 为主触发持久化
             if self._should_persist(response) or self._should_persist(user_input):
-                # 提取关键信息：若用户输入含"记住/偏好/喜欢"等显式偏好声明，优先以用户输入作为记忆内容
-                # 否则保留 user_input + response 的完整对话上下文
-                if self._should_persist(user_input):
-                    persist_content = user_input
-                else:
-                    persist_content = f"User asked: {user_input}\nAssistant responded: {response}"
-                # Spec memory-quality-and-short-term-recovery：
-                # 长期记忆内容必须 ≤500 字（MemoryManager._scrub_and_embed 的硬限制）。
-                # 超长内容（如完整对话原文）只写短期记忆，由 consolidation_runner 后台用 LLM
-                # 提炼为 ≤200 字的高价值片段再写入长期记忆，避免直接抛 ValueError 中断 chat 流。
-                # 截断到 500 字以内作为兜底，确保即使 _should_persist 命中也能成功写入。
-                max_chars = getattr(self.memory_manager, '_MAX_LONG_TERM_CONTENT_CHARS', 500)
-                if len(persist_content) > max_chars:
-                    persist_content = persist_content[:max_chars]
-                try:
-                    await self.memory_manager.add_long_term_memory(
-                        content=persist_content,
-                        importance=0.7,
-                        user_id=user_id,
-                    )
-                except ValueError as ve:
-                    # 内容校验失败（如 PII 脱敏后为空）：仅记录日志不中断 chat
-                    logger.warning(f"长期记忆写入被拒绝（不影响 chat 主流程）: {ve}")
+                # Spec memory-experience-redesign：
+                # 不再将对话原文直接写入长期记忆。命中关键词后由后台任务调用 LLM
+                # 提炼（≤200 字事实 + 模型评估 importance + source_type），提炼失败
+                # 或无价值内容时静默跳过、不落原文。对话响应零阻塞，原文仅保留在
+                # 短期记忆层（供上下文注入与巩固提炼消费）。
+                self._trigger_immediate_extract_async(
+                    user_input, response, user_id, context
+                )
                 # 命中持久化决策后，异步触发画像提取（复用 _should_persist 信号）
                 # maybe_extract 内部有锁去重，与 chat 路由的 N 轮兜底不会重复执行
                 self._trigger_profile_extract_async(user_id)
@@ -251,6 +236,56 @@ class FeedbackLayer:
         except Exception as exc:
             logger.opt(exception=True).error("记忆持久化失败")
             raise MemoryPersistenceError("记忆持久化失败") from exc
+
+    def _trigger_immediate_extract_async(
+        self,
+        user_input: str,
+        response: str,
+        user_id: Optional[str],
+        context: Dict[str, Any],
+    ) -> None:
+        """
+        关键词命中时后台触发即时提炼（Spec memory-experience-redesign）。
+
+        通过 asyncio.create_task 调用 ConsolidationRunner.extract_turn_async，
+        由 LLM 将本轮对话提炼为 ≤200 字事实后写入长期记忆；提炼失败或无价值
+        内容时静默跳过，不落原文，不阻塞 chat 响应。
+
+        关键设计：
+        1. 复用注入的 consolidation_runner（未注入时跳过，与自动巩固一致）
+        2. 后台任务异常全部捕获并记录日志，不影响主流程
+        3. 不持有请求级 session：extract_turn_async 内部分解 LLM 配置时使用
+           session_factory 创建独立 session
+
+        Args:
+            user_input: 本轮用户输入
+            response: 本轮助手响应
+            user_id: 用户 ID（可能为空，隔离维度）
+            context: 当前执行上下文（用于取 workspace_id）
+        """
+        runner = self.consolidation_runner
+        if runner is None:
+            logger.debug("consolidation_runner 未注入，跳过即时提炼")
+            return
+        try:
+            workspace_id = context.get("workspace_id", "default")
+
+            async def _extract_task() -> None:
+                """后台即时提炼任务。"""
+                try:
+                    await runner.extract_turn_async(
+                        user_input, response, user_id, workspace_id
+                    )
+                except Exception as exc:
+                    logger.opt(exception=True).warning(
+                        f"即时提炼后台任务异常（不影响主流程）: {exc}"
+                    )
+
+            asyncio.create_task(_extract_task())
+        except Exception as exc:
+            logger.opt(exception=True).warning(
+                f"触发即时提炼失败（不影响主流程）: {exc}"
+            )
 
     def _trigger_consolidation_check_async(
         self,

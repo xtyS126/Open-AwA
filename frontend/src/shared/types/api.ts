@@ -10,6 +10,12 @@ export interface LongTermMemory {
   id: number
   content: string
   importance: number
+  confidence?: number
+  quality_score?: number
+  archive_status?: string
+  source_type?: string
+  memory_layer?: string
+  state?: string
   access_count?: number
   created_at?: string
   last_access?: string
