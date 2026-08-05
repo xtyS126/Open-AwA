@@ -2,6 +2,8 @@ import React, { useState } from 'react'
 import { shallow } from 'zustand/shallow'
 import { authAPI, setTempApiKey, persistApiKey, clearCachedApiKey } from '@/shared/api/api'
 import { useAuthStore } from '@/shared/store/authStore'
+import { useNavigate } from '@/shared/routing'
+import { isNativeApp } from '@/shared/utils/platform'
 import { apiKeySchema } from '@/shared/schemas/auth'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './LoginPage.module.css'
@@ -14,13 +16,21 @@ import styles from './LoginPage.module.css'
  */
 function LoginPage() {
   // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
-  const { setAuth, setInitialized } = useAuthStore(s => ({
+  const { setAuth, setInitialized, setNeedsServerSelection } = useAuthStore(s => ({
     setAuth: s.setAuth,
     setInitialized: s.setInitialized,
+    setNeedsServerSelection: s.setNeedsServerSelection,
   }), shallow)
+  const navigate = useNavigate()
   const [apiKey, setApiKey] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  /** APP 模式：重新选择局域网后端 */
+  const handleSwitchServer = () => {
+    setNeedsServerSelection(true)
+    void navigate('/server-select')
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -117,6 +127,15 @@ function LoginPage() {
             {loading ? '验证中...' : '连接'}
           </button>
         </form>
+        {isNativeApp() && (
+          <button
+            type="button"
+            className={styles['switch-server-btn']}
+            onClick={handleSwitchServer}
+          >
+            切换服务器
+          </button>
+        )}
       </div>
     </div>
   )

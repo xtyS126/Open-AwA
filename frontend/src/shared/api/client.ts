@@ -11,6 +11,7 @@
  */
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
+import { isNativeApp } from '@/shared/utils/platform'
 import { safeGetItem, safeSetItem, safeSessionGetItem, safeSessionSetItem } from '@/shared/utils/safeStorage'
 import { asRecord } from '@/shared/types/api'
 
@@ -79,7 +80,11 @@ function resolveBaseURL(): string {
   return '/api'
 }
 
-export const API_BASE_URL = resolveBaseURL()
+// 模块级可变绑定：ES Module live binding 保证 import 方始终读到最新值。
+// setBackendUrl() 会重新赋值，使绕过 axios 的原生通道（SSE 流式 / WebSocket /
+// 文件预览等直接拼接 API_BASE_URL 的调用点）在切换后端后立即生效，
+// 无需逐个调用点改为运行时函数。
+export let API_BASE_URL = resolveBaseURL()
 
 /**
  * 设置后端 URL 并持久化到 localStorage
@@ -87,6 +92,39 @@ export const API_BASE_URL = resolveBaseURL()
  *
  * 安全：校验 URL 必须为 http(s) 协议，防止 XSS 将请求劫持到恶意源
  */
+/**
+ * 是否已配置可用后端。
+ * APP 模式：localStorage 存在合法后端 URL 或 preload 注入时视为已配置；
+ * Web 模式：默认相对路径 /api 视为已配置（走 Vite proxy 或同源部署）。
+ *
+ * 原生容器内 localhost/127.0.0.1 指向设备自身（模拟器/手机的环回地址），
+ * 不可能是承载后端的宿主机地址，此类残留配置视为未配置，
+ * 引导用户进入服务器选择页重新接入局域网后端。
+ */
+export function isBackendConfigured(): boolean {
+  if (typeof window !== 'undefined' && window.__OPENAWA_BACKEND__?.url) {
+    return true
+  }
+  if (typeof window !== 'undefined') {
+    const stored = window.localStorage.getItem(BACKEND_URL_STORAGE_KEY)
+    if (!stored || !isValidBackendUrl(stored)) {
+      return false
+    }
+    if (isNativeApp()) {
+      try {
+        const hostname = new URL(stored).hostname
+        if (hostname === 'localhost' || hostname === '127.0.0.1') {
+          return false
+        }
+      } catch {
+        return false
+      }
+    }
+    return true
+  }
+  return false
+}
+
 export function setBackendUrl(url: string): void {
   const trimmed = url.trim() || '/api'
   if (!isValidBackendUrl(trimmed)) {
@@ -99,6 +137,7 @@ export function setBackendUrl(url: string): void {
     })
     return
   }
+  API_BASE_URL = trimmed
   api.defaults.baseURL = trimmed
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(BACKEND_URL_STORAGE_KEY, trimmed)
@@ -134,7 +173,13 @@ export const persistApiKey = (key: string): void => {
   _inMemoryApiKey = key
   // 优先写入 sessionStorage；同时清理 localStorage 中的旧值避免残留
   safeSessionSetItem(API_KEY_STORAGE_KEY, key)
-  safeSetItem(API_KEY_STORAGE_KEY, '')
+  if (isNativeApp()) {
+    // APP 模式：WebView 进程可被系统回收，sessionStorage 随进程消失，
+    // 降级持久化到 localStorage，避免用户每次冷启动重新输入访问密钥
+    safeSetItem(API_KEY_STORAGE_KEY, key)
+  } else {
+    safeSetItem(API_KEY_STORAGE_KEY, '')
+  }
 }
 
 /** 临时设置 API Key 到内存（用于验证，验证成功后再调用 persistApiKey 持久化） */

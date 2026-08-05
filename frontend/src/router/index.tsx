@@ -10,6 +10,7 @@ import { Skeleton } from '@/shared/components/ui/Skeleton'
 import { DevTestRoute, RootGuard } from './RouteGuards'
 
 const LoginPage = React.lazy(() => import('@/features/auth/LoginPage'))
+const ServerSelectPage = React.lazy(() => import('@/features/server/ServerSelectPage'))
 const SetupPage = React.lazy(() => import('@/features/setup/SetupPage'))
 const ChatPage = React.lazy(() => import('@/features/chat/ChatPage'))
 const DashboardPage = React.lazy(() => import('@/features/dashboard/DashboardPage'))
@@ -70,6 +71,7 @@ export interface AppRouteDefinition {
  */
 export const routeDefinitions: AppRouteDefinition[] = [
   { path: '/login', element: withPageBoundary('Login', <LoginPage />) },
+  { path: '/server-select', element: withPageBoundary('ServerSelect', <ServerSelectPage />) },
   { path: '/setup', element: withPageBoundary('Setup', <SetupPage />) },
   { path: '/chat', element: withPageBoundary('Chat', <ChatPage />) },
   { path: '/chat/$conversationId', element: withPageBoundary('Chat', <ChatPage />) },

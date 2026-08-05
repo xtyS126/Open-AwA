@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { authAPI, systemAPI } from '@/shared/api/api'
-import { getCachedApiKey, refreshCsrfToken } from '@/shared/api/client'
+import { getCachedApiKey, isBackendConfigured, refreshCsrfToken } from '@/shared/api/client'
+import { isNativeApp } from '@/shared/utils/platform'
 import { appLogger } from '@/shared/utils/logger'
 import { loadServerPreferences } from '@/shared/utils/preferenceSync'
 import { safeGetItem } from '@/shared/utils/safeStorage'
@@ -182,6 +183,8 @@ export function useAppInitialization() {
   const setAuth = useAuthStore((state) => state.setAuth)
   const logout = useAuthStore((state) => state.logout)
   const setSystemInitialized = useAuthStore((state) => state.setSystemInitialized)
+  const setNeedsServerSelection = useAuthStore((state) => state.setNeedsServerSelection)
+  const needsServerSelection = useAuthStore((state) => state.needsServerSelection)
   const rehydratedRef = useRef<boolean | null>(null)
 
   // P0: 同步回填本地状态（仅首次渲染执行，确保主题等首屏状态在 React 首次渲染前已就位）
@@ -195,6 +198,18 @@ export function useAppInitialization() {
     let isActive = true
 
     const initializeApp = async () => {
+      // 步骤 0：APP 模式且未配置后端（或用户主动要求切换服务器）时进入选择流程。
+      // 此时默认 /api 指向 WebView 内部不存在的前端路径，发起 init-status
+      // 请求只会白等超时，因此必须先让用户选定局域网后端再走后续初始化。
+      // 条件含 needsServerSelection：用户从登录页点击"切换服务器"时保持选择页，
+      // 避免本 effect 重跑把选择状态改回 false 将用户踢出选择页。
+      if (isNativeApp() && (needsServerSelection || !isBackendConfigured())) {
+        setNeedsServerSelection(true)
+        setInitialized(true)
+        return
+      }
+      setNeedsServerSelection(false)
+
       // 步骤 1：检查系统是否已完成首次部署初始化
       // 未初始化时跳过 API Key 校验，由 RootGuard 跳转到 /setup 引导页
       try {
@@ -266,5 +281,5 @@ export function useAppInitialization() {
     return () => {
       isActive = false
     }
-  }, [logout, setAuth, setInitialized, setSystemInitialized])
+  }, [logout, needsServerSelection, setAuth, setInitialized, setNeedsServerSelection, setSystemInitialized])
 }

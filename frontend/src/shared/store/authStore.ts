@@ -25,9 +25,12 @@ interface AuthState {
   isInitialized: boolean
   /** 系统是否已完成首次部署初始化（owner 用户已创建） */
   isSystemInitialized: boolean | null
+  /** APP 模式：尚未选择局域网后端，需进入服务器选择页 */
+  needsServerSelection: boolean
   setAuth: (user: User | null, apiKey: string | null) => void
   setInitialized: (initialized: boolean) => void
   setSystemInitialized: (initialized: boolean | null) => void
+  setNeedsServerSelection: (needs: boolean) => void
   logout: () => void
   /** 更新当前用户的部分字段（用于头像上传、昵称修改后即时反映） */
   updateUser: (partial: Partial<User>) => void
@@ -39,6 +42,7 @@ export const useAuthStore = createWithEqualityFn<AuthState>((set) => ({
   isAuthenticated: false,
   isInitialized: false,
   isSystemInitialized: null,
+  needsServerSelection: false,
 
   setAuth: (user, apiKey) => {
     set({ user, apiKey, isAuthenticated: !!user })
@@ -47,6 +51,8 @@ export const useAuthStore = createWithEqualityFn<AuthState>((set) => ({
   setInitialized: (initialized) => set({ isInitialized: initialized }),
 
   setSystemInitialized: (initialized) => set({ isSystemInitialized: initialized }),
+
+  setNeedsServerSelection: (needs) => set({ needsServerSelection: needs }),
 
   logout: () => {
     clearCachedApiKey()

@@ -851,6 +851,19 @@ git commit -m "[Type] 变更描述"
 - **Sandbox 必须先校验原始命令再解析平台可执行文件**：权限、白名单和危险模式检查必须发生在 Windows/POSIX executable resolution 之前，禁止让危险命令借“command not found”绕过安全拒绝。
 - **旧 code-audit 脚本已移除**：`scripts/code-audit.ps1` 已由提交 `489446ee` 删除；当前 Agent 架构验证使用任务文件 Ruff、`git diff --check`、`tests/test_agent_architecture.py`、目标回归、完整分组 pytest 和隔离 E2E，不得把缺失旧脚本误判为产品失败。
 
+## 19.4 2026-08-05 移动 APP（Capacitor）新增陷阱
+
+- **AGP 拒绝中文路径构建**：项目根目录 `D:\代码\Open-AwA` 含非 ASCII 字符，AGP 报 "project path contains non-ASCII characters"（b.android.com/95744）。修复方向：`frontend/android/gradle.properties` 必须保留 `android.overridePathCheck=true`。
+- **gradle 发行版下载必须走国内镜像**：`gradle-wrapper.properties` 的 distributionUrl 使用 `https://mirrors.cloud.tencent.com/gradle/`（services.gradle.org 国内不可达导致 wrapper 卡死）；`networkTimeout` 调至 120000。
+- **工程内自定义 Capacitor 插件必须显式注册**：`@CapacitorPlugin` 注解扫描对未列入 `capacitor.plugins.json` 的工程内插件不保证生效（运行时报 "LanDiscovery plugin is not implemented"）；必须在 `MainActivity.onCreate` 里 `super.onCreate` 之前调用 `registerPlugin(LanDiscoveryPlugin.class)`。
+- **API_BASE_URL 必须保持模块级可变绑定**：`client.ts` 的 `API_BASE_URL` 是 `export let` 并由 `setBackendUrl()` 重新赋值（ES Module live binding），禁止改回 `const`。绕过 axios 的原生通道（SSE 流式 `chatApi.ts`、WebSocket `inboxStream.ts`/`TerminalPane.tsx`/`useWeixinWebSocket.ts`、文件预览、权限流等 10+ 处直接拼接 `API_BASE_URL`）依赖此机制在切换后端后立即生效。定位方法：APP 内切换服务器后聊天报 "Failed to fetch" 且日志 URL 是旧地址；修复方向：检查是否有人把 `export let` 改成了 `const` 或把 setBackendUrl 里对 `API_BASE_URL` 的赋值移除。
+- **原生容器内 localhost/127.0.0.1 后端视为未配置**：`isBackendConfigured()` 在 `isNativeApp()` 时拒绝 localhost/127.0.0.1（指向设备自身而非宿主机），避免残留配置把用户挡在服务器选择页之外。
+- **APP 内 API Key 持久化到 localStorage**：`persistApiKey` 在原生平台同时写入 sessionStorage 与 localStorage（WebView 进程可被系统回收，sessionStorage 随进程消失导致冷启动要重输密钥）；Web 模式行为不变。
+- **Android 模拟器网络拓扑**：MuMu/AOSP 模拟器内本机 IP 为 10.0.2.15（NAT 网段），宿主机后端经 10.0.2.2 映射可达（宿主 LAN IP 与模拟器不同网段，同网段扫描扫不到）；`lanDiscovery.ts` 的候选列表包含 `EMULATOR_HOST_ALIAS=10.0.2.2` 且置于首位优先探测。
+- **切换服务器后必须重新初始化**：`useAppInitialization` 的短路条件含 `needsServerSelection`（`isNativeApp() && (needsServerSelection || !isBackendConfigured())`），effect 依赖数组含 `needsServerSelection`，否则选择后端后 `isSystemInitialized` 仍为 null 卡在"无法连接服务"。
+- **Android 命令在 git-bash 下路径转换**：`adb shell screencap -p /sdcard/x.png` 的 `/sdcard` 会被 git-bash 转成 Windows 路径，必须写 `//sdcard/x.png`（双斜杠阻止 MSYS 转换）。
+- **截图验证用 uiautomator/CDP 而非 Read 图片**：模拟器截图 PNG 在本环境 Read 工具不支持（Unsupported Image），改用 `uiautomator dump`（UI 层级 XML）或 CDP（`Runtime.evaluate` + `awaitPromise`）读取 WebView 内部状态。
+
 ## 19.3 2026-08-04 记忆体验重设计新增陷阱
 
 - **长期记忆禁止直存对话原文**：`core/feedback.py` 关键词即时路径必须经 `ConsolidationRunner.extract_turn_async` 后台 LLM 提炼（≤200 字事实 + 模型评估 importance/source_type）后入库；原文只允许存在于短期记忆层。定位方法：长期记忆列表出现 `User asked: ...` 前缀或 importance 恒为 0.7 的内容；修复方向：检查 feedback `_should_persist` 分支是否又恢复了 `persist_content` 原文直存。
@@ -858,6 +871,52 @@ git commit -m "[Type] 变更描述"
 - **mock ConsolidationRunner 必须设置整数阈值**：测试注入 `FeedbackLayer.set_consolidation_runner` 的 mock 必须设置 `_conversation_threshold=10` 与 `increment_conversation_count` 返回值，否则 `_trigger_consolidation_check_async` 中 `count >= threshold` 对 MagicMock 比较抛 TypeError。
 - **前端 React Hooks 不得在 early return 之后声明**：MemoryPage 等组件的 useMemo/useCallback 必须在 loading early return 之前声明，否则数据到达后首帧渲染 Hook 数量不一致，触发 "Rendered more hooks than during the previous render"。
 - **真实库上验证状态变更 API 后必须恢复**：用 `validate`/`deprecate` 做连通性验证会真实修改用户记忆状态（validated/deprecated），验证后须将 `state`/`archive_status` 恢复为 `active` 并还原 confidence 原值（SQLite 直改可行；Qdrant 元数据被服务锁定，可用 `archive_long_term_memory(id, "active")` 或接受向量侧差异）。
+
+## 19.5 移动 APP（Capacitor Android）架构
+
+移动端通过 **Capacitor 8** 将现有 React 前端打包为 Android 原生应用，核心能力是**局域网后端自动发现与用户选择接入**。
+
+### 工程结构
+
+```
+frontend/
+  capacitor.config.ts        # appId=com.openawa.mobile, webDir=dist, allowMixedContent=true
+  android/                   # Capacitor Android 原生工程（gradle 8.14.3 + AGP 8.13）
+    app/src/main/java/com/openawa/mobile/
+      MainActivity.java      # 显式 registerPlugin(LanDiscoveryPlugin.class)
+      LanDiscoveryPlugin.java# 本机 IPv4 + 网段前缀获取（@CapacitorPlugin）
+```
+
+### 接入流程（APP 首启）
+
+1. `useAppInitialization` 短路：原生容器且未配置后端 → `needsServerSelection=true` → RootGuard 跳 `/server-select`
+2. `ServerSelectPage` 自动扫描：原生插件取本机 IP → 枚举同 /24 网段 + `10.0.2.2`（模拟器宿主映射）→ 并发 24 路 fetch 探测 `http://{ip}:8000/api/system/ping`（900ms 超时/个）→ `pong=true` 即命中
+3. 用户点击实例 → `setBackendUrl(url)`（持久化 localStorage + 更新 axios baseURL + 重新赋值 `API_BASE_URL` live binding）→ `setNeedsServerSelection(false)` → 初始化重跑
+4. 认证走 API Key（Bearer），`persistApiKey` 在原生平台持久化到 localStorage → 冷启动免登录
+
+### 关键设计约束
+
+- **WebView origin 为 `https://localhost`**，后端 CORS 正则 `ALLOW_LAN_ORIGIN_REGEX` 放行 `localhost` 与 `192.168.(0|1|2).x`，WebView 内 XHR/SSE/WS 直连 LAN 后端无需原生 HTTP 桥
+- `android:usesCleartextTraffic="true"` + `allowMixedContent=true`：https 页面直连 http://LAN-IP 明文后端
+- 原生容器内移除 Google Fonts 外部引用（`disableExternalFontsInNativeApp`），字体回退系统栈
+- 扫描/选择页路径 `/server-select`，登录页提供"切换服务器"入口（APP 模式）
+
+### 构建与安装（MuMu 模拟器）
+
+```bash
+cd frontend
+npm run build && npx cap sync android
+cd android && export JAVA_HOME="D:\Program Files\Java\jdk-21" && export ANDROID_HOME="D:\Android\Sdk"
+./gradlew.bat assembleDebug --no-daemon   # 产物 app/build/outputs/apk/debug/app-debug.apk
+adb -s 127.0.0.1:5555 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s 127.0.0.1:5555 shell am start -n com.openawa.mobile/.MainActivity
+```
+
+后端侧：`ALLOW_LAN_ACCESS=true` 环境变量开启局域网 CORS 放行；`INSTANCE_NAME` 自定义实例名（ping 响应展示用）；`/api/system/ping` 无认证返回 `{pong, version, instance_name, api_prefix, capabilities}` 供 APP 发现。
+
+真机调试：`adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` 后经 CDP 检查 WebView 状态。
+
+---
 
 ## 20. API Path Prefix
 

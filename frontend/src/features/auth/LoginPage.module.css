@@ -96,6 +96,24 @@
   cursor: not-allowed;
 }
 
+/* APP 模式：切换局域网后端入口（与主按钮同宽，弱化样式避免抢主视觉） */
+.switch-server-btn {
+  margin-top: 10px;
+  padding: 8px 0;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.switch-server-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
 .login-hint {
   text-align: center;
   font-size: 12px;

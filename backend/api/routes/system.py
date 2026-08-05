@@ -246,9 +246,23 @@ async def system_diagnostics(
 async def ping() -> Dict[str, Any]:
     """
     轻量级连通性检查，无需认证。
-    用于基础网络可达性验证。
+    用于基础网络可达性验证与局域网后端自动发现。
+
+    返回实例标识信息（version / instance_name / api_prefix），
+    供 Open-AwA 手机 APP 扫描局域网时展示候选后端。
+    所有字段均为附加信息，旧客户端仅读取 pong 字段不受影响。
     """
-    return {"pong": True, "timestamp": time.time()}
+    return {
+        "pong": True,
+        "timestamp": time.time(),
+        "version": settings.VERSION,
+        "instance_name": os.getenv("INSTANCE_NAME", "Open-AwA"),
+        "api_prefix": settings.API_V1_STR,
+        "capabilities": {
+            "lan_discovery": True,
+            "api_key_auth": True,
+        },
+    }
 
 
 def _check_vector_db() -> Dict[str, Any]:

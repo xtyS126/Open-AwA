@@ -52,6 +52,43 @@ describe('setBackendUrl', () => {
   })
 })
 
+describe('isBackendConfigured', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    // 清除前序 describe 注入的 preload 配置，避免跨用例污染
+    delete (window as unknown as { __OPENAWA_BACKEND__?: unknown }).__OPENAWA_BACKEND__
+  })
+
+  it('Web 模式：局域网后端 URL 视为已配置', async () => {
+    localStorage.setItem('openawa_backend_url', 'http://192.168.2.3:8000/api')
+    const { isBackendConfigured } = await import('@/shared/api/client')
+    expect(isBackendConfigured()).toBe(true)
+  })
+
+  it('无 URL 时视为未配置', async () => {
+    const { isBackendConfigured } = await import('@/shared/api/client')
+    expect(isBackendConfigured()).toBe(false)
+  })
+
+  it('原生容器内 localhost/127.0.0.1 残留视为未配置', async () => {
+    // 模拟原生容器：platform.isNativeApp 返回 true
+    vi.doMock('@/shared/utils/platform', () => ({ isNativeApp: () => true }))
+    localStorage.setItem('openawa_backend_url', 'http://127.0.0.1:8000/api')
+    const { isBackendConfigured } = await import('@/shared/api/client')
+    expect(isBackendConfigured()).toBe(false)
+    vi.doUnmock('@/shared/utils/platform')
+  })
+
+  it('原生容器内局域网 URL 视为已配置', async () => {
+    vi.doMock('@/shared/utils/platform', () => ({ isNativeApp: () => true }))
+    localStorage.setItem('openawa_backend_url', 'http://192.168.2.3:8000/api')
+    const { isBackendConfigured } = await import('@/shared/api/client')
+    expect(isBackendConfigured()).toBe(true)
+    vi.doUnmock('@/shared/utils/platform')
+  })
+})
+
 describe('refreshCsrfToken', () => {
   beforeEach(() => {
     vi.resetModules()

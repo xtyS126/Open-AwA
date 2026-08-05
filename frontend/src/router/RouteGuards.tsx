@@ -43,6 +43,7 @@ export function RootGuard() {
   const isInitialized = useAuthStore((s) => s.isInitialized)
   const isSystemInitialized = useAuthStore((s) => s.isSystemInitialized)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const needsServerSelection = useAuthStore((s) => s.needsServerSelection)
   const location = useLocation()
 
   let content: React.ReactNode
@@ -51,6 +52,19 @@ export function RootGuard() {
     // 初始化未完成时显示 App Shell + 主内容区 loading 占位
     // 修复了"直接 URL 访问被重定向到 /chat"和"侧边栏点击无响应"两类问题
     content = <InitializationShell />
+  } else if (needsServerSelection) {
+    // APP 模式尚未选定局域网后端：仅允许 /server-select 可访问
+    if (location.pathname !== '/server-select') {
+      content = <Navigate to="/server-select" replace />
+    } else {
+      content = (
+        <main id="main-content" tabIndex={-1}>
+          <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={3} /></div>}>
+            <Outlet />
+          </Suspense>
+        </main>
+      )
+    }
   } else if (isSystemInitialized === false) {
     // 系统未初始化（首次部署）：仅允许 /setup 可访问，其他路径重定向到 /setup
     if (location.pathname !== '/setup') {

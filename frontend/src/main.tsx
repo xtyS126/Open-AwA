@@ -5,8 +5,13 @@ import App from './App'
 import './styles/tokens.css'
 import './styles/global.css'
 import { appLogger } from '@/shared/utils/logger'
+import { disableExternalFontsInNativeApp } from '@/shared/utils/platform'
 import { mark } from '@/shared/perf/metrics'
 import { queryClient } from '@/shared/api/queryClient'
+
+// APP 模式（Capacitor 原生容器）下移除 Google Fonts 外部引用：
+// 消除首屏外部网络依赖，字体回退到系统字体栈
+disableExternalFontsInNativeApp()
 
 // P2: Web Vitals 性能指标采集
 import { onLCP, onCLS, onINP, onTTFB } from 'web-vitals'
