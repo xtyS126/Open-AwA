@@ -3,9 +3,9 @@
 这里的字段定义会直接影响输入校验和输出序列化行为。
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Literal, Optional, List, Any, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class UserBase(BaseModel):
@@ -455,6 +455,23 @@ class ScheduledTaskResponse(ScheduledTaskBase):
     cancelled_at: Optional[datetime] = None
     next_execution_at: Optional[str] = None
 
+    @field_validator(
+        "scheduled_at", "created_at", "updated_at", "completed_at", "cancelled_at",
+        mode="before",
+    )
+    @classmethod
+    def _ensure_utc_aware(cls, value: Any) -> Any:
+        """
+        将 naive datetime 视为 UTC 并补齐时区标识。
+
+        SQLite DateTime 列存储时丢失时区信息（naive），若响应不带时区标识，
+        前端 new Date("...05:46:00") 会按本地时区解析导致显示偏移（如 13:46 → 05:46）。
+        统一按 UTC 解释并输出带 +00:00 的 ISO 字符串，前端可正确转换回本地时间。
+        """
+        if isinstance(value, datetime) and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
     class Config:
         from_attributes = True
 
@@ -488,6 +505,14 @@ class ScheduledTaskExecutionResponse(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
     request_id: Optional[str] = None
+
+    @field_validator("scheduled_for", mode="before")
+    @classmethod
+    def _ensure_scheduled_for_aware(cls, value: Any) -> Any:
+        """naive datetime 视为 UTC 补齐时区标识（与 ScheduledTaskResponse 一致）。"""
+        if isinstance(value, datetime) and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
     execution_metadata: Dict[str, Any] = Field(default_factory=dict)
     started_at: datetime
     completed_at: Optional[datetime] = None
