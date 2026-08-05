@@ -9,12 +9,15 @@
  *   - 单例：全局仅一个 WS 连接，多个页面共享
  *   - 引用计数：connectInboxStream/disconnectInboxStream 配对调用，最后一个断开才真正关闭
  *   - 自动重连：指数退避（base * 2^attempts + 抖动），最多 5 次，封顶 30s
- *   - 鉴权：Sec-WebSocket-Protocol 子协议 `bearer.{token}`，token 从 getCachedApiKey 读取
+ *   - 鉴权：双轨策略，按优先级降级
+ *     1. Sec-WebSocket-Protocol 子协议 `bearer.{token}`（token 从 getCachedApiKey 读取）
+ *     2. Cookie access_token（同源时浏览器自动携带，后端 chat.py 从 Cookie 兜底鉴权）
  *   - 资源清理：disconnect 时主动 close 并清理重连定时器
  *
  * 安全说明（对应 SEC-16）：
  *   token 不通过 URL query 传递，避免泄露到日志/Referer/浏览器历史。
- *   通过 Sec-WebSocket-Protocol 子协议传递，后端 chat.py 解析子协议并校验。
+ *   优先通过 Sec-WebSocket-Protocol 子协议传递；纯 Cookie 登录场景降级为 Cookie 鉴权，
+ *   Origin 校验已防 CSWSH，Cookie 路径安全可控。
  */
 import { API_BASE_URL, getCachedApiKey } from '@/shared/api/client'
 import { appLogger } from '@/shared/utils/logger'
@@ -28,6 +31,10 @@ export type InboxMessageHandler = (message: InboxMessage) => void
 const MAX_RECONNECT_ATTEMPTS = 5
 const MAX_RECONNECT_DELAY_MS = 30000
 const BASE_RECONNECT_DELAY_MS = 1000
+/** 认证失败（后端 close code 4002：无效/过期 token）时不再自动重连，等待用户刷新页面重新登录 */
+const AUTH_FAILED_CLOSE_CODES = new Set([4001, 4002])
+/** 连接失败冷却窗口：心跳驱动（5 秒）在窗口内不重复发起连接，避免失败循环刷屏 */
+const CONNECT_FAIL_COOLDOWN_MS = 30000
 
 /** WebSocket session_id 固定为 inbox，后端不强制校验 */
 const INBOX_SESSION_ID = 'inbox'
@@ -66,6 +73,8 @@ let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 let manualClose = false
+/** 上次连接失败时间戳：心跳驱动的 connectInternal 在冷却窗口内跳过，避免失败循环 */
+let lastConnectFailAt = 0
 /** 引用计数：多个页面调用 connect 时累加，最后一个 disconnect 才真正关闭 */
 let connectCount = 0
 let coordinationChannel: BroadcastChannel | null = null
@@ -345,19 +354,33 @@ function scheduleReconnect(): void {
   }, delay)
 }
 
+/** 检测浏览器 Cookie 中是否含 access_token（纯 Cookie 登录场景） */
+function hasAccessTokenCookie(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.cookie
+    .split(';')
+    .some((c) => c.trim().startsWith('access_token='))
+}
+
 /** 内部连接实现 */
 function connectInternal(): void {
   if (typeof window === 'undefined') return
   if (!isLocalLeader()) return
   if (ws !== null) return
+  // 失败冷却闸：心跳（5 秒）会反复调用本函数，连接失败后 30 秒内不再重复发起，
+  // 由 scheduleReconnect 的指数退避负责重连节奏，避免失败循环刷屏
+  if (Date.now() - lastConnectFailAt < CONNECT_FAIL_COOLDOWN_MS) return
 
   const token = getCachedApiKey()
-  if (!token) {
+  const hasCookie = hasAccessTokenCookie()
+
+  // 无 token 且无 Cookie：完全无凭据，无法鉴权，放弃连接
+  if (!token && !hasCookie) {
     setStreamStatus('unavailable', true)
     appLogger.warning({
-      event: 'inbox_stream_no_token',
+      event: 'inbox_stream_no_credential',
       module: 'inbox',
-      message: 'inbox 流连接缺少访问令牌，跳过连接',
+      message: 'inbox 流连接缺少访问令牌与 Cookie，跳过连接',
     })
     return
   }
@@ -367,8 +390,11 @@ function connectInternal(): void {
   const url = deriveWebSocketUrl()
 
   try {
-    // 鉴权：通过 Sec-WebSocket-Protocol 子协议传递 token，避免 URL 暴露
-    const socket = new WebSocket(url, [`bearer.${token}`])
+    // 鉴权策略：
+    // - 有 token：通过 Sec-WebSocket-Protocol 子协议传递（避免 URL 暴露）
+    // - 无 token 但有 Cookie：不传子协议，浏览器同源自动携带 Cookie，后端兜底鉴权
+    const subprotocols = token ? [`bearer.${token}`] : undefined
+    const socket = new WebSocket(url, subprotocols)
     ws = socket
 
     socket.onopen = () => {
@@ -378,6 +404,7 @@ function connectInternal(): void {
         event: 'inbox_stream_connected',
         module: 'inbox',
         message: 'inbox 流已连接',
+        extra: { auth_mode: token ? 'subprotocol' : 'cookie' },
       })
     }
 
@@ -389,6 +416,7 @@ function connectInternal(): void {
     }
 
     socket.onerror = () => {
+      lastConnectFailAt = Date.now()
       appLogger.warning({
         event: 'inbox_stream_error',
         module: 'inbox',
@@ -396,11 +424,23 @@ function connectInternal(): void {
       })
     }
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       ws = null
-      if (!manualClose) {
-        scheduleReconnect()
+      lastConnectFailAt = Date.now()
+      if (manualClose) return
+      // 认证失败（无效/过期 token）：停止自动重连，避免无限重试噪音；
+      // 用户刷新页面重新登录后自然恢复
+      if (AUTH_FAILED_CLOSE_CODES.has(event.code)) {
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS
+        setStreamStatus('unavailable', true)
+        appLogger.warning({
+          event: 'inbox_stream_auth_failed',
+          module: 'inbox',
+          message: `inbox 流认证失败（close code ${event.code}），停止自动重连，请刷新页面重新登录`,
+        })
+        return
       }
+      scheduleReconnect()
     }
   } catch (err) {
     appLogger.error({
