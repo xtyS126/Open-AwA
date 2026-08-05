@@ -363,6 +363,18 @@ async def cancel_scheduled_task(
     task = _get_task_or_404(db, task_id, str(current_user.id))
 
     if task.status in CANCELLABLE_TASK_STATUSES:
+        # 取消路径同样注销 APScheduler 调度，避免已取消任务继续按 cron 触发
+        try:
+            from core.scheduled_task_manager import scheduled_task_manager
+            await scheduled_task_manager.unregister_task(task_id)
+        except Exception as exc:
+            logger.bind(
+                event="scheduled_task_unregister_failed",
+                module="scheduled_tasks",
+                task_id=task_id,
+                error=str(exc),
+            ).warning(f"任务取消前注销调度失败: {exc}")
+
         now = datetime.now(timezone.utc)
         task.status = "cancelled"
         task.cancelled_at = now
