@@ -307,7 +307,7 @@ def test_scheduled_task_api_crud_and_cancel_flow():
 
 def test_scheduled_task_api_rejects_update_and_cancel_for_non_pending_statuses():
     """
-    非 pending 状态的任务不应允许更新或取消。
+    非 pending 状态的任务不允许更新；删除语义为：终态任务物理删除、pending 取消。
     """
 
     db = TestingSessionLocal()
@@ -335,9 +335,13 @@ def test_scheduled_task_api_rejects_update_and_cancel_for_non_pending_statuses()
                 f"/api/scheduled-tasks/{task_id}",
                 json={"title": f"updated-{status}"},
             )
-            cancel_response = client.delete(f"/api/scheduled-tasks/{task_id}")
-
             assert update_response.status_code == 400
             assert update_response.json()["error"]["message"] == "Only pending scheduled tasks can be updated"
-            assert cancel_response.status_code == 400
-            assert cancel_response.json()["error"]["message"] == "Only pending scheduled tasks can be cancelled"
+
+            # 终态任务允许删除（物理删除），前端可清理列表
+            delete_response = client.delete(f"/api/scheduled-tasks/{task_id}")
+            assert delete_response.status_code == 200
+            assert "deleted" in delete_response.json()["message"]
+
+        # 终态任务已物理删除，再次查询应 404
+        assert client.get(f"/api/scheduled-tasks/{task_ids['completed']}").status_code == 404

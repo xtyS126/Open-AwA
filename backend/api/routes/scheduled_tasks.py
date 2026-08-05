@@ -321,17 +321,27 @@ async def cancel_scheduled_task(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> Dict[str, Any]:
+    """
+    删除定时任务。
+
+    - pending 状态：标记取消（保留记录，与既有取消语义一致）
+    - 终态（cancelled/completed/failed）：物理删除记录，允许前端清理列表
+    """
     task = _get_task_or_404(db, task_id, str(current_user.id))
-    _ensure_task_status_allowed(task, CANCELLABLE_TASK_STATUSES, "cancelled")
 
-    now = datetime.now(timezone.utc)
-    task.status = "cancelled"
-    task.cancelled_at = now
-    task.completed_at = now
-    task.last_error_message = None
+    if task.status in CANCELLABLE_TASK_STATUSES:
+        now = datetime.now(timezone.utc)
+        task.status = "cancelled"
+        task.cancelled_at = now
+        task.completed_at = now
+        task.last_error_message = None
+        db.commit()
+        return {"message": "Scheduled task cancelled successfully"}
+
+    # 终态任务：物理删除，前端删除按钮可移除任意状态任务
+    db.delete(task)
     db.commit()
-
-    return {"message": "Scheduled task cancelled successfully"}
+    return {"message": "Scheduled task deleted successfully"}
 
 
 @router.post("/{task_id}/trigger")
