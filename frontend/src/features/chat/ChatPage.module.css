@@ -311,8 +311,8 @@
 }
 
 .actionBtnActive {
-  color: var(--color-primary, #2563eb);
-  border-color: var(--color-primary, #2563eb);
+  color: var(--color-primary, #0f766e);
+  border-color: var(--color-primary, #0f766e);
   background: rgba(37, 99, 235, 0.06);
 }
 
@@ -502,7 +502,7 @@
 }
 
 .status-dot-running {
-  border: 1.5px solid #2563eb;
+  border: 1.5px solid #0f766e;
   background: transparent;
   animation: dotPulse 1s ease-in-out infinite;
 }

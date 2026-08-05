@@ -84,7 +84,7 @@
 .detailBtn {
   background: none;
   border: none;
-  color: var(--color-primary, #3b82f6);
+  color: var(--color-primary, #0d9488);
   cursor: pointer;
   font-size: 12px;
   padding: 0 4px;

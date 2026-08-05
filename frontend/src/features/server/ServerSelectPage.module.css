@@ -177,8 +177,8 @@
   border-radius: var(--radius-full);
   background: conic-gradient(
     from 0deg,
-    rgba(59, 130, 246, 0.28) 0deg,
-    rgba(59, 130, 246, 0.05) 70deg,
+    rgba(13, 148, 136, 0.28) 0deg,
+    rgba(13, 148, 136, 0.05) 70deg,
     transparent 140deg
   );
   animation: radar-sweep 1.8s linear infinite;
@@ -205,7 +205,7 @@
   margin: -5px 0 0 -5px;
   border-radius: var(--radius-full);
   background: var(--color-primary);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 12px rgba(13, 148, 136, 0.6);
 }
 
 @keyframes radar-sweep {

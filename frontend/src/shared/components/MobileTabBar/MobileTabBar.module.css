@@ -1,0 +1,100 @@
+/* ============================================================
+ * 底部 Tab Bar —— 移动端原生 APP 导航
+ *
+ * 视觉语言（延续「信号中枢 / Signal Nexus」）：
+ * - 毛玻璃半透明背景 + 顶部 hairline，悬浮于内容之上
+ * - 激活 Tab：信号青主色 + 顶部信号灯点（呼吸辉光），呼应雷达语言
+ * - 底部叠加 Home Indicator 安全区 padding
+ * - 内容区需预留 tab 高度：AppShell 在移动端用 flex column
+ *   布局（tab bar 为 flex 子项而非 fixed），天然避让，无需手动留白
+ * ============================================================ */
+
+.tab-bar {
+  flex-shrink: 0;
+  width: 100%;
+  /* 毛玻璃：半透明底色（不支持 backdrop-filter 的旧 WebView 直接回退为半透明纯色）
+   * 注意：WebView 内核不支持 color-mix，深浅色必须各自显式声明 */
+  background: rgba(255, 255, 255, 0.88);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+  border-top: 1px solid var(--color-border);
+  /* 底部安全区：Home Indicator 避让 */
+  padding-bottom: var(--safe-area-bottom);
+  z-index: var(--z-sticky);
+}
+
+/* 暗色主题：深墨蓝半透明毛玻璃 */
+:global(.dark) .tab-bar {
+  background: rgba(15, 23, 42, 0.88);
+}
+
+.tab-bar-inner {
+  display: flex;
+  align-items: stretch;
+  height: var(--tab-bar-height);
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.tab-item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--transition-fast);
+}
+
+/* 按下反馈：轻微下沉，触感更接近原生 */
+.tab-item:active {
+  transform: scale(0.94);
+}
+
+.tab-item-active {
+  color: var(--color-primary);
+}
+
+/* 图标容器：相对定位以承载信号灯点 */
+.tab-icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* 激活信号灯点：左上角呼吸辉光，复用雷达涟漪语言 */
+.tab-signal-dot {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  box-shadow: var(--color-glow);
+  animation: signal-breathe 2.4s ease-in-out infinite;
+}
+
+.tab-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* 呼吸辉光：模拟信号灯脉冲 */
+@keyframes signal-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* 无障碍：减少动态效果时停止辉光动画 */
+@media (prefers-reduced-motion: reduce) {
+  .tab-signal-dot {
+    animation: none;
+  }
+}

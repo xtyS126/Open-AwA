@@ -63,6 +63,7 @@ const jaJP: Record<string, string> = {
   "sidebar.settings": "設定",
   "sidebar.agent": "エージェント",
   "sidebar.menu": "メニュー",
+  "mobileTab.more": "もっと見る",
   "sidebar.expand": "展開",
   "sidebar.collapse": "折りたたむ",
   "sidebar.darkMode": "ダークモードに切替",

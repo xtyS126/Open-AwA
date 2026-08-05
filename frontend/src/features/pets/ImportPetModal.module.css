@@ -69,8 +69,8 @@
   font-size: var(--text-sm, 13px);
 }
 .tabActive {
-  border-color: var(--color-primary, #3b82f6);
-  color: var(--color-primary, #3b82f6);
+  border-color: var(--color-primary, #0d9488);
+  color: var(--color-primary, #0d9488);
   background: var(--color-info-bg, #eff6ff);
 }
 
@@ -102,7 +102,7 @@
 
 .fileName {
   font-size: var(--text-xs, 12px);
-  color: var(--color-primary, #3b82f6);
+  color: var(--color-primary, #0d9488);
   word-break: break-all;
 }
 
@@ -147,7 +147,7 @@
   border-color: var(--color-border, #ddd);
 }
 .btnPrimary {
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary, #0d9488);
   color: #fff;
 }
 .btnPrimary:disabled, .btnGhost:disabled {

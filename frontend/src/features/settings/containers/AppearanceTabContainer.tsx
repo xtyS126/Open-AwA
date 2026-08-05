@@ -333,7 +333,7 @@ export function AppearanceTabContainer() {
           <label>{t('theme.avatar.border')}</label>
           <input
             type="text"
-            placeholder="例如: 2px solid #3b82f6"
+            placeholder="例如: 2px solid #0d9488"
             value={config.avatarBorder}
             onChange={(e) => setConfig({ avatarBorder: e.target.value })}
           />

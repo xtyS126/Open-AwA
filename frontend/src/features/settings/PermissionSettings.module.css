@@ -42,7 +42,7 @@
 }
 
 .dangerBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary, #0d9488);
   outline-offset: 2px;
 }
 
@@ -117,7 +117,7 @@
   display: inline-block;
   padding: 2px 8px;
   background: var(--color-info-bg, #dbeafe);
-  color: var(--color-primary-dark, #1e40af);
+  color: var(--color-primary-dark, #134e4a);
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
@@ -155,7 +155,7 @@
 }
 
 .deleteBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary, #0d9488);
   outline-offset: 2px;
 }
 

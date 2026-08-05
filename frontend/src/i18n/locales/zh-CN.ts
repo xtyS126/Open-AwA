@@ -68,6 +68,7 @@ const zhCN: Record<string, string> = {
   "sidebar.menu": "菜单",
   "sidebar.expand": "展开",
   "sidebar.collapse": "收起",
+  "mobileTab.more": "更多",
   "sidebar.darkMode": "切换到黑夜模式",
   "sidebar.lightMode": "切换到白天模式",
   "sidebar.nightMode": "黑夜模式",

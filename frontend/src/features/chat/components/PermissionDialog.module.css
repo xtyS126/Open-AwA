@@ -139,12 +139,12 @@
 }
 
 .btnAlways {
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary, #0d9488);
   color: #fff;
 }
 
 .btnAlways:hover:not(:disabled) {
-  background: var(--color-primary-hover, #2563eb);
+  background: var(--color-primary-hover, #0f766e);
 }
 
 .btnDeny {

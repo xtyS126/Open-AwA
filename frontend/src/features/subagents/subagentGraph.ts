@@ -40,7 +40,7 @@ export interface SubagentEdgeData {
 
 /** Agent 颜色调色板（按 agent 名称哈希分配，相同 agent 返回相同颜色） */
 const AGENT_COLOR_PALETTE = [
-  '#3b82f6', // 蓝色
+  '#0d9488', // 蓝色
   '#10b981', // 绿色
   '#8b5cf6', // 紫色
   '#f59e0b', // 橙色

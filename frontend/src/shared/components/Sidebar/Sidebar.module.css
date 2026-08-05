@@ -398,10 +398,28 @@
       12px 0 40px rgba(0, 0, 0, 0.12);
   }
 
+  /* 抽屉品牌条：顶部信号青渐变 hairline，呼应「信号中枢」语言 */
+  .sidebar::after {
+    content: '';
+    position: absolute;
+    top: var(--safe-area-top);
+    right: 0;
+    left: 0;
+    height: 2px;
+    background: var(--color-primary-gradient);
+    opacity: 0.9;
+    pointer-events: none;
+  }
+
   /* sidebar-header 顶部 padding 适配 safe-area-top（竖屏刘海场景）*/
   .sidebar-header {
     padding-top: var(--safe-area-top);
     min-height: calc(var(--space-12) + var(--safe-area-top));
+  }
+
+  /* 抽屉底部 Home Indicator 安全区 */
+  .sidebar-footer {
+    padding-bottom: calc(var(--space-4) + var(--safe-area-bottom));
   }
 
   /* 移动端不使用折叠模式，恢复完整宽度 */

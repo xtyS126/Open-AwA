@@ -43,8 +43,8 @@
 
 .input:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
 }
 
 .input:disabled {
@@ -95,11 +95,11 @@
 }
 
 .primary {
-  background-color: #3b82f6;
+  background-color: #0d9488;
   color: #ffffff;
-  border-color: #3b82f6;
+  border-color: #0d9488;
 }
 
 .primary:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: #0f766e;
 }

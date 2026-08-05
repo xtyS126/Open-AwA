@@ -66,6 +66,7 @@ const enUS: Record<string, string> = {
   "sidebar.settings": "Settings",
   "sidebar.agent": "Agents",
   "sidebar.menu": "Menu",
+  "mobileTab.more": "More",
   "sidebar.expand": "Expand",
   "sidebar.collapse": "Collapse",
   "sidebar.darkMode": "Switch to dark mode",

@@ -24,7 +24,7 @@
 
 /* 变体 */
 .primary { background: var(--color-primary); color: #fff; }
-.primary:hover:not(:disabled) { background: var(--color-primary-hover); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25); }
+.primary:hover:not(:disabled) { background: var(--color-primary-hover); box-shadow: 0 4px 12px rgba(13, 148, 136, 0.25); }
 
 .secondary { background: var(--color-bg-tertiary); color: var(--color-text); }
 .secondary:hover:not(:disabled) { background: var(--color-border); }

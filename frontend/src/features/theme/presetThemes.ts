@@ -33,7 +33,7 @@ export const presetThemes: PresetTheme[] = [
     nameKey: 'theme.preset.default',
     descriptionKey: 'theme.preset.default.desc',
     colors: {
-      primary: '#3b82f6',
+      primary: '#0d9488',
       background: '#ffffff',
       surface: '#f8fafc',
       border: '#e2e8f0',
@@ -41,7 +41,7 @@ export const presetThemes: PresetTheme[] = [
       textSecondary: '#64748b',
     },
     config: {
-      themeColor: '#3b82f6',
+      themeColor: '#0d9488',
       borderRadius: '8px',
       density: 'default',
       animationsEnabled: true,

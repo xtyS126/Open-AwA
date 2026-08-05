@@ -63,6 +63,7 @@ const ruRU: Record<string, string> = {
   "sidebar.settings": "Настройки",
   "sidebar.agent": "Агенты",
   "sidebar.menu": "Меню",
+  "mobileTab.more": "Ещё",
   "sidebar.expand": "Развернуть",
   "sidebar.collapse": "Свернуть",
   "sidebar.darkMode": "Тёмная тема",

@@ -61,7 +61,7 @@
 }
 
 .intentNode .treeNodeDot {
-  background-color: var(--color-primary, #3b82f6);
+  background-color: var(--color-primary, #0d9488);
 }
 
 .intentText {
@@ -138,7 +138,7 @@
 }
 
 .stepDotRunning {
-  background-color: #3b82f6;
+  background-color: #0d9488;
   animation: stepPulse 1.5s ease-in-out infinite;
 }
 
@@ -172,7 +172,7 @@
 }
 
 .status-running {
-  color: #2563eb;
+  color: #0f766e;
 }
 
 .status-error {

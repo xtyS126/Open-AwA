@@ -37,7 +37,7 @@ export interface WorkflowEdgeData {
 
 /** 步骤类型对应的节点颜色（左边框 + 头部背景） */
 export const STEP_TYPE_COLORS: Record<GraphStepType, string> = {
-  tool: '#3b82f6',          // 蓝色 - 工具
+  tool: '#0d9488',          // 蓝色 - 工具
   skill: '#10b981',         // 绿色 - 技能
   plugin: '#8b5cf6',        // 紫色 - 插件
   condition: '#f59e0b',     // 橙色 - 条件

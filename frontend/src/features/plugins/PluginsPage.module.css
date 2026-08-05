@@ -711,7 +711,7 @@
   margin-top: var(--space-6);
   padding: var(--space-5);
   border-radius: var(--radius-lg);
-  background: var(--color-info-bg, rgba(59, 130, 246, 0.06));
+  background: var(--color-info-bg, rgba(13, 148, 136, 0.06));
   border-left: 3px solid var(--color-info, var(--color-primary));
 }
 
@@ -772,7 +772,7 @@
 
 /* 内置插件卡片 —— 浅色边框区分 */
 .builtin-card {
-  border-color: var(--color-primary-border, rgba(59, 130, 246, 0.2));
+  border-color: var(--color-primary-border, rgba(13, 148, 136, 0.2));
   background: var(--color-bg);
 }
 

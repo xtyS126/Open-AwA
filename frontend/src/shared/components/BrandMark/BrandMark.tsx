@@ -21,7 +21,7 @@ export default function BrandMark({ size = 56 }: BrandMarkProps) {
     >
       <defs>
         <linearGradient id="awaGradient" x1="0" y1="0" x2="32" y2="32">
-          <stop offset="0%" stopColor="#3b82f6" />
+          <stop offset="0%" stopColor="#0d9488" />
           <stop offset="100%" stopColor="#6366f1" />
         </linearGradient>
       </defs>

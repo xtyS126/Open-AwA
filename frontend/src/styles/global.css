@@ -120,7 +120,7 @@ input:focus, textarea:focus {
 
 .btn-primary:hover {
   background: var(--color-primary-hover);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.25);
   transform: translateY(-1px);
 }
 
@@ -310,21 +310,47 @@ select:focus-visible {
     transform: translateX(0);
   }
 
+  .app-container {
+    /* 移动端纵列布局：主内容区在上，底部 Tab Bar 在下（flex 子项天然避让） */
+    flex-direction: column;
+    height: 100dvh;
+  }
+
   .main-content {
+    flex: 1;
+    min-height: 0;
     margin-left: 0;
     /* 顶部安全区域：notch / Dynamic Island */
     padding-top: var(--safe-area-top);
-    /* 底部安全区域：Home Indicator */
-    padding-bottom: var(--safe-area-bottom);
-  }
-
-  /* 移动端使用 dvh 适配动态视口（地址栏伸缩） */
-  .app-container {
-    height: 100dvh;
   }
 
   /* 移动端禁用 transform 动画，避免 GPU 抖动 */
   .page-transition-wrapper {
     animation: pageFadeInMobile 200ms ease-out;
+  }
+}
+
+/* ============================================================
+ * 原生容器触控优化（APP 全屏 WebView 体验）
+ * ============================================================ */
+html {
+  /* 去掉点击高亮：原生 APP 无 Web 蓝色闪框 */
+  -webkit-tap-highlight-color: transparent;
+  /* 禁止双击缩放延迟与手势缩放，聊天流式场景更跟手 */
+  touch-action: manipulation;
+  /* 阻止下拉橡皮筋露出白底，视觉更贴近原生 */
+  overscroll-behavior: none;
+}
+
+body {
+  /* 移动端滚动条常驻遮挡内容，原生容器隐藏之（列表滚动仍可用） */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* 原生 WebView 内禁止文本自动缩放（用户已设置字体大小后不应再被放大） */
+@media (max-width: 768px) {
+  html {
+    -webkit-text-size-adjust: 100%;
   }
 }

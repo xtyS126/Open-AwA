@@ -275,12 +275,11 @@
 @media (max-width: 768px) {
   .chat-input-container {
     position: fixed;
-    bottom: 0;
+    /* 悬浮于底部 Tab Bar 之上：Tab Bar 总高 = 内容 64px + Home Indicator 安全区 */
+    bottom: calc(var(--tab-bar-height) + var(--safe-area-bottom));
     left: 0;
     right: 0;
     z-index: var(--z-sticky);
-    /* 底部安全区域 padding，适配 Home Indicator */
-    padding-bottom: var(--safe-area-bottom);
     /* 半透明背景 + 毛玻璃模糊，避免遮挡消息内容时突兀 */
     background: rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(12px);

@@ -23,7 +23,7 @@
 }
 
 .depthLineRunning {
-  background-color: #3b82f6;
+  background-color: #0d9488;
 }
 
 .depthLineCompleted {
@@ -108,7 +108,7 @@
 }
 
 .status-running {
-  background-color: #3b82f6;
+  background-color: #0d9488;
   animation: blink 1.5s infinite ease-in-out;
 }
 

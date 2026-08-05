@@ -139,7 +139,7 @@
 
 .count-ok { color: #16a34a; font-weight: 500; }
 .count-fail { color: #dc2626; font-weight: 500; }
-.count-running { color: #2563eb; font-weight: 500; }
+.count-running { color: #0f766e; font-weight: 500; }
 .count-total { color: var(--color-text-secondary); }
 
 /* 网格区域 */
@@ -200,7 +200,7 @@
 }
 
 .test-item.status-running {
-  border-left: 3px solid #2563eb;
+  border-left: 3px solid #0f766e;
 }
 
 .test-item.status-idle {
@@ -246,7 +246,7 @@
 /* 图标 */
 .icon-ok { color: #16a34a; }
 .icon-fail { color: #dc2626; }
-.icon-running { color: #2563eb; animation: spin 1s linear infinite; }
+.icon-running { color: #0f766e; animation: spin 1s linear infinite; }
 .dot-idle {
   width: 10px;
   height: 10px;
@@ -306,7 +306,7 @@
   padding: 8px 18px;
   border: none;
   border-radius: 6px;
-  background: #2563eb;
+  background: #0f766e;
   color: #fff;
   font-size: 13px;
   font-weight: 500;
@@ -315,7 +315,7 @@
 }
 
 .btn-run-all:hover {
-  background: #1d4ed8;
+  background: #115e59;
 }
 
 .btn-run-all:disabled {
@@ -353,7 +353,7 @@
 }
 
 .scenario-card.scenario-running {
-  border-left: 3px solid #2563eb;
+  border-left: 3px solid #0f766e;
 }
 
 .scenario-card.scenario-idle {

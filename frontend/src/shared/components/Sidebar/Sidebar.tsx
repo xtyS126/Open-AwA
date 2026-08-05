@@ -10,6 +10,7 @@ import {
   Layers,
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
+import { useMobileNavStore } from '@/shared/store/mobileNavStore'
 import { useI18nStore } from '@/i18n'
 import { UserFloatingArea } from '../UserFloatingArea'
 import { Tooltip } from '@/shared/components/ui'
@@ -102,8 +103,10 @@ const renderIcon = (type: string, size = 18) => {
       ]
     }
   ]
-  /* 移动端侧边栏展开状态 */
-  const [mobileOpen, setMobileOpen] = useState(false)
+  /* 移动端侧边栏展开状态：与底部 Tab Bar "更多"入口共享全局开关 */
+  const mobileOpen = useMobileNavStore((s) => s.drawerOpen)
+  const closeDrawer = useMobileNavStore((s) => s.closeDrawer)
+  const toggleMobile = useMobileNavStore((s) => s.toggleDrawer)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     control: true,
     agent: true,
@@ -122,17 +125,17 @@ const renderIcon = (type: string, size = 18) => {
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth > 768) {
-        setMobileOpen(false)
+        closeDrawer()
       }
     }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  }, [closeDrawer])
 
   /* 路由切换时自动关闭移动端菜单 */
   useEffect(() => {
-    setMobileOpen(false)
-  }, [location.pathname])
+    closeDrawer()
+  }, [closeDrawer, location.pathname])
 
   /* 移动端打开时阻止背景滚动 */
   useEffect(() => {
@@ -151,10 +154,6 @@ const renderIcon = (type: string, size = 18) => {
       requestAnimationFrame(() => menuBtnRef.current?.focus())
     }
   }, [mobileOpen])
-
-  const toggleMobile = useCallback(() => {
-    setMobileOpen((prev) => !prev)
-  }, [])
 
   /* 滑动手势：touchstart 记录起始坐标 */
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -176,12 +175,12 @@ const renderIcon = (type: string, size = 18) => {
   const handleTouchEnd = useCallback(() => {
     if (touchStartRef.current === null) return
     if (dragOffsetRef.current < -60) {
-      setMobileOpen(false)
+      closeDrawer()
     }
     dragOffsetRef.current = 0
     setDragOffset(0)
     touchStartRef.current = null
-  }, [])
+  }, [closeDrawer])
 
   /* 抽屉跟手偏移：拖动过程中临时覆盖 transform 与 transition，避免渐变延迟 */
   const asideStyle: React.CSSProperties = dragOffset !== 0
@@ -339,7 +338,7 @@ const renderIcon = (type: string, size = 18) => {
             className={styles['sidebar-item']}
             onClick={() => {
               useIssueFeedbackStore.getState().open()
-              setMobileOpen(false)
+              closeDrawer()
             }}
             data-testid="sidebar-issue-feedback-btn"
             aria-label={t('sidebar.issueFeedback') || '问题反馈'}

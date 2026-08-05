@@ -103,8 +103,8 @@
 }
 
 .tabActive {
-  color: var(--color-primary, #3b82f6);
-  border-bottom-color: var(--color-primary, #3b82f6);
+  color: var(--color-primary, #0d9488);
+  border-bottom-color: var(--color-primary, #0d9488);
 }
 
 /* ---- 标签页内容区 ---- */
@@ -181,11 +181,11 @@
 }
 
 .definitionItem:hover {
-  border-color: var(--color-primary, #3b82f6);
+  border-color: var(--color-primary, #0d9488);
 }
 
 .definitionItem.active {
-  border-color: var(--color-primary, #3b82f6);
+  border-color: var(--color-primary, #0d9488);
   background: var(--color-primary-soft-bg, #eff6ff);
 }
 
@@ -295,7 +295,7 @@
 
 .select:focus {
   outline: none;
-  border-color: var(--color-primary, #3b82f6);
+  border-color: var(--color-primary, #0d9488);
 }
 
 .select:disabled {
@@ -395,7 +395,7 @@
 
 .checkboxLabel input[type="checkbox"] {
   cursor: pointer;
-  accent-color: var(--color-primary, #3b82f6);
+  accent-color: var(--color-primary, #0d9488);
 }
 
 /* ---- 图标按钮 ---- */
@@ -587,7 +587,7 @@
 }
 
 .historyItem:hover {
-  border-color: var(--color-primary, #3b82f6);
+  border-color: var(--color-primary, #0d9488);
 }
 
 .historyItemHeader {
@@ -780,7 +780,7 @@
 }
 
 .viewToggle button.toggleActive {
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary, #0d9488);
   color: #ffffff;
 }
 
@@ -817,7 +817,7 @@
   width: 180px;
   min-height: 72px;
   border: 1px solid var(--color-border, #e5e7eb);
-  border-left: 4px solid #3b82f6;
+  border-left: 4px solid #0d9488;
   border-radius: var(--radius-sm, 6px);
   background: var(--color-bg, #ffffff);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -881,7 +881,7 @@
 .graphNodeHandle {
   width: 8px;
   height: 8px;
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary, #0d9488);
   border: 2px solid var(--color-bg, #ffffff);
 }
 

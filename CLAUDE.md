@@ -916,6 +916,15 @@ adb -s 127.0.0.1:5555 shell am start -n com.openawa.mobile/.MainActivity
 
 真机调试：`adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` 后经 CDP 检查 WebView 状态。
 
+## 19.6 2026-08-06 APP 界面重设计（信号中枢主题）新增陷阱
+
+- **Android WebView 不支持 CSS color-mix()**：`CSS.supports('background', 'color-mix(in srgb, red 50%, blue)')` 在 MuMu WebView 返回 false；且 CSS 压缩器会把同一属性的多条声明合并为最后一条，导致"先写回退色、再写 color-mix 覆盖"的降级策略失效（背景解析为 transparent）。毛玻璃背景必须显式写深浅两套 rgba 常量（浅 `rgba(255,255,255,0.88)` / 深 `rgba(15,23,42,0.88)`），与 ChatInput 移动端模式一致。定位方法：computed style 的 backgroundColor 为 `rgba(0,0,0,0)` 且页面上有 backdrop-filter。
+- **移动端底部导航必须用 flex column 布局而非 fixed 覆盖**：AppShell 移动端 `.app-container` 设 `flex-direction: column`，Tab Bar 作为 flex 子项天然避让内容区；`position: fixed; bottom: 0` 的底栏（如 ChatInput）必须 `bottom: calc(var(--tab-bar-height) + var(--safe-area-bottom))` 悬浮于 Tab Bar 之上，键盘弹起时由 inline style 覆盖 bottom。
+- **git-bash 下 node 脚本参数以 `/` 开头会被 MSYS 路径转换**：`node cdp-helper.cjs nav "/memory"` 会把参数转成 `D:/Program Files/Git/memory`；必须 `MSYS_NO_PATHCONV=1` 前缀执行。
+- **uiautomator dump 中 WebView 按钮的 aria-label 覆盖 text 字段**：带 aria-label 的按钮其可见文本不会出现在 text 属性中（显示为 aria-label 值）；验证可见文本时用 CDP 读取或先去掉 aria-label。
+- **CDP 截图 PNG/JPEG 在 Read 工具均不支持**：视觉验证用 DOM computed style（getComputedStyle）+ 截图像素颜色统计（PIL）替代。
+- **CDP 路由验证模式**：`frontend/scripts/cdp-helper.cjs`（eval/nav/shot）+ `verify-routes.cjs`（24 路由批量验收）可复用；TanStack Router 监听 popstate，导航用 `history.pushState` + 派发 `PopStateEvent` 即可，无需整页刷新。
+
 ---
 
 ## 20. API Path Prefix

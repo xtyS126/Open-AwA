@@ -12,18 +12,25 @@
 :root {
   /* ============================================================
    * 颜色体系 — 语义色板（从 global.css 抽取集中管理）
-   * ============================================================ */
+   * ============================================================
+   * 设计语言「信号中枢 / Signal Nexus」：主色为信号青（teal-700 #0f766e）。
+   * 与通用 SaaS 蓝决裂，呼应 APP 首屏"局域网信号发现"的雷达/信号强度语言。
+   */
 
-  /* 主色调 */
-  /* a11y: --color-primary 由 #3b82f6 调深为 #2563eb，与白色文本对比度 3.67 -> 5.22，满足 WCAG AA 4.5:1 */
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
-  --color-primary-dark: #1e40af;
-  --color-primary-ring: rgba(59, 130, 246, 0.2);
-  --color-primary-soft-bg: rgba(59, 130, 246, 0.1);
-  --color-primary-softer-bg: rgba(59, 130, 246, 0.08);
-  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
-  --color-primary-subtle: rgba(59, 130, 246, 0.08);
+  /* 主色调 — 信号青 */
+  /* a11y: --color-primary 选 teal-700 #0f766e，与白色文本对比度约 5.44:1，满足 WCAG AA 4.5:1 */
+  --color-primary: #0f766e;
+  --color-primary-hover: #115e59;
+  --color-primary-dark: #134e4a;
+  --color-primary-ring: rgba(13, 148, 136, 0.2);
+  --color-primary-soft-bg: rgba(13, 148, 136, 0.1);
+  --color-primary-softer-bg: rgba(13, 148, 136, 0.08);
+  --color-primary-softest-bg: rgba(13, 148, 136, 0.05);
+  --color-primary-subtle: rgba(13, 148, 136, 0.08);
+  /* 信号渐变：通信设备的 teal→cyan 发光过渡 */
+  --color-primary-gradient: linear-gradient(135deg, #0f766e 0%, #0891b2 100%);
+  /* 信号光晕：流式输出/激活态的辉光投影 */
+  --color-glow: 0 0 16px rgba(13, 148, 136, 0.35);
 
   /* 背景色 */
   --color-bg: #ffffff;
@@ -60,9 +67,9 @@
   --color-warning-soft-bg: #fef3c7;
   --color-warning-strong: #b45309;
 
-  /* 语义色 — 信息 */
-  --color-info: #3b82f6;
-  --color-info-bg: #dbeafe;
+  /* 语义色 — 信息（信号青系） */
+  --color-info: #0d9488;
+  --color-info-bg: #ccfbf1;
 
   /* 语义色 — 危险 */
   --color-danger: #ef4444;
@@ -78,8 +85,8 @@
   /* 图表色板 */
   --color-chart-grid: transparent;
   --color-chart-axis: #94a3b8;
-  --color-chart-primary: #3b82f6;
-  --color-chart-secondary: #10b981;
+  --color-chart-primary: #0f766e;
+  --color-chart-secondary: #0891b2;
   --color-chart-3: #ef4444;
   --color-chart-4: #f59e0b;
   --color-chart-5: #8b5cf6;
@@ -207,6 +214,8 @@
   --sidebar-width: 260px;
   --sidebar-collapsed-width: 68px;
   --secondary-sidebar-width: 240px;
+  /* 底部 Tab Bar 高度（原生 APP 导航栏）：64px 内容 + 底部安全区由组件自行叠加 */
+  --tab-bar-height: 64px;
 
   /* ============================================================
    * 安全区域（notch / Home Indicator）
@@ -230,16 +239,19 @@
  * 暗色主题覆写
  * ============================================================ */
 .dark {
-  /* 主色调 — 暗色下亮度提升 */
-  /* a11y: --color-primary 由 #3b82f6 调深为 #2563eb，与白色文本对比度 3.67 -> 5.22，满足 WCAG AA 4.5:1 */
-  --color-primary: #2563eb;
-  --color-primary-hover: #60a5fa;
-  --color-primary-dark: #2563eb;
-  --color-primary-ring: rgba(59, 130, 246, 0.3);
-  --color-primary-soft-bg: rgba(59, 130, 246, 0.15);
-  --color-primary-softer-bg: rgba(59, 130, 246, 0.1);
-  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
-  --color-primary-subtle: rgba(59, 130, 246, 0.12);
+  /* 主色调 — 暗色下亮度提升（信号青 teal-400） */
+  /* a11y: --color-primary #2dd4bf 与深色背景对比度高，满足 WCAG AA */
+  --color-primary: #2dd4bf;
+  --color-primary-hover: #5eead4;
+  --color-primary-dark: #14b8a6;
+  --color-primary-ring: rgba(45, 212, 191, 0.3);
+  --color-primary-soft-bg: rgba(45, 212, 191, 0.15);
+  --color-primary-softer-bg: rgba(45, 212, 191, 0.1);
+  --color-primary-softest-bg: rgba(45, 212, 191, 0.05);
+  --color-primary-subtle: rgba(45, 212, 191, 0.12);
+  --color-primary-gradient: linear-gradient(135deg, #0f766e 0%, #06b6d4 100%);
+  /* 暗色下光晕透明度提升，信号感更强 */
+  --color-glow: 0 0 20px rgba(45, 212, 191, 0.45);
 
   /* 背景色 */
   --color-bg: #0f172a;
@@ -271,8 +283,8 @@
   --color-warning-soft-bg: rgba(251, 191, 36, 0.1);
   --color-warning-strong: #f59e0b;
 
-  --color-info: #60a5fa;
-  --color-info-bg: rgba(96, 165, 250, 0.2);
+  --color-info: #2dd4bf;
+  --color-info-bg: rgba(45, 212, 191, 0.2);
 
   --color-danger: #ef4444;
   --color-danger-hover: #f87171;

@@ -184,7 +184,7 @@
 }
 
 .status-dot-running {
-  border: 1.5px solid #2563eb;
+  border: 1.5px solid #0f766e;
   background: transparent;
   animation: dotPulse 1s ease-in-out infinite;
 }
