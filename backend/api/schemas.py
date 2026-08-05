@@ -400,7 +400,8 @@ class ScheduledTaskBase(BaseModel):
     """
     title: str = Field(..., min_length=1, max_length=200)
     prompt: str = Field(default="")
-    scheduled_at: datetime
+    # 周期任务（is_daily + cron_expression）不依赖单次执行时间，可空
+    scheduled_at: Optional[datetime] = None
     provider: Optional[str] = None
     model: Optional[str] = None
     is_daily: Optional[bool] = False

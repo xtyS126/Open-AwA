@@ -180,11 +180,19 @@ async def create_scheduled_task(
             raise HTTPException(status_code=400, detail="每日执行任务必须选择至少一天和指定时间")
         cron_expr = _build_cron_expression(request.weekdays, request.daily_time)
 
+    # 非周期任务必须有单次执行时间
+    if not request.is_daily and not request.scheduled_at:
+        raise HTTPException(status_code=400, detail="一次性任务必须提供 scheduled_at")
+
+    # 周期任务不依赖单次执行时间：scheduled_at 为 DB 非空列，缺省时以当前时间占位
+    # （_build_trigger 仅对非周期任务读取该字段，周期任务由 CronTrigger 调度）
+    effective_scheduled_at = request.scheduled_at or datetime.now(timezone.utc)
+
     task = ScheduledTask(
         user_id=str(current_user.id),
         title=title,
         prompt=prompt,
-        scheduled_at=request.scheduled_at,
+        scheduled_at=effective_scheduled_at,
         provider=_normalize_optional_text(request.provider),
         model=_normalize_optional_text(request.model),
         status="pending",
@@ -201,6 +209,19 @@ async def create_scheduled_task(
     db.add(task)
     db.commit()
     db.refresh(task)
+
+    # 注册到 APScheduler：周期任务 CronTrigger / 一次性任务 DateTrigger。
+    # 不注册则服务运行期间新建的任务不会被调度（需重启才生效）。
+    try:
+        from core.scheduled_task_manager import scheduled_task_manager
+        await scheduled_task_manager.register_task(task)
+    except Exception as exc:
+        logger.bind(
+            event="scheduled_task_register_failed",
+            module="scheduled_tasks",
+            task_id=task.id,
+            error=str(exc),
+        ).warning(f"任务创建后注册到调度器失败: {exc}")
 
     # 计算并附加 next_execution_at
     next_exec = _calculate_next_execution(task.cron_expression) if task.cron_expression else None
@@ -309,6 +330,18 @@ async def update_scheduled_task(
     db.commit()
     db.refresh(task)
 
+    # 更新后重新注册调度（conflict_policy=replace 幂等更新 trigger）
+    try:
+        from core.scheduled_task_manager import scheduled_task_manager
+        await scheduled_task_manager.register_task(task)
+    except Exception as exc:
+        logger.bind(
+            event="scheduled_task_register_failed",
+            module="scheduled_tasks",
+            task_id=task.id,
+            error=str(exc),
+        ).warning(f"任务更新后注册到调度器失败: {exc}")
+
     next_exec = _calculate_next_execution(task.cron_expression) if task.cron_expression else None
     task_dict = ScheduledTaskResponse.model_validate(task).model_dump()
     task_dict["next_execution_at"] = next_exec.isoformat() if next_exec else task.scheduled_at.isoformat()
@@ -338,7 +371,19 @@ async def cancel_scheduled_task(
         db.commit()
         return {"message": "Scheduled task cancelled successfully"}
 
-    # 终态任务：物理删除，前端删除按钮可移除任意状态任务
+    # 终态任务：物理删除，前端删除按钮可移除任意状态任务；
+    # 先注销 APScheduler 调度，避免残留 schedule 继续触发已删除任务
+    try:
+        from core.scheduled_task_manager import scheduled_task_manager
+        await scheduled_task_manager.unregister_task(task_id)
+    except Exception as exc:
+        logger.bind(
+            event="scheduled_task_unregister_failed",
+            module="scheduled_tasks",
+            task_id=task_id,
+            error=str(exc),
+        ).warning(f"任务删除前注销调度失败: {exc}")
+
     db.delete(task)
     db.commit()
     return {"message": "Scheduled task deleted successfully"}
