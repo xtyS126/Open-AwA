@@ -370,15 +370,30 @@ async def trigger_scheduled_task(
         user_id=current_user.id,
     ).info("手动触发定时任务")
 
+    # 异步启动任务执行（复用 APScheduler 路径的完整状态机：claim→running→completed/failed
+    # + 执行记录落库）。此前同步 await 等待任务完成，任务执行超时（多轮搜索+LLM 汇总可达
+    # 数分钟）时客户端断开会取消执行，导致任务卡在 pending 且无执行记录。
     try:
         from core.scheduled_task_manager import scheduled_task_manager
-        result = await scheduled_task_manager.execute_task_now(task, db)
+
+        async def _run_background() -> None:
+            try:
+                await scheduled_task_manager._execute_task(task_id)
+            except Exception as exc:
+                logger.bind(
+                    event="scheduled_task_trigger_error",
+                    module="scheduled_tasks",
+                    task_id=task_id,
+                    error=str(exc),
+                ).opt(exception=True).error("手动触发定时任务后台执行失败")
+
+        import asyncio
+
+        asyncio.create_task(_run_background())
         return {
-            "message": "任务已执行",
+            "message": "任务已启动，可在任务列表查看执行状态",
             "task_id": task_id,
-            "status": result.get("status", "unknown"),
-            "response": result.get("response", ""),
-            "error": result.get("error"),
+            "status": "running",
         }
     except Exception as exc:
         logger.bind(
