@@ -1,12 +1,13 @@
 /**
  * 服务器选择页（APP 模式首屏）。
  *
- * 功能：
- * - 自动扫描局域网内同网段的 Open-AwA 后端（探测 /api/system/ping）
- * - 实时展示已发现实例（实例名/IP/版本/延迟），用户选择接入
- * - 支持手动输入后端地址兜底（跨网段或端口非默认）
+ * 设计主题："局域网信号发现"——探测、发现、连接 的配对仪式。
+ * - 扫描中：雷达动画（旋转扫描弧 + 涟漪脉冲）表达探测过程
+ * - 发现列表：信号强度条把延迟可视化（<30ms 满格），版本徽章与延迟并排
+ * - 手动添加：作为次级入口，与自动发现互补（跨网段 / 非默认端口）
  *
- * 选择后调用 setBackendUrl 持久化，随后由 RootGuard 走正常初始化流程。
+ * 全部颜色走 tokens 变量，浅色/深色主题自动适配；
+ * 动画只用 transform/opacity（GPU 合成），尊重 prefers-reduced-motion。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@/shared/routing'
@@ -19,6 +20,7 @@ import {
 import { isNativeApp } from '@/shared/utils/platform'
 import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
+import BrandMark from '@/shared/components/BrandMark/BrandMark'
 import styles from './ServerSelectPage.module.css'
 
 type ScanState = 'idle' | 'scanning' | 'done'
@@ -43,6 +45,18 @@ export function normalizeServerInput(input: string): string {
   }
 }
 
+/**
+ * 延迟毫秒数 → 信号格数（1-4）。
+ * 阈值对应局域网典型体验：<30ms 极佳（直连/模拟器宿主映射），
+ * <80ms 良好（同网段 WiFi），<200ms 可用（跨网段/NAT 转发）。
+ */
+export function signalBars(latencyMs: number): number {
+  if (latencyMs < 30) return 4
+  if (latencyMs < 80) return 3
+  if (latencyMs < 200) return 2
+  return 1
+}
+
 /** 校验候选后端可达：探测 ping 端点确认 pong=true */
 async function probeBackend(baseUrl: string, timeoutMs = 3000): Promise<boolean> {
   try {
@@ -58,6 +72,40 @@ async function probeBackend(baseUrl: string, timeoutMs = 3000): Promise<boolean>
   } catch {
     return false
   }
+}
+
+/** 扫描中的雷达动画（旋转扫描弧 + 双层涟漪脉冲） */
+function Radar() {
+  return (
+    <div className={styles['radar-wrap']} aria-hidden="true">
+      <div className={styles['radar']}>
+        <div className={styles['radar-sweep']} />
+        <div className={styles['radar-ripple']} />
+        <div className={styles['radar-ripple']} />
+        <div className={styles['radar-core']} />
+      </div>
+    </div>
+  )
+}
+
+/** 信号强度条：按延迟毫秒数渲染 1-4 格竖条 */
+function SignalBars({ latencyMs }: { latencyMs: number }) {
+  const bars = signalBars(latencyMs)
+  return (
+    <span
+      className={styles['signal-bars']}
+      aria-label={`信号强度 ${bars}/4`}
+      title={`延迟 ${latencyMs}ms`}
+    >
+      {[1, 2, 3, 4].map((level) => (
+        <span
+          key={level}
+          className={`${styles['signal-bar']} ${level <= bars ? styles['signal-bar-on'] : ''}`}
+          style={{ height: `${6 + level * 3}px` }}
+        />
+      ))}
+    </span>
+  )
 }
 
 export default function ServerSelectPage() {
@@ -142,77 +190,123 @@ export default function ServerSelectPage() {
   }, [manualInput, connectTo])
 
   const handleDiscoveredConnect = useCallback((backend: DiscoveredBackend) => {
-    void connectTo(backend.url, `${backend.ip}:${backend.latencyMs}ms`)
+    void connectTo(backend.url, backend.ip)
   }, [connectTo])
+
+  const scanning = scanState === 'scanning'
 
   return (
     <div className={styles['server-select-page']}>
-      <div className={styles['server-card']}>
-        <div className={styles['server-header']}>
-          <h1 className={styles['server-title']}>Open-AwA</h1>
-          <p className={styles['server-subtitle']}>选择要连接的服务器</p>
-        </div>
+      <div className={styles['server-shell']}>
+        {/* 品牌区 */}
+        <header className={styles['brand-header']}>
+          <BrandMark size={56} />
+          <h1 className={styles['brand-title']}>Open-AwA</h1>
+          <p className={styles['brand-subtitle']}>选择要连接的服务器</p>
+        </header>
 
-        <div className={styles['scan-section']}>
-          <div className={styles['scan-row']}>
-            <label className={styles['port-label']} htmlFor="server-port">端口</label>
+        {/* 扫描控制 */}
+        <div className={styles['scan-control']}>
+          <label className={styles['port-field']}>
+            <span className={styles['port-label']}>端口</span>
             <input
-              id="server-port"
               className={styles['port-input']}
               type="number"
               value={manualPort}
               min={1}
               max={65535}
               onChange={(e) => setManualPort(e.target.value)}
-              disabled={scanState === 'scanning'}
+              disabled={scanning}
             />
-            <button
-              type="button"
-              className={styles['scan-btn']}
-              onClick={() => void startScan()}
-              disabled={scanState === 'scanning'}
-            >
-              {scanState === 'scanning' ? '扫描中...' : found.length > 0 || scanState === 'done' ? '重新扫描' : '扫描局域网'}
-            </button>
-          </div>
-          {scanState === 'scanning' && (
-            <p className={styles['scan-hint']} role="status">
-              正在扫描网段内设备，约 10 秒，请稍候...
+          </label>
+          <button
+            type="button"
+            className={`${styles['scan-btn']} ${scanning ? styles['scan-btn-active'] : ''}`}
+            onClick={() => void startScan()}
+            disabled={scanning}
+          >
+            {scanning ? '正在扫描…' : found.length > 0 || scanState === 'done' ? '重新扫描' : '扫描局域网'}
+          </button>
+        </div>
+
+        {/* 扫描状态区：雷达动画 + 实时计数 */}
+        <div className={styles['status-area']} role="status" aria-live="polite">
+          {scanning ? (
+            <>
+              <Radar />
+              <p className={styles['status-text']}>
+                {found.length > 0
+                  ? `已发现 ${found.length} 个实例，继续扫描…`
+                  : '正在扫描网段内设备…'}
+              </p>
+            </>
+          ) : scanState === 'done' ? (
+            <p className={styles['status-text']}>
+              {found.length > 0 ? `发现 ${found.length} 个实例` : '本次扫描未发现实例'}
             </p>
-          )}
-          {scanState === 'done' && found.length === 0 && !error && (
-            <p className={styles['scan-empty']}>未发现 Open-AwA 后端，请确认后端已开启局域网访问，或手动输入地址</p>
+          ) : (
+            <p className={styles['status-text']}>点击上方按钮扫描局域网</p>
           )}
         </div>
 
+        {/* 发现结果列表 */}
         {found.length > 0 && (
           <ul className={styles['server-list']} aria-label="发现的服务器列表">
-            {found.map((backend) => (
-              <li key={backend.ip}>
-                <button
-                  type="button"
-                  className={styles['server-item']}
-                  onClick={() => handleDiscoveredConnect(backend)}
-                  disabled={!!connecting}
-                >
-                  <span className={styles['server-item-main']}>
-                    <span className={styles['server-item-name']}>
-                      {backend.instanceName || 'Open-AwA'}
+            {found.map((backend) => {
+              const isConnecting = connecting === backend.ip
+              return (
+                <li key={backend.ip}>
+                  <button
+                    type="button"
+                    className={styles['server-item']}
+                    onClick={() => handleDiscoveredConnect(backend)}
+                    disabled={!!connecting}
+                    aria-busy={isConnecting}
+                  >
+                    <span className={styles['server-item-signal']}>
+                      <SignalBars latencyMs={backend.latencyMs} />
                     </span>
-                    <span className={styles['server-item-ip']}>{backend.ip}</span>
-                  </span>
-                  <span className={styles['server-item-meta']}>
-                    {backend.version && <span className={styles['server-item-version']}>v{backend.version}</span>}
-                    <span className={styles['server-item-latency']}>{backend.latencyMs}ms</span>
-                  </span>
-                </button>
-              </li>
-            ))}
+                    <span className={styles['server-item-main']}>
+                      <span className={styles['server-item-name']}>
+                        {backend.instanceName || 'Open-AwA'}
+                      </span>
+                      <span className={styles['server-item-ip']}>
+                        {backend.ip}
+                        <span className={styles['server-item-latency']}>{backend.latencyMs}ms</span>
+                      </span>
+                    </span>
+                    <span className={styles['server-item-meta']}>
+                      {backend.version && (
+                        <span className={styles['server-item-version']}>v{backend.version}</span>
+                      )}
+                      <span
+                        className={`${styles['server-item-action']} ${isConnecting ? styles['server-item-action-loading'] : ''}`}
+                        aria-hidden="true"
+                      >
+                        {isConnecting ? '' : '›'}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
 
+        {/* 空结果引导 */}
+        {scanState === 'done' && found.length === 0 && !error && (
+          <div className={styles['empty-hint']}>
+            <p className={styles['empty-title']}>没有发现 Open-AwA 实例</p>
+            <p className={styles['empty-detail']}>
+              请确认后端已启动，并以 <code>ALLOW_LAN_ACCESS=true</code> 开启局域网访问；
+              也可以使用下方手动添加地址。
+            </p>
+          </div>
+        )}
+
+        {/* 手动添加 */}
         <div className={styles['manual-section']}>
-          <div className={styles['manual-label']}>手动输入服务器地址</div>
+          <div className={styles['manual-label']}>手动添加服务器</div>
           <div className={styles['manual-row']}>
             <input
               className={styles['manual-input']}
@@ -226,6 +320,7 @@ export default function ServerSelectPage() {
                 }
               }}
               disabled={!!connecting}
+              aria-label="服务器地址"
             />
             <button
               type="button"
@@ -240,7 +335,7 @@ export default function ServerSelectPage() {
 
         {connecting && (
           <p className={styles['connecting']} role="status">
-            正在连接 {connecting}...
+            正在连接 {connecting}…
           </p>
         )}
         {error && (

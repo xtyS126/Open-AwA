@@ -1,92 +1,224 @@
-/* 服务器选择页（APP 首屏）样式 */
+/* ============================================================
+ * 服务器选择页（APP 首屏）——"局域网信号发现"主题
+ *
+ * 视觉语言：
+ * - 背景为 bg-secondary 的细腻渐变，品牌区居中形成"连接仪式"聚焦
+ * - 扫描中：雷达动画（旋转扫描弧 + 双层涟漪脉冲），表达探测语义
+ * - 结果卡片：信号强度条（延迟可视化）+ 版本徽章 + 延迟 tabular-nums
+ * - 全部颜色走 tokens 变量（浅色/深色主题自动适配）
+ * - 动画仅用 transform/opacity（GPU 合成），尊重 prefers-reduced-motion
+ * ============================================================ */
 
 .server-select-page {
   min-height: 100vh;
   display: flex;
-  align-items: center;
   justify-content: center;
-  padding: var(--space-6);
-  background: linear-gradient(160deg, var(--color-bg) 0%, var(--color-bg-secondary, var(--color-bg)) 100%);
+  padding: var(--space-8) var(--space-5) var(--space-10);
+  background: linear-gradient(
+    180deg,
+    var(--color-bg) 0%,
+    var(--color-bg-secondary) 40%,
+    var(--color-bg) 100%
+  );
 }
 
-.server-card {
+.server-shell {
   width: 100%;
-  max-width: 420px;
-  background: var(--color-surface, var(--color-bg));
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: var(--space-6);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
 }
 
-.server-header {
-  text-align: center;
-  margin-bottom: var(--space-5);
+/* ---------- 品牌区 ---------- */
+
+.brand-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-4) 0 var(--space-6);
 }
 
-.server-title {
-  font-size: 1.5rem;
+.brand-header :global(svg) {
+  margin-bottom: var(--space-3);
+}
+
+.brand-title {
+  margin: 0;
+  font-size: 1.625rem;
   font-weight: 700;
-  margin: 0 0 var(--space-1);
+  letter-spacing: -0.02em;
   color: var(--color-text);
 }
 
-.server-subtitle {
-  margin: 0;
-  font-size: 0.9rem;
-  color: var(--color-text-secondary, var(--color-text-muted));
+.brand-subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: 0.875rem;
+  color: var(--color-text-tertiary);
 }
 
-.scan-section {
-  margin-bottom: var(--space-4);
-}
+/* ---------- 扫描控制 ---------- */
 
-.scan-row {
+.scan-control {
   display: flex;
-  gap: var(--space-2);
-  align-items: center;
+  gap: var(--space-3);
+  align-items: flex-end;
+  padding: var(--space-4);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.port-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
 }
 
 .port-label {
-  font-size: 0.85rem;
-  color: var(--color-text-secondary, var(--color-text-muted));
-  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
 }
 
 .port-input {
-  width: 84px;
-  padding: var(--space-2);
+  width: 92px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
   color: var(--color-text);
-  font-size: 0.9rem;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.port-input:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+.port-input:disabled {
+  opacity: 0.6;
 }
 
 .scan-btn {
   flex: 1;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
   border: none;
-  border-radius: 6px;
-  background: var(--color-primary, #2563eb);
-  color: #fff;
-  font-size: 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 0.9375rem;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: background-color 0.15s, transform 0.1s;
+}
+
+.scan-btn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.scan-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.scan-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
 }
 
 .scan-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  opacity: 0.65;
+  cursor: default;
 }
 
-.scan-hint,
-.scan-empty {
-  margin: var(--space-2) 0 0;
-  font-size: 0.8rem;
-  color: var(--color-text-secondary, var(--color-text-muted));
+.scan-btn-active {
+  background: var(--color-primary-dark);
 }
+
+/* ---------- 扫描状态区（雷达动画） ---------- */
+
+.status-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-6) 0 var(--space-4);
+}
+
+.status-text {
+  margin: var(--space-3) 0 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-tertiary);
+}
+
+/* 雷达：外圈 + 旋转扫描弧 + 双层涟漪 + 中心点 */
+.radar-wrap {
+  position: relative;
+  width: 132px;
+  height: 132px;
+}
+
+.radar {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background:
+    radial-gradient(circle, transparent 55%, var(--color-primary-softest-bg) 56%),
+    var(--color-bg);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: conic-gradient(
+    from 0deg,
+    rgba(59, 130, 246, 0.28) 0deg,
+    rgba(59, 130, 246, 0.05) 70deg,
+    transparent 140deg
+  );
+  animation: radar-sweep 1.8s linear infinite;
+}
+
+.radar-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-primary-ring);
+  animation: radar-ripple 2.4s ease-out infinite;
+}
+
+.radar-ripple:nth-child(3) {
+  animation-delay: 1.2s;
+}
+
+.radar-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.6);
+}
+
+@keyframes radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes radar-ripple {
+  0% { transform: scale(0.45); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+/* ---------- 发现结果列表 ---------- */
 
 .server-list {
   list-style: none;
@@ -101,43 +233,92 @@
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  padding: var(--space-4) var(--space-4);
   background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   color: var(--color-text);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s, background-color 0.15s;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 
 .server-item:hover:not(:disabled) {
-  border-color: var(--color-primary, #2563eb);
-  background: var(--color-bg-hover, var(--color-bg));
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.server-item:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.server-item:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
 }
 
 .server-item:disabled {
   opacity: 0.6;
-  cursor: not-allowed;
+  cursor: default;
+}
+
+/* 信号强度条（1-4 格竖条） */
+.server-item-signal {
+  flex-shrink: 0;
+  width: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.signal-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 18px;
+}
+
+.signal-bar {
+  width: 3px;
+  border-radius: 1.5px;
+  background: var(--color-border);
+  transition: background-color 0.3s;
+}
+
+.signal-bar-on {
+  background: var(--color-success-accent);
 }
 
 .server-item-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 0;
 }
 
 .server-item-name {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .server-item-ip {
-  font-size: 0.8rem;
-  color: var(--color-text-secondary, var(--color-text-muted));
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.server-item-latency {
+  color: var(--color-text-tertiary);
 }
 
 .server-item-meta {
@@ -148,27 +329,83 @@
 }
 
 .server-item-version {
-  font-size: 0.75rem;
-  color: var(--color-primary, #2563eb);
-  border: 1px solid currentColor;
-  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary-ring);
+  border-radius: var(--radius-sm);
   padding: 1px 6px;
 }
 
-.server-item-latency {
-  font-size: 0.8rem;
-  color: var(--color-text-secondary, var(--color-text-muted));
+.server-item-action {
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s, transform 0.15s;
 }
 
+.server-item:hover:not(:disabled) .server-item-action {
+  color: var(--color-primary);
+  transform: translateX(2px);
+}
+
+/* 连接中的旋转指示（替代箭头） */
+.server-item-action-loading {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: var(--radius-full);
+  animation: action-spin 0.8s linear infinite;
+}
+
+@keyframes action-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- 空状态引导 ---------- */
+
+.empty-hint {
+  padding: var(--space-4);
+  background: var(--color-bg-tertiary);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.empty-title {
+  margin: 0 0 var(--space-1-5);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.empty-detail {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+}
+
+.empty-detail code {
+  font-size: 0.75rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* ---------- 手动添加 ---------- */
+
 .manual-section {
-  margin-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-2);
   padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
 }
 
 .manual-label {
-  font-size: 0.85rem;
-  color: var(--color-text-secondary, var(--color-text-muted));
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
   margin-bottom: var(--space-2);
 }
 
@@ -179,42 +416,82 @@
 
 .manual-input {
   flex: 1;
-  padding: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--color-bg);
   color: var(--color-text);
-  font-size: 0.9rem;
-  min-width: 0;
+  font-size: 0.9375rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.manual-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.manual-input:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
 }
 
 .connect-btn {
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--color-primary, #2563eb);
-  border-radius: 6px;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--color-primary, #2563eb);
-  font-size: 0.9rem;
+  color: var(--color-primary);
+  font-size: 0.9375rem;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.connect-btn:hover:not(:disabled) {
+  background: var(--color-primary-softest-bg);
+}
+
+.connect-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
 }
 
 .connect-btn:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
+
+/* ---------- 状态反馈 ---------- */
 
 .connecting,
 .server-error {
   margin: var(--space-3) 0 0;
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
+  text-align: center;
 }
 
 .connecting {
-  color: var(--color-text-secondary, var(--color-text-muted));
+  color: var(--color-text-secondary);
 }
 
 .server-error {
-  color: var(--color-danger, #dc2626);
+  color: var(--color-danger);
+  line-height: 1.5;
+}
+
+/* ---------- 无障碍：减少动态效果 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-sweep,
+  .radar-ripple,
+  .server-item-action-loading {
+    animation: none;
+  }
+  .radar-sweep {
+    opacity: 0.5;
+  }
+  .radar-ripple {
+    display: none;
+  }
 }

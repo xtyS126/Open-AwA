@@ -1,0 +1,6 @@
+/* 品牌标识：柔和投影营造悬浮感，蓝紫渐变保留品牌色 */
+
+.brand-mark {
+  display: block;
+  filter: drop-shadow(0 4px 12px rgba(59, 130, 246, 0.25));
+}

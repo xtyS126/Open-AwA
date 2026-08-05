@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import ServerSelectPage, { normalizeServerInput } from '@/features/server/ServerSelectPage'
+import ServerSelectPage, { normalizeServerInput, signalBars } from '@/features/server/ServerSelectPage'
 import { scanLanBackends } from '@/shared/api/lanDiscovery'
 import { setBackendUrl } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/store/authStore'
@@ -32,6 +32,24 @@ vi.mock('@/shared/routing', () => ({
   Link: () => null,
   Outlet: () => null,
 }))
+
+describe('signalBars', () => {
+  it('延迟越低信号格数越高', () => {
+    expect(signalBars(10)).toBe(4)
+    expect(signalBars(50)).toBe(3)
+    expect(signalBars(120)).toBe(2)
+    expect(signalBars(500)).toBe(1)
+  })
+
+  it('边界值按阈值归属', () => {
+    expect(signalBars(29)).toBe(4)
+    expect(signalBars(30)).toBe(3)
+    expect(signalBars(79)).toBe(3)
+    expect(signalBars(80)).toBe(2)
+    expect(signalBars(199)).toBe(2)
+    expect(signalBars(200)).toBe(1)
+  })
+})
 
 describe('normalizeServerInput', () => {
   it('补全缺失的协议与 /api 前缀', () => {

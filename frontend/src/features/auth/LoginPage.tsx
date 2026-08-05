@@ -6,6 +6,7 @@ import { useNavigate } from '@/shared/routing'
 import { isNativeApp } from '@/shared/utils/platform'
 import { apiKeySchema } from '@/shared/schemas/auth'
 import { appLogger } from '@/shared/utils/logger'
+import BrandMark from '@/shared/components/BrandMark/BrandMark'
 import styles from './LoginPage.module.css'
 
 /**
@@ -100,6 +101,7 @@ function LoginPage() {
     <div className={styles['login-page']}>
       <div className={styles['login-card']}>
         <div className={styles['login-header']}>
+          <BrandMark size={48} />
           <h1>Open-AwA</h1>
           <p>AI Agent 实验平台</p>
         </div>

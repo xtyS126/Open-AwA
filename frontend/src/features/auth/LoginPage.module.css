@@ -1,94 +1,126 @@
+/* ============================================================
+ * 登录页 —— 与服务器选择页（ServerSelectPage）统一的视觉语言：
+ * - 同款背景渐变（bg → bg-secondary 细腻过渡）
+ * - 品牌区（BrandMark + 标题 + 副标题）形成认证仪式感
+ * - 卡片 radius-lg + shadow-sm；按钮 / 输入框统一 focus glow 与微交互
+ * ============================================================ */
+
 .login-page {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: var(--color-bg-secondary);
+  padding: var(--space-5);
+  background: linear-gradient(
+    180deg,
+    var(--color-bg) 0%,
+    var(--color-bg-secondary) 40%,
+    var(--color-bg) 100%
+  );
 }
 
 .login-card {
   background: var(--color-bg);
-  border-radius: var(--radius-lg, 12px);
-  padding: 40px 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-6);
   width: 100%;
   max-width: 400px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-md);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.login-header :global(svg) {
+  margin-bottom: var(--space-3);
 }
 
 .login-header h1 {
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--color-text);
-  margin-bottom: 8px;
+  margin: 0 0 var(--space-1);
 }
 
 .login-header p {
-  font-size: 14px;
-  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  color: var(--color-text-tertiary);
+  margin: 0;
 }
 
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-4);
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .form-group label {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--color-text);
 }
 
 .form-group input {
-  padding: 10px 14px;
-  border: 1px solid var(--color-bg-tertiary);
-  border-radius: var(--radius-sm, 6px);
-  font-size: 14px;
+  padding: var(--space-2-5, 10px) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
   color: var(--color-text);
-  background: var(--color-bg);
+  background: var(--color-bg-secondary);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.form-group input:focus {
+.form-group input:focus-visible {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-ring);
+  box-shadow: var(--shadow-glow);
 }
 
 .login-error {
-  padding: 10px 14px;
+  padding: var(--space-2) var(--space-3);
   background: var(--color-error-soft-bg);
-  color: var(--color-error-strong, var(--color-error));
-  border-radius: var(--radius-sm, 6px);
-  font-size: 13px;
+  color: var(--color-error-strong);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 
 .login-btn {
-  padding: 10px 0;
+  padding: var(--space-2-5, 10px) 0;
   background: var(--color-primary);
   color: #ffffff;
   border: none;
-  border-radius: var(--radius-sm, 6px);
-  font-size: 15px;
-  font-weight: 500;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background-color 0.15s, transform 0.1s;
 }
 
 .login-btn:hover:not(:disabled) {
   background: var(--color-primary-hover);
+}
+
+.login-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.login-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
 }
 
 .login-btn:disabled {
@@ -98,15 +130,15 @@
 
 /* APP 模式：切换局域网后端入口（与主按钮同宽，弱化样式避免抢主视觉） */
 .switch-server-btn {
-  margin-top: 10px;
-  padding: 8px 0;
+  margin-top: var(--space-2);
+  padding: var(--space-2) 0;
   background: transparent;
   color: var(--color-text-tertiary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 6px);
-  font-size: 13px;
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
   cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color 0.15s, border-color 0.15s;
 }
 
 .switch-server-btn:hover {
@@ -114,11 +146,16 @@
   border-color: var(--color-primary);
 }
 
+.switch-server-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
 .login-hint {
   text-align: center;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--color-text-tertiary);
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 /* ============================================================
@@ -128,34 +165,29 @@
  * ============================================================ */
 @media (max-width: 768px) {
   .login-page {
-    padding: 16px;
-    align-items: center;
+    padding: var(--space-4);
   }
 
   .login-card {
-    padding: 24px 20px;
+    padding: var(--space-6) var(--space-5);
     max-width: 100%;
   }
 
   .login-header {
-    margin-bottom: 24px;
-  }
-
-  .login-header h1 {
-    font-size: 20px;
+    margin-bottom: var(--space-5);
   }
 
   .login-form {
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .form-group input {
-    padding: 12px 14px;
-    font-size: 15px;
+    padding: var(--space-3) var(--space-3);
+    font-size: 1rem;
   }
 
   .login-btn {
-    padding: 12px 0;
-    font-size: 15px;
+    padding: var(--space-3) 0;
+    font-size: 1rem;
   }
 }
