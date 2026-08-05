@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from apscheduler import AsyncScheduler, ScheduleLookupError
-from apscheduler._enums import ConflictPolicy
 from apscheduler.datastores.sqlalchemy import SQLAlchemyDataStore
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
@@ -181,12 +180,17 @@ class ScheduledTaskManager:
                 return
 
             try:
+                # 显式先删后插保证幂等：SQLAlchemyDataStore 的 ConflictPolicy.replace
+                # 未真正执行先删后插，同 id 重复注册会抛 UNIQUE constraint failed
+                try:
+                    await self._scheduler.remove_schedule(schedule_id)
+                except ScheduleLookupError:
+                    pass  # 首次注册，无旧 schedule
                 await self._scheduler.add_schedule(
                     _execute_scheduled_task,
                     trigger,
                     id=schedule_id,
                     args=(task_id,),
-                    conflict_policy=ConflictPolicy.replace,
                 )
             except Exception as exc:
                 # 注册失败不影响 API 主流程，仅记录日志
@@ -248,11 +252,15 @@ class ScheduledTaskManager:
         async with self._register_lock:
             try:
                 trigger = CronTrigger.from_crontab(cron_expression, timezone="UTC")
+                # 显式先删后插保证幂等（与 register_task 一致，规避 replace 的 UNIQUE 冲突）
+                try:
+                    await self._scheduler.remove_schedule(schedule_id)
+                except ScheduleLookupError:
+                    pass
                 await self._scheduler.add_schedule(
                     func,
                     trigger,
                     id=schedule_id,
-                    conflict_policy=ConflictPolicy.replace,
                 )
                 return True
             except Exception as exc:
