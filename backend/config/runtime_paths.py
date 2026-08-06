@@ -19,6 +19,8 @@ STATE_DIR = VAR_DIR / "state"
 UPLOADS_DIR = DATA_DIR / "uploads"
 TOOL_OUTPUTS_DIR = UPLOADS_DIR / "tool_outputs"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
+# APP 更新包部署目录：release-apk 脚本构建后在此放置 manifest.json + APK
+APK_DIR = VAR_DIR / "apk"
 TRANSCRIPTS_DIR = DATA_DIR / "transcripts"
 
 
@@ -44,5 +46,6 @@ def ensure_runtime_directories() -> None:
         TOOL_OUTPUTS_DIR,
         DOWNLOADS_DIR,
         TRANSCRIPTS_DIR,
+        APK_DIR,
     ):
         runtime_dir.mkdir(parents=True, exist_ok=True)

@@ -4,6 +4,7 @@
 
 import asyncio
 import ipaddress
+import json
 import os
 import sys
 import platform
@@ -13,13 +14,14 @@ from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse, JSONResponse
 from loguru import logger
 from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import text
 
 from api.dependencies import get_current_user, get_current_admin_user
+from config.runtime_paths import APK_DIR
 from db.models import User, SessionLocal
 from config.settings import settings
 
@@ -261,8 +263,79 @@ async def ping() -> Dict[str, Any]:
         "capabilities": {
             "lan_discovery": True,
             "api_key_auth": True,
+            "app_update": True,
         },
     }
+
+
+# ==================== APP 局域网 OTA 更新 ====================
+# 更新元数据唯一事实源：backend/var/apk/manifest.json（release-apk 脚本构建后生成）。
+# 模块级缓存：60 秒内复用，部署后自动感知新文件（mtime 变化即重读）。
+
+_UPDATE_MANIFEST_CACHE: Dict[str, Any] = {"mtime": 0.0, "data": None}
+
+
+def _load_update_manifest() -> Optional[Dict[str, Any]]:
+    """读取 APK 更新清单（带 mtime 缓存）。文件缺失或解析失败返回 None。"""
+    manifest_path = APK_DIR / "manifest.json"
+    if not manifest_path.exists():
+        _UPDATE_MANIFEST_CACHE.update({"mtime": 0.0, "data": None})
+        return None
+    mtime = manifest_path.stat().st_mtime
+    if _UPDATE_MANIFEST_CACHE["mtime"] == mtime and _UPDATE_MANIFEST_CACHE["data"] is not None:
+        return _UPDATE_MANIFEST_CACHE["data"]
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _UPDATE_MANIFEST_CACHE.update({"mtime": mtime, "data": data})
+        return data
+    except Exception:
+        _UPDATE_MANIFEST_CACHE.update({"mtime": 0.0, "data": None})
+        return None
+
+
+@router.get("/update-check")
+async def update_check(
+    version_code: int = Query(0, ge=0, description="客户端 APK versionCode"),
+) -> Dict[str, Any]:
+    """
+    APP 更新检查：返回局域网后端托管的 APK 版本元数据。
+    未部署更新包（无 manifest）或客户端已是最新时 has_update=false。
+    """
+    manifest = _load_update_manifest()
+    if manifest is None:
+        return {"has_update": False}
+    latest_code = int(manifest.get("version_code", 0))
+    if latest_code <= version_code:
+        return {"has_update": False}
+    return {
+        "has_update": True,
+        "latest_version": manifest.get("version", ""),
+        "latest_version_code": latest_code,
+        "apk_size": int(manifest.get("apk_size", 0)),
+        "apk_sha256": manifest.get("apk_sha256", ""),
+        "changelog": manifest.get("changelog", ""),
+        "download_url": f"{settings.API_V1_STR}/system/apk/download",
+        "published_at": manifest.get("published_at", ""),
+    }
+
+
+@router.get("/apk/download")
+async def apk_download(current_user: User = Depends(get_current_user)):
+    """
+    下载托管 APK（需认证）。返回流式文件 + X-APK-SHA256 响应头供客户端校验。
+    """
+    manifest = _load_update_manifest()
+    if manifest is None:
+        raise HTTPException(status_code=404, detail="未部署更新包")
+    apk_path = APK_DIR / manifest.get("apk", "")
+    if not apk_path.exists():
+        raise HTTPException(status_code=404, detail="APK 文件缺失")
+    return FileResponse(
+        path=str(apk_path),
+        filename=apk_path.name,
+        media_type="application/vnd.android.package-archive",
+        headers={"X-APK-SHA256": manifest.get("apk_sha256", "")},
+    )
 
 
 def _check_vector_db() -> Dict[str, Any]:
