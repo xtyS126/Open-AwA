@@ -22,11 +22,16 @@ export async function checkForUpdate(versionCode: number): Promise<UpdateInfo> {
 /**
  * 构造 APK 下载绝对地址。
  * APP 模式 API_BASE_URL 为局域网地址（可能含 /api 后缀，lanDiscovery 返回"接入用 API 基址"），
- * download_url 是相对路径（/api/system/apk/download），需拼绝对地址供原生插件下载。
+ * download_url 是相对路径（/api/system/apk/download，已含 /api 前缀）。
+ * API_BASE_URL 也含 /api 时直接拼接会形成 /api/api 双前缀 404，必须剥掉 download_url 的重复前缀。
  */
 export function buildDownloadUrl(downloadUrl: string): string {
-  if (API_BASE_URL.startsWith('http')) {
-    return `${API_BASE_URL.replace(/\/$/, '')}${downloadUrl}`
+  if (!API_BASE_URL.startsWith('http')) {
+    return downloadUrl
   }
-  return downloadUrl
+  const base = API_BASE_URL.replace(/\/$/, '')
+  if (API_BASE_URL.includes('/api') && downloadUrl.startsWith('/api/')) {
+    return `${base}${downloadUrl.replace(/^\/api/, '')}`
+  }
+  return `${base}${downloadUrl}`
 }

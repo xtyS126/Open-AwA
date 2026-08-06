@@ -75,10 +75,14 @@ export function useAppUpdate(): AppUpdateState {
     setStatus('downloading')
     setProgress({ loaded: 0, total: updateInfo.apk_size, percent: 0 })
     try {
+      // APK 下载端点需认证（get_current_user）：原生插件通过 Authorization 头携带 API Key，
+      // token 不入 URL 避免泄露到访问日志/浏览器历史
+      const { getCachedApiKey } = await import('@/shared/api/client')
       const result = await appUpdatePlugin.downloadAndInstall({
         url: buildDownloadUrl(updateInfo.download_url),
         fileName: `openawa-${updateInfo.latest_version}.apk`,
         sha256: updateInfo.apk_sha256,
+        authToken: getCachedApiKey(),
       })
       if (result.code === 'NEED_INSTALL_PERMISSION') {
         // 用户被引导到系统"安装未知应用"设置，返回后需再次点击更新
