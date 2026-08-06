@@ -11,10 +11,12 @@ android {
         applicationId "com.openawa.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // versionCode 2：与已通过 APP 更新安装的版本对齐（设备端曾为 1 → 更新至 2），
-        // 保证 install -r 可覆盖；后续每次发版必须递增
-        versionCode 2
-        versionName "1.0.0"
+        // 版本规则（用户约定）：
+        // - versionName 形如 0.XX：当前 0.01，每次修复小数点后 +1（0.02、0.03...）
+        // - 整数位（个位）永远保持 0，除非用户明确要求提升
+        // - versionCode 单调递增（安装标识），当前设备已装 2，从 3 开始
+        versionCode 3
+        versionName "0.01"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

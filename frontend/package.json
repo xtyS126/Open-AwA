@@ -1,6 +1,6 @@
 {
   "name": "openawa-frontend",
-  "version": "1.0.0",
+  "version": "0.01",
   "type": "module",
   "scripts": {
     "dev": "vite",
