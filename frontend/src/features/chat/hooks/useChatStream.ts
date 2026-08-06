@@ -587,7 +587,11 @@ export function useChatStream({
       try {
         const { provider, model } = parseSelectedModel(selectedModel)
         const executionOptions = {
-          ...(thinkingEnabled ? { thinking_enabled: true, thinking_depth: thinkingDepth } : {}),
+          // 思考开关必须无条件显式发送：仅开启时发送会导致后端收不到关闭意图
+          // （thinking_enabled=None），DeepSeek V4 等默认思考的推理模型会按默认行为思考，
+          // 表现为"思考没开启但仍在思考"。
+          thinking_enabled: thinkingEnabled,
+          thinking_depth: thinkingDepth,
           max_tool_call_rounds: getConfiguredMaxToolCallRounds(),
           ...(options?.continuation ? { continuation: options.continuation } : {}),
           ...(streamTaskId ? { task_id: streamTaskId } : {}),
