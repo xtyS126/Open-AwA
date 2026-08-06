@@ -944,3 +944,16 @@ All API routes use prefix `settings.API_V1_STR` (`/api`) except MCP, billing, ma
 - [docs/指南/部署与运行说明.md](docs/指南/部署与运行说明.md) — Deployment guide
 - [docs/指南/测试说明.md](docs/指南/测试说明.md) — Testing strategy
 - [docs/插件开发手册/](docs/插件开发手册/) — Plugin development guide
+
+## 19.7 2026-08-06 APP 卡死修复（WebView 渲染满载）新增陷阱
+
+- **Android WebView 中任何活跃 CSS 动画都会强制整页 60fps 重绘**：哪怕只是 6x6 元素的 opacity 动画（gfxinfo 对照实验：仅禁 6x6 呼吸灯动画，帧率 60fps→2fps，20s 1200帧→0帧）。APP 长时间运行会拖垮渲染线程卡死整个手机。**硬性规则：APP 页面空闲状态必须零 running 动画**；loading/spinner/流式指示动画只允许在对应状态存在且状态结束必须卸载/停用。验证方法：`node scripts/verify-animations.cjs`（逐路由检查 getAnimations）+ `dumpsys gfxinfo com.openawa.mobile`（空闲 20s 帧数应为 0）。修复方向：动画元素静态化或条件渲染（如 `stats.running > 0 ? styles['stat-spin'] : ''`）。
+- **前端 WS/SSE URL 不得硬编码 /api 前缀**：`API_BASE_URL` 可能已含 `/api`（lanDiscovery 返回"接入用 API 基址" `http://ip:8000/api`），硬编码 `/api` 会形成 `/api/api` 双前缀 404/403。必须按 `API_BASE_URL.includes('/api')` 条件补全（参考 TerminalPane 的 apiPrefix 模式）。定位方法：浏览器/WebView 控制台出现 `ws://host/api/api/...` 或 `POST /api/api/... 404`。
+- **后端 terminal 路由注册在 /api 前缀下**：main.py `include_router(terminal_router, prefix=API_V1_STR)`，实际路径为 `/api/terminal/...`（HTTP 与 WS 都是）；terminalApi 的 BASE 保持 `/terminal`（sharedApi baseURL 已含 /api），TerminalPane WS 拼接需条件补全 /api。
+- **WebSocket 认证失败（4001/4002）必须停止重连**：token 不会自行变好，重连只会制造动画常驻 + 连接风暴。inbox 流与 TerminalPane 均应在 onclose 检查 close code 停止（AUTH_FAILED_CLOSE_CODES）。
+- **EventSource 在 APP（WebView origin=https://localhost）内不得用相对路径**：相对路径请求 WebView 自身返回 text/html 404，必须用 API_BASE_URL 拼绝对地址（同样注意 /api 双前缀）。
+
+## 19.8 2026-08-06 WebSocket 鉴权统一（api.security.ws_auth）
+
+- **WS 鉴权必须支持 API Key 与 JWT 双路径**：`api/security/ws_auth.py` 的 `resolve_ws_user_from_token`（API Key compare_digest → owner；JWT decode → user）是 chat/terminal/weixin 共用的唯一实现源。terminal.py 曾只认 JWT（decode_access_token），APP（API Key 登录）下 WS 永远 4002 被拒 → 前端无限重连。**任何新增 WS 端点必须使用该函数**，禁止重复实现 decode_access_token 单路径。
+- **terminal.py 是绑定导入**：测试 monkeypatch 必须 patch `terminal_route.resolve_ws_user_from_token`（模块内绑定名），patch `api.security.ws_auth.resolve_ws_user_from_token`（模块属性）对绑定导入不生效。
