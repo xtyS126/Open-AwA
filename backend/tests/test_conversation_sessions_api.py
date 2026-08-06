@@ -23,7 +23,7 @@ from core.conversation_sessions import (
     load_conversation_for_resume,
 )
 from core.feedback import FeedbackLayer
-from db.models import Base, Conversation, ConversationRecord
+from db.models import Base, Conversation, ConversationRecord, ShortTermMemory
 from main import app
 
 
@@ -72,6 +72,7 @@ def _reset_tables():
     """清理本测试文件涉及的表。"""
     db = TestingSessionLocal()
     try:
+        db.query(ShortTermMemory).delete()
         db.query(ConversationRecord).delete()
         db.query(Conversation).delete()
         db.commit()
@@ -259,6 +260,59 @@ def test_conversation_session_routes_match_frontend_contract():
         assert batch_payload["total"] == 1
         assert batch_payload["items"][0]["session_id"] == session_id
         assert batch_payload["items"][0]["deleted_at"] is not None
+
+
+def test_delete_session_cascades_short_term_memory_cleanup():
+    """删除会话必须级联清理该会话的短期记忆，避免删后仍被 AI 回忆。"""
+    with _test_client() as client:
+        create_response = client.post(f"{settings.API_V1_STR}/conversations", json={})
+        session_id = create_response.json()["session_id"]
+
+        # 预置该会话的短期记忆（模拟聊天产生的对话原文）
+        db = TestingSessionLocal()
+        try:
+            db.add(ShortTermMemory(session_id=session_id, role="user", content="旧对话内容"))
+            db.add(ShortTermMemory(session_id=session_id, role="assistant", content="旧回复内容"))
+            db.commit()
+        finally:
+            db.close()
+
+        # 单删：级联清理短期记忆
+        delete_response = client.delete(
+            f"{settings.API_V1_STR}/conversations/{session_id}",
+            params={"retention_days": 7},
+        )
+        assert delete_response.status_code == 200
+        db = TestingSessionLocal()
+        try:
+            remaining = db.query(ShortTermMemory).filter(
+                ShortTermMemory.session_id == session_id
+            ).count()
+        finally:
+            db.close()
+        assert remaining == 0
+
+        # 恢复后再次批量删除：级联清理同样生效
+        client.post(f"{settings.API_V1_STR}/conversations/{session_id}/restore")
+        db = TestingSessionLocal()
+        try:
+            db.add(ShortTermMemory(session_id=session_id, role="user", content="新对话内容"))
+            db.commit()
+        finally:
+            db.close()
+        batch_response = client.post(
+            f"{settings.API_V1_STR}/conversations/batch-delete",
+            json={"session_ids": [session_id], "retention_days": 3},
+        )
+        assert batch_response.status_code == 200
+        db = TestingSessionLocal()
+        try:
+            remaining = db.query(ShortTermMemory).filter(
+                ShortTermMemory.session_id == session_id
+            ).count()
+        finally:
+            db.close()
+        assert remaining == 0
 
 
 def test_list_sessions_hides_subagent_internal_sessions():

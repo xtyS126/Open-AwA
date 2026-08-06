@@ -30,7 +30,7 @@ from core.conversation_sessions import (
     soft_delete_conversation,
 )
 from core.conversation_recorder import conversation_recorder
-from db.models import Conversation, ConversationRecord, User, get_db
+from db.models import Conversation, ConversationRecord, ShortTermMemory, User, get_db
 
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
@@ -273,6 +273,7 @@ async def batch_delete_sessions(
     批量软删除会话，并返回本次更新后的会话条目。
     """
     updated_items = []
+    cleared_short_term = 0
     for session_id in payload.session_ids:
         conversation = soft_delete_conversation(
             db,
@@ -281,6 +282,8 @@ async def batch_delete_sessions(
             retention_days=payload.retention_days,
         )
         updated_items.append(conversation)
+        # 级联清理短期记忆：删除历史对话后不应再被 AI 回忆
+        cleared_short_term += _clear_session_short_term_memory(db, session_id)
 
     db.commit()
     for conversation in updated_items:
@@ -293,6 +296,7 @@ async def batch_delete_sessions(
         status="success",
         user_id=current_user.id,
         count=len(updated_items),
+        cleared_short_term=cleared_short_term,
     ).info("conversation sessions batch deleted")
 
     return {
@@ -488,6 +492,21 @@ async def rename_session(
     return _serialize_conversation(conversation)
 
 
+def _clear_session_short_term_memory(db: Session, session_id: str) -> int:
+    """级联清理指定会话的短期记忆（对话原文）。
+
+    删除对话历史时必须同步清理其短期记忆，否则短期记忆仍会在新对话
+    首轮作为系统提示词注入，导致"删了历史 AI 还记得"。
+    返回删除的短期记忆条数。
+    """
+    count = (
+        db.query(ShortTermMemory)
+        .filter(ShortTermMemory.session_id == session_id)
+        .delete(synchronize_session=False)
+    )
+    return count
+
+
 @router.delete("/{session_id}", response_model=ConversationSessionResponse)
 async def delete_session(
     session_id: str,
@@ -496,7 +515,7 @@ async def delete_session(
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
-    软删除指定会话。
+    软删除指定会话（级联清理该会话的短期记忆，避免删除后仍被 AI 回忆）。
     """
     conversation = soft_delete_conversation(
         db,
@@ -504,6 +523,7 @@ async def delete_session(
         user_id=current_user.id,
         retention_days=retention_days,
     )
+    cleared_short_term = _clear_session_short_term_memory(db, session_id)
     db.commit()
     db.refresh(conversation)
 
@@ -515,6 +535,7 @@ async def delete_session(
         user_id=current_user.id,
         session_id=session_id,
         retention_days=retention_days,
+        cleared_short_term=cleared_short_term,
     ).info("conversation session deleted")
 
     return _serialize_conversation(conversation)
