@@ -268,7 +268,10 @@ function ChatPage() {
     handleRestoreConversation,
     handleLoadMoreConversations,
     handleBatchDeleteConversations,
+    cancelBatchDeleteConversations,
+    confirmBatchDeleteConversations,
     pendingDeleteSessionId,
+    pendingBatchDeleteIds,
   } = useChatConversationActions({
     conversationId,
     sessionId,
@@ -297,7 +300,6 @@ function ChatPage() {
     flushConversationCache,
     getActiveConversationId,
     buildMessageMetaFromMessages,
-    t,
     handleSendRef: handleSendRef as React.MutableRefObject<((message?: string | undefined, attachments?: unknown[] | undefined) => Promise<void>) | undefined>,
   })
 
@@ -898,6 +900,18 @@ function ChatPage() {
           cancelText="取消"
           onConfirm={confirmDeleteConversation}
           onCancel={cancelDeleteConversation}
+        />
+      )}
+      {pendingBatchDeleteIds && pendingBatchDeleteIds.length > 0 && (
+        <ConfirmDialog
+          isOpen={true}
+          title="批量删除会话"
+          message={`确定要删除选中的 ${pendingBatchDeleteIds.length} 个对话吗？删除后可在 30 天内恢复。`}
+          type="danger"
+          confirmText="删除"
+          cancelText="取消"
+          onConfirm={confirmBatchDeleteConversations}
+          onCancel={cancelBatchDeleteConversations}
         />
       )}
       {/* 密钥失效提示对话框：点击「跳转设置」导航到 /settings 路由 */}

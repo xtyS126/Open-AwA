@@ -78,8 +78,6 @@ export interface UseChatConversationActionsParams {
   getActiveConversationId: () => string | undefined
   /** 缓存：基于消息列表构建执行元数据 */
   buildMessageMetaFromMessages: (messages: ChatMessage[]) => Record<string, import('@/features/chat/types').AssistantExecutionMeta>
-  /** 翻译函数 */
-  t: (key: string, params?: Record<string, string>) => string
   /**
    * handleSend 的 ref 镜像，供 handleRegenerate 调用。
    * 通过 ref 读取避免 useCallback 依赖 handleSend 导致引用频繁变化。
@@ -109,10 +107,16 @@ export interface UseChatConversationActionsReturn {
   handleRestoreConversation: (targetSessionId: string) => Promise<void>
   /** 加载更多会话（分页） */
   handleLoadMoreConversations: () => void
-  /** 批量删除会话 */
-  handleBatchDeleteConversations: (sessionIds: string[]) => Promise<void>
+  /** 请求批量删除会话（弹出确认对话框，不直接执行） */
+  handleBatchDeleteConversations: (sessionIds: string[]) => void
+  /** 取消批量删除 */
+  cancelBatchDeleteConversations: () => void
+  /** 确认批量删除 */
+  confirmBatchDeleteConversations: () => void
   /** 当前待确认删除的会话 ID（用于渲染确认对话框） */
   pendingDeleteSessionId: string | null
+  /** 当前待确认批量删除的会话 ID 列表（用于渲染确认对话框） */
+  pendingBatchDeleteIds: string[] | null
   /** 确保当前有活跃会话，无则创建（供 handleSend 调用） */
   ensureConversationSession: () => Promise<string>
 }
@@ -151,12 +155,13 @@ export function useChatConversationActions({
   flushConversationCache,
   getActiveConversationId,
   buildMessageMetaFromMessages,
-  t,
   handleSendRef,
 }: UseChatConversationActionsParams): UseChatConversationActionsReturn {
   const navigate = useNavigate()
   // 并发创建守卫：同一时间只允许一个 createSession 请求
   const pendingConversationCreationRef = useRef<Promise<string> | null>(null)
+  // 待确认批量删除的会话列表（由确认对话框驱动执行）
+  const [pendingBatchDeleteIds, setPendingBatchDeleteIds] = useState<string[] | null>(null)
   // mount 一次性守卫：StrictMode dev 下双 mount 时仅首次执行 loadConversationList，
   // 生产环境单 mount 不受影响。ref 在组件卸载时随闭包释放，重新进入页面会重置。
   const loadOnceRef = useRef(false)
@@ -426,23 +431,36 @@ export function useChatConversationActions({
     const targetSessionId = pendingDeleteSessionId
     setPendingDeleteSessionId(null)
 
-    const nextCandidate = conversations.find((item) => item.session_id !== targetSessionId && !item.deleted_at)
-    const response = await conversationAPI.deleteSession(targetSessionId)
-    if (includeDeleted) {
-      upsertConversation(response.data as ConversationSessionSummary)
-    } else {
-      removeConversation(targetSessionId)
-    }
-    if (sessionId === targetSessionId) {
-      if (nextCandidate) {
-        navigate(`/chat/${nextCandidate.session_id}`, { replace: true })
+    try {
+      const nextCandidate = conversations.find((item) => item.session_id !== targetSessionId && !item.deleted_at)
+      const response = await conversationAPI.deleteSession(targetSessionId)
+      if (includeDeleted) {
+        upsertConversation(response.data as ConversationSessionSummary)
       } else {
-        await createConversationAndNavigate(true)
+        removeConversation(targetSessionId)
       }
+      if (sessionId === targetSessionId) {
+        if (nextCandidate) {
+          navigate(`/chat/${nextCandidate.session_id}`, { replace: true })
+        } else {
+          await createConversationAndNavigate(true)
+        }
+      }
+      void loadConversationList(1, false, true)
+      // 删除会话后广播变更到其他标签页
+      broadcastConversationChange()
+    } catch (deleteError) {
+      // 删除失败（网络/限流/CSRF 等）：恢复待确认状态允许重试，避免静默失败
+      setPendingDeleteSessionId(targetSessionId)
+      appLogger.warning({
+        event: 'conversation_delete_failed',
+        module: 'chat',
+        action: 'delete',
+        status: 'failure',
+        message: 'delete conversation failed',
+        extra: { error: deleteError instanceof Error ? deleteError.message : String(deleteError) },
+      })
     }
-    void loadConversationList(1, false, true)
-    // 删除会话后广播变更到其他标签页
-    broadcastConversationChange()
   }, [broadcastConversationChange, conversations, createConversationAndNavigate, includeDeleted, navigate, removeConversation, sessionId, upsertConversation, loadConversationList, pendingDeleteSessionId])
 
   /* 取消删除会话 */
@@ -473,40 +491,71 @@ export function useChatConversationActions({
     void loadConversationList(historyPage + 1, true)
   }, [conversationsHasMore, historyLoading, historyPage, loadConversationList])
 
-  const handleBatchDeleteConversations = useCallback(async (sessionIds: string[]) => {
+  /* 请求批量删除：设置待确认列表，由确认对话框触发执行。
+   * 不使用 window.confirm——Android WebView（Capacitor）未实现 onJsConfirm，
+   * window.confirm 会永久阻塞 JS 线程导致删除流程卡死。 */
+  const handleBatchDeleteConversations = useCallback((sessionIds: string[]) => {
     if (sessionIds.length === 0) {
       return
     }
-    if (!window.confirm(t('chat.confirmDeleteSelected', { count: String(sessionIds.length) }))) {
-      return
-    }
+    setPendingBatchDeleteIds(sessionIds)
+  }, [])
 
-    const currentSessionDeleted = Boolean(sessionId && sessionIds.includes(sessionId))
-    const nextCandidate = conversations.find((item) => !sessionIds.includes(item.session_id) && !item.deleted_at)
-    const response = await conversationAPI.batchDeleteSessions(sessionIds)
+  /* 执行批量删除 */
+  const executeBatchDeleteConversations = useCallback(async (sessionIds: string[]) => {
+    setPendingBatchDeleteIds(null)
+    try {
+      const currentSessionDeleted = Boolean(sessionId && sessionIds.includes(sessionId))
+      const nextCandidate = conversations.find((item) => !sessionIds.includes(item.session_id) && !item.deleted_at)
+      const response = await conversationAPI.batchDeleteSessions(sessionIds)
 
-    if (includeDeleted) {
-      for (const item of response.data.items || []) {
-        upsertConversation(item as ConversationSessionSummary)
-      }
-    } else {
-      for (const targetSessionId of sessionIds) {
-        removeConversation(targetSessionId)
-      }
-    }
-
-    if (currentSessionDeleted) {
-      if (nextCandidate) {
-        navigate(`/chat/${nextCandidate.session_id}`, { replace: true })
+      if (includeDeleted) {
+        for (const item of response.data.items || []) {
+          upsertConversation(item as ConversationSessionSummary)
+        }
       } else {
-        await createConversationAndNavigate(true)
+        for (const targetSessionId of sessionIds) {
+          removeConversation(targetSessionId)
+        }
       }
-    }
 
-    void loadConversationList(1, false, true)
-    // 批量删除会话后广播变更到其他标签页
-    broadcastConversationChange()
-  }, [broadcastConversationChange, conversations, createConversationAndNavigate, includeDeleted, loadConversationList, navigate, removeConversation, sessionId, upsertConversation, t])
+      if (currentSessionDeleted) {
+        if (nextCandidate) {
+          navigate(`/chat/${nextCandidate.session_id}`, { replace: true })
+        } else {
+          await createConversationAndNavigate(true)
+        }
+      }
+
+      void loadConversationList(1, false, true)
+      // 批量删除会话后广播变更到其他标签页
+      broadcastConversationChange()
+    } catch (batchError) {
+      // 失败时恢复待确认状态（确认对话框重新出现即失败反馈），
+      // 避免使用 window.alert——Android WebView 未实现 onJsAlert 会阻塞线程
+      setPendingBatchDeleteIds(sessionIds)
+      appLogger.warning({
+        event: 'conversation_batch_delete_failed',
+        module: 'chat',
+        action: 'batch_delete',
+        status: 'failure',
+        message: 'batch delete conversations failed',
+        extra: { error: batchError instanceof Error ? batchError.message : String(batchError) },
+      })
+    }
+  }, [appLogger, broadcastConversationChange, conversations, createConversationAndNavigate, includeDeleted, loadConversationList, navigate, removeConversation, sessionId, upsertConversation])
+
+  /* 取消批量删除 */
+  const cancelBatchDeleteConversations = useCallback(() => {
+    setPendingBatchDeleteIds(null)
+  }, [])
+
+  /* 确认批量删除 */
+  const confirmBatchDeleteConversations = useCallback(() => {
+    if (pendingBatchDeleteIds && pendingBatchDeleteIds.length > 0) {
+      void executeBatchDeleteConversations(pendingBatchDeleteIds)
+    }
+  }, [executeBatchDeleteConversations, pendingBatchDeleteIds])
 
   return {
     ensureConversationSession,
@@ -521,6 +570,9 @@ export function useChatConversationActions({
     handleRestoreConversation,
     handleLoadMoreConversations,
     handleBatchDeleteConversations,
+    cancelBatchDeleteConversations,
+    confirmBatchDeleteConversations,
     pendingDeleteSessionId,
+    pendingBatchDeleteIds,
   }
 }

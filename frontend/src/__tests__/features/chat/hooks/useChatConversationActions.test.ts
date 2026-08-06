@@ -61,7 +61,6 @@ function buildParams(overrides: Partial<UseChatConversationActionsParams> = {}):
     flushConversationCache: vi.fn(),
     getActiveConversationId: vi.fn(() => undefined),
     buildMessageMetaFromMessages: vi.fn(() => ({})),
-    t: vi.fn((key: string) => key),
     handleSendRef: { current: undefined },
     ...overrides,
   }
