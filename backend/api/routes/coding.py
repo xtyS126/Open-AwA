@@ -186,8 +186,15 @@ except ImportError:
 
 
 def _get_project_dir(project_dir: Optional[str] = None) -> str:
-    """获取项目根目录。"""
-    raw = project_dir or DEFAULT_PROJECT_DIR
+    """获取项目根目录。
+
+    空字符串、'/'、'\\' 等根路径占位符统一回退到 DEFAULT_PROJECT_DIR，
+    避免前端默认传 '/' 触发 403。
+    """
+    # 空值或根路径占位符视作默认目录
+    if not project_dir or project_dir.strip() in ('/', '\\', os.sep):
+        return str(Path(os.path.realpath(os.path.abspath(DEFAULT_PROJECT_DIR))).resolve())
+    raw = project_dir
     # 防止通过 project_dir 参数遍历到系统根目录
     resolved = Path(os.path.realpath(os.path.abspath(raw))).resolve()
     default_resolved = Path(os.path.realpath(os.path.abspath(DEFAULT_PROJECT_DIR))).resolve()

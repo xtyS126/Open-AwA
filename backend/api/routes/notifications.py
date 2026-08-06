@@ -41,12 +41,13 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Deque, Dict, Optional, Set
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, get_db
 from db.models import User
 
 
@@ -286,9 +287,32 @@ async def list_notifications(
     )
 
 
+async def _optional_current_user(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """可选认证依赖：成功返回 User，失败返回 None（不抛 401）。
+
+    用于 SSE 端点：EventSource 无法主动设置 Authorization header，
+    需在 Cookie/ticket/api_key 多源认证中降级而非直接拒绝。
+    """
+    try:
+        return await get_current_user(request, None, db)
+    except HTTPException:
+        return None
+
+
 @router.get("/stream")
 async def stream_notifications(
-    current_user: User = Depends(get_current_user),
+    request: Request = None,  # type: ignore[assignment]  # FastAPI 自动注入；测试直调时 None 触发降级
+    ticket: Optional[str] = Query(
+        None, description="一次性 SSE ticket（首选方式，通过 POST /security/permissions/sse-ticket 获取）"
+    ),
+    api_key: Optional[str] = Query(
+        None, description="（已弃用）API Key，存在 URL 泄露风险，建议改用 ticket"
+    ),
+    db: Optional[Session] = Depends(get_db),
+    current_user: Optional[User] = Depends(_optional_current_user),
 ) -> StreamingResponse:
     """SSE 长连接：实时推送当前用户的通知。
 
@@ -296,9 +320,66 @@ async def stream_notifications(
     30s 无通知发送心跳 `: keep-alive\\n\\n`。
     客户端断开时从订阅集合移除 Queue，避免资源泄露。
 
+    认证方式（按优先级）：
+    1. ticket：一次性短时 ticket（首选，复用 /security/permissions/sse-ticket 签发）
+    2. Authorization Header / Cookie（由 _optional_current_user 子依赖注入，失败时返回 None）
+    3. api_key（已弃用，存在 URL 泄露风险，仅为向后兼容保留）
+
     P0-14: 单用户 SSE 订阅数上限 _MAX_SSE_SUBSCRIBERS_PER_USER，超出返回 429。
+
+    测试直调方式：stream_notifications(current_user=user)（current_user 为子依赖注入参数，
+    测试可通过关键字参数直接传入；request/db 由 FastAPI 在实际请求时自动注入）。
     """
-    user_id = str(current_user.id)
+    # current_user 由 _optional_current_user 子依赖注入（None 表示未通过 Authorization/Cookie 认证）
+    user: Optional[User] = current_user
+
+    # 路径 1：ticket 一次性短时凭证（首选，覆盖纯 API Key 登录场景下 EventSource 无法带 Auth 的痛点）
+    if user is None and ticket:
+        try:
+            from api.routes.security import _consume_sse_ticket
+        except ImportError:
+            _consume_sse_ticket = None  # type: ignore
+
+        if _consume_sse_ticket is not None and db is not None:
+            ticket_user_id = _consume_sse_ticket(ticket)
+            if ticket_user_id is not None:
+                ticket_user = db.query(User).filter(User.id == ticket_user_id).first()
+                if ticket_user is not None:
+                    user = ticket_user
+                else:
+                    logger.bind(
+                        event="notification_sse_ticket_user_missing",
+                        module="notifications",
+                        user_id=ticket_user_id,
+                    ).warning("ticket 对应的用户不存在")
+            else:
+                logger.bind(
+                    event="notification_sse_ticket_invalid",
+                    module="notifications",
+                ).warning("无效或已过期的 SSE ticket")
+
+    # 路径 4（已弃用）：api_key query 参数
+    if user is None and api_key:
+        import secrets as _secrets
+        from config.settings import settings as _settings
+        from api.dependencies import _normalize_request_token, _get_owner_from_settings
+
+        logger.bind(
+            event="notification_sse_legacy_api_key_used",
+            module="notifications",
+        ).warning("使用已弃用的 api_key query 参数建立通知 SSE 连接，建议迁移到 ticket 流程")
+        configured_key = _settings.OPENAWA_API_KEY.get_secret_value()
+        normalized_key = _normalize_request_token(api_key)
+        if configured_key and normalized_key and _secrets.compare_digest(normalized_key, configured_key):
+            user = _get_owner_from_settings()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="认证失败，请提供有效的 API Key 或 ticket",
+        )
+
+    user_id = str(user.id)
     queue: asyncio.Queue = asyncio.Queue()
     subs = _get_user_subscribers(user_id)
     # P0-14: per-user 订阅数上限，防止单用户创建海量 SSE 连接触发 OOM

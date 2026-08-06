@@ -218,3 +218,7 @@ frontend/.e2e_*
 # =========================
 desktop/resources/frontend/
 desktop/dist/
+
+# 本地敏感/临时文件（不入库）
+cookies.txt
+session.xml

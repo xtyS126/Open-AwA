@@ -30,10 +30,16 @@ function resolveManualChunk(moduleId: string): string | undefined {
   return undefined
 }
 
+function normalizeApiProxyTarget(target: string): string {
+  // 浏览器请求已经包含 /api；代理目标若也携带该前缀会生成 /api/api/*。
+  return target.trim().replace(/\/api\/?$/i, '').replace(/\/$/, '')
+}
+
 export default defineConfig(({ mode }) => {
-  const apiProxyTarget = mode === 'e2e'
+  const configuredApiProxyTarget = mode === 'e2e'
     ? `http://127.0.0.1:${process.env.OPENAWA_E2E_BACKEND_PORT || '18000'}`
     : process.env.OPENAWA_API_PROXY_TARGET || 'http://localhost:8000'
+  const apiProxyTarget = normalizeApiProxyTarget(configuredApiProxyTarget)
   const dedupedReactPackages = ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime']
 
   return {

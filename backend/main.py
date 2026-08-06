@@ -81,6 +81,7 @@ from core.scheduled_task_manager import scheduled_task_manager
 from core.startup.profiler import StartupProfiler
 from core.task_runtime import task_runtime
 from core.agent_registry import get_registry
+from core.agent_runtime_warmup import prewarm_agent_memory
 from config.security import generate_csrf_token
 from config.settings import is_production_environment, settings
 from db.models import SessionLocal, init_db
@@ -1048,6 +1049,10 @@ async def lifespan(app: FastAPI):
         await _startup_infrastructure(profiler)
         await _startup_data_init(profiler)
         await _startup_owner_user_init(profiler)
+        # 首个记忆/聊天请求前完成共享向量运行时预热，避免请求级 15 秒超时。
+        await _run_optional_startup_step(
+            app, "memory_runtime", lambda: prewarm_agent_memory(SessionLocal)
+        )
         # 数据库与认证是可用服务的硬前提，失败时仍应拒绝启动；其余能力允许降级。
         await _run_optional_startup_step(
             app, "plugin_system", lambda: _startup_plugin_system(profiler)

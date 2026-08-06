@@ -1168,6 +1168,11 @@ function PluginsPage() {
     setSearchKeyword(e.target.value)
   }, [])
 
+  /* 市场插件安装成功后的回调 —— useCallback 包裹避免 MarketplaceTab 因 onInstalled 引用变化而重渲染 */
+  const handleInstalled = useCallback(() => {
+    void refreshPlugins()
+  }, [refreshPlugins])
+
   const handleRetryErrors = useCallback(() => {
     if (listError) retryLoadPlugins()
     if (deleteError) retryDelete()
@@ -1490,7 +1495,7 @@ function PluginsPage() {
         </>
       ) : (
         /* 市场 Tab —— 集中承载所有获取新插件入口 */
-        <MarketplaceTab onInstalled={() => { void refreshPlugins() }} />
+        <MarketplaceTab onInstalled={handleInstalled} />
       )}
       <ToastContainer />
     </PageLayout>

@@ -20,15 +20,26 @@ router = APIRouter(prefix="/behaviors", tags=["Behavior Analysis"])
 @router.get("/stats", response_model=BehaviorStats)
 async def get_behavior_stats(
     days: int = Query(7, ge=1, le=90),
+    tz_offset: int = Query(
+        0,
+        ge=-720,
+        le=840,
+        description="用户时区相对 UTC 的分钟偏移（如 UTC+8 传 480），用于按本地时区聚合按天图表，避免 UTC 日期错位",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     获取当前用户的行为统计数据，按用户ID过滤防止信息泄露。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+
+    时区处理：tz_offset 用于将 UTC 时间戳转换为用户本地时区后再按天聚合，
+    避免 UTC+8 用户在凌晨 0-8 点产生的行为被错误归到前一天。
+    SQL 层通过 SQLite ``datetime(timestamp, '+N minutes')`` 修饰符实现时区偏移。
     """
     import json
-    start_date = datetime.now(timezone.utc) - timedelta(days=days)
+    # 多提前 1 天，避免用户本地"7天前 0 点"对应 UTC 的边界数据丢失
+    start_date = datetime.now(timezone.utc) - timedelta(days=days + 1)
     
     # 性能优化：将 3 次独立 COUNT 查询合并为 1 次 GROUP BY 查询
     # 原实现 3 次往返 DB 各扫一遍索引，合并后单次扫描完成
@@ -86,20 +97,29 @@ async def get_behavior_stats(
     
     # LLM 调用统计 — 使用 SQL 聚合替代全量加载 + Python JSON 解析循环
     # 1. 按天聚合交互次数（chart_data）
+    # 时区处理：通过 SQLite datetime(timestamp, '+N minutes') 修饰符将 UTC 时间戳
+    # 转换为用户本地时区后再提取日期，避免凌晨 0-8 点行为被归到前一天
+    tz_modifier = f"+{tz_offset} minutes" if tz_offset >= 0 else f"{tz_offset} minutes"
+    local_day_expr = func.date(func.datetime(BehaviorLog.timestamp, tz_modifier))
     chart_rows = db.query(
-        func.date(BehaviorLog.timestamp).label('day'),
+        local_day_expr.label('day'),
         func.count(BehaviorLog.id).label('cnt')
     ).filter(
         BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "llm_call"
-    ).group_by(func.date(BehaviorLog.timestamp)).all()
+    ).group_by(local_day_expr).all()
     chart_data_map: dict[str, int] = {}
+    # 用户本地时区的当前时间（UTC + tz_offset）
+    now_local = datetime.now(timezone.utc) + timedelta(minutes=tz_offset)
     for i in range(days):
-        day_str = (datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d")
+        day_str = (now_local - timedelta(days=i)).strftime("%Y-%m-%d")
         chart_data_map[day_str] = 0
     for row in chart_rows:
-        chart_data_map[str(row.day)] = row.cnt
+        day_str = str(row.day)
+        # 仅保留最近 days 天的桶，超出范围（如多提前 1 天查到的数据）忽略
+        if day_str in chart_data_map:
+            chart_data_map[day_str] = row.cnt
     chart_data = [
         {"day": day, "interactions": count}
         for day, count in sorted(chart_data_map.items())

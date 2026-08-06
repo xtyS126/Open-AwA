@@ -17,6 +17,8 @@ import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { useI18nStore } from '@/i18n'
 import { useBreakpoint } from '@/shared/hooks/useBreakpoint'
 import { appLogger } from '@/shared/utils/logger'
+import { securityAPI } from '@/shared/api/securityApi'
+import { getCachedApiKey } from '@/shared/api/client'
 import {
   listAgents,
   listSessions,
@@ -115,11 +117,54 @@ function VibeCodingPage() {
       }
     }
 
-    const connectNotificationStream = () => {
+    const connectNotificationStream = async () => {
       if (cancelled) return
       clearNotificationReconnectTimer()
+
+      // 优先检测 Cookie 是否含 access_token（与 usePermissionRequest 一致）
+      const hasCookie = typeof document !== 'undefined'
+        && document.cookie.split(';').some((c) => c.trim().startsWith('access_token='))
+      const apiKey = getCachedApiKey()
+
+      let streamUrl = '/api/notifications/stream'
+
+      if (!hasCookie && apiKey) {
+        // 无 Cookie 时通过一次性 ticket 建立 SSE，避免 API Key 泄露到 URL/日志
+        try {
+          const ticketResp = await securityAPI.requestSseTicket()
+          if (cancelled) return
+          const ticket = ticketResp.data.ticket
+          streamUrl = `/api/notifications/stream?ticket=${encodeURIComponent(ticket)}`
+        } catch (e) {
+          if (cancelled) return
+          appLogger.warning({
+            event: 'vibe_coding_notification_ticket_failed',
+            module: 'vibe-coding',
+            action: 'sse',
+            status: 'warning',
+            message: '获取通知 SSE ticket 失败，降级使用 api_key query 参数',
+            extra: { error: e instanceof Error ? e.message : String(e) },
+          })
+          // 降级：api_key query 参数（向后兼容）
+          streamUrl = `/api/notifications/stream?api_key=${encodeURIComponent(apiKey)}`
+        }
+      } else if (!hasCookie && !apiKey) {
+        // 无 Cookie 也无 API Key，无法建立 SSE，直接放弃
+        appLogger.warning({
+          event: 'vibe_coding_notification_no_credential',
+          module: 'vibe-coding',
+          action: 'sse',
+          status: 'warning',
+          message: '未检测到 Cookie 或 API Key，无法建立通知 SSE 连接',
+        })
+        return
+      }
+
+      if (cancelled) return
+
       try {
-        const source = new EventSource('/api/notifications/stream', { withCredentials: true })
+        // 有 Cookie 时 withCredentials=true 带 Cookie；ticket/api_key 已嵌入 URL
+        const source = new EventSource(streamUrl, { withCredentials: hasCookie })
         eventSource = source
 
         source.onmessage = (event) => {
@@ -186,11 +231,11 @@ function VibeCodingPage() {
       reconnectAttempts += 1
       notificationReconnectTimerRef.current = setTimeout(() => {
         notificationReconnectTimerRef.current = null
-        connectNotificationStream()
+        void connectNotificationStream()
       }, delay)
     }
 
-    connectNotificationStream()
+    void connectNotificationStream()
 
     return () => {
       cancelled = true

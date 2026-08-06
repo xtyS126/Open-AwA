@@ -36,10 +36,9 @@ type MobileMainPanel = 'files' | 'editor' | 'chat'
 const CodingPage: React.FC = () => {
   // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
-    setProjectDir, projectDir, ccModeEnabled, toggleCCMode,
+    projectDir, ccModeEnabled, toggleCCMode,
     diffMode, setDiffMode, openFiles, activeFilePath,
   } = useCodingStore(s => ({
-    setProjectDir: s.setProjectDir,
     projectDir: s.projectDir,
     ccModeEnabled: s.ccModeEnabled,
     toggleCCMode: s.toggleCCMode,
@@ -63,12 +62,8 @@ const CodingPage: React.FC = () => {
   const { isMobile } = useBreakpoint()
   const [mobileMainPanel, setMobileMainPanel] = useState<MobileMainPanel>('editor')
 
-  useEffect(() => {
-    if (!projectDir) {
-      setProjectDir('/')
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // 注：projectDir 默认 undefined，后端 _get_project_dir 会回退到 DEFAULT_PROJECT_DIR
+  // 未来接入目录选择 UI 时再从 store 取 setProjectDir
 
   // 同步 CC 模式到后端
   useEffect(() => {

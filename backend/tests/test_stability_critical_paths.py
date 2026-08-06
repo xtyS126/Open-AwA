@@ -2,6 +2,9 @@
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -40,6 +43,7 @@ async def test_optional_startup_failure_keeps_service_available(monkeypatch: pyt
     monkeypatch.setattr(main, "_startup_infrastructure", succeed)
     monkeypatch.setattr(main, "_startup_data_init", succeed)
     monkeypatch.setattr(main, "_startup_owner_user_init", succeed)
+    monkeypatch.setattr(main, "prewarm_agent_memory", succeed)
     monkeypatch.setattr(main, "_startup_plugin_system", fail)
     monkeypatch.setattr(main, "_startup_background_tasks", succeed)
     monkeypatch.setattr(main.task_runtime, "initialize", succeed)
@@ -61,6 +65,74 @@ async def test_optional_startup_failure_keeps_service_available(monkeypatch: pyt
     finally:
         with pytest.raises(StopAsyncIteration):
             await anext(lifespan)
+
+
+@pytest.mark.asyncio
+async def test_lifespan_prewarms_memory_runtime_before_serving(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """应用进入可用状态前必须完成共享向量运行时预热。"""
+
+    async def succeed(*_args, **_kwargs) -> None:
+        return None
+
+    prewarm_calls = []
+
+    async def record_prewarm(session_factory) -> None:
+        prewarm_calls.append(session_factory)
+
+    registry = MagicMock()
+    monkeypatch.setattr(main, "get_registry", lambda: registry)
+    monkeypatch.setattr(main, "_startup_infrastructure", succeed)
+    monkeypatch.setattr(main, "_startup_data_init", succeed)
+    monkeypatch.setattr(main, "_startup_owner_user_init", succeed)
+    monkeypatch.setattr(main, "_startup_plugin_system", succeed)
+    monkeypatch.setattr(main, "_startup_background_tasks", succeed)
+    monkeypatch.setattr(main.task_runtime, "initialize", succeed)
+    monkeypatch.setattr(main, "_startup_autonomous_mode", succeed)
+    monkeypatch.setattr(main, "_startup_acp_service", succeed)
+    monkeypatch.setattr(main, "_startup_mcp_sse_origin", lambda _profiler: None)
+    monkeypatch.setattr(main, "_startup_mcp_preheat", succeed)
+    monkeypatch.setattr(main, "prewarm_agent_memory", record_prewarm, raising=False)
+    monkeypatch.setattr(main, "_shutdown_plugin_system", succeed)
+    monkeypatch.setattr(main, "_shutdown_autonomous_mode", succeed)
+    monkeypatch.setattr(main, "_shutdown_acp_service", succeed)
+    monkeypatch.setattr(main.task_runtime, "shutdown", succeed)
+    monkeypatch.setattr(main.scheduled_task_manager, "stop", succeed)
+    monkeypatch.setattr(main, "close_shared_client", succeed)
+
+    lifespan = main.lifespan(main.app)
+    await anext(lifespan)
+    try:
+        assert prewarm_calls == [main.SessionLocal]
+    finally:
+        with pytest.raises(StopAsyncIteration):
+            await anext(lifespan)
+
+
+def test_litellm_uses_local_cost_map_by_default() -> None:
+    """离线启动默认不得请求远程 LiteLLM 价格表。"""
+
+    child_env = os.environ.copy()
+    child_env.pop("LITELLM_LOCAL_MODEL_COST_MAP", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import os; import core.litellm_adapter; "
+                "print(os.environ.get('LITELLM_LOCAL_MODEL_COST_MAP', ''))"
+            ),
+        ],
+        cwd=os.path.dirname(os.path.dirname(__file__)),
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+
+    assert result.stdout.strip().endswith("True")
 
 
 @pytest.mark.asyncio

@@ -28,7 +28,7 @@ from api.adapters.workflow_repository_adapter import WorkflowRepositoryAdapter
 from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_logging
 from config.runtime_paths import UPLOADS_DIR
 from core.litellm_adapter import CLIENT_VERSION_HEADER
-from config.security import decode_access_token
+from config.security import ACCESS_TOKEN_COOKIE_NAME, decode_access_token
 from core.agent import AIAgent
 from core.agent_registry import get_registry
 from core.agent_runtime_warmup import prewarm_agent_memory
@@ -125,6 +125,61 @@ def _ws_load_user_by_name(username: str):
     """
     with SessionLocal() as db:
         return db.query(User).filter(User.username == username).first()
+
+
+def _ws_resolve_user_from_token(token: Optional[str]) -> Optional[User]:
+    """
+    WebSocket 鉴权专用：统一解析 token 为 User，支持 API Key 与 JWT 两种路径。
+
+    与 api/dependencies.py 的 get_current_user 保持一致的鉴权顺序：
+      1. API Key 路径：token 与 settings.OPENAWA_API_KEY 完全匹配时返回 owner 用户
+      2. JWT 路径：decode_access_token 解析 sub 后查 User 表
+
+    设计动机：登录页仅支持 API Key 登录，浏览器无 access_token Cookie；
+    若 WS 鉴权只接受 JWT，会让 API Key 登录用户无法建立 WS 连接。
+    抽到同步函数便于在 asyncio.to_thread 中调用，避免阻塞事件循环。
+
+    Args:
+        token: 从 Sec-WebSocket-Protocol 子协议或 query 参数提取的原始 token
+
+    Returns:
+        认证成功返回 User 对象；token 无效/用户不存在/用户被禁用时返回 None
+    """
+    if not token:
+        return None
+
+    from api.dependencies import _normalize_request_token, _get_owner_from_settings
+    from config.settings import settings
+    import secrets as _secrets
+
+    normalized = _normalize_request_token(token)
+    if normalized is None:
+        return None
+
+    api_key = settings.OPENAWA_API_KEY.get_secret_value()
+    # 路径 1: API Key 认证（与 get_current_user 路径 1 对齐）
+    if api_key and _secrets.compare_digest(normalized, api_key):
+        owner = _get_owner_from_settings()
+        if owner is not None:
+            return owner
+        # owner 加载失败时降级到 JWT 路径，保证鉴权不静默失败
+
+    # 路径 2: JWT Bearer 认证
+    payload = decode_access_token(normalized)
+    if payload is None:
+        return None
+
+    username = payload.get("sub")
+    if not isinstance(username, str):
+        return None
+
+    user = _ws_load_user_by_name(username)
+    if user is None:
+        return None
+    # 禁用状态的用户视为无效凭证（与 _resolve_jwt_user 对齐）
+    if user.role == "disabled":
+        return None
+    return user
 
 
 def _ws_load_session_owner_id(session_id: str) -> str:
@@ -653,8 +708,15 @@ async def websocket_endpoint(
     处理websocket、endpoint相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
 
-    鉴权方式：优先 query 参数 token（向后兼容），缺失时从 Sec-WebSocket-Protocol
-    子协议头提取 bearer.<token>，避免 token 出现在 URL（泄露到日志/Referer/历史）。
+    鉴权方式（按优先级）：
+    1. query 参数 token（向后兼容，存在 URL 泄露风险，建议迁移）
+    2. Sec-WebSocket-Protocol 子协议头 bearer.<token>（推荐，避免 URL 泄露）
+    3. Cookie access_token（与 REST API 的 Cookie 鉴权一致，覆盖纯 Cookie 登录场景）
+
+    Cookie 兜底场景：浏览器原生 WebSocket API 无法主动设置 Authorization header，
+    仅支持 Sec-WebSocket-Protocol 子协议；当用户使用 Cookie 登录而非 API Key 时，
+    前端拿不到 token 无法填入子协议，需通过浏览器自动携带的 Cookie 完成鉴权。
+    Origin 校验已防 CSWSH，Cookie 路径安全可控。
     """
     # Origin 校验（防 CSWSH 跨站 WebSocket 劫持，参考 P0-2）
     # 必须在 accept() 前完成，避免恶意页面借助浏览器自动携带的 Cookie 建立跨站 WS
@@ -668,6 +730,13 @@ async def websocket_endpoint(
     if not token:
         token, subprotocol = extract_token_from_subprotocol(websocket)
 
+    # Cookie 兜底：纯 Cookie 登录场景下，前端无 token 可填入子协议，
+    # 此处从浏览器自动携带的 Cookie 提取 access_token 完成鉴权
+    if not token:
+        cookie_token = websocket.cookies.get(ACCESS_TOKEN_COOKIE_NAME, "") if websocket.cookies else ""
+        if cookie_token:
+            token = cookie_token
+
     if token is None:
         await websocket.close(code=4001, reason="Missing authentication token")
         return
@@ -677,22 +746,10 @@ async def websocket_endpoint(
     ).strip() or generate_request_id()
     client_version = websocket.headers.get(CLIENT_VERSION_HEADER, "")
 
-    payload = decode_access_token(token)
-    if payload is None:
-        await websocket.close(code=4002, reason="Invalid or expired token")
-        return
-
-    username = payload.get("sub")
-    if username is None:
-        await websocket.close(code=4003, reason="Invalid token payload")
-        return
-
-    # --- 鉴权查询：使用独立短生命周期会话，不把请求外层 Session 传入线程池 ---
+    # 统一鉴权：支持 API Key（登录页主路径）与 JWT（用户名密码登录路径）两种 token
+    # 抽取到 _ws_resolve_user_from_token，与 get_current_user 鉴权顺序保持一致
     try:
-        user = await asyncio.to_thread(_ws_load_user_by_name, username)
-        if user is None:
-            await websocket.close(code=4004, reason="User not found")
-            return
+        user = await asyncio.to_thread(_ws_resolve_user_from_token, token)
     except Exception as e:
         logger.bind(
             event="chat_ws_db_error",
@@ -703,6 +760,10 @@ async def websocket_endpoint(
             error_message=sanitize_for_logging(str(e)),
         ).error("database query failed")
         await websocket.close(code=4004, reason="Database error")
+        return
+
+    if user is None:
+        await websocket.close(code=4002, reason="Invalid or expired token")
         return
 
     try:
