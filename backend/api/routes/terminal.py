@@ -161,6 +161,52 @@ def _count_user_sessions(sessions_dict: Dict[str, Any], owner_user_id: str) -> i
     )
 
 
+def _evict_idle_user_pty(owner_user_id: str) -> bool:
+    """
+    淘汰指定用户最旧的、无活跃 WS 连接的 PTY 会话，释放 per-user 配额。
+
+    背景：WS 断开后 PTY 会话保留以支持断线重连（屏幕恢复），但如果客户端
+    永久离开（切页/杀进程/网络断），会话成为孤儿永久占用配额，最终触发
+    "已达到最大 PTY 会话数限制"。创建新会话时若配额已满，先淘汰该用户
+    无订阅者的最旧会话（OrderedDict 顺序即创建顺序），会话的 shell 子进程
+    同步关闭，避免资源泄漏。
+
+    Returns:
+        True 表示已淘汰一个空闲会话；False 表示无空闲会话可淘汰
+    """
+    for sid, session in _pty_sessions.items():
+        if getattr(session, "owner_user_id", None) != owner_user_id:
+            continue
+        # 无订阅者 = 无活跃 WS 连接 = 可安全淘汰
+        if getattr(session, "_subscribers", None) is None or len(session._subscribers) == 0:
+            _pty_sessions.pop(sid, None)
+            close = getattr(session, "close", None)
+            if callable(close):
+                try:
+                    result = close()
+                    if inspect.isawaitable(result):
+                        try:
+                            asyncio.get_running_loop().create_task(result)
+                        except RuntimeError:
+                            result.close()
+                except Exception as exc:
+                    logger.bind(
+                        event="pty_evict_close_error",
+                        module="terminal",
+                        session_id=sid,
+                        owner_user_id=owner_user_id,
+                        error_type=type(exc).__name__,
+                    ).warning("淘汰空闲 PTY 会话关闭失败")
+            logger.bind(
+                event="pty_session_evicted_idle",
+                module="terminal",
+                session_id=sid,
+                owner_user_id=owner_user_id,
+            ).info(f"per-user 配额已满，淘汰空闲 PTY 会话: {sid}")
+            return True
+    return False
+
+
 # 禁止执行的危险命令名（完整匹配命令名，非子串匹配）
 BLOCKED_COMMANDS = [
     'rm', 'rmdir', 'mv', 'cp',
@@ -617,7 +663,10 @@ async def create_pty_session(
     # per-user 会话数限制（防止单用户耗尽全局配额）
     owner_id = str(current_user.id)
     if _count_user_sessions(_pty_sessions, owner_id) >= MAX_PTY_SESSIONS:
-        return {"ok": False, "error": "已达到最大 PTY 会话数限制"}
+        # 配额已满时优先淘汰该用户无活跃 WS 连接的孤儿会话（WS 断开后保留
+        # 以支持重连的会话在客户端永久离开后成为孤儿，会永久占用配额）
+        if not _evict_idle_user_pty(owner_id):
+            return {"ok": False, "error": "已达到最大 PTY 会话数限制"}
 
     session_id = str(uuid.uuid4())[:8]
     session = PTYTerminalSession(

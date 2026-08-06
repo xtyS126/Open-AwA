@@ -634,8 +634,9 @@ class TestPTYSessionManagement:
         assert "close-1" not in _pty_sessions
 
     def test_max_pty_sessions_enforced(self) -> None:
-        """达到 MAX_PTY_SESSIONS 后应拒绝创建。"""
+        """配额已满且无可淘汰空闲会话时，应拒绝创建。"""
         # 预填满会话（设置 owner_user_id="user-1" 以计入当前用户配额）
+        # 全部模拟活跃 WS 连接（subscribe），确保没有空闲会话可淘汰
         for i in range(MAX_PTY_SESSIONS):
             session = PTYTerminalSession(
                 session_id=f"max-{i}",
@@ -644,6 +645,7 @@ class TestPTYSessionManagement:
                 owner_user_id="user-1",
             )
             asyncio.run(session.start())
+            session.subscribe()
             _pty_sessions[f"max-{i}"] = session
 
         try:
@@ -655,6 +657,36 @@ class TestPTYSessionManagement:
             data = response.json()
             assert data["ok"] is False
             assert "最大" in data["error"]
+        finally:
+            _pty_sessions.clear()
+
+    def test_max_pty_sessions_evicts_idle(self) -> None:
+        """配额已满时优先淘汰无活跃 WS 连接的空闲会话，新会话创建成功。"""
+        # 预填满会话：前 4 个有订阅者（活跃连接），最后 1 个无订阅者（孤儿）
+        for i in range(MAX_PTY_SESSIONS):
+            session = PTYTerminalSession(
+                session_id=f"idle-{i}",
+                cwd=".",
+                command=["/bin/bash"],
+                owner_user_id="user-1",
+            )
+            asyncio.run(session.start())
+            if i < MAX_PTY_SESSIONS - 1:
+                # 模拟活跃 WS 连接：订阅一个输出队列
+                session.subscribe()
+            _pty_sessions[f"idle-{i}"] = session
+
+        try:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/terminal/sessions/pty",
+                    json={"cwd": None, "cols": 80, "rows": 24, "command": ["/bin/bash"]},
+                )
+            data = response.json()
+            # 空闲会话被淘汰 → 创建成功；被淘汰的是无订阅者的最后一个
+            assert data["ok"] is True
+            assert "idle-4" not in _pty_sessions
+            assert "idle-0" in _pty_sessions
         finally:
             _pty_sessions.clear()
 
