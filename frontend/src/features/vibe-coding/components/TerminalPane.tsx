@@ -303,7 +303,12 @@ export default function TerminalPane({ cwd }: TerminalPaneProps) {
       const wsBaseUrl = resolveWsBaseUrl(API_BASE_URL)
       const token = getCachedApiKey()
       // URL 不携带 token，token 通过子协议传递
-      const url = `${wsBaseUrl}/terminal/ws/pty/${encodeURIComponent(sessionId)}`
+      // 后端 terminal 路由注册在 /api 前缀下（main.py include_router prefix=API_V1_STR），
+      // WS 路径必须为 {base}/api/terminal/ws/pty/{id}，否则握手 403 引发前端无限重连。
+      // 注意 API_BASE_URL 可能已含 /api（lanDiscovery 返回"接入用 API 基址"），
+      // 此时 wsBaseUrl 已带 /api，再拼 /api 会形成 /api/api 双前缀 404
+      const apiPrefix = API_BASE_URL.includes('/api') ? '' : '/api'
+      const url = `${wsBaseUrl}${apiPrefix}/terminal/ws/pty/${encodeURIComponent(sessionId)}`
       if (isFirstConnection) {
         setStatus('connecting')
       } else {
@@ -338,11 +343,24 @@ export default function TerminalPane({ cwd }: TerminalPaneProps) {
         })
       }
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (disposedRef.current) return
         // 服务端主动关闭（如会话被 DELETE）时不再重连
         if (wsRef.current !== ws) return
         wsRef.current = null
+        // 认证失败（4001/4002）不再重连：token 不会自行变好，重连只会制造
+        // reconnecting 脉冲动画常驻 + WS 连接风暴，拖垮渲染线程卡死手机
+        if (event?.code === 4001 || event?.code === 4002) {
+          setStatus('error')
+          appLogger.warning({
+            event: 'pty_ws_auth_failed',
+            module: 'vibe-coding',
+            action: 'terminal',
+            status: 'warning',
+            message: `PTY WebSocket 认证失败（code=${event.code}），停止重连`,
+          })
+          return
+        }
         scheduleReconnect(sessionId)
       }
 

@@ -108,8 +108,9 @@
   border-radius: 50%;
   background: currentColor;
   opacity: 0.88;
-  /* 脉冲动画 */
-  animation: pulse 1.5s ease-in-out infinite;
+  /* 注意：基础样式无动画 —— Android WebView 中任何常驻 CSS 动画都会强制整页
+   * 60fps 重绘（gfxinfo 实测），空闲状态长时间运行会拖垮渲染线程卡死手机。
+   * 动画仅限 connecting/retrying/streaming 活跃状态 */
 }
 
 .stream-status-connecting,

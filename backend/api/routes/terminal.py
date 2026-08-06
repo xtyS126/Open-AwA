@@ -36,8 +36,11 @@ from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketState
 
 from api.dependencies import get_current_user
-from api.security.ws_auth import extract_token_from_subprotocol, validate_ws_origin
-from config.security import decode_access_token
+from api.security.ws_auth import (
+    extract_token_from_subprotocol,
+    resolve_ws_user_from_token,
+    validate_ws_origin,
+)
 from core.terminal import PTYSession
 from db.models import SessionLocal, User
 from security.command_hard_block import is_hard_blocked_command
@@ -303,15 +306,6 @@ def _validate_cwd(cwd: Optional[str]) -> str:
 
     logger.warning(f"cwd 路径越权: {cwd_str} 不在允许的工作区内")
     raise HTTPException(status_code=400, detail="cwd 路径不在允许的工作区内")
-
-
-def _ws_load_user_by_name(username: str) -> Optional[User]:
-    """
-    WebSocket 鉴权专用：在独立短生命周期会话内查询用户。
-    避免把请求外层 Session 传入 asyncio.to_thread（SQLAlchemy Session 非线程安全）。
-    """
-    with SessionLocal() as db:
-        return db.query(User).filter(User.username == username).first()
 
 
 class TerminalSession:
@@ -808,29 +802,17 @@ async def terminal_pty_websocket(
     if not token:
         token, subprotocol = extract_token_from_subprotocol(websocket)
 
-    # 鉴权
+    # 鉴权（统一支持 API Key 与 JWT 双路径，与 chat WS 一致）：
+    # APP/API Key 登录用户无 JWT，若只认 JWT 会导致连接被 4002 拒绝后前端
+    # 无限重连（reconnecting 脉冲动画常驻 + WS 连接风暴），拖垮渲染线程卡死手机。
     if not token:
         await websocket.accept(subprotocol=subprotocol if subprotocol else None)
         await websocket.send_json({"type": "error", "message": "缺少认证 token"})
         await websocket.close(code=4001, reason="Missing authentication token")
         return
 
-    payload = decode_access_token(token)
-    if payload is None:
-        await websocket.accept(subprotocol=subprotocol if subprotocol else None)
-        await websocket.send_json({"type": "error", "message": "token 无效或已过期"})
-        await websocket.close(code=4002, reason="Invalid or expired token")
-        return
-
-    username = payload.get("sub")
-    if not isinstance(username, str):
-        await websocket.accept(subprotocol=subprotocol if subprotocol else None)
-        await websocket.send_json({"type": "error", "message": "token 载荷无效"})
-        await websocket.close(code=4003, reason="Invalid token payload")
-        return
-
     try:
-        user = await asyncio.to_thread(_ws_load_user_by_name, username)
+        user = await asyncio.to_thread(resolve_ws_user_from_token, token)
     except Exception as e:
         logger.bind(
             event="terminal_ws_db_error",
@@ -841,6 +823,12 @@ async def terminal_pty_websocket(
         await websocket.accept(subprotocol=subprotocol if subprotocol else None)
         await websocket.send_json({"type": "error", "message": "数据库查询失败"})
         await websocket.close(code=4004, reason="Database error")
+        return
+
+    if user is None:
+        await websocket.accept(subprotocol=subprotocol if subprotocol else None)
+        await websocket.send_json({"type": "error", "message": "token 无效或已过期"})
+        await websocket.close(code=4002, reason="Invalid or expired token")
         return
 
     if user is None:
@@ -1132,29 +1120,16 @@ async def terminal_websocket(
     if not token:
         token, subprotocol = extract_token_from_subprotocol(websocket)
 
-    # 鉴权：token 必须存在且可解析为有效用户
+    # 鉴权（统一支持 API Key 与 JWT 双路径，与 chat WS 一致）：
+    # API Key 登录用户无 JWT，若只认 JWT 会导致连接被拒后前端无限重连
     if not token:
         await websocket.accept(subprotocol=subprotocol if subprotocol else None)
         await websocket.send_json({"type": "error", "message": "缺少认证 token"})
         await websocket.close(code=4001, reason="Missing authentication token")
         return
 
-    payload = decode_access_token(token)
-    if payload is None:
-        await websocket.accept(subprotocol=subprotocol if subprotocol else None)
-        await websocket.send_json({"type": "error", "message": "token 无效或已过期"})
-        await websocket.close(code=4002, reason="Invalid or expired token")
-        return
-
-    username = payload.get("sub")
-    if not isinstance(username, str):
-        await websocket.accept(subprotocol=subprotocol if subprotocol else None)
-        await websocket.send_json({"type": "error", "message": "token 载荷无效"})
-        await websocket.close(code=4003, reason="Invalid token payload")
-        return
-
     try:
-        user = await asyncio.to_thread(_ws_load_user_by_name, username)
+        user = await asyncio.to_thread(resolve_ws_user_from_token, token)
     except Exception as e:
         logger.bind(
             event="terminal_ws_db_error",
@@ -1169,8 +1144,8 @@ async def terminal_websocket(
 
     if user is None:
         await websocket.accept(subprotocol=subprotocol if subprotocol else None)
-        await websocket.send_json({"type": "error", "message": "用户不存在"})
-        await websocket.close(code=4004, reason="User not found")
+        await websocket.send_json({"type": "error", "message": "token 无效或已过期"})
+        await websocket.close(code=4002, reason="Invalid or expired token")
         return
 
     await websocket.accept(subprotocol=subprotocol if subprotocol else None)

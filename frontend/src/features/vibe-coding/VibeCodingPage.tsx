@@ -18,7 +18,7 @@ import { useI18nStore } from '@/i18n'
 import { useBreakpoint } from '@/shared/hooks/useBreakpoint'
 import { appLogger } from '@/shared/utils/logger'
 import { securityAPI } from '@/shared/api/securityApi'
-import { getCachedApiKey } from '@/shared/api/client'
+import { API_BASE_URL, getCachedApiKey } from '@/shared/api/client'
 import {
   listAgents,
   listSessions,
@@ -126,7 +126,13 @@ function VibeCodingPage() {
         && document.cookie.split(';').some((c) => c.trim().startsWith('access_token='))
       const apiKey = getCachedApiKey()
 
-      let streamUrl = '/api/notifications/stream'
+      // APP（WebView origin=https://localhost）内 EventSource 相对路径会请求 WebView 自身
+      // 返回 text/html 404，必须用 API_BASE_URL 拼绝对地址；
+      // API_BASE_URL 可能已含 /api（lanDiscovery 返回"接入用 API 基址"），不能重复拼接
+      const baseUrl = API_BASE_URL.startsWith('http') ? API_BASE_URL : ''
+      const apiPrefix = API_BASE_URL.includes('/api') ? '' : '/api'
+      const notificationsStreamBase = `${baseUrl}${apiPrefix}/notifications/stream`
+      let streamUrl = notificationsStreamBase
 
       if (!hasCookie && apiKey) {
         // 无 Cookie 时通过一次性 ticket 建立 SSE，避免 API Key 泄露到 URL/日志
@@ -134,7 +140,7 @@ function VibeCodingPage() {
           const ticketResp = await securityAPI.requestSseTicket()
           if (cancelled) return
           const ticket = ticketResp.data.ticket
-          streamUrl = `/api/notifications/stream?ticket=${encodeURIComponent(ticket)}`
+          streamUrl = `${notificationsStreamBase}?ticket=${encodeURIComponent(ticket)}`
         } catch (e) {
           if (cancelled) return
           appLogger.warning({
@@ -146,7 +152,7 @@ function VibeCodingPage() {
             extra: { error: e instanceof Error ? e.message : String(e) },
           })
           // 降级：api_key query 参数（向后兼容）
-          streamUrl = `/api/notifications/stream?api_key=${encodeURIComponent(apiKey)}`
+          streamUrl = `${notificationsStreamBase}?api_key=${encodeURIComponent(apiKey)}`
         }
       } else if (!hasCookie && !apiKey) {
         // 无 Cookie 也无 API Key，无法建立 SSE，直接放弃

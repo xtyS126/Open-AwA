@@ -66,7 +66,11 @@
   display: inline-flex;
 }
 
-/* 激活信号灯点：左上角呼吸辉光，复用雷达涟漪语言 */
+/* 激活信号灯点：静态信号点。
+ * 注意：不得加 CSS 动画 —— Android WebView（Skia/OpenGL）中任何活跃的 CSS
+ * 动画都会强制整页 60fps 重绘，APP 空闲时长时间运行会拖垮渲染线程卡死手机。
+ * 该结论经 gfxinfo 对照实验证实（仅禁 6x6 呼吸灯动画帧率即从 60fps 降至 2fps）。
+ */
 .tab-signal-dot {
   position: absolute;
   top: -2px;
@@ -76,7 +80,6 @@
   border-radius: var(--radius-full);
   background: var(--color-primary);
   box-shadow: var(--color-glow);
-  animation: signal-breathe 2.4s ease-in-out infinite;
 }
 
 .tab-label {
@@ -84,17 +87,4 @@
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-}
-
-/* 呼吸辉光：模拟信号灯脉冲 */
-@keyframes signal-breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
-}
-
-/* 无障碍：减少动态效果时停止辉光动画 */
-@media (prefers-reduced-motion: reduce) {
-  .tab-signal-dot {
-    animation: none;
-  }
 }

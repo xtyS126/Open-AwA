@@ -188,7 +188,14 @@ def _override_auth(monkeypatch):
         def __exit__(self, *args):
             return False
 
-    monkeypatch.setattr(terminal_route, "decode_access_token", lambda token: {"sub": "tester"})
+    # WS 鉴权已统一走 api.security.ws_auth.resolve_ws_user_from_token（API Key + JWT 双路径），
+    # 注意：terminal.py 是绑定导入（from ... import ...），必须 patch 模块内绑定名
+    # 才能覆盖实际调用点（patch ws_auth 模块属性对绑定导入不生效）
+    monkeypatch.setattr(
+        terminal_route,
+        "resolve_ws_user_from_token",
+        lambda token: fake_user,
+    )
     monkeypatch.setattr(terminal_route, "SessionLocal", lambda: FakeSession())
     # 测试环境跳过 Origin 校验（Origin 检查由独立的 Origin 校验测试覆盖）
     # 终端路由已改为从 api.security.ws_auth 导入 validate_ws_origin，patch 模块内的引用即可生效

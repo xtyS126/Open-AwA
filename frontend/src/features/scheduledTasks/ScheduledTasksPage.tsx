@@ -506,7 +506,8 @@ export default function ScheduledTasksPage() {
           </div>
         </div>
         <div className={`${styles['stat-card']} ${styles['stat-running']}`}>
-          <Loader size={20} className={styles['stat-spin']} />
+          {/* 仅存在执行中任务时旋转（常驻旋转动画会让 WebView 持续整页重绘卡死手机） */}
+          <Loader size={20} className={stats.running > 0 ? styles['stat-spin'] : ''} />
           <div>
             <span className={styles['stat-value']}>{stats.running}</span>
             <span className={styles['stat-label']}>执行中</span>

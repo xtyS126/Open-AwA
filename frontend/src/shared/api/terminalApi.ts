@@ -4,6 +4,9 @@
  */
 import api from '@/shared/api/api'
 
+// 注意：sharedApi 的 baseURL 已包含 /api（后端 main.py 将 terminal 路由注册在
+// /api 前缀下，实际端点 /api/terminal/...），BASE 必须从领域路径开始写 '/terminal'，
+// 禁止写成 '/api/terminal'（会产生 /api/api/terminal 双前缀 404）
 const BASE = '/terminal'
 
 /** 终端会话信息 */

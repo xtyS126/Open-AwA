@@ -93,3 +93,72 @@ def validate_ws_origin(origin: str) -> bool:
         f"WebSocket origin rejected: {origin}"
     )
     return False
+
+
+def resolve_ws_user_by_name(username: str) -> Optional[object]:
+    """
+    WebSocket 鉴权专用：按用户名查询 User（独立短生命周期会话）。
+
+    Returns:
+        User 对象；未找到返回 None
+    """
+    from db.models import SessionLocal, User
+
+    with SessionLocal() as db:
+        return db.query(User).filter(User.username == username).first()
+
+
+def resolve_ws_user_from_token(token: Optional[str]) -> Optional[object]:
+    """
+    WebSocket 鉴权专用：统一解析 token 为 User，支持 API Key 与 JWT 两种路径。
+
+    与 api/dependencies.py 的 get_current_user 保持一致的鉴权顺序：
+      1. API Key 路径：token 与 settings.OPENAWA_API_KEY 完全匹配时返回 owner 用户
+      2. JWT 路径：decode_access_token 解析 sub 后查 User 表
+
+    设计动机：APP/登录页仅支持 API Key 认证，浏览器无 access_token Cookie；
+    若 WS 鉴权只接受 JWT，会让 API Key 登录用户无法建立 WS 连接
+    （终端 PTY 等场景表现为连接被 4002 拒绝后前端无限重连，拖垮渲染线程）。
+
+    Args:
+        token: 从 Sec-WebSocket-Protocol 子协议或 query 参数提取的原始 token
+
+    Returns:
+        认证成功返回 User 对象；token 无效/用户不存在/用户被禁用时返回 None
+    """
+    if not token:
+        return None
+
+    from api.dependencies import _normalize_request_token, _get_owner_from_settings
+    from config.security import decode_access_token
+    from config.settings import settings
+    import secrets as _secrets
+
+    normalized = _normalize_request_token(token)
+    if normalized is None:
+        return None
+
+    api_key = settings.OPENAWA_API_KEY.get_secret_value()
+    # 路径 1: API Key 认证（与 get_current_user 路径 1 对齐）
+    if api_key and _secrets.compare_digest(normalized, api_key):
+        owner = _get_owner_from_settings()
+        if owner is not None:
+            return owner
+        # owner 加载失败时降级到 JWT 路径，保证鉴权不静默失败
+
+    # 路径 2: JWT Bearer 认证
+    payload = decode_access_token(normalized)
+    if payload is None:
+        return None
+
+    username = payload.get("sub")
+    if not isinstance(username, str):
+        return None
+
+    user = resolve_ws_user_by_name(username)
+    if user is None:
+        return None
+    # 禁用状态的用户视为无效凭证（与 _resolve_jwt_user 对齐）
+    if user.role == "disabled":
+        return None
+    return user
