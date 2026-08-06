@@ -912,6 +912,19 @@ adb -s 127.0.0.1:5555 install -r app/build/outputs/apk/debug/app-debug.apk
 adb -s 127.0.0.1:5555 shell am start -n com.openawa.mobile/.MainActivity
 ```
 
+### 局域网 APK 分发（手机免数据线安装）
+
+后端提供无认证分发页（`backend/api/routes/apk_dist.py`）：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/apk` | 分发页：版本/大小/构建时间 + 下载按钮 + 安装引导 |
+| GET | `/apk/dist.css` | 页面样式（同源外链，满足 CSP style-src 'self'） |
+| GET | `/apk/download` | APK 下载（`application/vnd.android.package-archive`，文件名 Open-AwA.apk） |
+
+手机浏览器访问 `http://<后端局域网IP>:8000/apk` 即可下载安装，无需数据线。
+APK 路径默认锚定 `frontend/android/app/build/outputs/apk/debug/app-debug.apk`，可用 `APK_PATH` 环境变量覆盖；未打包时下载返回 404 引导文案。
+
 后端侧：`ALLOW_LAN_ACCESS=true` 环境变量开启局域网 CORS 放行；`INSTANCE_NAME` 自定义实例名（ping 响应展示用）；`/api/system/ping` 无认证返回 `{pong, version, instance_name, api_prefix, capabilities}` 供 APP 发现。
 
 真机调试：`adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` 后经 CDP 检查 WebView 状态。
