@@ -146,7 +146,9 @@ class FeedbackLayer:
             return
 
         if not self.memory_manager:
-            logger.debug("MemoryManager 未注入，跳过记忆更新")
+            # 提升为 warning：记忆写入静默失败会导致对话记录无法在
+            # 历史列表/网页端恢复（曾发生 8 小时消息丢失且无任何日志）
+            logger.warning("MemoryManager 未注入，跳过记忆更新（对话记录将无法持久化）")
             return
 
         user_id = context.get("user_id")
