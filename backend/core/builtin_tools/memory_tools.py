@@ -45,7 +45,13 @@ class MemoryTools:
     def get_tools(self) -> list:
         return ["remember", "recall", "forget", "list", "stats", "search_short_term"]
 
-    async def execute(self, action: str, **params: Any) -> Dict[str, Any]:
+    async def execute(self, action: str, _context: Any = None, **params: Any) -> Dict[str, Any]:
+        # 从执行上下文提取 user_id/session_id（builtin_tools.manager.execute_tool 透传）。
+        # 记忆操作必须携带 user_id，否则长期记忆写入 user_id=None 成为
+        # 列表/搜索/删除均不可见的"幽灵记忆"，且 recall 会跨用户串记忆。
+        context = _context or {}
+        user_id = str(context.get("user_id", "") or "")
+        session_id = str(context.get("session_id", "") or "")
         action_map = {
             "remember": self._remember,
             "recall": self._recall,
@@ -58,14 +64,14 @@ class MemoryTools:
         if handler is None:
             return {"success": False, "error": f"未知记忆管理操作: {action}"}
         try:
-            return await handler(**params)
+            return await handler(user_id=user_id, session_id=session_id, **params)
         except Exception as exc:
             logger.bind(module="memory_tools", action=action).exception(
                 f"memory_tools 执行失败: {exc}"
             )
             return {"success": False, "error": str(exc)}
 
-    async def _remember(self, content: str, importance: float = 0.5, memory_layer: str = "auto", **_kwargs: Any) -> Dict[str, Any]:
+    async def _remember(self, content: str, importance: float = 0.5, memory_layer: str = "auto", user_id: str = "", **_kwargs: Any) -> Dict[str, Any]:
         if not isinstance(content, str) or not content.strip():
             return {"success": False, "error": "缺少必填参数: content"}
         importance = max(0.0, min(1.0, float(importance or 0.5)))
@@ -78,6 +84,8 @@ class MemoryTools:
             importance=importance,
             source_type="agent",
             memory_layer=memory_layer,
+            # 归属当前用户：缺失会产生列表/搜索/删除均不可见的幽灵记忆
+            user_id=user_id or None,
         )
         return {
             "success": True,
@@ -86,12 +94,12 @@ class MemoryTools:
             "message": f"已记住 (id={memory.id}, layer={memory_layer}, importance={importance:.2f})",
         }
 
-    async def _recall(self, query: str, limit: int = 5, memory_layers: list = None, **_kwargs: Any) -> Dict[str, Any]:
+    async def _recall(self, query: str, limit: int = 5, memory_layers: list = None, user_id: str = "", **_kwargs: Any) -> Dict[str, Any]:
         if not isinstance(query, str) or not query.strip():
             return {"success": False, "error": "缺少必填参数: query"}
         limit = max(1, min(20, int(limit or 5)))
         manager = MemoryManager(_get_session_local())
-        memories = await manager.search_memories(query=query.strip(), limit=limit)
+        memories = await manager.search_memories(query=query.strip(), limit=limit, user_id=user_id or None)
         if not memories:
             return {"success": True, "memories": [], "message": "未找到相关记忆"}
         items = [
@@ -127,13 +135,14 @@ class MemoryTools:
             }
         return {"success": False, "error": f"记忆不存在: {memory_id}"}
 
-    async def _list(self, limit: int = 10, include_archived: bool = False, **_kwargs: Any) -> Dict[str, Any]:
+    async def _list(self, limit: int = 10, include_archived: bool = False, user_id: str = "", **_kwargs: Any) -> Dict[str, Any]:
         limit = max(1, min(50, int(limit or 10)))
         manager = MemoryManager(_get_session_local())
         memories = await manager.get_long_term_memories(
             min_importance=0.0,
             limit=limit,
             include_archived=include_archived,
+            user_id=user_id or None,
         )
         if not memories:
             return {"success": True, "memories": [], "message": "暂无长期记忆"}
@@ -149,9 +158,9 @@ class MemoryTools:
         ]
         return {"success": True, "memories": items, "count": len(items)}
 
-    async def _stats(self, **_kwargs: Any) -> Dict[str, Any]:
+    async def _stats(self, user_id: str = "", **_kwargs: Any) -> Dict[str, Any]:
         manager = MemoryManager(_get_session_local())
-        stats = await manager.get_memory_stats()
+        stats = await manager.get_memory_stats(user_id=user_id or None)
         return {
             "success": True,
             "total_memories": stats["total_memories"],

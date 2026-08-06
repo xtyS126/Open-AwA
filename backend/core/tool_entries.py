@@ -115,7 +115,8 @@ async def _execute_tool_async(parameters: Dict[str, Any], context: Dict[str, Any
     import time as _time
     _started = _time.perf_counter()
     try:
-        result = await builtin_tool_manager.execute_tool(tool_name, parameters)
+        # 透传 context（含 user_id/session_id）供记忆类工具做用户隔离
+        result = await builtin_tool_manager.execute_tool(tool_name, parameters, context=context)
         return result
     except Exception as e:
         return {"success": False, "error": f"工具执行异常: {type(e).__name__}: {str(e)}"}

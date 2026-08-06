@@ -627,6 +627,7 @@ class BuiltInToolManager:
         *,
         action: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         执行内置工具。
@@ -634,6 +635,9 @@ class BuiltInToolManager:
         支持两种调用方式：
         1. 新式（function calling）: func_name="read_file", params={"path": "..."}
         2. 旧式（兼容 API 路由/workflow）: func_name="file_manager", action="read_file", params={...}
+
+        context 携带 user_id/session_id 等执行上下文，通过 _context 透传给
+        工具实例（记忆类工具依赖 user_id 做用户隔离，缺省会写入幽灵记忆）。
         """
         params = params or {}
 
@@ -648,7 +652,7 @@ class BuiltInToolManager:
             return {"success": False, "error": f"未知内置工具: {func_name}"}
 
         instance = await self._initialize_tool(tool_name, config=config)
-        return await instance.execute(action=tool_action, **params)
+        return await instance.execute(action=tool_action, _context=context, **params)
 
     async def list_tools(self) -> Dict[str, Dict[str, Any]]:
         """返回全部内置工具的定义与状态（供 /api/tools/list 使用）。"""

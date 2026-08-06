@@ -684,7 +684,7 @@ class ExecutionToolRuntimeMixin:
             # 回退：直接通过 builtin_tool_manager 执行（仅当 ToolRegistry 完全不可用时）
             from core.builtin_tools.manager import builtin_tool_manager
             try:
-                result = await builtin_tool_manager.execute_tool(builtin_name, func_args)
+                result = await builtin_tool_manager.execute_tool(builtin_name, func_args, context=context)
                 ok = bool(result.get("success"))
                 _builtin_output = {"ok": ok, "result": result, "tool_name": func_name}
                 return await self._apply_post_tool_use_hooks(_builtin_output, func_name, context)
