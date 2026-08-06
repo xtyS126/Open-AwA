@@ -3,6 +3,10 @@ apply plugin: 'com.android.application'
 android {
     namespace = "com.openawa.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
+    buildFeatures {
+        // AGP 8 默认关闭 BuildConfig 生成；AppUpdatePlugin 需要读取 VERSION_CODE/VERSION_NAME
+        buildConfig = true
+    }
     defaultConfig {
         applicationId "com.openawa.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
