@@ -78,6 +78,14 @@ const enUS: Record<string, string> = {
 
   // ===== User =====
   "user.center": "User Center",
+  "update.title": "Update Available",
+  "update.currentToLatest": "Update to {latest}",
+  "update.changelog": "Changelog",
+  "update.now": "Update Now",
+  "update.later": "Later",
+  "update.packageSize": "Package size",
+  "update.installing": "Installing…",
+  "update.downloadFailed": "Download failed, please retry",
   "user.logout": "Logout",
   "user.profile": "Profile",
   "user.avatar": "Avatar",

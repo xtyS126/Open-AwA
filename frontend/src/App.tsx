@@ -3,6 +3,8 @@ import { RouterProvider } from '@tanstack/react-router'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { appLogger } from '@/shared/utils/logger'
 import { useAppInitialization } from '@/shared/hooks/useAppInitialization'
+import { useAppUpdate } from '@/shared/hooks/useAppUpdate'
+import { UpdateDialog } from '@/shared/components/UpdateDialog/UpdateDialog'
 import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { mark } from '@/shared/perf/metrics'
@@ -11,9 +13,18 @@ import { router } from '@/router'
 function App() {
   // 使用选择器精确订阅，避免整个 store 变化触发重渲染
   const isInitialized = useAuthStore((s) => s.isInitialized)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const { theme } = useThemeStore()
   const shellMarkedRef = useRef<boolean | null>(null)
   useAppInitialization()
+
+  // APP 局域网 OTA 更新：认证完成后自动检查一次（仅原生容器生效）
+  const { status, updateInfo, progress, error, check, dismiss, startDownload } = useAppUpdate()
+  useEffect(() => {
+    if (isAuthenticated) {
+      void check()
+    }
+  }, [isAuthenticated, check])
 
   // P2: 认证状态解析后记录时间
   useEffect(() => {
@@ -71,9 +82,22 @@ function App() {
   }, [])
 
   // P0: 始终渲染 RouterProvider，由 RootGuard 内部根据认证状态决定具体内容
+  // 更新弹窗挂载在 RouterProvider 外层，跨路由持久
   return (
     <ErrorBoundary name="Root">
       <RouterProvider router={router} />
+      {isAuthenticated && updateInfo && (
+        (status === 'available' || status === 'downloading' || status === 'installing' || status === 'error') && (
+          <UpdateDialog
+            info={updateInfo}
+            status={status}
+            progress={progress}
+            error={error}
+            onUpdate={() => void startDownload()}
+            onLater={dismiss}
+          />
+        )
+      )}
     </ErrorBoundary>
   )
 }

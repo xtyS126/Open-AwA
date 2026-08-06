@@ -1,0 +1,161 @@
+/* ============================================================
+ * APP 更新弹窗 —— 延续「信号中枢 / Signal Nexus」视觉语言
+ * ============================================================ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: var(--color-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.dialog {
+  width: 100%;
+  max-width: 380px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-lg);
+}
+
+.icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  margin-bottom: var(--space-4);
+}
+
+.title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-lg);
+  color: var(--color-text);
+}
+
+.subtitle {
+  margin: 0 0 var(--space-4);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.changelog {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.changelog h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.changelogText {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+  font-family: inherit;
+  color: var(--color-text-secondary);
+}
+
+.meta {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.progressWrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.progressBar {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-primary-gradient);
+  border-radius: var(--radius-full);
+  transition: width var(--transition-fast);
+}
+
+.progressText {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: right;
+  color: var(--color-text-secondary);
+}
+
+.installing {
+  color: var(--color-success-strong);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+  line-height: var(--leading-relaxed);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+.laterBtn {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.updateBtn {
+  padding: var(--space-2) var(--space-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* 移动端（≤ 768px，对应 --breakpoint-md 令牌）：弹窗贴边 */
+@media (max-width: 768px) {
+  .overlay {
+    padding: var(--space-3);
+  }
+  .dialog {
+    max-width: none;
+    border-radius: var(--radius-lg);
+  }
+}

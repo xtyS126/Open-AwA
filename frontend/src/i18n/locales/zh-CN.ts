@@ -78,6 +78,14 @@ const zhCN: Record<string, string> = {
 
   // ===== 用户 =====
   "user.center": "用户中心",
+  "update.title": "发现新版本",
+  "update.currentToLatest": "可更新至 {latest}",
+  "update.changelog": "更新内容",
+  "update.now": "立即更新",
+  "update.later": "稍后",
+  "update.packageSize": "安装包大小",
+  "update.installing": "正在安装…",
+  "update.downloadFailed": "下载失败，请重试",
   "user.logout": "退出登录",
   "user.profile": "个人画像",
   "user.avatar": "头像",

@@ -5,6 +5,8 @@
 import { useCallback } from 'react'
 import { BackendConnection } from '@/features/settings/components/BackendConnection'
 import { QrCodeSection } from '@/features/settings/components/QrCodeSection'
+import { useAppUpdate } from '@/shared/hooks/useAppUpdate'
+import { isNativeApp } from '@/shared/utils/platform'
 import { API_BASE_URL } from '@/shared/api/client'
 
 /** 桌面端 IPC 测试连接返回类型 */
@@ -21,6 +23,8 @@ interface DesktopSaveResult {
 
 export function BackendConnectionTabContainer() {
   const isDesktop = typeof window !== 'undefined' && !!window.__OPENAWA_DESKTOP__
+  // APP 局域网 OTA 更新检查（仅原生容器生效）
+  const { status, check } = useAppUpdate()
 
   /** 桌面端通过 IPC 保存后端地址到 electron-store */
   const handleSave = useCallback(async (url: string): Promise<void> => {
@@ -55,6 +59,20 @@ export function BackendConnectionTabContainer() {
       />
       {/* 移动端接入二维码：渲染后端地址二维码供手机 App 扫码连接 */}
       <QrCodeSection />
+      {/* APP 局域网 OTA 更新检查：仅原生容器显示 */}
+      {isNativeApp() && (
+        <div className="check-update-row">
+          <span className="check-update-label">APP 版本更新</span>
+          <button
+            type="button"
+            className="check-update-btn"
+            onClick={() => void check()}
+            disabled={status === 'checking'}
+          >
+            {status === 'checking' ? '检查中…' : '检查更新'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
