@@ -4,15 +4,17 @@ android {
     namespace = "com.openawa.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
     buildFeatures {
-        // AGP 8 默认关闭 BuildConfig 生成；AppUpdatePlugin 需要读取 VERSION_CODE/VERSION_NAME
+        // AGP 8 榛樿鍏抽棴 BuildConfig 鐢熸垚锛汚ppUpdatePlugin 闇€瑕佽鍙?VERSION_CODE/VERSION_NAME
         buildConfig = true
     }
     defaultConfig {
         applicationId "com.openawa.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // versionCode 2：与已通过 APP 更新安装的版本对齐（设备端曾为 1 → 更新至 2），
+        // 保证 install -r 可覆盖；后续每次发版必须递增
+        versionCode 2
+        versionName "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -56,3 +58,4 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+

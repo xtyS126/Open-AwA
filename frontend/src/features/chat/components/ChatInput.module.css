@@ -285,6 +285,8 @@
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-top: 1px solid var(--color-border);
+    /* 紧凑化：容器纵向 padding 减半，把高度让给对话列表 */
+    padding: 8px 12px 8px;
     /* bottom 属性变化时平滑过渡，配合键盘弹起适配 */
     transition: bottom 0.2s ease, transform 0.2s ease;
   }
@@ -292,6 +294,33 @@
   /* 暗色主题：使用更深的毛玻璃背景 */
   :global(.dark) .chat-input-container {
     background: rgba(15, 23, 42, 0.92);
+  }
+
+  /* 输入行紧凑化：40px 单行输入，内容超过时内部滚动而非撑高 */
+  .input-row {
+    padding: 4px;
+  }
+
+  .chat-input {
+    min-height: 40px;
+    max-height: 40px;
+    padding: 8px 10px;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    overflow-y: auto;
+  }
+
+  /* 附件/发送按钮移动端保持 32px 触摸目标（不缩小到不可点） */
+  .attach-btn,
+  .send-btn,
+  .stop-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* 字符计数在移动端省略 */
+  .char-count {
+    display: none;
   }
 
   /* 键盘弹起状态：通过 inline style 覆盖 bottom，此处保留过渡动画 */
