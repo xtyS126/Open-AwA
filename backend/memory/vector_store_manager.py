@@ -440,6 +440,21 @@ def create_embedding_provider(provider_type: Optional[str] = None) -> EmbeddingP
         _settings.MEMORY_LOCAL_EMBEDDING_MODEL or default_embedding_model("local")
     )
     if normalized in {"local", "sentence-transformers"} or not normalized:
+        # Spec 模型进程化：开启模型服务时本地模型在独立子进程加载推理，
+        # 主进程不占模型内存（空闲自动卸载、按需加载）
+        if bool(_settings.MODEL_SERVICE_ENABLED):
+            try:
+                from model_service.client import (
+                    RemoteEmbeddingProvider,
+                    get_model_service_client,
+                )
+
+                client = get_model_service_client()
+                client.configure(embedding_model=local_model)
+                logger.info(f"本地嵌入模型切换到模型服务进程: {local_model}")
+                return RemoteEmbeddingProvider(client)
+            except Exception as exc:
+                logger.warning(f"模型服务不可用，回退主进程内加载: {exc}")
         try:
             return SentenceTransformerEmbeddingProvider(model_name=local_model)
         except RuntimeError as exc:

@@ -221,6 +221,14 @@ class Settings(BaseSettings):
     # 云端重排 API 配置
     MEMORY_RERANK_API_KEY: str = ""
     MEMORY_RERANK_API_ENDPOINT: str = ""
+    # 模型服务独立进程（Spec 模型进程化）：本地嵌入/重排模型在独立子进程中
+    # 加载推理，主进程不占用模型内存；空闲 MODEL_IDLE_UNLOAD_MINUTES 分钟自动
+    # 卸载（kill 子进程），下次调用时按需重新加载。关闭时回退主进程内加载。
+    MODEL_SERVICE_ENABLED: bool = True
+    # 模型服务端口（0=自动分配空闲端口）
+    MODEL_SERVICE_PORT: int = 0
+    # 模型空闲卸载阈值（分钟，0=不自动卸载）
+    MODEL_IDLE_UNLOAD_MINUTES: int = 15
     # 模型下载源：modelscope（默认，国内网络友好）| huggingface
     MODEL_DOWNLOAD_SOURCE: str = "modelscope"
     # 本地嵌入模型名（兼容旧配置 MEMORY_LOCAL_EMBEDDING_MODEL）

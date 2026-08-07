@@ -270,6 +270,20 @@ def create_reranker(provider_type: Optional[str] = None) -> Optional[Reranker]:
 
     if normalized in {"local", "sentence-transformers", "cross-encoder"}:
         local_model = model_name or default_rerank_model("local")
+        # Spec 模型进程化：本地重排模型在独立子进程加载（空闲自动卸载）
+        if bool(_settings.MODEL_SERVICE_ENABLED):
+            try:
+                from model_service.client import (
+                    RemoteReranker,
+                    get_model_service_client,
+                )
+
+                client = get_model_service_client()
+                client.configure(rerank_model=local_model)
+                logger.info(f"本地重排模型切换到模型服务进程: {local_model}")
+                return RemoteReranker(client)
+            except Exception as exc:
+                logger.warning(f"模型服务不可用，回退主进程内加载重排: {exc}")
         return LocalCrossEncoderReranker(model_name=local_model)
 
     if normalized in {"cloud", "api"}:

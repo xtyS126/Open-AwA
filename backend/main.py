@@ -1100,6 +1100,15 @@ async def lifespan(app: FastAPI):
     profiler.finish()
 
     yield
+    # 模型服务子进程关闭（Spec 模型进程化）：释放模型内存，不留孤儿进程
+    try:
+        from model_service.client import shutdown_model_service
+
+        await shutdown_model_service()
+    except Exception as exc:
+        logger.bind(event="model_service_shutdown_error", module="main").warning(
+            f"模型服务关闭失败: {exc}"
+        )
     # task_runtime 关闭：触发 Stop 钩子，通知后台 agent（原 @router.on_event("startup") 迁移至 lifespan）
     # task_runtime.shutdown 为 async 函数，直接 await 调用（asyncio.to_thread 不适用于 async 函数）
     try:
