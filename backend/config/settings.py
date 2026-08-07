@@ -114,7 +114,7 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "Open-AwA AI Agent"
     # 版本规则：0.XX，每次修复小数点后 +1；整数位保持 0（除非用户明确提升）
-    VERSION: str = "0.01"
+    VERSION: str = "0.02"
     API_V1_STR: str = "/api"
     ENVIRONMENT: str = "development"
     

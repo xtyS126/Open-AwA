@@ -12,11 +12,11 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // 版本规则（用户约定）：
-        // - versionName 形如 0.XX：当前 0.01，每次修复小数点后 +1（0.02、0.03...）
+        // - versionName 形如 0.XX：每次修复小数点后 +1（0.01 → 0.02 → ...）
         // - 整数位（个位）永远保持 0，除非用户明确要求提升
-        // - versionCode 单调递增（安装标识），当前设备已装 2，从 3 开始
-        versionCode 3
-        versionName "0.01"
+        // - versionCode 单调递增（安装标识），当前设备已装 3，从 4 开始
+        versionCode 4
+        versionName "0.02"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

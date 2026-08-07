@@ -577,6 +577,10 @@ export function useChatStream({
       // 仅 stream 模式需要（direct 模式无 SSE，无需重连）
       // 声明在 try 外部以便 finally 块访问（任务结束时清理追踪状态）
       const streamTaskId = outputMode === 'stream' ? crypto.randomUUID() : undefined
+      // 标记本次流式是否被外部 abort（组件卸载 / 用户停止）。
+      // abort 时后端任务可能仍在运行，不得触发 onTaskFinished 清除恢复记录，
+      // 否则用户切回页面后无法通过 task_id 重连订阅流式输出。
+      let streamAborted = false
       if (streamTaskId) {
         activeTaskIdRef.current = streamTaskId
         activeTaskLastSeqRef.current = -1
@@ -814,6 +818,10 @@ export function useChatStream({
         }
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
+          // 外部 abort（组件卸载或用户停止）：标记后正常返回。
+          // 不能在此触发 onTaskFinished——切页面场景后端任务仍在运行，
+          // 恢复记录必须保留供重连使用（用户主动停止由 ChatPage 显式清理）。
+          streamAborted = true
           streamExecution.clearStreamStageMessage()
           streamExecution.setIdleStreamState()
           return
@@ -864,9 +872,11 @@ export function useChatStream({
             streamExecution.setIdleStreamState()
           }
         }
-        // 任务结束（无论成功/失败/取消）：通知 ChatPage 清除 sessionStorage 任务记录
+        // 任务结束（成功/失败）：通知 ChatPage 清除 sessionStorage 任务记录。
+        // abort 场景跳过（streamAborted=true）：后端任务可能仍在运行，
+        // 记录需保留供页面切回后通过 task_id 重连订阅。
         // 仅在当前请求仍是活跃请求时触发，避免被新的请求覆盖后误清
-        if (streamTaskId && activeRequestIdRef.current === requestId) {
+        if (streamTaskId && activeRequestIdRef.current === requestId && !streamAborted) {
           const finishedTaskId = streamTaskId
           activeTaskIdRef.current = null
           activeTaskLastSeqRef.current = -1
@@ -940,6 +950,9 @@ export function useChatStream({
       activeTaskLastSeqRef.current = fromSeq
 
       let streamErrorHandled = false
+      // 重连被外部 abort（再次切走页面）时不得清除恢复记录，
+      // 否则用户下一次切回仍无法重连
+      let streamAborted = false
       // 重连场景下助手消息已存在（由 handleSendMessage 首次创建并持久化到 sessionStore）
       // 标记为 true 以跳过 ensureAssistantMessage 的创建逻辑
       let assistantMessageCreated = true
@@ -1056,7 +1069,9 @@ export function useChatStream({
         streamExecution.setIdleStreamState()
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
-          // 组件卸载或新请求中断：清理流式状态，不展示错误
+          // 组件卸载或新请求中断：清理流式状态，不展示错误；
+          // 保留恢复记录（streamAborted 标记），后端任务可能仍在运行
+          streamAborted = true
           streamExecution.clearStreamStageMessage()
           streamExecution.setIdleStreamState()
           return
@@ -1091,7 +1106,8 @@ export function useChatStream({
           }
         }
         // 任务结束：清除追踪状态并通知 ChatPage 清除 sessionStorage
-        if (activeRequestIdRef.current === requestId) {
+        // abort 场景跳过：后端任务可能仍在运行，记录需保留供再次切回重连
+        if (activeRequestIdRef.current === requestId && !streamAborted) {
           const finishedTaskId = taskId
           activeTaskIdRef.current = null
           activeTaskLastSeqRef.current = -1
