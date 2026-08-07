@@ -493,6 +493,33 @@ class TestPostTestSearch:
         assert body["error"] is not None
         assert "500" in body["error"]
 
+    def test_search_test_propagates_unexpected_exception_as_500(
+        self, db_session, monkeypatch
+    ) -> None:
+        """未预期异常自然传播为 500（删除兜底后的错误路径），禁止以 success=False 兜底返回。"""
+        app = FastAPI()
+        app.include_router(search_router)
+
+        def _override_db():
+            yield db_session
+
+        app.dependency_overrides[get_db] = _override_db
+        app.dependency_overrides[get_current_user] = _override_user(_USER_A)
+
+        async def _boom(*args, **kwargs):
+            raise RuntimeError("searxng test crashed")
+
+        monkeypatch.setattr("api.routes.search_config._test_searxng", _boom)
+
+        # ServerErrorMiddleware 处理后主动 re-raise，需关闭 raise_server_exceptions 才能收到 500 响应
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post(
+                "/api/search/test",
+                json={"provider": "searxng", "base_url": "https://example.com"},
+            )
+
+        assert response.status_code == 500
+
     def test_search_test_uses_request_body_config_not_db_config(
         self, client_fixture, db_session, monkeypatch
     ) -> None:

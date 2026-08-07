@@ -285,7 +285,8 @@ class SkillLoader:
                     'config': config
                 })
             except yaml.YAMLError as e:
-                logger.warning(f"Failed to parse config for skill {skill.name}: {e}")
+                # 解析失败不静默替换为空配置：条目带显式 config_error 字段，调用方可感知
+                logger.error(f"Failed to parse config for skill {skill.name}: {e}")
                 result.append({
                     'id': skill.id,
                     'name': skill.name,
@@ -293,7 +294,8 @@ class SkillLoader:
                     'description': skill.description,
                     'enabled': skill.enabled,
                     'installed_at': skill.installed_at.isoformat() if skill.installed_at else None,
-                    'config': {}
+                    'config': {},
+                    'config_error': f"配置 YAML 解析失败: {e}",
                 })
 
         return result

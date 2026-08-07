@@ -1555,19 +1555,25 @@ async def _discover_ollama_models_via_litellm(
             "request_id": request_id,
         }
     except Exception as exc:
-        # Ollama 连接异常时降级返回空模型列表，但必须记录日志便于排查
-        # 此处保持 ok=True 是为了让上层 UI 不把网络异常显示为"配置错误"
+        # Ollama 连接异常时如实返回失败结果与结构化错误信息，
+        # 让上层 UI 显示真实的连接错误而非伪装成"无模型"
         logger.bind(
             module="litellm_adapter",
             event="ollama_list_models_failed",
             provider="ollama",
             request_id=request_id,
-        ).warning(f"Ollama 列出模型失败，降级返回空列表：{exc}", exc_info=exc)
+        ).warning(f"Ollama 列出模型失败: {exc}", exc_info=exc)
         return {
-            "ok": True,
+            "ok": False,
             "models": [],
             "provider": "ollama",
             "request_id": request_id,
+            "error": build_standard_error(
+                code="ollama_list_models_failed",
+                message=f"Ollama 连接或列出模型失败: {exc}",
+                request_id=request_id,
+                status_code=0,
+            ),
         }
 
 

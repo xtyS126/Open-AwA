@@ -562,7 +562,7 @@ function EventView({ evt }: { evt: AcpEvent }) {
  *   event: <type>
  *   data: <json>
  *
- * 非法帧静默忽略并记录警告日志。
+ * 非法帧上报会话错误事件（用户可见），不静默忽略。
  */
 function parseAndDispatchFrame(
   frame: string,
@@ -589,14 +589,16 @@ function parseAndDispatchFrame(
   try {
     data = JSON.parse(dataStr)
   } catch {
-    appLogger.warning({
+    // 解析失败必须上报会话错误事件（用户可见），Agent 输出缺失不能静默吞掉
+    appLogger.error({
       event: 'acp_sse_parse_failed',
       module: 'vibe-coding',
       action: 'sse',
-      status: 'warning',
+      status: 'failure',
       message: 'ACP SSE 帧解析失败',
       extra: { event_type: eventType, payload_preview: dataStr.slice(0, 100) },
     })
+    appendEvent('error', { message: 'ACP SSE 帧解析失败，该帧输出已丢失' })
     return
   }
 

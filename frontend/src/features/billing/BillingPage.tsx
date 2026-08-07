@@ -103,11 +103,12 @@ function BillingPage() {
     },
   })
 
-  // 预算状态查询 —— 后端可能未配置预算，失败时降级为 null
+  // 预算状态查询 —— 后端"未配置预算"以 data:null 正常返回；
+  // 请求失败则抛错并入 error 状态展示（不静默降级为 null）
   const budgetQuery = useQuery<BudgetStatus | null>({
     queryKey: ['billing', 'budget'],
     queryFn: async () => {
-      const response = await billingAPI.getBudget('current').catch(() => ({ data: null }))
+      const response = await billingAPI.getBudget('current')
       return response.data
     },
   })
@@ -121,12 +122,14 @@ function BillingPage() {
   const loading = statsQuery.isInitialLoading && !statistics
   // 任一查询后台刷新中即视为"同步中"
   const refreshing = statsQuery.isFetching && !statsQuery.isInitialLoading
-  // 优先展示统计查询错误，其次展示用量查询错误
+  // 优先展示统计查询错误，其次展示用量查询错误，再展示预算查询错误
   const error = statsQuery.error
     ? (statsQuery.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '加载计费数据失败'
     : usageQuery.error
       ? (usageQuery.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '加载用量明细失败'
-      : null
+      : budgetQuery.error
+        ? (budgetQuery.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '加载预算状态失败'
+        : null
 
   // 数据成功加载后更新"最近更新"时间戳
   useEffect(() => {

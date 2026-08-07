@@ -33,6 +33,15 @@ def pytest_configure(config):
     # 回退到 SentenceTransformerEmbeddingProvider 触发 sentence-transformers ImportError
     # 想测试 sentence-transformers 路径的用例可在 fixture 内显式覆盖此变量
     os.environ.setdefault("MEMORY_EMBEDDING_PROVIDER", "hash")
+    # 显式声明测试环境的 MCP SSE origin 白名单（fail-closed 契约：未配置则拒绝启动）。
+    # 测试 WebView/TestClient 以 localhost 发起 SSE 请求，白名单必须显式配置而非继承
+    # 生产环境变量；test_mcp_sse_origin.py 用例内部会按需覆盖此变量，不受影响
+    os.environ.setdefault("MCP_SSE_ALLOWED_ORIGINS", "https://localhost")
+    # 与生产启动顺序一致：先初始化默认数据库表结构，再允许构造 VectorStoreManager
+    # （其构造会同步 vector_model_config 表配置，该同步失败已改为显式抛错）
+    from db.models import init_db
+
+    init_db()
 
 
 def _reset_loaded_runtime_state() -> None:

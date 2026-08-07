@@ -422,6 +422,7 @@ const enUS: Record<string, string> = {
   "skillMarket.uninstalling": "Uninstalling...",
   "skillMarket.installed": "Installed (Uninstall)",
   "skillMarket.empty": "No matching skills found",
+  "skillMarket.loadFailed": "Failed to load skill market, please try again later",
   "skillMarket.installFailed": "Failed to install {name}",
 
   // ===== Dashboard =====

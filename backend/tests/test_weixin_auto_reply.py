@@ -505,6 +505,105 @@ async def test_auto_reply_keeps_cursor_when_processing_fails(tmp_path, monkeypat
     assert service.adapter.load_cursor("acc-1") == ""
 
 
+async def test_auto_reply_records_error_state_when_media_asset_persistence_fails(tmp_path, monkeypatch):
+    """多媒体资产持久化失败时：消息显式标记 error 并跳过，禁止静默丢失资产（删除兜底后的错误路径）。"""
+    _create_binding()
+
+    async def fake_ai_reply(db, binding, inbound):
+        # 资产持久化失败的消息必须被跳过，AI 回复生成不应执行
+        raise AssertionError("资产持久化失败的消息不应进入 AI 回复生成")
+
+    service = _build_service(tmp_path, fake_ai_reply)
+
+    async def fake_get_updates(config, cursor="", persist_cursor=True):
+        return {
+            "response": {
+                "msgs": [
+                    {
+                        "message_id": "msg-media",
+                        "from_user_id": "friend-5",
+                        "context_token": "ctx-media",
+                        "item_list": [
+                            {
+                                "type": 2,
+                                "image_item": {
+                                    "media_id": "img-001",
+                                    "url": "https://wx.example.com/img/001.jpg",
+                                    "format": "jpg",
+                                },
+                            }
+                        ],
+                    }
+                ]
+            },
+            "cursor": "cursor-media",
+        }
+
+    monkeypatch.setattr(service.adapter, "get_updates", fake_get_updates)
+    # 伪造多媒体凭据，使消息进入资产持久化分支
+    monkeypatch.setattr(
+        auto_reply_service,
+        "extract_weixin_media_credentials",
+        lambda raw_message: {"encrypted_query_param": "enc-query", "aes_key": "0123456789abcdef"},
+    )
+    # 持久化目标类不可用（非 SQLAlchemy 映射类），触发持久化失败分支
+    monkeypatch.setattr(
+        auto_reply_service,
+        "WeixinMediaAsset",
+        type("BrokenAsset", (), {}),
+    )
+
+    result = await service.process_once("user-1")
+
+    assert result["ok"] is False
+    assert result["errors"] == 1
+    assert result["cursor_advanced"] is False
+    # 显式错误状态已持久化到账号状态文件
+    persisted_state = service._load_state("acc-1")
+    assert "多媒体资产持久化失败" in (persisted_state.get("last_error") or "")
+    # 该消息以 error 状态记录，游标未推进（不会丢消息）
+    processed = persisted_state.get("processed_messages", {})
+    assert processed.get("msg-media", {}).get("status") == "error"
+
+
+def test_list_weixin_conversations_returns_500_on_db_error(tmp_path, monkeypatch):
+    """查询微信会话列表失败时返回 500（删除兜底后的错误路径），禁止降级返回空列表。"""
+    _create_binding()
+
+    async def fake_ai_reply(db, binding, inbound):
+        return {"response": "x"}
+
+    service = _build_service(tmp_path, fake_ai_reply)
+
+    class _BrokenSession:
+        """query 调用即抛错，模拟数据库不可用。"""
+
+        def query(self, *args, **kwargs):
+            raise RuntimeError("db query failed")
+
+    def _override_broken_db():
+        db = _BrokenSession()
+        try:
+            yield db
+        finally:
+            pass
+
+    previous_overrides = dict(app.dependency_overrides)
+    previous_manager = auto_reply_service._AUTO_REPLY_MANAGER
+    app.dependency_overrides[get_db] = _override_broken_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    auto_reply_service._AUTO_REPLY_MANAGER = service
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/weixin/conversations")
+    finally:
+        app.dependency_overrides = previous_overrides
+        auto_reply_service._AUTO_REPLY_MANAGER = previous_manager
+
+    assert response.status_code == 500
+    assert "查询微信会话列表失败" in response.json()["error"]["message"]
+
+
 def test_auto_reply_status_and_process_once_routes(tmp_path, monkeypatch):
     """验证自动回复状态接口和单次处理接口可正常联通管理器。"""
     _create_binding()

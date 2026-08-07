@@ -392,6 +392,7 @@ const jaJP: Record<string, string> = {
   "skillMarket.uninstalling": "解除中...",
   "skillMarket.installed": "インストール済 (解除)",
   "skillMarket.empty": "一致なし",
+  "skillMarket.loadFailed": "スキルマーケットの読み込みに失敗しました。後でもう一度お試しください",
   "skillMarket.installFailed": "{name} 失敗",
   "dashboard.title": "ダッシュボード",
   "dashboard.subtitle": "AI Agent 概要",

@@ -7,7 +7,7 @@
 - 云端模型（OpenAI 兼容 API / DashScope 多模态）：记录 API 模型名与能力标签，
   如 Qwen3-VL-Embedding（多模态嵌入）与 Qwen3-VL-Reranker（多模态重排）
 
-默认下载源为 ModelScope（魔搭社区），网络不可达时降级 HuggingFace。
+下载源由 MODEL_DOWNLOAD_SOURCE 显式指定（默认 ModelScope），不跨源降级。
 """
 
 from __future__ import annotations
@@ -24,7 +24,8 @@ class EmbeddingModelSpec:
     kind: str  # local | cloud
     label: str
     description: str = ""
-    # 本地模型仓库 ID（ModelScope 优先，HuggingFace 兜底）
+    # 本地模型仓库 ID（modelscope_id 与 huggingface_id 分别对应两个下载源，
+    # 实际使用哪个由 MODEL_DOWNLOAD_SOURCE 决定）
     modelscope_id: str = ""
     huggingface_id: str = ""
     # 嵌入向量维度（本地模型已知维度；云端模型 None 表示由 API 探测）

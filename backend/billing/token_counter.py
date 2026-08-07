@@ -1,10 +1,12 @@
-"""Token 计数四层策略模块
+"""Token 计数策略模块
 
 优先级：
 1. API 响应 usage 字段（精确）
 2. 流式 chunk 累计 usage
-3. tiktoken 估算（OpenAI 模型）
-4. 字符比率估算（兜底）
+3. usage 缺失时显式标记 method=unknown（不估算伪装，由上层决策）
+
+tiktoken（必需依赖）与字符比率估算函数作为显式工具保留，
+由上层决定何时调用；计数失败一律显式传播，禁止静默返回 0 伪装。
 
 设计参考 cherry-studio 的 MessageStats 字段定义，统一兼容 OpenAI 与 Anthropic 两种 usage 格式。
 """
@@ -48,15 +50,12 @@ class TokenBreakdown:
 def _is_tiktoken_enabled() -> bool:
     """读取 settings.TIKTOKEN_ENABLED 配置项
 
-    Task 3 会统一在 settings.py 添加 TIKTOKEN_ENABLED 配置。
-    此处使用延迟 import + getattr 兜底，避免循环依赖与配置缺失导致 ImportError。
+    延迟 import 避免循环依赖。配置读取失败时显式传播异常，
+    禁止静默默认开启/关闭（配置状态必须真实反映）。
     """
-    try:
-        from config.settings import settings  # 延迟 import，避免循环依赖
+    from config.settings import settings  # 延迟 import，避免循环依赖
 
-        return bool(getattr(settings, "TIKTOKEN_ENABLED", True))
-    except Exception:  # 配置未就绪时默认开启
-        return True
+    return bool(getattr(settings, "TIKTOKEN_ENABLED", True))
 
 
 def count_from_usage(usage: Optional[Dict[str, Any]]) -> TokenBreakdown:
@@ -174,12 +173,19 @@ def estimate_with_tiktoken(text: str, model: str) -> int:
     - gpt-4/gpt-4-turbo/gpt-3.5-turbo → cl100k_base
     - 其他 → o200k_base（默认）
 
+    tiktoken 是必需依赖（requirements.txt 已声明），未安装或编码失败时
+    显式传播异常，禁止静默返回 0 伪装估算结果。
+
     Args:
         text: 待估算的文本。
         model: 模型名称，用于选择 encoding。
 
     Returns:
-        估算 token 数。tiktoken 不可用或文本为空时返回 0。
+        估算 token 数。文本为空或 TIKTOKEN_ENABLED=False 时返回 0。
+
+    Raises:
+        ImportError: tiktoken 未安装（必需依赖缺失）。
+        Exception: tiktoken 编码失败（显式传播）。
     """
     if not text:
         return 0
@@ -188,26 +194,11 @@ def estimate_with_tiktoken(text: str, model: str) -> int:
         logger.debug("tiktoken 已被 settings.TIKTOKEN_ENABLED 关闭，跳过估算")
         return 0
 
-    try:
-        import tiktoken  # 延迟 import，避免未安装时模块加载失败
-    except ImportError:
-        logger.warning(
-            "tiktoken 未安装，无法执行精确 token 估算，请检查 requirements.txt"
-        )
-        return 0
+    import tiktoken  # 必需依赖，未安装时 ImportError 显式传播
 
     encoding_name = _resolve_encoding_name(model)
-    try:
-        encoding = tiktoken.get_encoding(encoding_name)
-        return len(encoding.encode(text))
-    except Exception as exc:
-        logger.warning(
-            "tiktoken 编码失败，model=%s encoding=%s error=%s",
-            model,
-            encoding_name,
-            exc,
-        )
-        return 0
+    encoding = tiktoken.get_encoding(encoding_name)
+    return len(encoding.encode(text))
 
 
 def _resolve_encoding_name(model: str) -> str:
@@ -272,19 +263,19 @@ def count_tokens(
     usage: Optional[Dict[str, Any]] = None,
     stream_chunks: Optional[List[Dict[str, Any]]] = None,
 ) -> TokenBreakdown:
-    """统一入口，按四层优先级返回 TokenBreakdown
+    """统一入口，按优先级返回 TokenBreakdown
 
     优先级：
     1. usage 非 None → count_from_usage
-    2. stream_chunks 非 None 且非空 → count_from_stream
-    3. provider 含 openai 且 tiktoken 可用 → estimate_with_tiktoken
-    4. 兜底 → estimate_with_ratio
+    2. stream_chunks 携带 usage → count_from_stream
+    3. usage 完全缺失 → method=unknown（不自动估算伪装）
 
-    注意：当 stream_chunks 提供但未携带 usage 时，count_from_stream 返回零值且
-    estimated=True，此时降级到下一层（tiktoken/ratio）以保证可用的估算结果。
+    当 stream_chunks 提供但未携带 usage 时，显式标记 method=unknown，
+    是否启用估算由上层决策（上层可显式调用 estimate_with_tiktoken /
+    estimate_with_ratio 等工具函数）。
 
     Args:
-        text: 待估算的文本（用于 tiktoken/ratio 兜底）。
+        text: 待估算的文本（由上层决定是否用于估算）。
         provider: 供应商名称。
         model: 模型名称。
         usage: API 响应 usage 字段。
@@ -300,29 +291,15 @@ def count_tokens(
     # 2. 流式 chunk usage（精确值，但可能未携带 usage）
     if stream_chunks:
         stream_breakdown = count_from_stream(stream_chunks)
-        # 只有当流中确实解析到 usage 时才使用，否则降级
         if not (
             stream_breakdown.estimated
             and stream_breakdown.input_tokens == 0
             and stream_breakdown.output_tokens == 0
         ):
             return stream_breakdown
+        # 流中确实没有 usage：显式标记 unknown，由上层决策是否估算
+        stream_breakdown.method = "unknown"
+        return stream_breakdown
 
-    # 3. tiktoken 估算（仅 OpenAI 系列）
-    normalized_provider = (provider or "").strip().lower()
-    if normalized_provider == "openai" or "openai" in normalized_provider:
-        tokens = estimate_with_tiktoken(text, model or "")
-        if tokens > 0:
-            return TokenBreakdown(
-                input_tokens=tokens,
-                method="tiktoken",
-                estimated=True,
-            )
-
-    # 4. 字符比率兜底
-    tokens = estimate_with_ratio(text, provider=provider)
-    return TokenBreakdown(
-        input_tokens=tokens,
-        method="ratio",
-        estimated=True,
-    )
+    # 3. usage 完全缺失：显式标记 unknown（不估算伪装），由上层决策
+    return TokenBreakdown(method="unknown", estimated=True)

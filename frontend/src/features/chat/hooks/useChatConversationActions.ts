@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@/shared/routing'
 import { chatAPI, conversationAPI } from '@/shared/api/api'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
+import { useToast } from '@/shared/components/Toast'
 import { appLogger } from '@/shared/utils/logger'
 import type { ChatMessage, ConversationSessionSummary } from '@/features/chat/types'
 
@@ -158,6 +159,8 @@ export function useChatConversationActions({
   handleSendRef,
 }: UseChatConversationActionsParams): UseChatConversationActionsReturn {
   const navigate = useNavigate()
+  // 会话被删除/不可达时，重定向需给用户可见提示（toast），不能静默跳转
+  const { addToast } = useToast()
   // 并发创建守卫：同一时间只允许一个 createSession 请求
   const pendingConversationCreationRef = useRef<Promise<string> | null>(null)
   // 待确认批量删除的会话列表（由确认对话框驱动执行）
@@ -218,13 +221,16 @@ export function useChatConversationActions({
       (item) => item.session_id !== missingSessionId && !item.deleted_at
     )
 
+    // 重定向必须用户可见提示：原会话已不存在，避免用户不知情地丢失上下文
+    addToast('原会话已不存在，已切换到其他会话', 'warning')
+
     if (fallbackConversation) {
       navigate(`/chat/${fallbackConversation.session_id}`, { replace: true })
       return
     }
 
     await createConversationAndNavigate(true)
-  }, [broadcastConversationChange, createConversationAndNavigate, navigate, removeConversation, resetStreamExecutionState, setMessageMeta, setMessages, setStreamingAssistantId])
+  }, [addToast, broadcastConversationChange, createConversationAndNavigate, navigate, removeConversation, resetStreamExecutionState, setMessageMeta, setMessages, setStreamingAssistantId])
 
   // mount 时拉取第一页会话列表
   // StrictMode dev 下双 mount 时，loadOnceRef 守卫仅首次执行，

@@ -90,6 +90,8 @@ class PTYSession:
         # 运行状态
         self._closed: bool = False
         self._started: bool = False
+        # 读取循环错误信息（None 表示无错误）
+        self._reader_error: Optional[str] = None
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -192,12 +194,20 @@ class PTYSession:
             # 被显式取消：正常退出
             raise
         except Exception as e:
+            # 读取循环异常：必须向客户端发送错误帧并标记会话错误，
+            # 禁止静默退出（否则终端看似冻结）
+            self._reader_error = str(e)
             logger.bind(
                 event="pty_reader_error",
                 module="terminal",
                 error_type=type(e).__name__,
                 error_message=str(e),
             ).warning(f"PTY 读取循环异常: {e}")
+            if self._on_output is not None:
+                try:
+                    self._on_output(f"\r\n[PTY 会话错误] {type(e).__name__}: {e}\r\n")
+                except Exception as cb_exc:
+                    logger.warning(f"PTY 错误帧发送失败: {cb_exc}")
 
     async def _read_once(self, loop: asyncio.AbstractEventLoop) -> bytes:
         """读取一次数据，跨平台抽象。"""
@@ -369,6 +379,10 @@ class PTYSession:
             # line[i] 在缺列时返回默认 Char(data=' ')
             result.append("".join(line[c].data for c in range(columns)))
         return result
+
+    def get_reader_error(self) -> Optional[str]:
+        """返回读取循环错误信息（None 表示读取正常）。"""
+        return self._reader_error
 
     def is_alive(self) -> bool:
         """子进程是否仍在运行。"""

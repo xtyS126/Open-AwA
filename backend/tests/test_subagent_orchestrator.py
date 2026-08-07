@@ -218,14 +218,13 @@ class TestResultMergeStrategies:
         merged = merge_results(results, ResultMergeStrategy.VOTING)
         assert "A" in merged
 
-    def test_llm_summary_falls_back_to_concatenate(self):
-        """LLM 摘要策略在无外部 LLM 时降级为拼接。"""
+    def test_llm_summary_raises_when_not_implemented(self):
+        """LLM 摘要策略未实现时必须显式失败，禁止降级为拼接。"""
         results = [
             SubagentResult(task_id="t1", success=True, output="内容"),
         ]
-        merged = merge_results(results, ResultMergeStrategy.LLM_SUMMARY)
-        assert "内容" in merged
-        assert "LLM_SUMMARY" in merged
+        with pytest.raises(ValueError, match="LLM_SUMMARY"):
+            merge_results(results, ResultMergeStrategy.LLM_SUMMARY)
 
 
 # ==================== 安全性检查测试 ====================
@@ -454,8 +453,8 @@ class TestSubagentOrchestrator:
             SubagentOrchestrator(max_parallel=0)
 
     @pytest.mark.asyncio
-    async def test_level2_isolation_degrades_without_worktree_manager(self):
-        """无 WorktreeManager 时 Level 2 隔离应降级为 Level 1。"""
+    async def test_level2_isolation_fails_without_worktree_manager(self):
+        """无 WorktreeManager 时 Level 2 隔离必须显式失败，禁止静默降级。"""
         orchestrator = SubagentOrchestrator(max_parallel=1, worktree_manager=None)
 
         async def executor(task: SubagentTask) -> SubagentResult:
@@ -467,13 +466,14 @@ class TestSubagentOrchestrator:
             isolation_level=IsolationLevel.PROCESS,
         )
 
-        # 应正常执行（降级为 Level 1）
+        # 无法提供请求的隔离级别时任务失败并携带错误信息
         result = await orchestrator.delegate_one(task, executor)
-        assert result.success is True
+        assert result.success is False
+        assert "WorktreeManager" in (result.error or "")
 
     @pytest.mark.asyncio
-    async def test_level3_isolation_degrades_to_level2(self):
-        """Level 3 沙箱隔离应降级为 Level 2。"""
+    async def test_level3_isolation_fails_when_not_implemented(self):
+        """Level 3 沙箱隔离未实现时必须显式失败，禁止静默降级。"""
         orchestrator = SubagentOrchestrator(max_parallel=1, worktree_manager=None)
 
         async def executor(task: SubagentTask) -> SubagentResult:
@@ -485,9 +485,10 @@ class TestSubagentOrchestrator:
             isolation_level=IsolationLevel.SANDBOX,
         )
 
-        # 应正常执行（降级）
+        # 无法提供请求的隔离级别时任务失败并携带错误信息
         result = await orchestrator.delegate_one(task, executor)
-        assert result.success is True
+        assert result.success is False
+        assert "Level 3" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_merge_strategy_voting_in_delegate_all(self):

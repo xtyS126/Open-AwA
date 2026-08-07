@@ -435,9 +435,12 @@ class ExecutionConfigurationMixin:
                 if not config:
                     config = pricing_manager.get_default_configuration()
             except Exception as e:
+                # DB 是模型配置的权威来源，解析失败必须向上报告，
+                # 禁止静默回退到默认端点继续请求
                 logger.opt(exception=True).error(
                     f"从数据库解析模型配置失败: {e}"
                 )
+                raise
 
         if config:
             provider = provider or config.provider
@@ -505,15 +508,19 @@ class ExecutionConfigurationMixin:
                                 )
                             }
                 except Exception as e:
+                    # 凭据解析是模型调用主路径的必需输入，失败必须向上报告
                     logger.warning(f"从 ProviderCredential 表解析 API Key 失败: {e}")
+                    raise
             api_endpoint = config.api_endpoint
             max_tokens = getattr(config, "max_tokens_limit", None)
             selected_models: list[str] = []
             try:
                 selected_models = PricingManager.parse_selected_models(getattr(config, "selected_models", None))
             except Exception as e:
-                logger.warning(f"解析 selected_models 失败，已降级为空列表: {e}")
-                selected_models = []
+                # selected_models 是模型选择主路径的输入，解析失败必须传播，
+                # 禁止静默降级为默认单模型
+                logger.warning(f"解析 selected_models 失败: {e}")
+                raise
             model = self._pick_effective_model(provider, model, selected_models)
         else:
             api_key = None
@@ -555,10 +562,8 @@ class ExecutionConfigurationMixin:
             else:
                 api_endpoint = self.default_provider_endpoints.get(provider)
 
-        try:
-            api_endpoint = PricingManager.build_provider_api_endpoint(provider, api_endpoint, "chat")
-        except Exception as e:
-            logger.error(f"Failed to normalize provider endpoint: {e}")
+        # 端点规范化失败必须传播，禁止使用未规范化的端点继续请求
+        api_endpoint = PricingManager.build_provider_api_endpoint(provider, api_endpoint, "chat")
 
         if not api_endpoint:
             return {

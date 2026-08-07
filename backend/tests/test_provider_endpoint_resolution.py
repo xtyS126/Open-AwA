@@ -362,6 +362,14 @@ async def test_execution_layer_resolves_chat_endpoint_from_base_url():
             return original_pricing_manager.build_provider_api_endpoint(provider, base_url, purpose)
 
         @staticmethod
+        def normalize_model(model):
+            return original_pricing_manager.normalize_model(model)
+
+        @staticmethod
+        def parse_selected_models(selected_models):
+            return original_pricing_manager.parse_selected_models(selected_models)
+
+        @staticmethod
         def get_provider_base_suffix(provider):
             return original_pricing_manager.get_provider_base_suffix(provider)
 
@@ -427,6 +435,14 @@ async def test_execution_layer_resolves_real_model_directly():
         @staticmethod
         def build_provider_api_endpoint(provider, base_url, purpose):
             return original_pricing_manager.build_provider_api_endpoint(provider, base_url, purpose)
+
+        @staticmethod
+        def normalize_model(model):
+            return original_pricing_manager.normalize_model(model)
+
+        @staticmethod
+        def parse_selected_models(selected_models):
+            return original_pricing_manager.parse_selected_models(selected_models)
 
         @staticmethod
         def get_provider_base_suffix(provider):
@@ -497,6 +513,14 @@ async def test_execution_layer_uses_provider_level_credentials_for_selected_mode
         @staticmethod
         def build_provider_api_endpoint(provider, base_url, purpose):
             return original_pricing_manager.build_provider_api_endpoint(provider, base_url, purpose)
+
+        @staticmethod
+        def normalize_model(model):
+            return original_pricing_manager.normalize_model(model)
+
+        @staticmethod
+        def parse_selected_models(selected_models):
+            return original_pricing_manager.parse_selected_models(selected_models)
 
         @staticmethod
         def get_provider_base_suffix(provider):

@@ -19,7 +19,7 @@ from loguru import logger
 MAX_RESULTS = 10
 # 请求超时（秒）
 REQUEST_TIMEOUT = 15
-# 一次搜索涵盖多个 provider 的降级链，总耗时必须有上限，避免逐个超时累加。
+# 单次搜索总耗时上限（覆盖 execute 外层 wait_for）
 SEARCH_TOTAL_TIMEOUT = 30
 # provider 配置缓存 TTL（秒），避免每次搜索都查询数据库
 _CACHE_TTL_SECONDS = 10.0
@@ -34,14 +34,15 @@ def _load_provider_config() -> Dict[str, Any]:
 
     Returns:
         包含 provider/base_url/api_key/extra_config 的字典。
-        若数据库不可用或无激活配置，返回默认 duckduckgo 配置。
+        无激活配置时返回默认 duckduckgo 配置。
+        数据库读取失败时抛出异常（配置是搜索主路径的必需输入，禁止静默降级）。
     """
     # 1. 检查缓存是否有效（使用 monotonic 时钟，避免系统时间回拨影响）
     now = time.monotonic()
     if _provider_config_cache["data"] is not None and now < _provider_config_cache["expires_at"]:
         return _provider_config_cache["data"]
 
-    # 2. 默认配置（数据库不可用或无激活配置时使用）
+    # 2. 默认配置（无激活配置时使用）
     default_cfg: Dict[str, Any] = {
         "provider": "duckduckgo",
         "base_url": None,
@@ -50,35 +51,25 @@ def _load_provider_config() -> Dict[str, Any]:
     }
 
     # 3. 查询数据库获取激活的 provider 配置
-    try:
-        # 延迟导入，避免模块加载阶段数据库未初始化
-        from db.models import SearchProviderConfig, SessionLocal
+    # 延迟导入，避免模块加载阶段数据库未初始化
+    from db.models import SearchProviderConfig, SessionLocal
 
-        with contextlib.closing(SessionLocal()) as db:
-            cfg = (
-                db.query(SearchProviderConfig)
-                .filter(SearchProviderConfig.enabled == True)  # noqa: E712
-                .first()
-            )
-            if cfg:
-                result = {
-                    "provider": cfg.provider or "duckduckgo",
-                    "base_url": cfg.base_url,
-                    "api_key": cfg.api_key,
-                    "extra_config": cfg.extra_config or {},
-                }
-            else:
-                # 数据库无激活配置，使用默认 duckduckgo
-                result = default_cfg
-    except ImportError as e:
-        # db.models 模块不可用时降级
-        logger.warning(f"无法导入数据库模型，使用默认 duckduckgo 配置: {e}")
-        result = default_cfg
-    except Exception as e:
-        # 数据库查询异常统一降级（可能涉及 SQLAlchemyError/OSError 等多种类型）
-        # 此处为缓存兜底函数，必须保证不阻塞搜索功能
-        logger.warning(f"读取搜索 provider 配置失败，使用默认 duckduckgo 配置: {e}")
-        result = default_cfg
+    with contextlib.closing(SessionLocal()) as db:
+        cfg = (
+            db.query(SearchProviderConfig)
+            .filter(SearchProviderConfig.enabled == True)  # noqa: E712
+            .first()
+        )
+        if cfg:
+            result = {
+                "provider": cfg.provider or "duckduckgo",
+                "base_url": cfg.base_url,
+                "api_key": cfg.api_key,
+                "extra_config": cfg.extra_config or {},
+            }
+        else:
+            # 数据库无激活配置，使用默认 duckduckgo
+            result = default_cfg
 
     # 4. 更新缓存
     _provider_config_cache["data"] = result
@@ -143,10 +134,8 @@ class WebSearchSkill:
         """
         执行网页搜索。
         根据激活的 provider 配置分发到 SearXNG 或 DuckDuckGo。
-        SearXNG 失败时自动降级到 DuckDuckGo。
+        主 provider 失败时直接返回结构化错误，不做逐级降级。
         """
-        import http.client
-
         query = kwargs.get('query', '').strip()
         max_results = kwargs.get('max_results', self.max_results)
 
@@ -159,7 +148,7 @@ class WebSearchSkill:
         base_url = cfg.get("base_url")
         extra_config = cfg.get("extra_config") or {}
 
-        # SearXNG 路径：配置为 searxng 且提供 base_url 时尝试
+        # SearXNG 路径：配置为 searxng 且提供 base_url 时使用
         if provider == "searxng" and base_url:
             try:
                 results = await asyncio.wait_for(
@@ -182,35 +171,22 @@ class WebSearchSkill:
                     "provider": "searxng",
                 }
             except asyncio.TimeoutError:
-                # SearXNG 超时，降级到 DuckDuckGo
-                logger.warning(
-                    f"SearXNG search timed out, falling back to DuckDuckGo: query='{query}'"
-                )
-            except (httpx.TimeoutException, httpx.HTTPError) as e:
-                # SearXNG HTTP/超时异常，降级到 DuckDuckGo
-                logger.warning(
-                    f"SearXNG search HTTP error, falling back to DuckDuckGo: {e}"
-                )
-            except ValueError as e:
-                # SearXNG JSON 解析或 SSRF 校验失败，降级到 DuckDuckGo
-                logger.warning(
-                    f"SearXNG search invalid data, falling back to DuckDuckGo: {e}"
-                )
-            except OSError as e:
-                # SearXNG 网络异常，降级到 DuckDuckGo
-                logger.warning(
-                    f"SearXNG search network error, falling back to DuckDuckGo: {e}"
-                )
+                return {
+                    "success": False,
+                    "error": f"SearXNG 搜索超时: query='{query}'",
+                    "error_code": "searxng_timeout",
+                    "retryable": True,
+                }
             except Exception as e:
-                # 未知异常也降级到 DuckDuckGo，确保搜索可用性
-                logger.warning(
-                    f"SearXNG search unknown error, falling back to DuckDuckGo: {e}"
-                )
-            # 降级到 DuckDuckGo 路径继续执行
+                # 主 provider 失败直接返回结构化错误，不做逐级降级
+                return {
+                    "success": False,
+                    "error": f"SearXNG 搜索失败: {type(e).__name__}: {e}",
+                    "error_code": "searxng_search_failed",
+                    "retryable": True,
+                }
 
-        # DuckDuckGo 路径（默认 provider 或 SearXNG 降级）
-        # DuckDuckGo 在部分网络环境（如中国大陆）可能不可达，
-        # 失败时自动降级到 Bing HTML 抓取（cn.bing.com 通常可达）。
+        # DuckDuckGo 路径（默认 provider）
         try:
             results = await self._duckduckgo_search(query, max_results)
             logger.info(
@@ -223,49 +199,14 @@ class WebSearchSkill:
                 "count": len(results),
                 "provider": "duckduckgo",
             }
-        except (asyncio.TimeoutError, http.client.HTTPException, OSError, ValueError) as e:
-            # DuckDuckGo 超时/网络错误/解析失败，降级到 Bing
-            logger.warning(
-                f"DuckDuckGo search failed, falling back to Bing: {type(e).__name__}: {e}"
-            )
         except Exception as e:
-            # 未知异常也尝试 Bing 降级，确保搜索可用性
-            logger.warning(
-                f"DuckDuckGo search unexpected error, falling back to Bing: {e}"
-            )
-
-        # Bing 降级路径（DuckDuckGo 不可达时的最终兜底）
-        try:
-            results = await self._bing_search(query, max_results)
-            if results:
-                logger.info(
-                    f"Bing search completed: query='{query}', results={len(results)}"
-                )
-                return {
-                    "success": True,
-                    "query": query,
-                    "results": results,
-                    "count": len(results),
-                    "provider": "bing",
-                }
-            # Bing 返回空结果，视为失败继续走错误返回
-            logger.warning(f"Bing search returned no results: query='{query}'")
-        except (asyncio.TimeoutError, http.client.HTTPException, OSError, ValueError) as e:
-            logger.error(f"Bing search error: {e}")
-        except Exception as e:
-            logger.error(f"Bing search unexpected error: {e}")
-
-        # 所有 provider 均失败，返回结构化错误与配置建议
-        return {
-            "success": False,
-            "error": (
-                "搜索失败：DuckDuckGo 与 Bing 均不可达。"
-                "可能原因：当前网络环境无法访问海外搜索引擎，"
-                "或未配置可用的 SearXNG 实例。"
-                "建议：在系统设置中配置一个可达的 SearXNG provider base_url，"
-                "或检查网络代理配置。"
-            ),
-        }
+            # 主 provider 失败直接返回结构化错误，不做逐级降级
+            return {
+                "success": False,
+                "error": f"DuckDuckGo 搜索失败: {type(e).__name__}: {e}",
+                "error_code": "duckduckgo_search_failed",
+                "retryable": True,
+            }
 
     async def _duckduckgo_search(self, query: str, max_results: int) -> List[Dict[str, str]]:
         """
@@ -298,102 +239,6 @@ class WebSearchSkill:
 
         return results
 
-    async def _bing_search(self, query: str, max_results: int) -> List[Dict[str, str]]:
-        """
-        通过 Bing HTML 页面提取搜索结果（DuckDuckGo 不可达时的降级方案）。
-
-        使用 cn.bing.com（中国大陆可达）的 HTML 搜索接口，
-        解析 ``<li class="b_algo">`` 结果块中的标题、链接与摘要。
-        不依赖第三方搜索库，直接解析 HTML。
-        """
-        import html as html_module
-
-        encoded_query = urllib.parse.quote_plus(query)
-        # cn.bing.com 在中国大陆通常可达，作为 DuckDuckGo 的降级方案
-        url_path = f"/search?q={encoded_query}&count={max_results}&setlang=zh-CN"
-
-        results: List[Dict[str, str]] = []
-        try:
-            raw_html = await asyncio.wait_for(
-                self._http_get("cn.bing.com", url_path),
-                timeout=REQUEST_TIMEOUT,
-            )
-            results = self._parse_bing_html(raw_html, max_results)
-        except asyncio.TimeoutError:
-            logger.warning(f"Bing search timed out for query: {query}")
-            raise
-        except (http.client.HTTPException, OSError, ValueError) as e:
-            logger.error(f"Bing search error: {e}")
-            raise
-
-        return results
-
-    def _parse_bing_html(self, html_content: str, max_results: int) -> List[Dict[str, str]]:
-        """
-        从 Bing HTML 搜索结果中提取链接和摘要。
-
-        Bing 结果块结构：``<li class="b_algo">...<h2><a href="...">title</a></h2>...<p>snippet</p>...``。
-        使用简单字符串解析，不依赖 BeautifulSoup。
-        """
-        import html as html_module
-
-        results: List[Dict[str, str]] = []
-        search_start = 0
-
-        while len(results) < max_results:
-            # Bing 结果块以 <li class="b_algo"> 开头
-            block_marker = 'class="b_algo"'
-            block_pos = html_content.find(block_marker, search_start)
-            if block_pos == -1:
-                break
-
-            # 在当前结果块内查找下一个结果块的边界，避免跨块提取
-            next_block_pos = html_content.find(block_marker, block_pos + len(block_marker))
-            block_end = next_block_pos if next_block_pos != -1 else len(html_content)
-            block_html = html_content[block_pos:block_end]
-
-            # 提取标题与链接：<h2><a href="...">title</a></h2>
-            href = ""
-            title = ""
-            h2_pos = block_html.find("<h2")
-            if h2_pos != -1:
-                a_start = block_html.find('<a', h2_pos)
-                if a_start != -1:
-                    href_start = block_html.find('href="', a_start)
-                    if href_start != -1:
-                        href_start += len('href="')
-                        href_end = block_html.find('"', href_start)
-                        href = block_html[href_start:href_end]
-                    # 标题在 <a ...>title</a>
-                    title_start = block_html.find('>', a_start) + 1
-                    title_end = block_html.find('</a>', title_start)
-                    if title_end > title_start:
-                        title = block_html[title_start:title_end]
-                        title = self._strip_html_tags(title)
-                        title = html_module.unescape(title).strip()
-
-            # 提取摘要：<p>snippet</p> 或 <div class="b_caption"><p>...</p>
-            snippet = ""
-            p_pos = block_html.find("<p", h2_pos if h2_pos != -1 else 0)
-            if p_pos != -1:
-                snippet_start = block_html.find('>', p_pos) + 1
-                snippet_end = block_html.find('</p>', snippet_start)
-                if snippet_end > snippet_start:
-                    snippet = block_html[snippet_start:snippet_end]
-                    snippet = self._strip_html_tags(snippet)
-                    snippet = html_module.unescape(snippet).strip()
-
-            if href and title:
-                results.append({
-                    "title": title[:200],
-                    "url": href,
-                    "snippet": snippet[:500],
-                })
-
-            search_start = block_pos + len(block_marker)
-
-        return results
-
     async def _searxng_search(
         self,
         query: str,
@@ -407,22 +252,15 @@ class WebSearchSkill:
         调用 {base_url}/search?q={query}&format=json&pageno=1，
         解析返回的 JSON results 数组，提取 title/url/content 字段。
 
-        异常由上层 _search() 捕获后降级到 DuckDuckGo。
+        异常向上传播，由上层 _search() 返回结构化错误，不做逐级降级。
         """
-        # 1. SSRF 校验：若 security.search_ssrf 模块可用则校验 base_url
-        #    Task 9 尚未执行时模块不存在，用 ImportError 兜底跳过
-        #    安全策略：默认禁止内网/回环/链路本地地址，防止已认证用户探测内网服务
-        try:
-            from security.search_ssrf import validate_search_url
+        # 1. SSRF 校验（安全敏感路径 fail-closed）：
+        #    校验模块不可用时直接拒绝搜索，禁止跳过校验
+        from security.search_ssrf import validate_search_url
 
-            is_valid, err = validate_search_url(base_url, allow_private=allow_private)
-            if not is_valid:
-                raise ValueError(f"SearXNG base_url SSRF 校验失败: {err}")
-        except ImportError:
-            # security.search_ssrf 模块未找到，跳过 SSRF 校验
-            logger.warning(
-                "security.search_ssrf 模块未找到，跳过 SearXNG base_url SSRF 校验"
-            )
+        is_valid, err = validate_search_url(base_url, allow_private=allow_private)
+        if not is_valid:
+            raise ValueError(f"SearXNG base_url SSRF 校验失败: {err}")
 
         # 2. 拼接请求 URL（清理 base_url 末尾斜杠）
         search_url = base_url.rstrip('/') + '/search'

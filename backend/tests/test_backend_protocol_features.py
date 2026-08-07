@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from api.routes import chat as chat_route
 from billing.pricing_manager import PricingManager
+from config.settings import settings
 from core.agent import AIAgent
 from core.agent_execution_context import PlanExecutionContext
 import core.executor as executor_module
@@ -297,6 +298,17 @@ async def test_ai_agent_process_strips_reasoning_content_when_final_only(monkeyp
     async def fake_retrieve_relevant_experiences(user_input, context):
         return []
 
+    async def fake_get_available_skills():
+        # 轻量实例未注入数据库会话，mock 技能注入返回空列表
+        return []
+
+    async def fake_build_conversation_history(session_id, max_turns=20):
+        # 轻量实例未注入记忆管理器，mock 历史构建返回空列表
+        return []
+
+    async def fake_retrieve_relevant_memories(user_input, context):
+        return []
+
     monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
     monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
     monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
@@ -305,6 +317,12 @@ async def test_ai_agent_process_strips_reasoning_content_when_final_only(monkeyp
     monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
     monkeypatch.setattr(agent.feedback, "update_memory", fake_update_memory)
     monkeypatch.setattr(agent, "_retrieve_relevant_experiences", fake_retrieve_relevant_experiences)
+    # 两处入口分别持有引用：capability_aggregator 在调用时接收 self.get_available_skills，
+    # plan_executor 在构造时捕获绑定方法，均需覆盖
+    monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
+    monkeypatch.setattr(agent._plan_executor, "_get_available_skills", fake_get_available_skills)
+    monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
+    monkeypatch.setattr(agent, "_retrieve_relevant_memories", fake_retrieve_relevant_memories)
 
     result = await agent.process(
         "你好",
@@ -370,6 +388,10 @@ async def test_ai_agent_process_injects_db_into_context(monkeypatch):
     async def fake_update_memory(user_input, response, context):
         return None
 
+    async def fake_build_conversation_history(session_id, max_turns=20):
+        # 轻量实例未注入记忆管理器，mock 历史构建返回空列表
+        return []
+
     monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
     monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
     monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
@@ -377,6 +399,7 @@ async def test_ai_agent_process_injects_db_into_context(monkeypatch):
     monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
     monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
     monkeypatch.setattr(agent.feedback, "update_memory", fake_update_memory)
+    monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
 
     result = await agent.process(
         "请在晚上八点提醒我整理日报",
@@ -466,9 +489,9 @@ async def test_feedback_layer_skips_memory_update_when_isolated():
 
 
 @pytest.mark.asyncio
-async def test_ai_agent_get_available_skills_returns_empty_without_db_session(monkeypatch):
+async def test_ai_agent_get_available_skills_fails_without_db_session(monkeypatch):
     """
-    无数据库会话时应直接返回空列表，而不是继续访问依赖数据库的技能注册表。
+    无数据库会话时必须显式失败，禁止静默返回空技能列表。
     """
 
     agent = AIAgent()
@@ -478,9 +501,8 @@ async def test_ai_agent_get_available_skills_returns_empty_without_db_session(mo
 
     monkeypatch.setattr(agent.skill_engine.registry, "list_all", fail_list_all)
 
-    result = await agent.get_available_skills()
-
-    assert result == []
+    with pytest.raises(RuntimeError, match="数据库会话不可用"):
+        await agent.get_available_skills()
 
 
 @pytest.mark.asyncio
@@ -915,7 +937,7 @@ def test_http_version_headers_and_metrics_route():
         metrics_response = client.get("/metrics")
 
     assert health_response.status_code == 200
-    assert health_response.headers["X-Server-Ver"] == "1.0.0"
+    assert health_response.headers["X-Server-Ver"] == settings.VERSION
     assert health_response.headers["X-Version-Status"] == "compatible"
     assert health_response.headers["X-Client-Ver"] == "1.0.0"
 
@@ -961,7 +983,9 @@ def test_websocket_sends_chunked_messages_with_seq_and_checksum(monkeypatch):
             "results": [{"ok": True}],
         }
 
-    monkeypatch.setattr(chat_route, "decode_access_token", lambda token: {"sub": "tester"})
+    # WS 鉴权统一走 resolve_ws_user_from_token（API Key + JWT 双路径），
+    # 不再直接 patch decode_access_token 单路径
+    monkeypatch.setattr(chat_route, "resolve_ws_user_from_token", lambda token: fake_user)
     monkeypatch.setattr(chat_route, "SessionLocal", lambda: FakeSession())
     monkeypatch.setattr(chat_route.AIAgent, "process", mock_process)
 

@@ -480,13 +480,13 @@ async def test_build_messages_with_history_omits_short_term_when_empty():
 
 
 @pytest.mark.asyncio
-async def test_returns_empty_when_manager_raises_exception():
+async def test_raises_when_manager_raises_exception():
     """
-    场景：memory_manager._get_recent_short_term_memories_sync 抛异常时，静默返回空串。
+    场景：memory_manager._get_recent_short_term_memories_sync 抛异常时，异常自然传播。
 
     Given memory_manager 是个 mock，_get_recent_short_term_memories_sync 抛 RuntimeError
     When 调用 _build_recent_short_term_memories_system_prompt
-    Then 返回空串，不抛异常
+    Then 异常向调用方传播，禁止静默降级为空串
     """
 
     class _BrokenManager:
@@ -495,11 +495,10 @@ async def test_returns_empty_when_manager_raises_exception():
 
     executor = _StubExecutor(memory_manager=_BrokenManager())
 
-    prompt = executor._build_recent_short_term_memories_system_prompt(
-        context={"user_id": "user-1"}
-    )
-
-    assert prompt == ""
+    with pytest.raises(RuntimeError, match="DB connection failed"):
+        executor._build_recent_short_term_memories_system_prompt(
+            context={"user_id": "user-1"}
+        )
 
 
 # ---------------------------------------------------------------------------

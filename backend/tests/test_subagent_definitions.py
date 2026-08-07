@@ -11,6 +11,7 @@ SubAgent 内置专业 Agent 与图定义持久化测试。
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -290,6 +291,20 @@ def test_create_definition_success():
     assert data["is_builtin"] is False
     assert data["user_id"] == "user-1"
     assert len(data["graph_definition"]["nodes"]) == 2
+
+
+def test_create_definition_runtime_registration_failure_returns_500():
+    """运行时注册失败时显式返回 500，禁止持久化成功但运行时不可用的假成功。"""
+    with patch.object(
+        subagents_routes,
+        "_build_graph_from_definition",
+        side_effect=RuntimeError("运行时注册失败"),
+    ):
+        with _test_client() as client:
+            response = client.post("/api/subagents/definitions", json=_valid_graph_definition())
+    assert response.status_code == 500
+    # 统一错误体为结构化 error.message 字段（code=http_500）
+    assert "运行时注册失败" in response.json()["error"]["message"]
 
 
 def test_create_definition_duplicate_name_returns_409():

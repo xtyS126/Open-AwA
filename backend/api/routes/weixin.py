@@ -675,8 +675,8 @@ async def list_weixin_conversations(
             .all()
         )
     except Exception as exc:
-        logger.warning(f"[weixin] 查询微信会话列表失败，降级返回空列表：{exc}", exc_info=exc)
-        return []
+        logger.error(f"[weixin] 查询微信会话列表失败: {exc}", exc_info=exc)
+        raise HTTPException(status_code=500, detail="查询微信会话列表失败")
 
     # 按 session_id 聚合
     sessions: Dict[str, Dict[str, Any]] = {}
@@ -771,8 +771,8 @@ async def get_cross_channel_context(
             .all()
         )
     except Exception as exc:
-        logger.warning(f"[weixin] 查询微信记忆失败，降级为空列表：{exc}", exc_info=exc)
-        weixin_memories = []
+        logger.error(f"[weixin] 查询微信记忆失败: {exc}", exc_info=exc)
+        raise HTTPException(status_code=500, detail="查询微信记忆失败")
 
     weixin_sessions: Dict[str, Dict[str, Any]] = {}
     for mem in weixin_memories:

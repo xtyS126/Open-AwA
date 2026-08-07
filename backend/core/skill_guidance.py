@@ -261,7 +261,7 @@ class SkillGuidance:
             return available
         except Exception as e:
             logger.warning(f"获取可用技能列表失败: {e}")
-            return []
+            raise
 
     def format_skills_guidance(
         self,

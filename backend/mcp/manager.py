@@ -1027,9 +1027,17 @@ class MCPManager:
                             "tool": tool.model_dump(),
                         })
                 except MCPClientError as e:
-                    logger.bind(module="mcp.manager", event="list_tools_error").warning(
-                        f"获取 Server {server_id} 工具列表失败: {e}"
-                    )
+                    logger.bind(
+                        module="mcp.manager",
+                        event="list_tools_error",
+                        server_id=server_id,
+                    ).warning(f"获取 Server {server_id} 工具列表失败: {e}")
+                    # 失败不静默跳过：以显式 error 条目标记该 Server，结果不消失、调用方可感知
+                    all_tools.append({
+                        "server_id": server_id,
+                        "server_name": client.config.name,
+                        "error": f"获取工具列表失败: {e}",
+                    })
         return all_tools
 
     async def call_tool(
@@ -1141,7 +1149,16 @@ class MCPManager:
                         "mime_type": res.mime_type,
                     })
             except (MCPClientError, MCPTransportError, asyncio.TimeoutError, ConnectionError) as e:
-                logger.warning(f"获取 Server {server_id} 资源列表失败: {e}")
+                logger.bind(
+                    module="mcp.manager",
+                    event="list_resources_error",
+                    server_id=server_id,
+                ).warning(f"获取 Server {server_id} 资源列表失败: {e}")
+                # 失败不静默跳过：以显式 error 条目标记该 Server，结果不消失、调用方可感知
+                all_resources.append({
+                    "server_id": server_id,
+                    "error": f"获取资源列表失败: {e}",
+                })
         return all_resources
 
     def get_server_status(self, server_id: str) -> Dict[str, Any]:
@@ -1199,33 +1216,35 @@ class MCPManager:
         return client
 
     def _restore_from_persistent_config(self) -> None:
-        """启动时从持久化配置文件恢复 Server 配置（不自动连接）。"""
-        try:
-            saved_configs = self._config_store.load_all()
-            if not saved_configs:
-                return
-            restored = 0
-            for server_id, config_dict in saved_configs.items():
-                with self._lock:
-                    if server_id in self._configs:
-                        continue
-                    try:
-                        config = MCPServerConfig(**config_dict)
-                        self._configs[server_id] = config
-                        self._clients[server_id] = MCPClient(config)
-                    except (ValueError, TypeError, MCPClientError) as exc:
-                        logger.bind(
-                            module="mcp.manager", event="restore_error", server_id=server_id
-                        ).warning(f"恢复 MCP Server 配置失败: {exc}")
-                        continue
-                restored += 1
-            if restored > 0:
-                logger.bind(module="mcp.manager", event="restored").info(
-                    f"从持久化配置恢复了 {restored} 个 MCP Server"
-                )
-        except Exception as exc:
-            logger.bind(module="mcp.manager", event="restore_error").error(
-                f"恢复持久化 MCP 配置时发生错误: {exc}"
+        """启动时从持久化配置文件恢复 Server 配置（不自动连接）。
+
+        整体恢复失败（配置存储读取异常）显式传播：mcp_preheat 启动步骤
+        已按 fail-fast 设计（见 main.py），禁止吞掉异常后以"零配置"假成功。
+
+        Raises:
+            Exception: 持久化配置读取失败（显式传播）。
+        """
+        saved_configs = self._config_store.load_all()
+        if not saved_configs:
+            return
+        restored = 0
+        for server_id, config_dict in saved_configs.items():
+            with self._lock:
+                if server_id in self._configs:
+                    continue
+                try:
+                    config = MCPServerConfig(**config_dict)
+                    self._configs[server_id] = config
+                    self._clients[server_id] = MCPClient(config)
+                except (ValueError, TypeError, MCPClientError) as exc:
+                    logger.bind(
+                        module="mcp.manager", event="restore_error", server_id=server_id
+                    ).warning(f"恢复 MCP Server 配置失败: {exc}")
+                    continue
+            restored += 1
+        if restored > 0:
+            logger.bind(module="mcp.manager", event="restored").info(
+                f"从持久化配置恢复了 {restored} 个 MCP Server"
             )
 
     def check_hot_reload(self) -> bool:

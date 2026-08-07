@@ -334,12 +334,12 @@ class FeedbackLayer:
         关键词命中时后台触发即时提炼（Spec memory-experience-redesign）。
 
         通过 asyncio.create_task 调用 ConsolidationRunner.extract_turn_async，
-        由 LLM 将本轮对话提炼为 ≤200 字事实后写入长期记忆；提炼失败或无价值
-        内容时静默跳过，不落原文，不阻塞 chat 响应。
+        由 LLM 将本轮对话提炼为 ≤200 字事实后写入长期记忆；不阻塞 chat 响应。
 
         关键设计：
         1. 复用注入的 consolidation_runner（未注入时跳过，与自动巩固一致）
-        2. 后台任务异常全部捕获并记录日志，不影响主流程
+        2. 后台任务异常不捕获，在 asyncio 任务中自然浮现（事件循环会记录），
+           且不阻塞对话响应
         3. 不持有请求级 session：extract_turn_async 内部分解 LLM 配置时使用
            session_factory 创建独立 session
 
@@ -353,25 +353,15 @@ class FeedbackLayer:
         if runner is None:
             logger.debug("consolidation_runner 未注入，跳过即时提炼")
             return
-        try:
-            workspace_id = context.get("workspace_id", "default")
+        workspace_id = context.get("workspace_id", "default")
 
-            async def _extract_task() -> None:
-                """后台即时提炼任务。"""
-                try:
-                    await runner.extract_turn_async(
-                        user_input, response, user_id, workspace_id
-                    )
-                except Exception as exc:
-                    logger.opt(exception=True).warning(
-                        f"即时提炼后台任务异常（不影响主流程）: {exc}"
-                    )
-
-            asyncio.create_task(_extract_task())
-        except Exception as exc:
-            logger.opt(exception=True).warning(
-                f"触发即时提炼失败（不影响主流程）: {exc}"
+        async def _extract_task() -> None:
+            """后台即时提炼任务（异常自然浮现，由事件循环记录）。"""
+            await runner.extract_turn_async(
+                user_input, response, user_id, workspace_id
             )
+
+        asyncio.create_task(_extract_task())
 
     def _trigger_consolidation_check_async(
         self,
@@ -389,8 +379,8 @@ class FeedbackLayer:
         1. 使用 asyncio.create_task 启动，不 await，确保不阻塞 chat 响应
         2. increment_conversation_count 是同步 DB 操作（短耗时），仍放到后台避免阻塞
         3. 计数 >= 阈值时调用 run_if_due（异步 LLM 提炼在后台执行）
-        4. 异常全部捕获并记录 WARNING 日志，不影响主流程
-        5. 延迟导入 ConsolidationRunner，避免循环依赖与模块加载顺序问题
+        4. 后台任务异常不捕获，在 asyncio 任务中自然浮现（事件循环会记录），
+           且不阻塞对话响应
 
         Args:
             user_id: 用户 ID（隔离维度）
@@ -398,30 +388,20 @@ class FeedbackLayer:
         """
         if not user_id or not self.consolidation_runner:
             return
-        try:
-            runner = self.consolidation_runner
-            threshold = runner._conversation_threshold
+        runner = self.consolidation_runner
+        threshold = runner._conversation_threshold
 
-            async def _check_task() -> None:
-                """后台巩固检查任务：递增计数 + 阈值触发 run_if_due。"""
-                try:
-                    count = runner.increment_conversation_count(
-                        user_id, workspace_id=workspace_id
-                    )
-                    if count >= threshold:
-                        await runner.run_if_due(
-                            user_id, workspace_id=workspace_id
-                        )
-                except Exception as exc:
-                    logger.opt(exception=True).warning(
-                        f"记忆巩固后台任务异常（不影响主流程）: {exc}"
-                    )
-
-            asyncio.create_task(_check_task())
-        except Exception as exc:
-            logger.opt(exception=True).warning(
-                f"触发记忆巩固检查失败（不影响主流程）: {exc}"
+        async def _check_task() -> None:
+            """后台巩固检查任务：递增计数 + 阈值触发 run_if_due（异常自然浮现）。"""
+            count = runner.increment_conversation_count(
+                user_id, workspace_id=workspace_id
             )
+            if count >= threshold:
+                await runner.run_if_due(
+                    user_id, workspace_id=workspace_id
+                )
+
+        asyncio.create_task(_check_task())
 
     def _trigger_profile_extract_async(self, user_id: str) -> None:
         """
@@ -434,43 +414,32 @@ class FeedbackLayer:
         1. 使用独立 db session（SessionLocal），不复用请求级 session
            （请求结束后 session 会被关闭，后台任务需独立生命周期）
         2. 通过 asyncio.create_task 启动，不 await，确保不阻塞 chat 响应
-        3. 异常全部捕获并记录日志，不影响主流程
-        4. 延迟导入 coordinator 与 SessionLocal，避免循环依赖与模块加载顺序问题
+        3. 后台任务异常不捕获，在 asyncio 任务中自然浮现（事件循环会记录），
+           且不阻塞对话响应
 
         Args:
             user_id: 用户 ID，从 context.user_id 获取
         """
         if not user_id:
             return
-        try:
-            from plugins.user_profile_builtin.coordinator import get_coordinator
-            from db.models import SessionLocal
+        from plugins.user_profile_builtin.coordinator import get_coordinator
+        from db.models import SessionLocal
 
-            async def _extract_task() -> None:
-                """后台画像提取任务，使用独立 db session。"""
-                async_db = SessionLocal()
-                try:
-                    coordinator = get_coordinator()
-                    # 偏好关键词触发时使用 force=True，绕过 N 轮阈值检查，
-                    # 实现"用户显式声明偏好 → 立即提取画像"的即时反馈。
-                    # maybe_extract 内部有 asyncio.Lock 去重，与 chat 路由的
-                    # N 轮兜底不会重复执行（锁占用时直接跳过）。
-                    await coordinator.maybe_extract(user_id, async_db, force=True)
-                except Exception as exc:
-                    # 后台任务异常不静默吞，记录完整堆栈便于诊断
-                    logger.opt(exception=True).warning(
-                        f"画像提取后台任务异常（不影响主流程）: {exc}"
-                    )
-                finally:
-                    async_db.close()
+        async def _extract_task() -> None:
+            """后台画像提取任务，使用独立 db session（异常自然浮现）。"""
+            async_db = SessionLocal()
+            try:
+                coordinator = get_coordinator()
+                # 偏好关键词触发时使用 force=True，绕过 N 轮阈值检查，
+                # 实现"用户显式声明偏好 → 立即提取画像"的即时反馈。
+                # maybe_extract 内部有 asyncio.Lock 去重，与 chat 路由的
+                # N 轮兜底不会重复执行（锁占用时直接跳过）。
+                await coordinator.maybe_extract(user_id, async_db, force=True)
+            finally:
+                async_db.close()
 
-            # 创建后台 Task，不 await，确保不阻塞 chat 响应
-            asyncio.create_task(_extract_task())
-        except Exception as exc:
-            # 导入失败或任务创建失败：记录日志但不影响主流程
-            logger.opt(exception=True).warning(
-                f"触发画像提取失败（不影响主流程）: {exc}"
-            )
+        # 创建后台 Task，不 await，确保不阻塞 chat 响应
+        asyncio.create_task(_extract_task())
     
     def _should_persist(self, content: str) -> bool:
         """判断对话内容是否包含需持久化到长期记忆的关键词(如 remember/记住/preference 等)."""

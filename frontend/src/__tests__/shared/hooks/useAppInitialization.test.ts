@@ -146,8 +146,9 @@ describe('useAppInitialization - 模型选项预加载', () => {
 
     // isInitialized=true 表示应用初始化流程完成，未被 preloadModelOptions 阻塞
     expect(useAuthStore.getState().isInitialized).toBe(true)
-    // 由于 preloadModelOptions 抛错被外层 catch 捕获，isAuthenticated 为 false（兜底降级）
-    // 但应用不会卡死，用户会看到登录页，可以重新登录
+    // preloadModelOptions 内部失败会暴露到 modelStore.modelError（不静默）；
+    // 若其意外抛错，外层 catch 保证初始化不卡死：isAuthenticated 为 false，
+    // 用户会看到登录页，可以重新登录（错误在初始化日志中可见）
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
   })
 

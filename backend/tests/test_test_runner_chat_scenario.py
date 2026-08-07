@@ -10,6 +10,10 @@ def test_chat_scenario_accepts_completed_response(monkeypatch) -> None:
     """只有成功终态且正文非空时，聊天场景才应通过。"""
 
     class FakeAgent:
+        def __init__(self, db_session=None, workflow_repository=None, memory_session_factory=None) -> None:
+            # 生产场景以完整持久化边界构造，fake 忽略注入参数
+            self.db_session = db_session
+
         async def process(self, user_input, context):
             return {"status": "completed", "response": "功能测试通过"}
 
@@ -29,6 +33,9 @@ def test_chat_scenario_rejects_error_text_as_success(monkeypatch) -> None:
     """错误终态即使带有文本，也不得被 run-all 统计为通过。"""
 
     class FakeAgent:
+        def __init__(self, db_session=None, workflow_repository=None, memory_session_factory=None) -> None:
+            self.db_session = db_session
+
         async def process(self, user_input, context):
             return {
                 "status": "error",

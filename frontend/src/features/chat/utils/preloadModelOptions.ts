@@ -8,7 +8,8 @@
  * 设计意图：
  * - 首次登录用户（无 localStorage 缓存）进入 /chat 时，selectedModel 不再为空，
  *   parseSelectedModel 能正常解析出 { provider, model }，避免发送消息时报错。
- * - 加载失败不阻塞登录流程，仅记录 WARNING，由后续 ChatPage 兜底重试。
+ * - 加载失败不阻塞登录流程，但必须显式暴露到 modelStore.modelError（设置页/聊天页可见），
+ *   不静默降级、不隐藏错误。
  */
 import { modelsAPI, type ModelConfiguration, type ModelProvider } from '@/features/settings/modelsApi'
 import { useModelStore, type ModelOption } from '@/features/chat/store/modelStore'
@@ -70,7 +71,7 @@ function buildRemoteModelOptions(
  *    - 优先后端标记为 is_default 的 configuration
  *    - 否则回退到第一个可用模型
  *
- * 任意步骤失败均不抛出，仅记录 WARNING，由调用方决定后续兜底策略。
+ * 任意步骤失败均不抛出（不阻塞登录），但失败显式暴露到 modelStore.modelError 并记录日志。
  */
 export async function preloadModelOptions(): Promise<void> {
   const modelStore = useModelStore.getState()
@@ -99,8 +100,18 @@ export async function preloadModelOptions(): Promise<void> {
           const providerModelsResponse = await modelsAPI.getModelsByProvider(provider.id)
           const providerModelsData = providerModelsResponse.data
 
-          // source !== 'remote' 表示后端无法访问该供应商，跳过本地回退避免误选
+          // source !== 'remote' 表示后端无法访问该供应商：显式记录警告（此前静默跳过，用户误以为无模型可选）
           if (providerModelsData.source !== 'remote') {
+            appLogger.warning({
+              event: 'preload_model_provider_unreachable',
+              module: 'preloadModelOptions',
+              message: 'provider model list not from remote source, skip',
+              extra: {
+                provider: provider.id,
+                signature: buildProviderCacheSignature(provider),
+                source: providerModelsData.source,
+              },
+            })
             return { provider, options: [] as RemoteModelOption[] }
           }
 
@@ -148,13 +159,15 @@ export async function preloadModelOptions(): Promise<void> {
       }
     }
   } catch (err) {
-    appLogger.warning({
+    appLogger.error({
       event: 'preload_model_options_failed',
       module: 'preloadModelOptions',
       message: 'failed to preload model options during app initialization',
       extra: { error: err instanceof Error ? err.message : String(err) },
     })
-    // 不抛出，确保登录流程不被阻断
+    // 失败显式暴露到 modelStore.modelError：设置页/聊天页可见"模型列表加载失败"，不静默回退
+    modelStore.setModelError('模型列表预加载失败，请稍后重试')
+    // 不抛出，确保登录流程不被阻断（错误已通过 store 状态暴露）
   } finally {
     modelStore.setModelLoading(false)
   }

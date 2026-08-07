@@ -216,16 +216,23 @@ def compare_deepseek_vs_generic(text: str) -> Dict[str, float]:
 
 def try_load_deepseek_tokenizer(tokenizer_dir: Optional[str] = None):
     """
-    尝试加载 DeepSeek 的完整 HuggingFace tokenizer（需要 transformers 库）。
+    加载 DeepSeek 的完整 HuggingFace tokenizer（需要 transformers 库）。
 
     此函数用于精确 token 计数场景（如测试/调试），
     日常计费估算应使用 estimate_deepseek_* 系列函数。
+
+    transformers 未安装、tokenizer 文件缺失或损坏时显式传播异常，
+    禁止返回 None 让调用方误以为计数成功。
 
     Args:
         tokenizer_dir: tokenizer 文件所在目录，默认使用参考用文件夹。
 
     Returns:
-        HuggingFace tokenizer 实例，加载失败返回 None。
+        HuggingFace tokenizer 实例。
+
+    Raises:
+        ImportError: transformers 未安装（显式传播）。
+        Exception: tokenizer 文件缺失或损坏（显式传播）。
     """
     if tokenizer_dir is None:
         from pathlib import Path
@@ -235,25 +242,17 @@ def try_load_deepseek_tokenizer(tokenizer_dir: Optional[str] = None):
             / "deepseek_v3_tokenizer"
         )
 
-    try:
-        from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_dir,
-            trust_remote_code=True,
-        )
-        return tokenizer
-    except ImportError:
-        # transformers 未安装
-        return None
-    except Exception:
-        # tokenizer 文件不存在或损坏
-        return None
+    from transformers import AutoTokenizer
+    return AutoTokenizer.from_pretrained(
+        tokenizer_dir,
+        trust_remote_code=True,
+    )
 
 
 def count_tokens_with_real_tokenizer(
     text: str,
     tokenizer_dir: Optional[str] = None,
-) -> Optional[Dict[str, int]]:
+) -> Dict[str, int]:
     """
     使用真实的 DeepSeek tokenizer 进行精确 token 计数。
 
@@ -265,11 +264,12 @@ def count_tokens_with_real_tokenizer(
         tokenizer_dir: tokenizer 目录。
 
     Returns:
-        包含 token_count 的字典，加载失败返回 None。
+        包含 token_count 的字典。
+
+    Raises:
+        Exception: tokenizer 加载失败（显式传播，不返回 None 伪装）。
     """
     tokenizer = try_load_deepseek_tokenizer(tokenizer_dir)
-    if tokenizer is None:
-        return None
 
     tokens = tokenizer.encode(text)
     return {

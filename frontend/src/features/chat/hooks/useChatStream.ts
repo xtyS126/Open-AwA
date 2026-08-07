@@ -52,8 +52,7 @@ function sanitizeDisplayedError(message: string): string {
 
 /**
  * 判断流式错误是否可重试。
- * 透传到 errorCodes.ts 的 isRetryableError，统一消费后端 retryable 字段或错误码注册表，
- * 不再字符串匹配 message（保持向后兼容作为兜底）。
+ * 透传到 errorCodes.ts 的 isRetryableError，统一消费后端 retryable 字段或错误码注册表。
  */
 function shouldRetryStreamError(error: Error): boolean {
   return isRetryableError(error)
@@ -65,8 +64,8 @@ type ErrorCategory = 'auth' | 'timeout' | 'server' | 'network' | 'unknown'
 /**
  * 分类错误类型。
  *
- * 优先消费后端 error.code 字段做精确映射，code 不存在或未注册时
- * 回退到字符串匹配 message + 状态码的旧逻辑（向后兼容）。
+ * 只消费后端结构化 error.code 字段（错误码注册表）做精确映射；
+ * code 不存在或未注册时如实归类为 unknown，不做字符串猜测匹配。
  */
 function classifyError(error: Error): ErrorCategory {
   // 优先按 code 精确映射
@@ -97,7 +96,7 @@ function classifyError(error: Error): ErrorCategory {
     if (code === ErrorCode.NETWORK_ERROR) {
       return 'network'
     }
-    // 其他已注册 code：按状态码兜底
+    // 其他已注册 code：按注册元数据的 statusCode 映射
     if (meta.statusCode >= 500) {
       return 'server'
     }
@@ -106,54 +105,8 @@ function classifyError(error: Error): ErrorCategory {
     }
   }
 
-  // 回退：字符串匹配 message + 状态码（旧逻辑）
-  const message = String(error.message || '').toLowerCase()
-  const statusMatch = message.match(/(\d{3})/)
-  const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 0
-
-  // 认证错误：401/403 或包含 API Key 相关关键词
-  if (
-    statusCode === 401 ||
-    statusCode === 403 ||
-    message.includes('api key') ||
-    message.includes('api_key') ||
-    message.includes('apikey') ||
-    message.includes('authentication') ||
-    message.includes('unauthorized') ||
-    message.includes('forbidden') ||
-    message.includes('未检测到任何已配置') ||
-    message.includes('未配置')
-  ) {
-    return 'auth'
-  }
-
-  // 超时错误
-  if (
-    message.includes('timeout') ||
-    message.includes('超时') ||
-    message.includes('timed out')
-  ) {
-    return 'timeout'
-  }
-
-  // 服务器错误
-  if (statusCode >= 500) {
-    return 'server'
-  }
-
-  // 网络错误
-  if (
-    message.includes('failed to fetch') ||
-    message.includes('network') ||
-    message.includes('networkerror') ||
-    message.includes('load failed') ||
-    message.includes('econnreset') ||
-    message.includes('econnrefused') ||
-    message.includes('abort')
-  ) {
-    return 'network'
-  }
-
+  // 无结构化 code（或 code 未注册）：显式归类为 unknown，
+  // 不做字符串猜测匹配 —— 错误类型缺失时如实上报，由用户看到原始错误信息
   return 'unknown'
 }
 
@@ -394,8 +347,8 @@ export function useChatStream({
   /**
    * Spec Task 18：异步加载最近短期记忆到本地 state。
    *
-   * 在 handleSendMessage 触发时调用，失败时静默忽略（不阻塞对话）。
-   * 后端会自动在 system prompt 注入这些短期记忆，前端不需要传递给后端。
+   * 在 handleSendMessage 触发时调用，失败时记录 error 级日志（不阻塞对话，
+   * 但失败必须可见，不得静默忽略）。后端会自动在 system prompt 注入这些短期记忆。
    */
   const loadRecentShortTermMemories = useCallback(async () => {
     try {
@@ -404,13 +357,12 @@ export function useChatStream({
         setRecentShortTermMemories(response.data)
       }
     } catch (error) {
-      // 静默忽略，仅记录 warning 日志，不阻塞对话
-      appLogger.warning({
+      appLogger.error({
         event: 'load_recent_short_term_memories_failed',
         module: 'chat_stream',
         action: 'load_recent_short_term',
         status: 'failure',
-        message: '加载最近短期记忆失败，静默忽略',
+        message: '加载最近短期记忆失败',
         extra: { error: error instanceof Error ? error.message : String(error) },
       })
     }

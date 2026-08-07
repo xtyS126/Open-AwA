@@ -93,32 +93,27 @@ class ResourceLimiter:
         """检查当前进程内存是否超限。
 
         注意：Python 层面难以精确控制内存限制，
-        此方法使用 psutil（如果可用）进行进程级内存监控。
+        此方法使用 psutil 进行进程级内存监控。
+        psutil 缺失或监控失败时抛出异常（fail-closed，资源限制不得静默失效）。
         """
         limit = limit_mb or self._memory_limit_mb
-        try:
-            import psutil
-            proc = psutil.Process()
-            mem_info = proc.memory_info()
-            used_mb = mem_info.rss / (1024 * 1024)
+        import psutil
+        proc = psutil.Process()
+        mem_info = proc.memory_info()
+        used_mb = mem_info.rss / (1024 * 1024)
 
-            if used_mb > limit:
-                logger.warning(f"[资源限制] 内存超限: {used_mb:.1f}MB > {limit}MB")
-                return {
-                    "ok": False,
-                    "error": (
-                        f"资源限制: 当前内存使用 ({used_mb:.1f}MB) 超过上限 "
-                        f"({limit}MB)。请减少数据处理量。"
-                    ),
-                    "denied_by": "resource",
-                    "recoverable": True,
-                    "suggestion": f"当前内存使用 {used_mb:.1f}MB，上限 {limit}MB。请优化内存使用。",
-                }
-        except ImportError:
-            # psutil 不可用，跳过内存检查
-            pass
-        except Exception as e:
-            logger.debug(f"内存检查失败: {e}")
+        if used_mb > limit:
+            logger.warning(f"[资源限制] 内存超限: {used_mb:.1f}MB > {limit}MB")
+            return {
+                "ok": False,
+                "error": (
+                    f"资源限制: 当前内存使用 ({used_mb:.1f}MB) 超过上限 "
+                    f"({limit}MB)。请减少数据处理量。"
+                ),
+                "denied_by": "resource",
+                "recoverable": True,
+                "suggestion": f"当前内存使用 {used_mb:.1f}MB，上限 {limit}MB。请优化内存使用。",
+            }
 
         return None
 

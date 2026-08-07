@@ -7,6 +7,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { WeixinWsEvent } from '../api/api'
 import { API_BASE_URL, getCachedApiKey } from '@/shared/api/client'
+import { appLogger } from '@/shared/utils/logger'
+
+/**
+ * 认证失败 close code（对齐 inboxStream.ts 的 AUTH_FAILED_CLOSE_CODES 模式，见 CLAUDE.md 19.7）：
+ * 后端以 4001/4002 拒绝无效/过期 token，token 不会自行变好，
+ * 继续重连只会制造连接风暴，必须停止自动重连。
+ */
+const AUTH_FAILED_CLOSE_CODES = new Set([4001, 4002])
 
 /**
  * 根据 API_BASE_URL 推导 WebSocket URL（不含 token，token 通过子协议传递）
@@ -136,8 +144,16 @@ export function useWeixinWebSocket(
           if (data.event === 'new_message' && onMessageRef.current) {
             onMessageRef.current(data)
           }
-        } catch {
-          // 忽略无法解析的消息
+        } catch (err) {
+          // 无法解析的消息必须记录警告（此前完全静默，消息丢失不可感知）
+          appLogger.warning({
+            event: 'weixin_ws_message_parse_failed',
+            module: 'weixin-ws',
+            action: 'onmessage',
+            status: 'warning',
+            message: '微信 WS 消息 JSON 解析失败',
+            extra: { error: err instanceof Error ? err.message : String(err), payload_preview: String(event.data).slice(0, 200) },
+          })
         }
       }
 
@@ -146,10 +162,22 @@ export function useWeixinWebSocket(
         setConnected(false)
       }
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         setConnected(false)
         wsRef.current = null
         if (!manualCloseRef.current) {
+          // 认证失败（4001/4002）：token 不会自行变好，停止自动重连，避免连接风暴
+          if (AUTH_FAILED_CLOSE_CODES.has(event.code)) {
+            setError(`认证失败（close code ${event.code}），已停止重连，请重新登录后重试`)
+            appLogger.warning({
+              event: 'weixin_ws_auth_failed',
+              module: 'weixin-ws',
+              action: 'onclose',
+              status: 'warning',
+              message: `微信 WS 认证失败（close code ${event.code}），停止自动重连`,
+            })
+            return
+          }
           // 自动重连
           clearReconnectTimer()
           reconnectTimerRef.current = setTimeout(() => {

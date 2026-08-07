@@ -18,6 +18,7 @@ import {
   loadMessages,
   saveMessages,
   removeMessages,
+  isChatPersistenceAvailable,
 } from '@/features/chat/storage/chatPersistence'
 import type { ChatMessage, ConversationSessionSummary } from '@/features/chat/types'
 
@@ -41,6 +42,11 @@ interface SessionState {
    * useConversationHistory 监听该字段变化后重新加载会话列表。
    */
   conversationsVersion: number
+  /**
+   * 本地消息缓存（IndexedDB）是否可用。
+   * 不可用时页面展示"本地缓存不可用"提示，历史消息由服务端恢复路径接管。
+   */
+  persistenceAvailable: boolean
   addMessage: (
     role: 'user' | 'assistant',
     content: string,
@@ -110,6 +116,20 @@ const initialSessionId = getActiveSessionId() || 'default'
 /** 加载请求序列号，用于防止异步加载竞态：只有最新请求的结果才会写入 state */
 let loadSequenceNumber = 0
 
+/** 将 IndexedDB 可用性同步到 store（仅在实际变化时 set，避免无效通知） */
+function syncPersistenceAvailability(): void {
+  const available = isChatPersistenceAvailable()
+  if (useSessionStore.getState().persistenceAvailable !== available) {
+    useSessionStore.setState({ persistenceAvailable: available })
+  }
+}
+
+/** 本地缓存读取失败处理：显式记录错误 + 同步可用性状态，不静默返回空 */
+function handleCacheLoadFailure(error: unknown): void {
+  console.error('[sessionStore] 本地消息缓存读取失败，历史消息将由服务端恢复:', error)
+  syncPersistenceAvailability()
+}
+
 /** 从 localStorage 读取固定的对话 ID 列表 */
 function loadPinnedConversations(): string[] {
   try {
@@ -130,6 +150,7 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
   conversationsHasMore: false,
   pinnedConversations: loadPinnedConversations(),
   conversationsVersion: 0,
+  persistenceAvailable: true,
 
   addMessage: (role, content, reasoning_content, id, isError) => {
     const messageId = id || crypto.randomUUID()
@@ -186,15 +207,18 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
     // 异步加载由 ChatPage 处理，这里同步设为空然后由调用方异步填充
     const seq = ++loadSequenceNumber
     set({ messages: [] })
-    void loadMessages(sessionId).then((msgs) => {
-      // 仅当此请求仍为最新时才写入 state，防止竞态
-      if (seq === loadSequenceNumber) {
-        const currentId = useSessionStore.getState().sessionId
-        if (currentId === sessionId && Array.isArray(msgs) && msgs.length > 0) {
-          set({ messages: msgs as ChatMessage[] })
+    void loadMessages(sessionId)
+      .then((msgs) => {
+        syncPersistenceAvailability()
+        // 仅当此请求仍为最新时才写入 state，防止竞态
+        if (seq === loadSequenceNumber) {
+          const currentId = useSessionStore.getState().sessionId
+          if (currentId === sessionId && Array.isArray(msgs) && msgs.length > 0) {
+            set({ messages: msgs as ChatMessage[] })
+          }
         }
-      }
-    })
+      })
+      .catch(handleCacheLoadFailure)
   },
 
   setLoading: (loading) => set({ isLoading: loading }),
@@ -235,15 +259,18 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
     // 两条路径都受 loadSequenceNumber 与 cancelled 标志保护，不会出现脏数据。
     const seq = ++loadSequenceNumber
     set({ sessionId: id })
-    void loadMessages(id).then((msgs) => {
-      // 仅当此请求仍为最新时才写入 state，防止竞态
-      if (seq === loadSequenceNumber) {
-        const currentId = useSessionStore.getState().sessionId
-        if (currentId === id && Array.isArray(msgs) && msgs.length > 0) {
-          set({ messages: msgs as ChatMessage[] })
+    void loadMessages(id)
+      .then((msgs) => {
+        syncPersistenceAvailability()
+        // 仅当此请求仍为最新时才写入 state，防止竞态
+        if (seq === loadSequenceNumber) {
+          const currentId = useSessionStore.getState().sessionId
+          if (currentId === id && Array.isArray(msgs) && msgs.length > 0) {
+            set({ messages: msgs as ChatMessage[] })
+          }
         }
-      }
-    })
+      })
+      .catch(handleCacheLoadFailure)
   },
 
   setConversations: (items, total, hasMore) => {

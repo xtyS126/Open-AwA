@@ -2,7 +2,7 @@
  * 聊天 API 模块。封装对话发送、SSE 流式、任务断连恢复、消息反馈、文件操作撤销等端点。自 api.ts 拆分而来。
  */
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
-import { api, getCachedApiKey, refreshCsrfToken, getCachedCsrfToken, logStreamParseWarning, API_BASE_URL } from './client'
+import { api, getCachedApiKey, refreshCsrfToken, getCachedCsrfToken, API_BASE_URL } from './client'
 import type { ApiObject, ChatAttachmentType, ChatHistoryResponse, ChatUploadResponse, ChatCancelResponse, ChatTaskSummary, ChatTaskStatus, ChatFeedbackResponse, ChatUndoOperationResponse } from './types'
 
 interface ChatStreamEvent {
@@ -101,7 +101,8 @@ export function parseSSELines(
           onEvent?.(data)
         }
       } catch {
-        logStreamParseWarning(dataStr, context)
+        // 数据块解析失败：触发错误回调（标记可重试），不吞块 —— 回复内容缺失必须可见
+        onError?.(createStreamError(`SSE 数据块解析失败（${context}），内容可能不完整，可重试`, undefined, true))
       }
 
       // 重置事件类型

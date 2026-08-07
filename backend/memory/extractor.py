@@ -11,14 +11,15 @@ Spec memory-quality-and-short-term-recovery 阶段 2 的核心配套模块。
 - 复用 ``PricingManager.get_default_configuration`` 解析 provider/model/api_key/api_endpoint，
   与 executor 的 LLM 配置解析路径保持一致。
 - 通过 :func:`core.litellm_adapter.litellm_chat_completion` 发起非流式 LLM 调用。
-- 失败时返回空列表：让上层 watermark 仍推进，不阻塞巩固流程（与 spec 中
-  "LLM 提炼失败 → 跳过提炼但仍记录 fingerprint" 的回退策略一致）。
+- 配置解析失败、LLM 调用失败或响应无法解析时直接抛错（传播）：由
+  ConsolidationRunner 显式记录 errors 并保留批次供重试，不产生假成功。
 
 LLM 提炼 prompt 设计：
 - 系统消息要求 LLM 扮演"记忆提炼助手"，从短期记忆中提取用户偏好/事实/决策
 - 用户消息附带 JSON 格式的短期记忆列表
 - 要求 LLM 返回严格 JSON 数组，每项含 content/importance/source_type/source_short_term_memory_id
-- 通过 ``json.loads`` 解析失败时返回空列表
+- 兼容多种合法 JSON 包装格式（裸 JSON / ```json 代码块 / 首尾方括号提取），
+  全部解析失败时抛错而非静默返回空
 """
 
 from __future__ import annotations
@@ -94,16 +95,21 @@ def _extract_json_array(text: str) -> List[Dict[str, Any]]:
     """
     从 LLM 回复文本中提取 JSON 数组。
 
-    LLM 可能返回带 markdown 代码块或前后说明文字，需要容错处理。
+    LLM 可能返回带 markdown 代码块或前后说明文字，按三种合法包装格式
+    依次尝试解析（裸 JSON / ```json 代码块 / 首尾方括号提取）。
 
     Args:
         text: LLM 回复文本
 
     Returns:
-        解析后的字典列表；解析失败返回空列表
+        解析后的字典列表
+
+    Raises:
+        ValueError: 全部解析方式均失败——LLM 响应不可用，调用方应显式
+                    记录失败并保留批次重试，不能静默视为"无价值内容"
     """
     if not text:
-        return []
+        raise ValueError("LLM 提炼响应为空，无法解析")
     text = text.strip()
     # 1. 直接尝试解析
     try:
@@ -131,7 +137,7 @@ def _extract_json_array(text: str) -> List[Dict[str, Any]]:
                 return [_normalize_extract_item(item) for item in data if isinstance(item, dict)]
         except json.JSONDecodeError:
             pass
-    return []
+    raise ValueError(f"LLM 提炼响应无法解析为 JSON 数组: {text[:200]}")
 
 
 def _normalize_extract_item(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -158,7 +164,7 @@ def _normalize_extract_item(item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _resolve_llm_config(session_factory, preferred_provider: str, preferred_model: str) -> Optional[Dict[str, Any]]:
+def _resolve_llm_config(session_factory, preferred_provider: str, preferred_model: str) -> Dict[str, Any]:
     """
     通过 PricingManager 解析 LLM 配置。
 
@@ -167,7 +173,11 @@ def _resolve_llm_config(session_factory, preferred_provider: str, preferred_mode
     2. DB 默认配置（PricingManager.get_default_configuration）
 
     Returns:
-        含 provider/model/api_key/api_endpoint 的字典，解析失败返回 None
+        含 provider/model/api_key/api_endpoint 的字典
+
+    Raises:
+        RuntimeError: 未解析到模型配置或可用 API Key、解析过程异常——
+                      LLM 配置缺失属于显式失败，不得静默跳过提炼
     """
     from config.settings import settings
     from config.security import decrypt_secret_value
@@ -188,14 +198,14 @@ def _resolve_llm_config(session_factory, preferred_provider: str, preferred_mode
                 config = pricing_manager.get_default_configuration()
 
             if not config:
-                return None
+                raise RuntimeError("巩固提炼未解析到任何模型配置（DB 无默认模型）")
 
             provider = provider or config.provider
             model = model or config.model
             api_endpoint = config.api_endpoint
 
-            # 解密 API Key：优先 ModelConfiguration.api_key，回退到 ProviderCredential；
-            # api_endpoint 同样从 credential 回退（model_configurations 可能未冗余 endpoint）
+            # 解密 API Key：优先 ModelConfiguration.api_key，其次 ProviderCredential；
+            # api_endpoint 缺省时从 credential 补齐（model_configurations 可能未冗余 endpoint）
             raw_key = config.api_key or ""
             api_key = ""
             cred = None
@@ -218,15 +228,14 @@ def _resolve_llm_config(session_factory, preferred_provider: str, preferred_mode
                     )
                 else:
                     api_key = decrypt_secret_value(cred.api_key)
-            # endpoint 回退：config.api_endpoint 为空时使用 ProviderCredential.api_endpoint
+            # endpoint 缺省时使用 ProviderCredential.api_endpoint
             if not api_endpoint and cred and cred.api_endpoint:
                 api_endpoint = cred.api_endpoint
 
             if not api_key:
-                logger.warning(
-                    f"巩固提炼模型 {provider}/{model} 未解析到可用 API Key，跳过提炼"
+                raise RuntimeError(
+                    f"巩固提炼模型 {provider}/{model} 未解析到可用 API Key"
                 )
-                return None
 
             return {
                 "provider": provider,
@@ -235,9 +244,10 @@ def _resolve_llm_config(session_factory, preferred_provider: str, preferred_mode
                 "api_endpoint": api_endpoint,
                 "max_tokens": getattr(config, "max_tokens", None),
             }
+    except RuntimeError:
+        raise
     except Exception as exc:
-        logger.opt(exception=True).warning(f"巩固提炼 LLM 配置解析失败: {exc}")
-        return None
+        raise RuntimeError(f"巩固提炼 LLM 配置解析失败: {exc}") from exc
 
 
 def make_default_extract_callback(
@@ -279,13 +289,9 @@ def make_default_extract_callback(
         if not messages:
             return []
 
-        # 每次调用时独立解析配置，避免持有长期 db session
+        # 每次调用时独立解析配置，避免持有长期 db session；
+        # 配置解析失败抛 RuntimeError，由 ConsolidationRunner 显式记录 errors
         config = _resolve_llm_config(session_factory, preferred_provider, preferred_model)
-        if config is None:
-            logger.warning(
-                f"巩固提炼跳过 LLM 阶段：未解析到可用模型配置 user_id={user_id}"
-            )
-            return []
 
         try:
             result = await litellm_chat_completion(
@@ -303,16 +309,14 @@ def make_default_extract_callback(
                 num_retries=1,
             )
         except Exception as exc:
-            logger.opt(exception=True).warning(
+            raise RuntimeError(
                 f"巩固提炼 LLM 调用异常 user_id={user_id}: {exc}"
-            )
-            return []
+            ) from exc
 
         if not result.get("ok"):
-            logger.warning(
+            raise RuntimeError(
                 f"巩固提炼 LLM 调用失败 user_id={user_id}: {result.get('error', {})}"
             )
-            return []
 
         response_text = result.get("response", "") or ""
         extracted = _extract_json_array(response_text)

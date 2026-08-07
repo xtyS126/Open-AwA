@@ -80,7 +80,7 @@ def map_finish_reason_to_state(
     - stop -> TERMINAL_END_TURN（正常结束）
     - length -> CONTINUE_COMPACT（上下文超限，压缩后继续）
     - content_filter -> TERMINAL_REFUSAL（模型拒绝）
-    - 其他未知值 -> TERMINAL_END_TURN（安全回退）
+    - 其他未知值 -> 抛出 ValueError（显式错误路径，禁止静默当作正常结束）
 
     参数:
         finish_reason: LLM 返回的结束原因字符串
@@ -103,8 +103,8 @@ def map_finish_reason_to_state(
         return AgentState.CONTINUE_COMPACT
     if normalized == "content_filter":
         return AgentState.TERMINAL_REFUSAL
-    # 未知 finish_reason 安全回退为正常结束
-    return AgentState.TERMINAL_END_TURN
+    # 未知 finish_reason 必须走显式错误路径，禁止静默当作正常结束
+    raise ValueError(f"未知的 finish_reason: {finish_reason!r}")
 
 
 def get_stream_tool_kind(tool_name: str) -> str:

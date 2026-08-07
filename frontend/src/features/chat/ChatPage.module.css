@@ -89,6 +89,16 @@
   margin-left: auto;
 }
 
+/* 本地消息缓存不可用提示条（IndexedDB 打开失败时展示） */
+.persistence-warning {
+  padding: 6px var(--space-4);
+  background: var(--color-warning-bg, rgba(245, 158, 11, 0.12));
+  color: var(--color-warning-strong, #b45309);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  text-align: center;
+}
+
 .stream-status {
   display: inline-flex;
   align-items: center;

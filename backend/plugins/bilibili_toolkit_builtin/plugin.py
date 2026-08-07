@@ -87,7 +87,7 @@ class BilibiliToolkitBuiltinPlugin(BasePlugin):
         """初始化插件：依赖检测 + 构造适配层 + 加载工具。
 
         Returns:
-            True 表示初始化成功（可能以降级模式加载，工具列表为空）。
+            True 表示初始化成功；适配层初始化失败时返回 False（插件进入失败状态）。
 
         Raises:
             BuiltinPluginDependencyError: 关键依赖缺失时抛出，由 main.py 捕获。
@@ -104,23 +104,16 @@ class BilibiliToolkitBuiltinPlugin(BasePlugin):
         self._adapter = BilibiliToolkitAdapter()
         try:
             await self._adapter.initialize()
-        except Exception as exc:  # noqa: BLE001 - 适配层异常统一降级
-            # adapter 内部已捕获大部分异常，这里兜底防止插件初始化崩溃
+        except Exception as exc:
+            # 适配层初始化失败：插件整体进入失败状态，不降级为空工具集
             warning = (
-                f"BilibiliToolkitAdapter.initialize 抛出未预期异常，工具集降级为空: {exc}"
+                f"BilibiliToolkitAdapter.initialize 抛出未预期异常，插件初始化失败: {exc}"
             )
-            logger.warning(warning)
+            logger.error(warning)
             self._dependency_warnings.append(warning)
             self._adapter = None
             self._tools = []
-            # 即使适配层失败，5 个 B 站下载工具仍可用（不依赖 vendored openbiliclaw）
-            self._tools.extend(self._load_download_tools())
-            # 适配层失败仍检测 ffmpeg，便于用户一次性看到所有告警
-            if not await check_ffmpeg_or_warn():
-                self._dependency_warnings.append(
-                    "ffmpeg 不可用，视频合并功能将无法使用（请安装 ffmpeg 并确保在 PATH 中）"
-                )
-            return True
+            return False
 
         self._dependency_warnings.extend(self._adapter.get_warnings())
         self._tools = self._adapter.get_tools()

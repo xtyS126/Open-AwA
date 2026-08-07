@@ -70,6 +70,16 @@ describe('useAppUpdate', () => {
     expect(result.current.status).toBe('idle')
   })
 
+  it('更新检查失败时状态为 error 并携带错误信息（不静默降级为 idle）', async () => {
+    vi.mocked(checkForUpdate).mockRejectedValue(new Error('后端未部署更新包'))
+    const { result } = renderHook(() => useAppUpdate())
+    await act(async () => {
+      await result.current.check()
+    })
+    expect(result.current.status).toBe('error')
+    expect(result.current.error).toContain('更新检查失败')
+  })
+
   it('startDownload 进入 downloading 并在完成后进入 installing', async () => {
     vi.mocked(checkForUpdate).mockResolvedValue(updateInfo as never)
     const { appUpdatePlugin } = await import('@/shared/api/appUpdatePlugin')

@@ -47,7 +47,7 @@ from api.dependencies import get_current_user  # noqa: E402
 from api.routes import discussions as discussions_module  # noqa: E402
 from api.routes.discussions import router as discussions_router  # noqa: E402
 from core.discussion.orchestrator import DiscussionOrchestrator  # noqa: E402
-from db.models import Base, DiscussionTask, DiscussionVote, User, get_db  # noqa: E402
+from db.models import AuditLog, Base, DiscussionTask, DiscussionVote, User, get_db  # noqa: E402
 
 
 # ── 模块级测试数据库 ──────────────────────────────────────────────
@@ -57,9 +57,10 @@ _engine = create_engine(
     poolclass=StaticPool,
 )
 _TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
+# force-execute 审计为 fail-closed 路径，测试库必须含 audit_logs 表
 Base.metadata.create_all(
     bind=_engine,
-    tables=[User.__table__, DiscussionTask.__table__, DiscussionVote.__table__],
+    tables=[AuditLog.__table__, User.__table__, DiscussionTask.__table__, DiscussionVote.__table__],
 )
 
 
@@ -694,6 +695,38 @@ def test_post_force_execute_succeeds_for_admin(admin_client, test_orchestrator):
     with _TestingSessionLocal() as db:
         task = db.get(DiscussionTask, task_id)
         assert task.status == "approved"
+
+
+def test_post_force_execute_fails_closed_when_audit_write_fails(
+    admin_client, test_orchestrator, monkeypatch
+):
+    """审计日志写入失败时 fail-closed：拒绝旁路执行并返回 500，禁止绕过审计放行高危操作。"""
+    task_id = _seed_task(user_id="admin-1", status="pending_approval")
+
+    class _FailingAuditLogger:
+        """模拟审计写入失败的 AuditLogger。"""
+
+        def __init__(self, db):
+            pass
+
+        async def log(self, **kwargs):
+            raise RuntimeError("audit write failed")
+
+    # 路由在函数体内 import security.audit.AuditLogger，patch 模块属性即可生效
+    monkeypatch.setattr("security.audit.AuditLogger", _FailingAuditLogger)
+
+    response = admin_client.post(
+        f"/api/discussions/{task_id}/force-execute",
+        json={"reason": "审计失败测试"},
+    )
+
+    assert response.status_code == 500
+    # 该测试 app 未挂统一错误中间件，FastAPI 默认 detail 结构
+    assert "审计" in response.json()["detail"]
+    # 任务状态不得被修改：旁路执行被拒绝
+    with _TestingSessionLocal() as db:
+        task = db.get(DiscussionTask, task_id)
+        assert task.status == "pending_approval"
 
 
 def test_post_force_execute_returns_422_when_missing_reason(admin_client):

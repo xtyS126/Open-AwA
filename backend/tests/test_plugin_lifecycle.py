@@ -1175,7 +1175,12 @@ class RuntimeFailurePlugin(BasePlugin):
     manager = PluginManager(plugins_dir=str(tmp_path))
     metadata = manager._scan_plugin_file(str(plugin_path))
 
-    assert metadata is None
+    # 扫描失败的插件以显式错误状态元数据进入发现结果，不再静默消失
+    assert metadata is not None
+    assert metadata["name"] == "runtime_failure_plugin"
+    assert metadata["executable"] is False
+    assert metadata["scan_error_type"] == "RuntimeError"
+    assert "scan boom" in metadata["scan_error"]
     assert any(
         level == "error"
         and extra.get("event") == "plugin_scan_failed"

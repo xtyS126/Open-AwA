@@ -200,7 +200,7 @@ async def test_vector_embedding_providers_and_factory(monkeypatch, tmp_path):
     验证哈希、OpenAI、本地 sentence-transformers 以及工厂分支逻辑。
     """
     # conftest.py 默认设置 MEMORY_EMBEDDING_PROVIDER=hash 避免 sentence-transformers ImportError，
-    # 本测试需要验证 create_embedding_provider(None) 的默认回退路径，需临时清除该环境变量
+    # 本测试需要验证 provider 工厂的各分支，需临时清除该环境变量
     monkeypatch.delenv("MEMORY_EMBEDDING_PROVIDER", raising=False)
     hash_provider = HashEmbeddingProvider(dimension=4)
     vector = (await hash_provider.embed_texts([""]))[0]
@@ -276,7 +276,14 @@ async def test_vector_embedding_providers_and_factory(monkeypatch, tmp_path):
     assert isinstance(create_embedding_provider("openai"), CloudEmbeddingProvider)
     assert isinstance(create_embedding_provider("cloud"), CloudEmbeddingProvider)
     assert isinstance(create_embedding_provider("hash"), HashEmbeddingProvider)
+    # 关闭模型服务进程以测试主进程内加载路径（Spec 模型进程化：开启时 local 走 RemoteEmbeddingProvider）
+    monkeypatch.setattr("memory.vector_store_manager.settings.MODEL_SERVICE_ENABLED", False, raising=False)
     assert isinstance(create_embedding_provider("local"), SentenceTransformerEmbeddingProvider)
+    # 开启模型服务时 local 走模型服务子进程（不再回退主进程）
+    monkeypatch.setattr("memory.vector_store_manager.settings.MODEL_SERVICE_ENABLED", True, raising=False)
+    from model_service.client import RemoteEmbeddingProvider
+
+    assert isinstance(create_embedding_provider("local"), RemoteEmbeddingProvider)
 
     original_import = builtins.__import__
 
@@ -285,12 +292,14 @@ async def test_vector_embedding_providers_and_factory(monkeypatch, tmp_path):
             raise ImportError("missing")
         return original_import(name, *args, **kwargs)
 
-    # 自动降级路径：未显式配置 provider 且无 OPENAI_API_KEY 时，
-    # 若 sentence-transformers 不可用应降级到 Hash 嵌入，避免阻塞核心对话功能。
+    # 无显式配置（清除 conftest 注入的 hash 与 settings 上的残留值）且
+    # sentence-transformers 不可用时直接抛错，不再自动降级 Hash 嵌入
     monkeypatch.setattr(builtins, "__import__", failing_import)
     monkeypatch.setattr("memory.vector_store_manager.settings.OPENAI_API_KEY", None, raising=False)
-    fallback_provider = create_embedding_provider(None)
-    assert isinstance(fallback_provider, HashEmbeddingProvider)
+    monkeypatch.setattr("memory.vector_store_manager.settings.MODEL_SERVICE_ENABLED", False, raising=False)
+    monkeypatch.setattr("memory.vector_store_manager.settings.MEMORY_EMBEDDING_PROVIDER", "", raising=False)
+    with pytest.raises(RuntimeError, match="sentence-transformers"):
+        create_embedding_provider(None)
 
 
 def test_local_embedding_provider_prefers_project_cached_snapshot(monkeypatch, tmp_path):
@@ -363,14 +372,100 @@ async def test_vector_store_manager_helper_paths(tmp_path):
     assert manager.count(user_id="user-1", include_archived=False) == 1
     manager.close()
 
-    # 数据库中存在但向量库尚未写入的历史记忆，元数据同步应安全跳过
+    # 向量 point 缺失属于 DB/向量不一致（写入路径已保证原子性），
+    # 元数据同步必须显式抛错，不允许静默跳过
     missing_point_manager = VectorStoreManager(
         persist_directory=str(tmp_path / "missing_point_store"),
         collection_name="missing_point_helpers",
         embedding_provider=HashEmbeddingProvider(dimension=4),
     )
-    missing_point_manager.update_memory_metadata(99, foo="bar")
+    with pytest.raises(KeyError):
+        missing_point_manager.update_memory_metadata(99, foo="bar")
     missing_point_manager.close()
+
+
+def _build_manager_with_missing_point_store():
+    """
+    构造 MemoryManager + 内存数据库 + 元数据同步抛 KeyError 的向量库
+    （模拟 Qdrant 缺失 point：DB 行存在但向量 point 未写入）。
+    """
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    init_db(bind_engine=engine)
+    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    class MissingPointVectorStore(FakeVectorStore):
+        def update_memory_metadata(self, memory_id, **kwargs):
+            self.metadata_updates.append((memory_id, kwargs))
+            raise KeyError(memory_id)
+
+    vector_store = MissingPointVectorStore()
+    MemoryManager._shared_vector_store = vector_store
+    manager = MemoryManager(factory)
+    return manager, factory, vector_store
+
+
+def _insert_single_memory(factory, content: str = "测试记忆") -> int:
+    """插入一条长期记忆并返回 id。"""
+    with factory() as db:
+        memory = LongTermMemory(
+            content=content,
+            importance=0.6,
+            user_id="u1",
+            workspace_id="default",
+            created_at=datetime.now(timezone.utc),
+            last_access=datetime.now(timezone.utc),
+        )
+        db.add(memory)
+        db.commit()
+        db.refresh(memory)
+        memory_id = memory.id
+    return memory_id
+
+
+def test_memory_eval_missing_vector_point_is_visible_not_fatal():
+    """
+    向量 point 缺失（KeyError）时，列表/评估路径不得整条失败：
+    该条目显式返回 vector_sync_error 错误状态并记录 ERROR 日志，
+    其余条目与 API 可用性不受影响（19.1 边界：单条失败不拖垮列表）。
+    """
+    manager, factory, _ = _build_manager_with_missing_point_store()
+    try:
+        memory_id = _insert_single_memory(factory)
+        with factory() as db:
+            memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+            result = manager._evaluate_memory_in_session(db, memory)
+        # 显式条目错误状态：不抛异常，错误信息可见
+        assert result["vector_sync_error"] is not None
+        assert "point" in result["vector_sync_error"]
+        assert memory.vector_sync_error is not None
+    finally:
+        MemoryManager._shared_vector_store = None
+
+
+def test_memory_merge_missing_vector_point_fails_closed():
+    """
+    合并写入路径中向量 point 缺失必须显式抛错（fail-closed），
+    不允许"DB 已合并、向量仍为旧状态"的一致性分叉被静默容忍。
+    """
+    manager, factory, _ = _build_manager_with_missing_point_store()
+    try:
+        memory_id = _insert_single_memory(factory)
+        with pytest.raises(RuntimeError, match="point"):
+            manager._merge_into_existing_memory_sync(
+                memory_id,
+                "合并后的新内容",
+                [1.0, 0.0, 0.0],
+                0.7,
+                None,
+                "llm_extracted",
+                None,
+            )
+    finally:
+        MemoryManager._shared_vector_store = None
 
 
 def test_memory_manager_shared_vector_store_is_initialized_once(monkeypatch):
@@ -740,7 +835,9 @@ async def test_workflow_engine_helper_and_error_paths(monkeypatch):
         runtime,
     )
     assert rendered == {"plain": "text", "direct": 1, "mixed": "name=ok", "list": 3}
-    assert engine_without_db._resolve_placeholder("missing.value", runtime) is None
+    # 占位符解析失败必须显式抛错（不允许静默返回 None 走错分支）
+    with pytest.raises(ValueError, match="missing"):
+        engine_without_db._resolve_placeholder("missing.value", runtime)
     assert engine_without_db._evaluate_condition("steps.one.value == 1 and context.name == 'ok'", runtime) is True
     with pytest.raises(ValueError):
         engine_without_db._evaluate_condition("len(context.items) > 0", runtime)

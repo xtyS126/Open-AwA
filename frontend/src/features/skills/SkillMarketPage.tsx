@@ -28,12 +28,14 @@ const SkillMarketPage: React.FC = () => {
         sourceFilter !== 'all' ? sourceFilter : undefined
       );
       setSkills(data.skills || []);
+      setError('');
     } catch {
-      setSkills([]);
+      // 加载失败显示错误条（对齐 handleInstall 的错误处理），不显示空市场误导用户
+      setError(t('skillMarket.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [search, sourceFilter]);
+  }, [search, sourceFilter, t]);
 
   useEffect(() => {
     loadSkills();
@@ -138,7 +140,7 @@ const SkillMarketPage: React.FC = () => {
       {loading && filtered.length === 0 && (
         <p className={styles.empty}>{t('app.loading')}</p>
       )}
-      {!loading && filtered.length === 0 && (
+      {!loading && !error && filtered.length === 0 && (
         <EmptyState title={t('skillMarket.empty')} />
       )}
     </div>

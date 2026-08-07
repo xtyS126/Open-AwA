@@ -388,34 +388,28 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
         # 同步函数包装为 to_thread，避免阻塞事件循环
         await asyncio.to_thread(_check_model_provider_availability)
 
-    # 初始化预设角色
+    # 初始化预设角色（失败拒绝启动：种子数据缺失会破坏依赖预设角色的功能）
     with profiler.step("preset_roles_init"):
+        from core.role_engine import RoleEngine
+        _preset_db = SessionLocal()
         try:
-            from core.role_engine import RoleEngine
-            _preset_db = SessionLocal()
-            try:
-                # 同步 DB 调用包装为 to_thread，避免阻塞事件循环
-                added = await asyncio.to_thread(RoleEngine.ensure_presets_in_db, _preset_db)
-                if added > 0:
-                    logger.bind(event="preset_roles_initialized", module="startup").info(f"初始化 {added} 个预设角色")
-            finally:
-                _preset_db.close()
-        except Exception as e:
-            logger.bind(event="preset_roles_init_error", module="startup").warning(f"预设角色初始化失败: {e}")
+            # 同步 DB 调用包装为 to_thread，避免阻塞事件循环
+            added = await asyncio.to_thread(RoleEngine.ensure_presets_in_db, _preset_db)
+            if added > 0:
+                logger.bind(event="preset_roles_initialized", module="startup").info(f"初始化 {added} 个预设角色")
+        finally:
+            _preset_db.close()
 
-    # ???????????8 ? Codex ?????
+    # 内置宠物种子（失败拒绝启动）
     with profiler.step("builtin_pets_seed"):
+        from api.routes.pets import seed_builtin_pets
+        _pets_db = SessionLocal()
         try:
-            from api.routes.pets import seed_builtin_pets
-            _pets_db = SessionLocal()
-            try:
-                added = await asyncio.to_thread(seed_builtin_pets, _pets_db)
-                if added > 0:
-                    logger.bind(event="builtin_pets_seed", module="startup").info(f"??? {added} ?????")
-            finally:
-                _pets_db.close()
-        except Exception as e:
-            logger.bind(event="builtin_pets_seed_error", module="startup").warning(f"?????????: {e}")
+            added = await asyncio.to_thread(seed_builtin_pets, _pets_db)
+            if added > 0:
+                logger.bind(event="builtin_pets_seed", module="startup").info(f"内置宠物种子完成 {added} 个")
+        finally:
+            _pets_db.close()
     
     
     from billing.pricing_manager import PricingManager
@@ -693,8 +687,9 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                 # 内置插件迁移必须原子提交，任一步失败时由下方 rollback 恢复完整旧状态。
                 db.commit()
             except Exception as exc:
-                logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
                 db.rollback()
+                logger.bind(event="builtin_plugin_seed_error", module="main").error(f"内置插件注册失败: {exc}")
+                raise
             finally:
                 db.close()
 
@@ -807,32 +802,26 @@ async def _startup_background_tasks(profiler: StartupProfiler) -> None:
 
     # 模型目录定时同步：仅在配置开启时注册到 APScheduler
     # 复用 scheduled_task_manager 的 AsyncScheduler，无需创建业务表 ScheduledTask
+    # 注册失败显式抛错（拒绝带病启动，禁止 warning 后静默缺同步）
     with profiler.step("model_catalog_sync_schedule"):
-        try:
-            from config.settings import settings
-            if settings.MODEL_CATALOG_SYNC_ENABLED:
-                from billing.catalog_sync import run_scheduled_catalog_sync
-                registered = await scheduled_task_manager.register_external_schedule(
-                    schedule_id="model_catalog_sync",
-                    cron_expression=settings.MODEL_CATALOG_SYNC_CRON,
-                    func=run_scheduled_catalog_sync,
+        from config.settings import settings
+        if settings.MODEL_CATALOG_SYNC_ENABLED:
+            from billing.catalog_sync import run_scheduled_catalog_sync
+            registered = await scheduled_task_manager.register_external_schedule(
+                schedule_id="model_catalog_sync",
+                cron_expression=settings.MODEL_CATALOG_SYNC_CRON,
+                func=run_scheduled_catalog_sync,
+            )
+            if registered:
+                logger.bind(
+                    event="model_catalog_sync_scheduled",
+                    module="billing",
+                    cron=settings.MODEL_CATALOG_SYNC_CRON,
+                ).info(
+                    f"模型目录定时同步已注册 (cron={settings.MODEL_CATALOG_SYNC_CRON})"
                 )
-                if registered:
-                    logger.bind(
-                        event="model_catalog_sync_scheduled",
-                        module="billing",
-                        cron=settings.MODEL_CATALOG_SYNC_CRON,
-                    ).info(
-                        f"模型目录定时同步已注册 (cron={settings.MODEL_CATALOG_SYNC_CRON})"
-                    )
-                else:
-                    logger.warning("模型目录定时同步注册失败：调度器未启动或注册异常")
-        except Exception as exc:
-            logger.bind(
-                event="model_catalog_sync_schedule_error",
-                module="billing",
-                error_type=type(exc).__name__,
-            ).warning(f"模型目录定时同步注册异常: {exc}")
+            else:
+                raise RuntimeError("模型目录定时同步注册失败：调度器未启动或注册异常")
 
     with profiler.step("weixin_auto_reply"):
         from db.models import WeixinBinding
@@ -848,14 +837,21 @@ async def _startup_background_tasks(profiler: StartupProfiler) -> None:
             bindings = await asyncio.to_thread(_query_bindings)
             if bindings:
                 manager = get_auto_reply_manager()
+                autostart_failures: list[str] = []
                 for binding in bindings:
                     try:
                         await manager.start(binding.user_id)
                         logger.bind(event="weixin_auto_reply_autostart", module="main", user_id=binding.user_id).info("自动启动微信自动回复")
-                    except ValueError as e:
-                        logger.bind(event="weixin_auto_reply_autostart_failed", module="main", user_id=binding.user_id).warning(f"自动启动微信自动回复失败（配置错误）: {e}")
                     except Exception as e:
+                        # 失败进入可见状态：收集后统一抛错（拒绝带病启动），
+                        # 禁止 per-binding error 后 continue 静默丢消息
+                        autostart_failures.append(f"user_id={binding.user_id}: {e}")
                         logger.bind(event="weixin_auto_reply_autostart_error", module="main", user_id=binding.user_id).error(f"自动启动微信自动回复异常: {e}")
+                if autostart_failures:
+                    raise RuntimeError(
+                        "微信自动回复自动启动失败（失败可见，拒绝带病启动）: "
+                        + "; ".join(autostart_failures)
+                    )
         finally:
             db.close()
 
@@ -881,37 +877,35 @@ async def _startup_acp_service(profiler: StartupProfiler) -> None:
     扫描 acp_host.agents.discover_agents() 返回的所有内置 agent 配置，
     为每个 agent 调用 init_acp_service 注册 ACPService 实例到模块级单例注册表。
     实际的 ACP 子进程会话在首次 prompt 时通过 ACPService.run_turn 创建。
-    启动失败时仅记录日志，不阻塞主流程（acp SDK 未安装时也走降级路径）。
+
+    失败时显式传播（拒绝带病启动）：acp_host 包对 acp SDK 缺失的降级
+    已在模块内部处理（SDK 缺失时导入安全，仅在 run_turn 等调用时抛
+    ACPConfigurationError），此处的任何异常都是真实错误，禁止吞掉后
+    让 /api/acp/* 以"未初始化"状态假成功。
+
+    Raises:
+        Exception: ACP 服务初始化失败（显式传播，由 _run_optional_startup_step 拒绝启动）。
     """
     with profiler.step("acp_service_init"):
-        try:
-            from acp_host import init_acp_service
-            from acp_host.core import ACPConfig
-            from acp_host.agents import discover_agents
+        from acp_host import init_acp_service
+        from acp_host.core import ACPConfig
+        from acp_host.agents import discover_agents
 
-            agents = discover_agents()
-            if not agents:
-                logger.bind(event="acp_no_agents", module="startup").warning(
-                    "未发现任何 ACP agent 配置，跳过 ACP 服务初始化"
-                )
-                return
-            acp_config = ACPConfig(agents=agents)
-            for agent_id in acp_config.agents.keys():
-                init_acp_service(agent_id, acp_config)
-            logger.bind(
-                event="acp_services_initialized",
-                module="startup",
-                agent_count=len(agents),
-                agents=list(agents.keys()),
-            ).info(f"ACP 服务已初始化 {len(agents)} 个 agent")
-        except Exception as exc:
-            # acp SDK 缺失或 agent 配置加载失败时仅记录日志，不阻塞启动
-            logger.bind(
-                event="acp_init_failed",
-                module="startup",
-                error_type=type(exc).__name__,
-                error_message=str(exc),
-            ).warning(f"ACP 服务初始化失败（不阻塞启动）: {exc}")
+        agents = discover_agents()
+        if not agents:
+            logger.bind(event="acp_no_agents", module="startup").warning(
+                "未发现任何 ACP agent 配置，跳过 ACP 服务初始化"
+            )
+            return
+        acp_config = ACPConfig(agents=agents)
+        for agent_id in acp_config.agents.keys():
+            init_acp_service(agent_id, acp_config)
+        logger.bind(
+            event="acp_services_initialized",
+            module="startup",
+            agent_count=len(agents),
+            agents=list(agents.keys()),
+        ).info(f"ACP 服务已初始化 {len(agents)} 个 agent")
 
 
 async def _shutdown_acp_service() -> None:
@@ -939,31 +933,32 @@ def _startup_mcp_sse_origin(profiler: StartupProfiler) -> None:
     """配置 MCP SSE 传输层的 origin 白名单。
 
     通过环境变量 MCP_SSE_ALLOWED_ORIGINS（逗号分隔）配置允许的 origin 列表，
-    防止跨域攻击。未配置时记录 WARNING 日志提示安全风险，并保持白名单为空
-    （SSETransport 在白名单为空时允许所有 origin，仅适用于开发环境）。
+    防止跨域攻击。未配置时拒绝启动（fail-closed）：
+    SSETransport 在白名单为空时允许所有 origin，该状态必须显式配置，
+    禁止默认以"允许所有 origin"的降级模式启动。
+
+    Raises:
+        RuntimeError: 未配置 MCP_SSE_ALLOWED_ORIGINS（fail-closed 拒绝启动）。
     """
     with profiler.step("mcp_sse_origin_config"):
         from mcp.manager import SSETransport
 
         raw_origins = os.getenv("MCP_SSE_ALLOWED_ORIGINS", "")
         origins = [item.strip() for item in raw_origins.split(",") if item.strip()]
+        if not origins:
+            # 先校验再写入：拒绝启动时不得把白名单改成"允许所有 origin"的空状态
+            raise RuntimeError(
+                "未配置 MCP_SSE_ALLOWED_ORIGINS 环境变量：MCP SSE 传输在白名单为空时"
+                "允许所有 origin（跨域安全风险）。必须显式配置白名单后启动（fail-closed）。"
+            )
         SSETransport.set_allowed_origins(origins)
-        if origins:
-            logger.bind(
-                event="mcp_sse_origin_configured",
-                module="main",
-                origin_count=len(origins),
-            ).info(
-                f"MCP SSE origin 白名单已配置，共 {len(origins)} 个 origin"
-            )
-        else:
-            logger.bind(
-                event="mcp_sse_origin_not_configured",
-                module="main",
-            ).warning(
-                "未配置 MCP_SSE_ALLOWED_ORIGINS 环境变量，MCP SSE 传输将允许所有 origin。"
-                "生产环境必须显式配置白名单以防止跨域攻击。"
-            )
+        logger.bind(
+            event="mcp_sse_origin_configured",
+            module="main",
+            origin_count=len(origins),
+        ).info(
+            f"MCP SSE origin 白名单已配置，共 {len(origins)} 个 origin"
+        )
 
 
 async def _shutdown_plugin_system() -> None:
@@ -1009,20 +1004,31 @@ async def _run_optional_startup_step(
     app: FastAPI,
     step_name: str,
     step: Callable[[], Awaitable[None]],
+    *,
+    degradable: bool = False,
 ) -> None:
-    """执行可降级启动步骤，并将失败状态暴露给运行期诊断接口。"""
+    """执行启动步骤，失败时默认拒绝启动（fail-fast）。
+
+    仅 memory_runtime 预热（CLAUDE.md 19.x 文档化的可降级启动）允许
+    degradable=True：失败记录到 startup_failures 并暴露给运行期诊断，
+    服务以降级模式继续运行。其余启动步骤失败必须显式传播（raise），
+    禁止带病启动。
+    """
     try:
         await step()
     except Exception as exc:
-        startup_failures = getattr(app.state, "startup_failures", {})
-        startup_failures[step_name] = type(exc).__name__
-        app.state.startup_failures = startup_failures
-        logger.bind(
-            event="optional_startup_step_failed",
-            module="main",
-            step=step_name,
-            error_type=type(exc).__name__,
-        ).opt(exception=True).warning(f"可选启动步骤失败，服务将以降级模式继续运行: {step_name}")
+        if degradable:
+            startup_failures = getattr(app.state, "startup_failures", {})
+            startup_failures[step_name] = type(exc).__name__
+            app.state.startup_failures = startup_failures
+            logger.bind(
+                event="optional_startup_step_failed",
+                module="main",
+                step=step_name,
+                error_type=type(exc).__name__,
+            ).opt(exception=True).warning(f"可降级启动步骤失败，服务将以降级模式继续运行: {step_name}")
+            return
+        raise
 
 
 async def lifespan(app: FastAPI):
@@ -1051,10 +1057,12 @@ async def lifespan(app: FastAPI):
         await _startup_data_init(profiler)
         await _startup_owner_user_init(profiler)
         # 首个记忆/聊天请求前完成共享向量运行时预热，避免请求级 15 秒超时。
+        # memory_runtime 是 CLAUDE.md 19.x 文档化的可降级启动，失败仅记录不拒绝启动；
+        # 其余启动步骤失败一律拒绝启动（fail-fast，禁止带病启动）。
         await _run_optional_startup_step(
-            app, "memory_runtime", lambda: prewarm_agent_memory(SessionLocal)
+            app, "memory_runtime", lambda: prewarm_agent_memory(SessionLocal),
+            degradable=True,
         )
-        # 数据库与认证是可用服务的硬前提，失败时仍应拒绝启动；其余能力允许降级。
         await _run_optional_startup_step(
             app, "plugin_system", lambda: _startup_plugin_system(profiler)
         )
@@ -1063,13 +1071,9 @@ async def lifespan(app: FastAPI):
         )
         # task_runtime 初始化：回收悬挂会话（原 @router.on_event("startup") 迁移至 lifespan）
         # task_runtime.initialize 为 async 函数，直接 await 调用（asyncio.to_thread 不适用于 async 函数）
-        try:
-            with profiler.step("task_runtime_init"):
-                await task_runtime.initialize()
-        except Exception as e:
-            logger.bind(event="task_runtime_init_error", module="main").warning(
-                f"task_runtime 初始化失败: {e}"
-            )
+        # 初始化失败并入启动失败（拒绝带病启动）
+        with profiler.step("task_runtime_init"):
+            await task_runtime.initialize()
         # 17. 自主运行模式初始化（在所有其他初始化之后）
         await _run_optional_startup_step(
             app, "autonomous_mode", lambda: _startup_autonomous_mode(profiler)
@@ -1078,17 +1082,8 @@ async def lifespan(app: FastAPI):
         await _run_optional_startup_step(
             app, "acp_service", lambda: _startup_acp_service(profiler)
         )
-        # 19. 配置 MCP SSE 传输层 origin 白名单
-        try:
-            _startup_mcp_sse_origin(profiler)
-        except Exception as exc:
-            app.state.startup_failures["mcp_sse_origin"] = type(exc).__name__
-            logger.bind(
-                event="optional_startup_step_failed",
-                module="main",
-                step="mcp_sse_origin",
-                error_type=type(exc).__name__,
-            ).opt(exception=True).warning("MCP SSE Origin 配置失败，服务将以降级模式继续运行")
+        # 19. 配置 MCP SSE 传输层 origin 白名单（未配置时拒绝启动，fail-closed）
+        _startup_mcp_sse_origin(profiler)
         # 21. MCPManager 预热：触发单例构造与持久化配置恢复，避免首次对话同步阻塞
         await _run_optional_startup_step(
             app, "mcp_preheat", lambda: _startup_mcp_preheat(profiler)
@@ -1185,20 +1180,18 @@ async def _extract_user_id_from_request(request: Request) -> Optional[str]:
 
     # 路径 0: API Key 认证（单用户模式，Bearer 等于 OPENAWA_API_KEY 时返回 owner ID）
     # 必须先于 JWT 解析，避免 API Key 被误当作 JWT 触发解码失败
-    try:
-        api_key = settings.OPENAWA_API_KEY.get_secret_value() if settings.OPENAWA_API_KEY else None
-    except Exception:
-        api_key = None
+    # 读取配置失败显式传播（禁止静默置 None 使 API Key 认证路径失效）
+    api_key = settings.OPENAWA_API_KEY.get_secret_value() if settings.OPENAWA_API_KEY else None
     if api_key:
         import secrets as _secrets
         if _secrets.compare_digest(token, api_key):
-            try:
-                from api.dependencies import _get_owner_from_settings
-                owner = _get_owner_from_settings()
-                if owner is not None:
-                    return str(owner.id)
-            except Exception as exc:
-                logger.warning("API Key 路径加载 owner 失败: {0}", exc)
+            # API Key 匹配成功后必须解析出 owner：加载失败显式传播
+            # （_get_owner_from_settings 内部对 owner 查询失败有自身的日志与 None 契约，
+            #  此处禁止再套 try/except 吞掉真实错误后假返回未认证）
+            from api.dependencies import _get_owner_from_settings
+            owner = _get_owner_from_settings()
+            if owner is not None:
+                return str(owner.id)
             return None
 
     payload = decode_access_token(token)

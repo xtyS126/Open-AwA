@@ -62,33 +62,29 @@ class DingtalkAdapter(IMAdapter):
         """通过钉钉 Webhook 发送消息。
 
         Webhook 模式下消息固定发送到 Webhook 对应的群聊，chat_id 参数未使用。
+        失败时抛出结构化异常让路由层感知（禁止返回 False 被路由层忽略）。
+
+        Raises:
+            RuntimeError: 适配器未启动或未配置 Webhook URL。
+            ValueError: 钉钉返回非 200。
+            Exception: 网络/HTTP 异常（显式传播）。
         """
         if not self._client:
-            return False
+            raise RuntimeError("钉钉适配器未启动，无法发送消息")
         webhook_url = self._config.webhook_url
         if not webhook_url:
-            logger.bind(
-                event="dingtalk_no_webhook",
-                module="im_dingtalk",
-            ).error("未配置 Webhook URL")
-            return False
-        try:
-            resp = await self._client.post(
-                webhook_url,
-                json={
-                    "msgtype": "text",
-                    "text": {"content": text},
-                },
-            )
-            return resp.status_code == 200
-        except Exception as e:
-            logger.bind(
-                event="dingtalk_send_error",
-                module="im_dingtalk",
-                chat_id=chat_id,
-                error=str(e),
-            ).error(f"钉钉发送消息失败: {e}")
-            return False
+            raise RuntimeError("未配置 Webhook URL，无法发送钉钉消息")
+
+        resp = await self._client.post(
+            webhook_url,
+            json={
+                "msgtype": "text",
+                "text": {"content": text},
+            },
+        )
+        if resp.status_code != 200:
+            raise ValueError(f"钉钉发送消息失败: status={resp.status_code}")
+        return True
 
     async def receive_message(self) -> AsyncGenerator[IMMessage, None]:
         """接收来自钉钉的消息流。

@@ -22,6 +22,7 @@ from plugins.bundle_detector import (
     BundleDetector,
     BundleFormat,
     BundleManifestAdapter,
+    BundleManifestError,
 )
 from plugins.openclaw_adapter import (
     AdaptedManifest,
@@ -616,8 +617,8 @@ class TestBundleManifestAdapter:
         assert adapted.executable is False
         assert adapted.openclaw_id == "oc-plugin"
 
-    def test_adapt_codex_bundle_with_name_as_id(self, adapter: BundleManifestAdapter, tmp_path: Path) -> None:
-        """Codex bundle 缺少 id 时应回退用 name 作为 id。"""
+    def test_adapt_codex_bundle_without_id_is_rejected(self, adapter: BundleManifestAdapter, tmp_path: Path) -> None:
+        """Codex bundle 缺少 id 时应拒绝适配并显式报错，不伪造 id。"""
         plugin_dir = tmp_path / "codex-plugin"
         plugin_dir.mkdir()
         codex_dir = plugin_dir / ".codex-plugin"
@@ -628,10 +629,9 @@ class TestBundleManifestAdapter:
         )
 
         detection = BundleDetector().detect(plugin_dir)
-        adapted = adapter.adapt(detection)
 
-        assert adapted is not None
-        assert adapted.openclaw_id == "codex-fallback"
+        with pytest.raises(BundleManifestError, match="id"):
+            adapter.adapt(detection)
 
     def test_adapt_openawa_native_executable(self, adapter: BundleManifestAdapter, tmp_path: Path) -> None:
         """Open-AwA 原生格式应标记为可执行。"""

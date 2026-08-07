@@ -194,22 +194,20 @@ class BundleManifestAdapter:
 
         原生格式已经是内部格式，直接解析并包装为 AdaptedManifest。
         """
-        try:
-            data = self._load_json(manifest_path)
-        except BundleLoadError as e:
-            logger.error(f"加载 Open-AwA 原生 manifest 失败: {manifest_path} — {e}")
-            return None
+        data = self._load_json(manifest_path)
 
         if not isinstance(data, dict):
-            logger.error(f"Open-AwA 原生 manifest 顶层不是对象: {manifest_path}")
-            return None
+            raise BundleManifestError(
+                f"Open-AwA 原生 manifest 顶层不是对象: {manifest_path}"
+            )
 
         name = data.get("name")
         version = data.get("version")
         if not isinstance(name, str) or not isinstance(version, str):
-            # 非插件 manifest（如 PWA web/manifest.json）碰巧同名，静默跳过
-            logger.debug(f"跳过非插件 manifest（缺少 name/version）: {manifest_path}")
-            return None
+            # 缺少插件标识字段：拒绝并显式报错，不静默跳过（也不伪造标识）
+            raise BundleManifestError(
+                f"manifest 缺少 name/version 字段，无法识别为插件: {manifest_path}"
+            )
 
         return AdaptedManifest(
             name=name,
@@ -232,31 +230,21 @@ class BundleManifestAdapter:
         适配 OpenClaw 兼容 bundle（OpenClaw/Codex/Claude/Cursor）。
 
         这些格式的 manifest 结构相似，统一通过 OpenClawAdapter 解析。
-        若 manifest 缺少 OpenClaw 必填字段（如 id），会尝试用文件名或目录名作为 id。
+        manifest 缺少 OpenClaw 必填字段（如 id）时拒绝适配并显式报错，
+        不再用 name 或目录名伪造 id。
         """
-        try:
-            data = self._load_json(manifest_path)
-        except BundleLoadError as e:
-            logger.error(f"加载 {fmt.value} bundle manifest 失败: {manifest_path} — {e}")
-            return None
+        data = self._load_json(manifest_path)
 
         if not isinstance(data, dict):
-            logger.error(f"{fmt.value} bundle manifest 顶层不是对象: {manifest_path}")
-            return None
+            raise BundleManifestError(
+                f"{fmt.value} bundle manifest 顶层不是对象: {manifest_path}"
+            )
 
-        # 兼容处理：部分 bundle 格式可能用 "name" 而非 "id" 作为唯一标识
-        # OpenClawAdapter 要求 id 字段，这里做兼容补全
-        if "id" not in data:
-            # 尝试用 name 或目录名作为 id
-            fallback_id = data.get("name") or manifest_path.parent.name
-            if isinstance(fallback_id, str) and fallback_id.strip():
-                data = {**data, "id": fallback_id}
-                logger.debug(
-                    f"{fmt.value} bundle 缺少 'id' 字段，使用 '{fallback_id}' 作为 id: {manifest_path}"
-                )
-            else:
-                logger.error(f"{fmt.value} bundle 缺少 'id' 且无法推断: {manifest_path}")
-                return None
+        # 唯一标识必须显式声明：拒绝伪造
+        if not isinstance(data.get("id"), str) or not data["id"].strip():
+            raise BundleManifestError(
+                f"{fmt.value} bundle manifest 缺少 'id' 字段，拒绝适配: {manifest_path}"
+            )
 
         try:
             manifest = self._openclaw_adapter.parse_manifest_dict(data)
@@ -266,7 +254,9 @@ class BundleManifestAdapter:
             return adapted
         except OpenClawManifestError as e:
             logger.error(f"{fmt.value} bundle 适配失败: {manifest_path} — {e}")
-            return None
+            raise BundleManifestError(
+                f"{fmt.value} bundle 适配失败: {manifest_path} — {e}"
+            ) from e
 
     @staticmethod
     def _load_json(path: Path) -> Any:
@@ -293,3 +283,7 @@ class BundleManifestAdapter:
 
 class BundleLoadError(Exception):
     """bundle manifest 加载失败时抛出。"""
+
+
+class BundleManifestError(Exception):
+    """bundle manifest 语义校验或适配失败时抛出（拒绝伪造/静默跳过）。"""

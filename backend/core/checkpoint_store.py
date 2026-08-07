@@ -63,7 +63,9 @@ class CheckpointStore:
                 checkpoint["can_undo"] = True
                 logger.info(f"Checkpoint saved for overwrite: {file_path}, op_id={operation_id}")
             except Exception as exc:
+                # 备份失败必须中止覆写（否则覆盖后无法撤销），禁止继续写入
                 logger.warning(f"Failed to save checkpoint backup for {file_path}: {exc}")
+                raise
 
         elif operation_type in ("create", "delete"):
             checkpoint["can_undo"] = True

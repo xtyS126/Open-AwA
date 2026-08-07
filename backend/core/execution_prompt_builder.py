@@ -8,32 +8,19 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from loguru import logger
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from soul.profile import OnionProfile
 
 
 def _load_onion_profile(user_id: str, db: Session) -> Optional[OnionProfile]:
-    """加载用户画像；未建立画像或加载失败时返回空值。"""
+    """加载用户画像；未建立画像时返回空值，加载失败时传播异常。"""
     if not user_id or db is None:
         return None
 
-    try:
-        from soul.persistence import load_profile
+    from soul.persistence import load_profile
 
-        return load_profile(db, user_id)
-    except SQLAlchemyError as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"读取用户画像数据库查询失败: {exc}"
-        )
-        return None
-    except (ImportError, AttributeError, ValueError, TypeError) as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"加载用户画像失败: {exc}"
-        )
-        return None
+    return load_profile(db, user_id)
 
 
 def _build_profile_context(user_id: str, db: Session) -> str:
@@ -65,24 +52,18 @@ def _build_onion_fact_set(onion_profile: Optional[OnionProfile]) -> set:
     if onion_profile is None:
         return set()
 
-    try:
-        fact_set: set = set()
-        for layer_name in ("surface", "interest", "role", "values", "core"):
-            layer = getattr(onion_profile, layer_name, None)
-            if layer is None:
-                continue
-            structured_data = getattr(layer, "structured_data", None)
-            if not isinstance(structured_data, dict):
-                continue
-            for key, value in structured_data.items():
-                if key is not None:
-                    fact_set.add((str(key), str(value)))
-        return fact_set
-    except (AttributeError, TypeError) as exc:
-        logger.opt(exception=True).warning(
-            f"构建 OnionProfile 事实集合失败，降级为不去重: {exc}"
-        )
-        return set()
+    fact_set: set = set()
+    for layer_name in ("surface", "interest", "role", "values", "core"):
+        layer = getattr(onion_profile, layer_name, None)
+        if layer is None:
+            continue
+        structured_data = getattr(layer, "structured_data", None)
+        if not isinstance(structured_data, dict):
+            continue
+        for key, value in structured_data.items():
+            if key is not None:
+                fact_set.add((str(key), str(value)))
+    return fact_set
 
 
 def _build_profile_facts_context(
@@ -94,30 +75,19 @@ def _build_profile_facts_context(
     if not user_id or db is None:
         return ""
 
-    try:
-        from db.models import ProfileFact
+    from db.models import ProfileFact
 
-        facts = (
-            db.query(ProfileFact)
-            .filter(
-                ProfileFact.user_id == user_id,
-                ProfileFact.is_active.is_(True),
-                ProfileFact.confidence >= 0.7,
-            )
-            .order_by(ProfileFact.confidence.desc())
-            .limit(20)
-            .all()
+    facts = (
+        db.query(ProfileFact)
+        .filter(
+            ProfileFact.user_id == user_id,
+            ProfileFact.is_active.is_(True),
+            ProfileFact.confidence >= 0.7,
         )
-    except SQLAlchemyError as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"读取用户画像事实数据库查询失败: {exc}"
-        )
-        return ""
-    except (ImportError, AttributeError) as exc:
-        logger.bind(user_id=user_id).opt(exception=True).warning(
-            f"加载 ProfileFact 模型失败: {exc}"
-        )
-        return ""
+        .order_by(ProfileFact.confidence.desc())
+        .limit(20)
+        .all()
+    )
 
     if not facts:
         return ""
@@ -151,17 +121,11 @@ def build_recent_short_term_memories_prompt(
         return ""
 
     workspace_id = context.get("workspace_id", "default")
-    try:
-        memories = memory_manager._get_recent_short_term_memories_sync(
-            user_id,
-            limit=20,
-            workspace_id=workspace_id,
-        )
-    except Exception as exc:
-        logger.opt(exception=True).warning(
-            f"加载近期短期记忆失败（不影响主流程）: {exc}"
-        )
-        return ""
+    memories = memory_manager._get_recent_short_term_memories_sync(
+        user_id,
+        limit=20,
+        workspace_id=workspace_id,
+    )
 
     if not memories:
         return ""

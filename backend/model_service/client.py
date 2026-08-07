@@ -206,10 +206,17 @@ class ModelServiceClient:
         resp.raise_for_status()
         return resp.json()
 
-    async def embed(self, texts: List[str], images: List[str]) -> Optional[List[List[float]]]:
-        """文本/图片 → 向量；子进程不可用时返回 None（调用方降级）。"""
+    async def embed(self, texts: List[str], images: List[str]) -> List[List[float]]:
+        """文本/图片 → 向量。
+
+        Raises:
+            RuntimeError: 模型服务未启用或子进程启动失败（显式传播，禁止返回 None 伪装）。
+            Exception: 嵌入调用失败（显式传播，调用方不得静默拿到空向量）。
+        """
         if not await self.ensure_started():
-            return None
+            raise RuntimeError(
+                "模型服务子进程不可用（未启用或启动失败），无法执行嵌入"
+            )
         try:
             resp = await self._client.post(
                 f"{self._base_url}/embed", json={"texts": texts, "images": images}
@@ -218,14 +225,21 @@ class ModelServiceClient:
             self._touch()
             return resp.json()["vectors"]
         except Exception as exc:
-            logger.warning(f"模型服务嵌入调用失败（降级）: {exc}")
+            logger.error(f"模型服务嵌入调用失败: {exc}")
             self._kill_process_sync()
-            return None
+            raise
 
-    async def rerank(self, query: str, documents: List[str]) -> Optional[List[float]]:
-        """查询 + 文档 → 分数；子进程不可用时返回 None。"""
+    async def rerank(self, query: str, documents: List[str]) -> List[float]:
+        """查询 + 文档 → 分数。
+
+        Raises:
+            RuntimeError: 模型服务未启用或子进程启动失败（显式传播）。
+            Exception: 重排调用失败（显式传播，禁止伪装全 0 分）。
+        """
         if not await self.ensure_started():
-            return None
+            raise RuntimeError(
+                "模型服务子进程不可用（未启用或启动失败），无法执行重排"
+            )
         try:
             resp = await self._client.post(
                 f"{self._base_url}/rerank", json={"query": query, "documents": documents}
@@ -234,9 +248,9 @@ class ModelServiceClient:
             self._touch()
             return resp.json()["scores"]
         except Exception as exc:
-            logger.warning(f"模型服务重排调用失败（降级）: {exc}")
+            logger.error(f"模型服务重排调用失败: {exc}")
             self._kill_process_sync()
-            return None
+            raise
 
 
 # ---------------- 协议适配（嵌入 / 重排 Provider） ----------------
@@ -244,7 +258,7 @@ class ModelServiceClient:
 class RemoteEmbeddingProvider:
     """实现 EmbeddingProvider 协议的远程嵌入提供方（代理到模型服务子进程）。
 
-    子进程不可用时 embed_texts 返回空列表（调用方已有 Hash 降级语义）。
+    子进程不可用时显式传播异常，禁止返回空列表伪装嵌入成功。
     """
 
     provider_name = "model-service"
@@ -261,8 +275,7 @@ class RemoteEmbeddingProvider:
         return spec.dimension if spec else None
 
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        vectors = await self._client.embed(texts, [])
-        return vectors or []
+        return await self._client.embed(texts, [])
 
     async def embed_inputs(self, inputs: List[Any]) -> List[List[float]]:
         # 多模态输入：拆分文本与图片 URL 透传给子进程
@@ -277,8 +290,7 @@ class RemoteEmbeddingProvider:
                         url = block.get("image_url", {}).get("url", "")
                         if url:
                             images.append(url)
-        vectors = await self._client.embed(texts, images)
-        return vectors or []
+        return await self._client.embed(texts, images)
 
 
 class RemoteReranker:
@@ -290,8 +302,8 @@ class RemoteReranker:
         self._client = client
 
     async def rerank(self, query: str, documents: List[str]) -> List[float]:
-        scores = await self._client.rerank(query, documents)
-        return scores or [0.0] * len(documents)
+        # 重排失败由 client 显式传播，禁止伪装全 0 分
+        return await self._client.rerank(query, documents)
 
 
 # ---------------- 单例 ----------------

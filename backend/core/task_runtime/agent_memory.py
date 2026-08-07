@@ -93,7 +93,7 @@ def _load_user_scope_memories(agent_id: str) -> List[AgentMemoryEntry]:
     """从长期记忆表加载 USER 范围记忆。
 
     复用 MemoryManager 的内部同步方法，避免 async/sync 转换开销。
-    加载失败时返回空列表并记录警告，不向上抛出异常以保障代理启动流程。
+    加载失败时异常自然传播（记忆是子代理上下文的必需输入）。
 
     参数:
         agent_id: 代理 ID（用于日志关联）
@@ -101,43 +101,37 @@ def _load_user_scope_memories(agent_id: str) -> List[AgentMemoryEntry]:
     返回:
         记忆条目列表
     """
-    try:
-        # 延迟导入避免循环依赖：memory.manager -> core.conversation_sessions -> core.task_runtime
-        from db.models import SessionLocal
-        from memory.manager import MemoryManager
+    # 延迟导入避免循环依赖：memory.manager -> core.conversation_sessions -> core.task_runtime
+    from db.models import SessionLocal
+    from memory.manager import MemoryManager
 
-        manager = MemoryManager(SessionLocal)
-        # 调用内部同步方法获取高重要性长期记忆
-        memories = manager._get_and_evaluate_long_term_memories_sync(
-            min_importance=0.5,
-            limit=20,
-        )
-        entries: List[AgentMemoryEntry] = []
-        for mem in memories:
-            entries.append(
-                AgentMemoryEntry(
-                    agent_id=agent_id,
-                    scope=AgentMemoryScope.USER,
-                    key=str(mem.id),
-                    value=mem.content or "",
-                    timestamp=(
-                        mem.created_at.isoformat()
-                        if mem.created_at
-                        else datetime.now(timezone.utc).isoformat()
-                    ),
-                    metadata={
-                        "importance": float(mem.importance or 0.0),
-                        "confidence": float(mem.confidence or 0.0),
-                        "memory_layer": getattr(mem, "memory_layer", "semantic"),
-                    },
-                )
+    manager = MemoryManager(SessionLocal)
+    # 调用内部同步方法获取高重要性长期记忆
+    memories = manager._get_and_evaluate_long_term_memories_sync(
+        min_importance=0.5,
+        limit=20,
+    )
+    entries: List[AgentMemoryEntry] = []
+    for mem in memories:
+        entries.append(
+            AgentMemoryEntry(
+                agent_id=agent_id,
+                scope=AgentMemoryScope.USER,
+                key=str(mem.id),
+                value=mem.content or "",
+                timestamp=(
+                    mem.created_at.isoformat()
+                    if mem.created_at
+                    else datetime.now(timezone.utc).isoformat()
+                ),
+                metadata={
+                    "importance": float(mem.importance or 0.0),
+                    "confidence": float(mem.confidence or 0.0),
+                    "memory_layer": getattr(mem, "memory_layer", "semantic"),
+                },
             )
-        return entries
-    except Exception as exc:
-        logger.bind(module="agent_memory", agent_id=agent_id).warning(
-            f"加载 USER 范围记忆失败: {exc}"
         )
-        return []
+    return entries
 
 
 def _load_project_scope_memories(
@@ -190,10 +184,11 @@ def _load_project_scope_memories(
             )
         return entries
     except (OSError, json.JSONDecodeError) as exc:
+        # 项目记忆文件损坏或不可读必须传播，禁止静默返回空列表
         logger.bind(module="agent_memory", agent_id=agent_id).warning(
             f"加载 PROJECT 范围记忆失败: {exc}"
         )
-        return []
+        raise
 
 
 def _load_local_scope_memories(agent_id: str) -> List[AgentMemoryEntry]:

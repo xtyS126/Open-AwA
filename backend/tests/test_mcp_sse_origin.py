@@ -61,30 +61,13 @@ class TestStartupMcpSseOrigin:
         assert SSETransport.is_origin_allowed("https://single.example.com") is True
         assert SSETransport.is_origin_allowed("https://other.example.com") is False
 
-    def test_empty_environment_variable_logs_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """未配置环境变量时白名单应为空，并记录 WARNING 日志。"""
+    def test_empty_environment_variable_refuses_startup(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """未配置环境变量时必须拒绝启动（fail-closed，禁止默认允许所有 origin）。"""
         monkeypatch.delenv("MCP_SSE_ALLOWED_ORIGINS", raising=False)
         profiler = StartupProfiler()
 
-        # 捕获 loguru 日志，验证 WARNING 提示
-        captured_warnings: list[str] = []
-
-        def sink(message):
-            captured_warnings.append(str(message))
-
-        from loguru import logger
-        handler_id = logger.add(sink, level="WARNING")
-
-        try:
+        with pytest.raises(RuntimeError, match="MCP_SSE_ALLOWED_ORIGINS"):
             main._startup_mcp_sse_origin(profiler)
-        finally:
-            logger.remove(handler_id)
-
-        # 白名单为空时 SSETransport 允许所有 origin
-        assert SSETransport.is_origin_allowed("https://any.example.com") is True
-        # 应至少有一条 WARNING 日志包含安全提示
-        assert any("MCP_SSE_ALLOWED_ORIGINS" in msg for msg in captured_warnings), \
-            "未配置 origin 时应记录包含 MCP_SSE_ALLOWED_ORIGINS 的 WARNING 日志"
 
     def test_blank_origins_are_filtered(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """环境变量中包含空白项时应被过滤，不写入白名单。"""

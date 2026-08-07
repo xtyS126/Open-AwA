@@ -54,6 +54,7 @@ export default function TestPage() {
     { name: 'navigation', label: '路由导航', category: 'frontend', status: 'idle', message: '待检测', detail: null },
   ])
   const [scenarios, setScenarios] = useState<ScenarioTest[]>([])
+  const [scenarioError, setScenarioError] = useState<string | null>(null)
   const [scenariosLoaded, setScenariosLoaded] = useState(false)
   const [running, setRunning] = useState(false)
   const [scenariosRunning, setScenariosRunning] = useState(false)
@@ -73,7 +74,7 @@ export default function TestPage() {
     setTests((prev) => prev.map((t) => ({ ...t, ...updater(t) })))
   }, [])
 
-  // [NEW] 加载可用场景列表
+  // [NEW] 加载可用场景列表 —— 失败时展示错误条，不静默显示空列表
   useEffect(() => {
     testRunnerAPI.listScenarios().then((res) => {
       const items: ScenarioTest[] = (res.data.scenarios || []).map((s: ScenarioDef) => ({
@@ -84,7 +85,8 @@ export default function TestPage() {
       }))
       setScenarios(items)
       setScenariosLoaded(true)
-    }).catch(() => {
+    }).catch((err) => {
+      setScenarioError(err instanceof Error ? err.message : '场景列表加载失败')
       setScenariosLoaded(true)
     })
   }, [])
@@ -365,6 +367,7 @@ export default function TestPage() {
             <h2>真实场景测试</h2>
             <span className={styles['scenario-desc']}>通过API运行端到端功能场景，验证各子系统在真实调用链路中的表现</span>
           </div>
+          {scenarioError && <div className={styles['scenario-error']}>场景列表加载失败：{scenarioError}</div>}
           <button
             className={styles['btn-run-all']}
             onClick={runAllScenarios}

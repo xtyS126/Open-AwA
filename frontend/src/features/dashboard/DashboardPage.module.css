@@ -29,6 +29,16 @@
   color: var(--color-text-secondary);
 }
 
+/* 数据加载失败错误提示条 */
+.errorBanner {
+  margin-bottom: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg, rgba(220, 38, 38, 0.1));
+  color: var(--color-danger, #dc2626);
+  font-size: var(--text-sm);
+}
+
 /* ========== 区块标题（系统资源 / 最近活动） ========== */
 
 .section {

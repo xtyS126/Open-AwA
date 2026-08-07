@@ -301,17 +301,20 @@ function DashboardPage() {
   const [loading, setLoading] = useState(true)
   /* 业务数据状态 —— 合并自 DataDashboard，独立于系统概览，加载失败时为 null */
   const [dataStats, setDataStats] = useState<DataStats | null>(null)
+  /* 加载失败错误态 —— 任一数据源失败即展示错误提示，不显示假空数据 */
+  const [error, setError] = useState<string | null>(null)
 
   const loadStats = async () => {
+    setError(null)
     try {
-      /* 并发加载所有数据源 —— 保持原有调用不变，业务数据并行拉取 */
+      /* 并发加载所有数据源 —— 任一失败整体走 catch 渲染错误态，不吞错 */
       const [behaviorRes, billingRes, skillsRes, pluginsRes, memoryRes, dataRes] = await Promise.all([
-        behaviorAPI.getStats(7).catch(() => ({ data: null })),
-        billingAPI.getCostStatistics({ period: 'monthly' }).catch(() => ({ data: null })),
-        skillsAPI.getAll().catch(() => ({ data: [] })),
-        pluginsAPI.getAll().catch(() => ({ data: [] })),
-        memoryAPI.getLongTerm().catch(() => ({ data: [] })),
-        getDataStats().catch(() => null),
+        behaviorAPI.getStats(7),
+        billingAPI.getCostStatistics({ period: 'monthly' }),
+        skillsAPI.getAll(),
+        pluginsAPI.getAll(),
+        memoryAPI.getLongTerm(),
+        getDataStats(),
       ])
       setStats(behaviorRes.data)
       setBillingStats(billingRes.data)
@@ -330,7 +333,7 @@ function DashboardPage() {
         longTermMemories: memoriesList.length,
       })
     } catch {
-      setStats(null)
+      setError('仪表盘数据加载失败，请稍后重试')
     } finally {
       setLoading(false)
     }
@@ -447,6 +450,9 @@ function DashboardPage() {
         <h1 className={styles.pageTitle}>仪表盘</h1>
         <p className={styles.pageSubtitle}>系统运行状态概览</p>
       </div>
+
+      {/* 数据加载失败错误提示 —— 不显示假空数据 */}
+      {error && <div className={styles.errorBanner}>{error}</div>}
 
       {/* ========== 统计卡片行 ========== */}
       <div className={styles.statGrid}>

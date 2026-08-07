@@ -16,6 +16,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -85,6 +87,20 @@ fake_vector_store = _FakeVectorStore()
 MemoryManager._shared_vector_store = fake_vector_store
 
 
+@pytest.fixture(autouse=True)
+def _rearm_fake_vector_store():
+    """
+    每个用例前重装假向量库。
+
+    conftest 的 teardown/setup 会在用例之间把 MemoryManager._shared_vector_store
+    清空（强制下个用例重建真实 VectorStoreManager）；若本文件用例未在启动 TestClient
+    前重装假向量库，lifespan 预热会构造真实 Qdrant 存储，而测试仅向 DB 插入记忆行
+    （无向量 point），fail-closed 的 update_memory_metadata 会抛 KeyError 使用例 500。
+    """
+    MemoryManager._shared_vector_store = fake_vector_store
+    yield
+
+
 def override_get_db():
     """覆盖 get_db 依赖，返回测试用 SessionLocal。"""
     db = TestingSessionLocal()
@@ -113,14 +129,18 @@ def override_get_current_user_factory(user_id: str):
 
 
 @contextmanager
-def _test_client(user_id: str = "user-1"):
-    """构造 TestClient，覆盖 db / current_user / memory_manager 依赖。"""
+def _test_client(user_id: str = "user-1", *, raise_server_exceptions: bool = True):
+    """构造 TestClient，覆盖 db / current_user / memory_manager 依赖。
+
+    raise_server_exceptions=False 用于断言未捕获异常被转换为 500 响应的用例
+    （ServerErrorMiddleware 处理后会主动 re-raise 供服务器日志记录）。
+    """
     previous_overrides = dict(app.dependency_overrides)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user_factory(user_id)
     app.dependency_overrides[get_memory_manager] = lambda: MemoryManager(TestingSessionLocal)
     try:
-        with TestClient(app) as client:
+        with TestClient(app, raise_server_exceptions=raise_server_exceptions) as client:
             yield client
     finally:
         app.dependency_overrides = previous_overrides
@@ -321,6 +341,28 @@ def test_long_term_list_source_type_fallback_manual():
 # ---------------------------------------------------------------------------
 # 手动巩固
 # ---------------------------------------------------------------------------
+
+
+def test_consolidation_run_propagates_unexpected_exception_as_500(monkeypatch):
+    """
+    场景：手动巩固执行抛出未预期异常（删除兜底后的错误路径）。
+
+    When 调用 POST /api/memory/consolidation/run 且 run_if_due 抛错
+    Then 返回 500（异常自然传播，禁止以 success=False 伪装成功返回）
+    """
+    from memory.consolidation_runner import ConsolidationRunner
+
+    async def _boom(self, **kwargs):
+        raise RuntimeError("consolidation crashed")
+
+    monkeypatch.setattr(ConsolidationRunner, "run_if_due", _boom)
+
+    with _test_client(raise_server_exceptions=False) as client:
+        response = client.post("/api/memory/consolidation/run")
+
+    assert response.status_code == 500
+    # 结构化错误体：统一 error.message 字段（code=internal_server_error）
+    assert response.json()["error"]["code"] == "internal_server_error"
 
 
 def test_consolidation_run_returns_statistics():

@@ -132,6 +132,18 @@
   font-size: 14px;
 }
 
+/* 场景列表加载失败错误条 */
+.scenario-error {
+  margin: 0 0 10px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+  font-size: 13px;
+  line-height: 1.5;
+  flex-basis: 100%;
+}
+
 .badge-idle {
   color: var(--color-text-secondary);
   font-size: 14px;

@@ -58,30 +58,32 @@ class FeishuAdapter(IMAdapter):
         logger.bind(event="feishu_stopped", module="im_feishu").info("飞书适配器已停止")
 
     async def send_message(self, chat_id: str, text: str) -> bool:
-        """发送消息到飞书。"""
+        """发送消息到飞书。
+
+        失败时抛出结构化异常让路由层感知（禁止返回 False 被路由层忽略）。
+
+        Raises:
+            RuntimeError: 适配器未启动或未认证。
+            ValueError: 飞书 API 返回错误。
+            Exception: 网络/HTTP 异常（显式传播）。
+        """
         if not self._client or not self._tenant_access_token:
-            return False
-        try:
-            resp = await self._client.post(
-                "https://open.feishu.cn/open-apis/im/v1/messages",
-                params={"receive_id_type": "chat_id"},
-                headers={"Authorization": f"Bearer {self._tenant_access_token}"},
-                json={
-                    "receive_id": chat_id,
-                    "msg_type": "text",
-                    "content": f'{{"text":"{text}"}}',
-                },
-            )
-            data = resp.json()
-            return data.get("code") == 0
-        except Exception as e:
-            logger.bind(
-                event="feishu_send_error",
-                module="im_feishu",
-                chat_id=chat_id,
-                error=str(e),
-            ).error(f"飞书发送消息失败: {e}")
-            return False
+            raise RuntimeError("飞书适配器未启动或未完成认证，无法发送消息")
+
+        resp = await self._client.post(
+            "https://open.feishu.cn/open-apis/im/v1/messages",
+            params={"receive_id_type": "chat_id"},
+            headers={"Authorization": f"Bearer {self._tenant_access_token}"},
+            json={
+                "receive_id": chat_id,
+                "msg_type": "text",
+                "content": f'{{"text":"{text}"}}',
+            },
+        )
+        data = resp.json()
+        if data.get("code") != 0:
+            raise ValueError(f"飞书发送消息失败: {data.get('msg', 'unknown error')}")
+        return True
 
     async def receive_message(self) -> AsyncGenerator[IMMessage, None]:
         """接收来自飞书的消息流（通过 Webhook 推入队列）。"""

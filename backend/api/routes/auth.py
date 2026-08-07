@@ -382,6 +382,7 @@ async def rotate_api_key(
     ).warning("访问密钥已轮转")
 
     # 清除 owner 缓存，下次查询时会重新加载
+    # 失败时返回 500：旧 Key 在 TTL 内继续有效属于安全敏感状态，不得伪装成功
     try:
         from core.owner import invalidate_owner_cache
         invalidate_owner_cache()
@@ -391,7 +392,11 @@ async def rotate_api_key(
             module="auth",
             action="rotate_api_key",
             error=str(exc),
-        ).warning(f"清除 owner 缓存失败，可能使用过期数据: {exc}")
+        ).error(f"清除 owner 缓存失败，旧 Key 可能在 TTL 内继续有效: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail="清除 owner 缓存失败，旧 Key 未立即失效，轮转失败请重试",
+        ) from exc
 
     return {
         "message": "API Key 已轮转。请将新 Key 分发到所有客户端。旧 Key 立即失效。",

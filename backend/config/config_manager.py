@@ -132,22 +132,20 @@ class ConfigManager:
                     logger.info(f"已加载项目配置: {config_file} ({len(data)} 项)")
 
         # 2. Markdown frontmatter 配置
+        # frontmatter 存在但解析失败时显式传播（配置损坏必须可见，禁止静默丢失）
         for md_file in ["CLAUDE.md", "AGENTS.md"]:
             md_path = project_path / md_file
             if md_path.exists():
-                try:
-                    content = md_path.read_text(encoding="utf-8")
-                    frontmatter = self._parse_markdown_frontmatter(content)
-                    if frontmatter:
-                        for key, value in frontmatter.items():
-                            self._entries[key] = ConfigEntry(
-                                key=key, value=value,
-                                source=ConfigSourceType.PROJECT,
-                                file_path=str(md_path),
-                            )
-                        logger.info(f"已加载 Markdown 配置: {md_path} ({len(frontmatter)} 项)")
-                except Exception as e:
-                    logger.warning(f"解析 {md_file} 配置失败: {e}")
+                content = md_path.read_text(encoding="utf-8")
+                frontmatter = self._parse_markdown_frontmatter(content)
+                if frontmatter:
+                    for key, value in frontmatter.items():
+                        self._entries[key] = ConfigEntry(
+                            key=key, value=value,
+                            source=ConfigSourceType.PROJECT,
+                            file_path=str(md_path),
+                        )
+                    logger.info(f"已加载 Markdown 配置: {md_path} ({len(frontmatter)} 项)")
 
         self._loaded_sources.append(ConfigSourceType.PROJECT)
 
@@ -237,19 +235,19 @@ class ConfigManager:
     # ===== 内部工具方法 =====
 
     @staticmethod
-    def _read_jsonc(filepath: Path) -> Optional[Dict[str, Any]]:
-        """读取 JSONC（JSON with Comments）文件"""
+    def _read_jsonc(filepath: Path) -> Dict[str, Any]:
+        """读取 JSONC（JSON with Comments）文件
+
+        Raises:
+            ValueError: 配置文件缺失/损坏时显式抛错（禁止静默返回 None 丢失配置）。
+        """
+        content = filepath.read_text(encoding="utf-8")
+        # 移除注释
+        cleaned = ConfigManager._strip_json_comments(content)
         try:
-            content = filepath.read_text(encoding="utf-8")
-            # 移除注释
-            cleaned = ConfigManager._strip_json_comments(content)
             return json.loads(cleaned)
         except json.JSONDecodeError as e:
-            logger.warning(f"解析 JSONC 失败 {filepath}: {e}")
-            return None
-        except Exception as e:
-            logger.warning(f"读取配置文件失败 {filepath}: {e}")
-            return None
+            raise ValueError(f"解析 JSONC 失败 {filepath}: {e}") from e
 
     @staticmethod
     def _strip_json_comments(content: str) -> str:
@@ -282,21 +280,25 @@ class ConfigManager:
         从 Markdown 文件的 YAML frontmatter 中提取配置项。
 
         支持的配置字段：model, shell, permissions, agents, compaction, skills
+
+        Returns:
+            配置字典；文件无 frontmatter 时返回 None。
+
+        Raises:
+            ValueError: frontmatter 存在但 YAML 解析失败（显式报错，配置不得静默丢失）。
         """
         frontmatter_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
         if not frontmatter_match:
             return None
 
+        import yaml
         try:
-            import yaml
             data = yaml.safe_load(frontmatter_match.group(1)) or {}
         except Exception as exc:
-            # 记录日志而非静默吞异常，便于排查 frontmatter 解析失败问题
-            logger.warning(f"解析 Markdown frontmatter 失败: {exc}")
-            return None
+            raise ValueError(f"解析 Markdown frontmatter 失败: {exc}") from exc
 
         if not isinstance(data, dict):
-            return None
+            raise ValueError(f"Markdown frontmatter 顶层结构必须是对象，实际: {type(data).__name__}")
 
         # 只提取已知的配置字段
         known_fields = {

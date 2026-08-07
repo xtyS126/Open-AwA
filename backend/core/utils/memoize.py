@@ -22,6 +22,8 @@ from collections import OrderedDict
 from functools import wraps
 from typing import Any, Callable, Optional
 
+from loguru import logger
+
 
 def _make_key(args: tuple, kwargs: dict) -> str:
     """根据函数参数生成缓存 key。"""
@@ -50,11 +52,11 @@ def memoize_with_ttl(ttl: float = 60.0, maxsize: int = 128) -> Callable:
             args: tuple,
             kwargs: dict,
         ) -> None:
-            # 后台刷新：失败静默忽略，不影响旧值
-            # （任务规范允许的唯一静默吞异常场景）
+            # 后台刷新失败保留旧值，但必须记录 warning，不得完全静默
             try:
                 refreshed = target(*args, **kwargs)
-            except Exception:
+            except Exception as exc:
+                logger.warning(f"缓存后台刷新失败（保留旧值）: {target.__name__} key={key}: {exc}")
                 return
             with lock:
                 cache[key] = (refreshed, time.time())

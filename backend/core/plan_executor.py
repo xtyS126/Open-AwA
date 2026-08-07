@@ -140,11 +140,13 @@ class PlanExecutor:
                 "auto_plugin_error",
             )
         except Exception as error:
+            # 自动执行失败必须传播，禁止以空结果静默继续
             logger.bind(
                 event="auto_execution_error",
                 module="plan_executor",
                 error_type=type(error).__name__,
             ).opt(exception=True).error(f"自动执行技能或插件异常: {error}")
+            raise
         return auto_results
 
     @staticmethod

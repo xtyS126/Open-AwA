@@ -392,6 +392,7 @@ const ruRU: Record<string, string> = {
   "skillMarket.uninstalling": "Удаление...",
   "skillMarket.installed": "Установлено",
   "skillMarket.empty": "Ничего не найдено",
+  "skillMarket.loadFailed": "Не удалось загрузить магазин навыков, повторите позже",
   "skillMarket.installFailed": "Ошибка: {name}",
   "dashboard.title": "Панель",
   "dashboard.subtitle": "Обзор AI Agent",

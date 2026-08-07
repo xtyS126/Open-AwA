@@ -252,6 +252,10 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
 
     agent = AIAgent()
 
+    async def fake_build_conversation_history(session_id, max_turns=20):
+        # 轻量实例未注入记忆管理器，mock 对话历史返回空列表
+        return []
+
     async def fake_recognize_intent(user_input):
         return "chat"
 
@@ -369,11 +373,20 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
     async def fake_update_memory(user_input, response, context):
         return None
 
+    monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
     monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
     monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
     monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
+    # PlanExecutor 在构造时保存了方法绑定，需同时 patch 其实例字段；
+    # AIAgent 实例属性用于 _inject_runtime_capabilities 的能力聚合路径
     monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
     monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
+    monkeypatch.setattr(
+        agent._plan_executor, "_get_available_skills", fake_get_available_skills
+    )
+    monkeypatch.setattr(
+        agent._plan_executor, "_get_available_plugins", fake_get_available_plugins
+    )
     monkeypatch.setattr(
         agent._capability_aggregator,
         "collect_configured_models",

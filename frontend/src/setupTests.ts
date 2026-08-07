@@ -5,7 +5,8 @@ import { useI18nStore } from '@/i18n'
 useI18nStore.setState({ locale: 'zh-CN' })
 
 // 模拟 indexedDB——jsdom 环境不提供 indexedDB，
-// 测试中让其 open 失败以触发 chatPersistence 的 localStorage 降级路径
+// 测试中让其 open 失败以覆盖 chatPersistence 的 IndexedDB 不可用路径：
+// 读取显式抛错（无 localStorage 降级），由 sessionStore 记录错误并暴露 persistenceAvailable=false
 if (typeof indexedDB === 'undefined') {
   // idb 库引用了这些全局类，须在 indexedDB 之前定义
   class MockIDBRequest extends EventTarget {

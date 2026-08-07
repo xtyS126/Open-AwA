@@ -379,11 +379,14 @@ export function useProviderForm({
 
       // 并行获取脱敏 API Key 和供应商模型列表，减少串行等待时间
       const [maskedApiKey] = await Promise.all([
-        // 获取脱敏 API Key（失败不阻塞主流程）
+        // 获取脱敏 API Key —— 失败显式提示，不得显示"无密钥"误导用户重新填写
         providerData.has_api_key
           ? modelsAPI.getMaskedApiKey(providerId)
               .then(res => res.data.masked_api_key as string | null)
-              .catch(() => null as string | null)
+              .catch(() => {
+                showNotification({ type: 'error', text: '获取脱敏 API Key 失败，密钥状态可能不准确' })
+                return null as string | null
+              })
           : Promise.resolve(null as string | null),
         // 获取供应商模型列表（内部已处理错误，不会抛出异常）
         fetchProviderModels(providerId, selectedModels, false, { api_endpoint })
@@ -618,7 +621,7 @@ export function useProviderForm({
       const next = !prev
       // 仅在切换到"显示"且尚未拉取明文时触发请求
       if (next && plainApiKey === null && providerForm.has_api_key && providerForm.provider) {
-        // 触发即忘：不阻塞 UI 切换，失败时保持脱敏展示
+        // 触发即忘：不阻塞 UI 切换，失败时保持脱敏展示并显式提示
         modelsAPI.getPlainApiKey(providerForm.provider)
           .then(res => {
             if (res.data.api_key) {
@@ -626,12 +629,12 @@ export function useProviderForm({
             }
           })
           .catch(() => {
-            // 拉取失败时静默回退到脱敏展示
+            showNotification({ type: 'error', text: '获取明文 API Key 失败，仅可查看脱敏密钥' })
           })
       }
       return next
     })
-  }, [plainApiKey, providerForm.has_api_key, providerForm.provider])
+  }, [plainApiKey, providerForm.has_api_key, providerForm.provider, showNotification])
 
   /** 打开创建供应商模态框 */
   const handleOpenCreateProviderModal = useCallback(() => {
@@ -815,7 +818,9 @@ export function useProviderForm({
             masked_api_key: maskedRes.data.masked_api_key
           }))
         } catch {
+          // 密钥已保存但脱敏显示刷新失败：显式提示，不静默显示过期/缺失的密钥状态
           setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl, has_api_key: true, api_key_status: 'active' }))
+          showNotification({ type: 'error', text: 'API Key 已保存，但刷新脱敏密钥显示失败' })
         }
       } else {
         setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl }))

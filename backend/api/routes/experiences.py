@@ -240,21 +240,17 @@ async def extract_experience(
     )
     manager.db.add(log)
 
-    # 恢复双写机制：将提取的经验同时保存到数据库主表
-    try:
-        await manager.add_experience(
-            experience_type=experience_data.get('experience_type', 'method'),
-            title=experience_data.get('title', '未命名经验'),
-            content=experience_data.get('content', ''),
-            trigger_conditions=experience_data.get('trigger_conditions', ''),
-            confidence=experience_data.get('confidence', 0.5),
-            source_task='session_extraction',
-            metadata={"session_id": request.session_id, "file": experience_data.get('save_result')},
-            user_id=current_user.id
-        )
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Failed to save extracted experience to DB: {e}")
+    # 双写：将提取的经验同时保存到数据库主表；失败直接抛错转 500，禁止返回 extracted 但数据丢失
+    await manager.add_experience(
+        experience_type=experience_data.get('experience_type', 'method'),
+        title=experience_data.get('title', '未命名经验'),
+        content=experience_data.get('content', ''),
+        trigger_conditions=experience_data.get('trigger_conditions', ''),
+        confidence=experience_data.get('confidence', 0.5),
+        source_task='session_extraction',
+        metadata={"session_id": request.session_id, "file": experience_data.get('save_result')},
+        user_id=current_user.id
+    )
 
     # 同步 DB commit 放入线程池执行，避免阻塞事件循环
     await asyncio.to_thread(manager.db.commit)

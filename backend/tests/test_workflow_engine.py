@@ -546,15 +546,15 @@ def test_render_steps_placeholder():
     assert result == "step1_result"
 
 
-def test_render_nonexistent_placeholder_returns_none():
-    """不存在的占位符路径应返回 None。"""
+def test_render_nonexistent_placeholder_raises():
+    """不存在的占位符路径必须显式抛错（定义错误在执行前暴露）。"""
     engine = WorkflowEngine(db_session=None, skill_engine=None)
-    result = engine._render_data("{{ context.nonexistent.key }}", {
-        "context": {},
-        "steps": {},
-        "last_result": {},
-    })
-    assert result is None
+    with pytest.raises(ValueError, match="解析失败"):
+        engine._render_data("{{ context.nonexistent.key }}", {
+            "context": {},
+            "steps": {},
+            "last_result": {},
+        })
 
 
 # ==================== 条件表达式求值测试 ====================
@@ -631,6 +631,13 @@ def test_evaluate_empty_condition_returns_false():
         _eval_condition(engine, "", {})
 
 
+def test_evaluate_runtime_failure_raises():
+    """求值期异常（如访问不存在的属性）必须显式抛错，禁止静默返回 False。"""
+    engine = WorkflowEngine(db_session=None, skill_engine=None)
+    with pytest.raises(ValueError, match="求值失败"):
+        _eval_condition(engine, "context.missing > 5", {"x": 10})
+
+
 # ==================== 工具步骤参数校验测试 ====================
 
 @pytest.mark.asyncio
@@ -691,22 +698,21 @@ steps:
 
 # ==================== 数据渲染边界测试 ====================
 
-def test_resolve_placeholder_empty_expression():
-    """空占位符表达式应返回 None。"""
+def test_resolve_placeholder_empty_expression_raises():
+    """空占位符表达式必须显式抛错。"""
     engine = WorkflowEngine(db_session=None, skill_engine=None)
-    result = engine._resolve_placeholder("  ", {
-        "context": {},
-        "steps": {},
-        "last_result": {},
-    })
-    assert result is None
+    with pytest.raises(ValueError, match="为空"):
+        engine._resolve_placeholder("  ", {
+            "context": {},
+            "steps": {},
+            "last_result": {},
+        })
 
 
 def test_resolve_placeholder_default_to_context():
-    """不以 context/steps/last_result 开头的占位符默认从 context 中查找。
-    
-    注意：当前实现存在已知问题——默认走 context 分支时会将 root_name 插入 parts，
-    导致双重遍历，最终返回 None 而非实际值。此测试记录当前实际行为。
+    """不以 context/steps/last_result 开头的裸名称占位符默认从 context 中查找。
+
+    修复历史双重遍历 bug：`{{key}}` 应直接解析 context 中的 key 值。
     """
     engine = WorkflowEngine(db_session=None, skill_engine=None)
     result = engine._resolve_placeholder("key", {
@@ -714,7 +720,18 @@ def test_resolve_placeholder_default_to_context():
         "steps": {},
         "last_result": {},
     })
-    assert result is None  # 已知行为：双重遍历导致返回 None
+    assert result == "direct_value"
+
+
+def test_resolve_placeholder_broken_path_raises():
+    """裸名称占位符路径断裂（值不存在）时必须显式抛错。"""
+    engine = WorkflowEngine(db_session=None, skill_engine=None)
+    with pytest.raises(ValueError, match="解析失败"):
+        engine._resolve_placeholder("missing_key", {
+            "context": {},
+            "steps": {},
+            "last_result": {},
+        })
 
 
 def test_resolve_placeholder_list_index():

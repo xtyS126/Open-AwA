@@ -241,13 +241,14 @@ def merge_results(
     if strategy == ResultMergeStrategy.VOTING:
         return merge_results_voting(results)
     if strategy == ResultMergeStrategy.LLM_SUMMARY:
-        # LLM 摘要需要外部 LLM 调用，此处降级为拼接并标注
-        concatenated = merge_results_concatenate(results)
-        return f"[LLM_SUMMARY 需外部 LLM 调用，降级为拼接]\n{concatenated}"
+        # LLM 摘要需要外部 LLM 调用，当前未实现该合并器，必须显式失败
+        raise ValueError("ResultMergeStrategy.LLM_SUMMARY 未实现，禁止降级为拼接")
     if strategy == ResultMergeStrategy.DAG:
-        # DAG 合并需要依赖信息，此处按完成顺序拼接
+        # DAG 合并需要依赖信息，当前未实现该合并器，必须显式失败
+        raise ValueError("ResultMergeStrategy.DAG 未实现，禁止降级为按序拼接")
+    if strategy == ResultMergeStrategy.CONCATENATE:
         return merge_results_concatenate(results)
-    return merge_results_concatenate(results)
+    raise ValueError(f"未知的合并策略: {strategy}")
 
 
 # ── Agent 节点状态与图结构（保留原有 LangGraph 风格） ──────────────
@@ -1300,7 +1301,7 @@ class SubagentOrchestrator:
 
         - Level 1 (CONTEXT): 仅返回上下文片段，无额外资源
         - Level 2 (PROCESS): 调用 WorktreeManager 创建 git worktree
-        - Level 3 (SANDBOX): 预留 Docker/VM 隔离接口，当前降级为 Level 2
+        - Level 3 (SANDBOX): 尚未实现，请求该级别时直接抛出异常（fail-fast）
         """
         context: Dict[str, Any] = {
             "isolation_level": task.isolation_level,
@@ -1310,28 +1311,29 @@ class SubagentOrchestrator:
         if task.isolation_level == IsolationLevel.CONTEXT:
             return context
 
-        if task.isolation_level in (IsolationLevel.PROCESS, IsolationLevel.SANDBOX):
-            if task.isolation_level == IsolationLevel.SANDBOX:
-                logger.bind(
-                    module="subagent_orchestrator",
-                    task_id=task.task_id,
-                ).warning("Level 3 沙箱隔离暂未实现，降级为 Level 2 进程隔离")
+        if task.isolation_level == IsolationLevel.SANDBOX:
+            # Level 3 沙箱隔离尚未实现，必须显式失败，禁止静默降级
+            raise ValueError(
+                f"Level 3 沙箱隔离尚未实现，无法提供请求的隔离级别: {task.task_id}"
+            )
 
+        if task.isolation_level == IsolationLevel.PROCESS:
             if self._worktree_manager is None:
-                logger.bind(
-                    module="subagent_orchestrator",
-                    task_id=task.task_id,
-                ).warning(
-                    "未提供 WorktreeManager，Level 2 隔离降级为 Level 1 上下文隔离"
+                # 未提供 WorktreeManager 时无法提供 Level 2 进程隔离，必须显式失败
+                raise ValueError(
+                    f"未提供 WorktreeManager，无法提供 Level 2 进程隔离: {task.task_id}"
                 )
-                return context
 
             worktree_info = await self._worktree_manager.create_worktree(
                 task.task_id
             )
-            if worktree_info:
-                context["worktree"] = worktree_info
-                context["work_dir"] = worktree_info.path
+            if not worktree_info:
+                # worktree 创建失败必须显式报错，禁止静默返回无 worktree 的上下文
+                raise RuntimeError(
+                    f"WorktreeManager 创建 worktree 失败: {task.task_id}"
+                )
+            context["worktree"] = worktree_info
+            context["work_dir"] = worktree_info.path
             return context
 
         return context

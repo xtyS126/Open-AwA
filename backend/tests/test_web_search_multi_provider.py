@@ -4,8 +4,8 @@ web_search 工具多 Provider 切换单元测试。
 
 覆盖：
 1. Provider 切换：searxng 激活时调用 _searxng_search、duckduckgo 激活时调用 _duckduckgo_search、
-   searxng 失败降级到 duckduckgo、双方都失败返回错误
-2. SSRF 校验：云元数据地址拒绝、私有 IP 授权放行
+   主 provider 失败直接返回结构化错误（无降级链）
+2. SSRF 校验：云元数据地址拒绝、私有 IP 授权放行、校验模块缺失时 fail-closed
 3. 配置缓存：10 秒 TTL 缓存、过期后重新读取
 4. SearXNG 响应解析：正常结果解析、空结果、非 JSON 响应
 
@@ -214,10 +214,10 @@ class TestProviderSwitching:
         call_args = mock_ddg.call_args
         assert call_args[0][0] == "test"  # query 参数
 
-    async def test_search_falls_back_to_duckduckgo_on_searxng_failure(
+    async def test_search_returns_error_on_searxng_timeout(
         self, web_search_tool_fixture, mock_duckduckgo_response_fixture, monkeypatch
     ) -> None:
-        """searxng 抛出 httpx.TimeoutException 时，应降级到 duckduckgo。"""
+        """searxng 抛出 httpx.TimeoutException 时，应返回结构化错误，不再降级。"""
         # mock provider 配置返回 searxng
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
@@ -247,21 +247,18 @@ class TestProviderSwitching:
             "core.builtin_tools.web_search.httpx.AsyncClient", _TimeoutClient
         )
 
-        # mock _duckduckgo_search 方法
-        mock_ddg = AsyncMock(return_value=mock_duckduckgo_response_fixture)
-        monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
-
         result = await web_search_tool_fixture._search({"query": "test", "max_results": 5})
 
-        # 应降级到 duckduckgo
-        assert result["success"] is True
-        assert result["provider"] == "duckduckgo"
-        mock_ddg.assert_awaited_once()
+        # 主 provider 失败直接返回结构化错误，不降级到其他 provider
+        assert result["success"] is False
+        assert "error" in result
+        assert "SearXNG" in result["error"]
+        assert result.get("error_code") == "searxng_search_failed"
 
-    async def test_search_falls_back_to_duckduckgo_on_searxng_500(
-        self, web_search_tool_fixture, mock_duckduckgo_response_fixture, monkeypatch
+    async def test_search_returns_error_on_searxng_500(
+        self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """searxng 返回 500 时，应降级到 duckduckgo。"""
+        """searxng 返回 500 时，应返回结构化错误，不再降级。"""
         # mock provider 配置返回 searxng
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
@@ -280,21 +277,18 @@ class TestProviderSwitching:
             "core.builtin_tools.web_search.httpx.AsyncClient", mock_client_class
         )
 
-        # mock _duckduckgo_search 方法
-        mock_ddg = AsyncMock(return_value=mock_duckduckgo_response_fixture)
-        monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
-
         result = await web_search_tool_fixture._search({"query": "test", "max_results": 5})
 
-        # 应降级到 duckduckgo
-        assert result["success"] is True
-        assert result["provider"] == "duckduckgo"
-        mock_ddg.assert_awaited_once()
+        # 主 provider 失败直接返回结构化错误，不降级到其他 provider
+        assert result["success"] is False
+        assert "error" in result
+        assert "SearXNG" in result["error"]
+        assert result.get("error_code") == "searxng_search_failed"
 
-    async def test_search_returns_error_when_both_providers_fail(
+    async def test_search_returns_error_when_searxng_fails(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """searxng、duckduckgo、bing 都失败时，应返回错误结构，不抛异常给上层。"""
+        """searxng 失败时直接返回错误结构，不抛异常给上层，也不做逐级降级。"""
         # mock provider 配置返回 searxng
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
@@ -324,20 +318,12 @@ class TestProviderSwitching:
             "core.builtin_tools.web_search.httpx.AsyncClient", _TimeoutClient
         )
 
-        # mock _duckduckgo_search 抛出异常
-        mock_ddg = AsyncMock(side_effect=ValueError("DDG also failed"))
-        monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
-
-        # mock _bing_search 也抛出异常（Bing 降级也失败）
-        mock_bing = AsyncMock(side_effect=OSError("Bing also failed"))
-        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
-
         result = await web_search_tool_fixture._search({"query": "test", "max_results": 5})
 
         # 应返回错误结构，不抛异常
         assert result["success"] is False
         assert "error" in result
-        assert "搜索失败" in result["error"]
+        assert "SearXNG" in result["error"]
 
 
 # ==================== SSRF 校验测试 ====================
@@ -1062,10 +1048,10 @@ class TestFetchUrl:
 class TestLoadProviderConfigExceptions:
     """_load_provider_config 的异常降级路径测试。"""
 
-    def test_load_provider_config_falls_back_on_import_error(
+    def test_load_provider_config_raises_on_import_error(
         self, monkeypatch
     ) -> None:
-        """db.models 模块不可导入时，应降级到默认 duckduckgo 配置。"""
+        """db.models 模块不可导入时，应抛出异常（配置是搜索主路径的必需输入）。"""
         # 清空缓存
         web_search_module._provider_config_cache["data"] = None
         web_search_module._provider_config_cache["expires_at"] = 0.0
@@ -1081,16 +1067,13 @@ class TestLoadProviderConfigExceptions:
 
         monkeypatch.setattr(builtins, "__import__", _fake_import)
 
-        result = _load_provider_config()
+        with pytest.raises(ImportError):
+            _load_provider_config()
 
-        assert result["provider"] == "duckduckgo"
-        assert result["base_url"] is None
-        assert result["api_key"] is None
-
-    def test_load_provider_config_falls_back_on_db_query_error(
+    def test_load_provider_config_raises_on_db_query_error(
         self, monkeypatch
     ) -> None:
-        """数据库查询抛异常时，应降级到默认 duckduckgo 配置。"""
+        """数据库查询抛异常时，应抛出异常而非静默降级到默认配置。"""
         # 清空缓存
         web_search_module._provider_config_cache["data"] = None
         web_search_module._provider_config_cache["expires_at"] = 0.0
@@ -1105,22 +1088,20 @@ class TestLoadProviderConfigExceptions:
             db_models_module, "SessionLocal", _fake_session_local
         )
 
-        result = _load_provider_config()
-
-        assert result["provider"] == "duckduckgo"
-        assert result["base_url"] is None
+        with pytest.raises(RuntimeError):
+            _load_provider_config()
 
 
 # ==================== SearXNG 降级路径补充测试 ====================
 
 
 class TestSearxngFallbackPaths:
-    """_search 中 SearXNG 异常降级路径补充测试。"""
+    """_search 中 SearXNG 异常路径测试（失败直接返回结构化错误，不再降级）。"""
 
-    async def test_search_falls_back_on_searxng_asyncio_timeout(
-        self, web_search_tool_fixture, mock_duckduckgo_response_fixture, monkeypatch
+    async def test_search_returns_error_on_searxng_asyncio_timeout(
+        self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """SearXNG 调用抛 asyncio.TimeoutError 时应降级到 DuckDuckGo。
+        """SearXNG 调用抛 asyncio.TimeoutError 时应返回结构化错误。
 
         注：实际 _searxng_search 抛的是 httpx.TimeoutException，
         但 _search 内部 try/except 同时捕获 asyncio.TimeoutError（来自 wait_for）。
@@ -1146,21 +1127,18 @@ class TestSearxngFallbackPaths:
             _fake_searxng_search,
         )
 
-        mock_ddg = AsyncMock(return_value=mock_duckduckgo_response_fixture)
-        monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
-
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
-        assert result["success"] is True
-        assert result["provider"] == "duckduckgo"
-        mock_ddg.assert_awaited_once()
+        assert result["success"] is False
+        assert "SearXNG" in result["error"]
+        assert result.get("error_code") == "searxng_timeout"
 
-    async def test_search_falls_back_on_searxng_value_error(
-        self, web_search_tool_fixture, mock_duckduckgo_response_fixture, monkeypatch
+    async def test_search_returns_error_on_searxng_value_error(
+        self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """SearXNG 抛 ValueError（SSRF/JSON 解析失败）时应降级到 DuckDuckGo。"""
+        """SearXNG 抛 ValueError（SSRF/JSON 解析失败）时应返回结构化错误。"""
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
             lambda: {
@@ -1179,21 +1157,18 @@ class TestSearxngFallbackPaths:
             _fake_searxng_search,
         )
 
-        mock_ddg = AsyncMock(return_value=mock_duckduckgo_response_fixture)
-        monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
-
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
-        assert result["success"] is True
-        assert result["provider"] == "duckduckgo"
-        mock_ddg.assert_awaited_once()
+        assert result["success"] is False
+        assert "SearXNG" in result["error"]
+        assert result.get("error_code") == "searxng_search_failed"
 
-    async def test_search_falls_back_on_searxng_oserror(
-        self, web_search_tool_fixture, mock_duckduckgo_response_fixture, monkeypatch
+    async def test_search_returns_error_on_searxng_oserror(
+        self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """SearXNG 抛 OSError（网络异常）时应降级到 DuckDuckGo。"""
+        """SearXNG 抛 OSError（网络异常）时应返回结构化错误。"""
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
             lambda: {
@@ -1212,21 +1187,18 @@ class TestSearxngFallbackPaths:
             _fake_searxng_search,
         )
 
-        mock_ddg = AsyncMock(return_value=mock_duckduckgo_response_fixture)
-        monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
-
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
-        assert result["success"] is True
-        assert result["provider"] == "duckduckgo"
-        mock_ddg.assert_awaited_once()
+        assert result["success"] is False
+        assert "SearXNG" in result["error"]
+        assert result.get("error_code") == "searxng_search_failed"
 
-    async def test_search_falls_back_on_searxng_generic_exception(
-        self, web_search_tool_fixture, mock_duckduckgo_response_fixture, monkeypatch
+    async def test_search_returns_error_on_searxng_generic_exception(
+        self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """SearXNG 抛未知异常时应降级到 DuckDuckGo。"""
+        """SearXNG 抛未知异常时应返回结构化错误。"""
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
             lambda: {
@@ -1245,28 +1217,25 @@ class TestSearxngFallbackPaths:
             _fake_searxng_search,
         )
 
-        mock_ddg = AsyncMock(return_value=mock_duckduckgo_response_fixture)
-        monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
-
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
-        assert result["success"] is True
-        assert result["provider"] == "duckduckgo"
-        mock_ddg.assert_awaited_once()
+        assert result["success"] is False
+        assert "SearXNG" in result["error"]
+        assert result.get("error_code") == "searxng_search_failed"
 
 
 # ==================== DuckDuckGo 失败路径测试 ====================
 
 
 class TestDuckDuckGoFailurePaths:
-    """_search 中 DuckDuckGo 调用失败时的错误处理路径。"""
+    """_search 中 DuckDuckGo 调用失败时的错误处理路径（失败直接返回错误，不再降级）。"""
 
     async def test_search_returns_timeout_error_when_duckduckgo_times_out(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """DuckDuckGo 抛 asyncio.TimeoutError 且 Bing 降级也失败时，应返回搜索失败错误。"""
+        """DuckDuckGo 抛 asyncio.TimeoutError 时应返回搜索失败错误。"""
         import asyncio as _asyncio
 
         monkeypatch.setattr(
@@ -1282,21 +1251,18 @@ class TestDuckDuckGoFailurePaths:
         mock_ddg = AsyncMock(side_effect=_asyncio.TimeoutError())
         monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
 
-        # Bing 降级也超时，验证降级链路完整失败
-        mock_bing = AsyncMock(side_effect=_asyncio.TimeoutError())
-        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
-
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
         assert result["success"] is False
-        assert "搜索失败" in result["error"]
+        assert "DuckDuckGo" in result["error"]
+        assert result.get("error_code") == "duckduckgo_search_failed"
 
     async def test_search_returns_network_error_when_duckduckgo_raises_oserror(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """DuckDuckGo 抛 OSError 且 Bing 降级也失败时，应返回搜索失败错误。"""
+        """DuckDuckGo 抛 OSError 时应返回搜索失败错误。"""
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
             lambda: {
@@ -1310,21 +1276,18 @@ class TestDuckDuckGoFailurePaths:
         mock_ddg = AsyncMock(side_effect=OSError("DNS resolution failed"))
         monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
 
-        # Bing 降级也失败
-        mock_bing = AsyncMock(side_effect=OSError("Bing DNS failed"))
-        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
-
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
         assert result["success"] is False
-        assert "搜索失败" in result["error"]
+        assert "DuckDuckGo" in result["error"]
+        assert result.get("error_code") == "duckduckgo_search_failed"
 
     async def test_search_returns_value_error_when_duckduckgo_raises_value_error(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """DuckDuckGo 抛 ValueError（SSRF/HTML 解析）且 Bing 降级也失败时，应返回搜索失败错误。"""
+        """DuckDuckGo 抛 ValueError（SSRF/HTML 解析）时应返回搜索失败错误。"""
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
             lambda: {
@@ -1338,21 +1301,18 @@ class TestDuckDuckGoFailurePaths:
         mock_ddg = AsyncMock(side_effect=ValueError("HTML parse error"))
         monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
 
-        # Bing 降级也失败
-        mock_bing = AsyncMock(side_effect=ValueError("Bing parse error"))
-        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
-
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
         assert result["success"] is False
-        assert "搜索失败" in result["error"]
+        assert "DuckDuckGo" in result["error"]
+        assert result.get("error_code") == "duckduckgo_search_failed"
 
     async def test_search_returns_unexpected_error_when_duckduckgo_raises_generic_exception(
         self, web_search_tool_fixture, monkeypatch
     ) -> None:
-        """DuckDuckGo 抛未知异常且 Bing 降级也失败时，应返回搜索失败错误（安全网捕获）。"""
+        """DuckDuckGo 抛未知异常时应返回搜索失败错误。"""
         monkeypatch.setattr(
             "core.builtin_tools.web_search._load_provider_config",
             lambda: {
@@ -1366,64 +1326,23 @@ class TestDuckDuckGoFailurePaths:
         mock_ddg = AsyncMock(side_effect=RuntimeError("unexpected"))
         monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
 
-        # Bing 降级也失败
-        mock_bing = AsyncMock(side_effect=RuntimeError("Bing unexpected"))
-        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
-
         result = await web_search_tool_fixture._search(
             {"query": "test", "max_results": 5}
         )
 
         assert result["success"] is False
-        assert "搜索失败" in result["error"]
-
-    async def test_search_falls_back_to_bing_when_duckduckgo_fails(
-        self, web_search_tool_fixture, monkeypatch
-    ) -> None:
-        """DuckDuckGo 失败时应自动降级到 Bing 并返回成功结果。"""
-        import asyncio as _asyncio
-
-        monkeypatch.setattr(
-            "core.builtin_tools.web_search._load_provider_config",
-            lambda: {
-                "provider": "duckduckgo",
-                "base_url": None,
-                "api_key": None,
-                "extra_config": {},
-            },
-        )
-
-        # DuckDuckGo 超时
-        mock_ddg = AsyncMock(side_effect=_asyncio.TimeoutError())
-        monkeypatch.setattr(web_search_tool_fixture, "_duckduckgo_search", mock_ddg)
-
-        # Bing 返回有效结果
-        bing_results = [
-            {"title": "Bing Result", "url": "https://example.com/bing", "snippet": "snippet"},
-        ]
-        mock_bing = AsyncMock(return_value=bing_results)
-        monkeypatch.setattr(web_search_tool_fixture, "_bing_search", mock_bing)
-
-        result = await web_search_tool_fixture._search(
-            {"query": "test", "max_results": 5}
-        )
-
-        assert result["success"] is True
-        assert result["provider"] == "bing"
-        assert result["count"] == 1
-        assert result["results"][0]["title"] == "Bing Result"
-        mock_ddg.assert_awaited_once()
-        mock_bing.assert_awaited_once()
+        assert "DuckDuckGo" in result["error"]
+        assert result.get("error_code") == "duckduckgo_search_failed"
 
 
 class TestSearxngSsrfModuleMissing:
-    """_searxng_search 在 security.search_ssrf 模块缺失时的兜底行为。"""
+    """_searxng_search 在 security.search_ssrf 模块缺失时的 fail-closed 行为。"""
 
-    async def test_searxng_search_skips_ssrf_when_module_missing(
+    async def test_searxng_search_rejects_when_ssrf_module_missing(
         self, web_search_tool_fixture, mock_searxng_response_fixture, monkeypatch
     ) -> None:
-        """security.search_ssrf 模块不可导入时，应跳过 SSRF 校验继续请求。"""
-        # mock httpx 返回成功
+        """security.search_ssrf 模块不可导入时，应拒绝搜索（fail-closed），禁止跳过校验。"""
+        # mock httpx 返回成功（若校验被绕过则会用到，用于验证未发起请求）
         response = _MockSearxngResponse(
             status_code=200, json_data=mock_searxng_response_fixture
         )
@@ -1443,13 +1362,11 @@ class TestSearxngSsrfModuleMissing:
 
         monkeypatch.setattr(builtins, "__import__", _fake_import)
 
-        # 使用公网域名 example.com，不触发 SSRF 校验（模块缺失时跳过）
-        results = await web_search_tool_fixture._searxng_search(
-            "test", 5, "https://example.com"
-        )
-
-        # 应成功返回结果（SSRF 校验被跳过）
-        assert len(results) == 5
+        # SSRF 校验模块缺失时直接拒绝搜索
+        with pytest.raises(ImportError):
+            await web_search_tool_fixture._searxng_search(
+                "test", 5, "https://example.com"
+            )
 
 
 # ==================== _http_get SSRF 防护测试 ====================

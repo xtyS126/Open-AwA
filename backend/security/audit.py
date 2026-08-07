@@ -1,20 +1,17 @@
 """
 安全控制模块，负责审计日志记录与查询。
 所有用户操作的审计信息通过此模块写入数据库，支持异步记录与多维度查询。
+
+审计是安全关键路径（fail-closed）：写入失败必须显式传播异常，
+禁止降级写 JSONL 文件——审计不可用时操作必须失败并让调用方感知。
 """
 
 import asyncio
-import json
-import os
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from db.models import AuditLog
 from loguru import logger
-
-# 审计日志降级文件路径（DB 写入失败时使用）
-_AUDIT_FALLBACK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".openawa", "audit_fallback")
-os.makedirs(_AUDIT_FALLBACK_DIR, exist_ok=True)
 
 
 class AuditLogger:
@@ -38,8 +35,15 @@ class AuditLogger:
         result: str,
         details: Optional[str] = None,
         ip_address: Optional[str] = None,
-    ) -> Optional[AuditLog]:
-        """同步写入审计日志记录。异常时回滚并记录到文件日志，不影响主业务流程。"""
+    ) -> AuditLog:
+        """同步写入审计日志记录。
+
+        Fail-closed：审计写入失败（DB 异常）时回滚会话并显式传播异常。
+        审计不可用即操作失败，禁止降级写 JSONL 文件让调用方误以为已审计。
+
+        Raises:
+            Exception: 审计写入失败（显式传播）。
+        """
         try:
             log_entry = AuditLog(
                 user_id=user_id,
@@ -53,36 +57,10 @@ class AuditLogger:
             self.db.commit()
             self.db.refresh(log_entry)
             return log_entry
-        except Exception as e:
+        except Exception:
+            # 回滚会话使其恢复可用，然后显式传播审计失败
             self.db.rollback()
-            # 降级到文件系统，确保审计日志不丢失
-            try:
-                fallback_record = {
-                    "user_id": user_id,
-                    "action": action,
-                    "resource": resource,
-                    "result": f"{result}_audit_fallback",
-                    "details": details,
-                    "ip_address": ip_address,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "db_error": f"{type(e).__name__}: {e}",
-                }
-                fallback_file = os.path.join(
-                    _AUDIT_FALLBACK_DIR,
-                    f"audit_fallback_{datetime.now(timezone.utc).strftime('%Y%m%d')}.jsonl"
-                )
-                with open(fallback_file, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(fallback_record, ensure_ascii=False) + "\n")
-                logger.critical(
-                    f"审计日志已降级写入文件: action={action}, resource={resource}, "
-                    f"user_id={user_id}, file={fallback_file}"
-                )
-            except Exception as fallback_error:
-                logger.critical(
-                    f"审计日志降级写入也失败: action={action}, resource={resource}, "
-                    f"user_id={user_id}, db_error={e}, fallback_error={fallback_error}"
-                )
-            return None
+            raise
 
     async def log(
         self,
@@ -94,7 +72,7 @@ class AuditLogger:
         ip_address: Optional[str] = None,
     ) -> Optional[AuditLog]:
         """
-        异步记录审计日志。写入失败时不会抛出异常，返回 None。
+        异步记录审计日志。写入失败时显式传播异常（fail-closed）。
 
         Args:
             user_id: 操作用户标识。
@@ -103,13 +81,18 @@ class AuditLogger:
             result: 操作结果（success/failure）。
             details: 附加详情字典。
             ip_address: 请求来源 IP。
+
+        Returns:
+            审计日志记录（AuditLog）。
+
+        Raises:
+            Exception: 审计写入失败（显式传播，审计不可用即操作失败）。
         """
         details_str = str(details) if details else None
         log_entry = await asyncio.to_thread(
             self._log_sync, user_id, action, resource, result, details_str, ip_address
         )
-        if log_entry:
-            logger.debug(f"Audit log created: {action} on {resource} by {user_id}")
+        logger.debug(f"Audit log created: {action} on {resource} by {user_id}")
         return log_entry
 
     async def log_auth_event(

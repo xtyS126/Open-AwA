@@ -503,6 +503,8 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  /* 市场列表/搜索加载失败错误条（不静默保留旧内容误导用户） */
+  const [marketError, setMarketError] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState('all')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -565,6 +567,7 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
   /** 加载插件列表 */
   const loadPlugins = useCallback(async () => {
     setLoading(true)
+    setMarketError(null)
     try {
       const response = await getPlugins({
         category: activeCategory === 'all' ? undefined : activeCategory,
@@ -577,6 +580,7 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
       loadRatings(response.data.plugins.map((p) => p.id))
     } catch (error) {
       console.error('加载插件列表失败:', error)
+      setMarketError('插件市场加载失败，请稍后重试')
     } finally {
       setLoading(false)
     }
@@ -709,13 +713,18 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
     // 搜索状态时重新搜索（支持分页），非搜索状态加载列表
     if (searchQuery.trim()) {
       setLoading(true)
+      setMarketError(null)
       searchPlugins(searchQuery.trim(), page, pageSize)
         .then(response => {
           setPlugins(response.data.plugins)
           setTotal(response.data.total)
           loadRatings(response.data.plugins.map((p) => p.id))
         })
-        .catch(error => console.error('搜索插件失败:', error))
+        .catch(error => {
+          console.error('搜索插件失败:', error)
+          // 显示错误条而非保留旧列表误以为"无搜索结果"
+          setMarketError('搜索插件失败，请稍后重试')
+        })
         .finally(() => setLoading(false))
     } else {
       loadPlugins()
@@ -770,6 +779,19 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
         <div className={marketStyles['inline-error']}>
           <span>{importError}</span>
           <button className={marketStyles['search-btn']} onClick={() => { void retryImport() }}>
+            重试
+          </button>
+        </div>
+      )}
+
+      {/* 市场列表/搜索加载失败错误条 */}
+      {marketError && (
+        <div className={marketStyles['inline-error']}>
+          <span>{marketError}</span>
+          <button
+            className={marketStyles['search-btn']}
+            onClick={() => { searchQuery.trim() ? handleSearch() : void loadPlugins() }}
+          >
             重试
           </button>
         </div>

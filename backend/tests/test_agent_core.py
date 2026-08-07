@@ -332,6 +332,22 @@ class TestProcessFlow:
     """验证 process() 方法的完整执行链路。"""
 
     @pytest.mark.asyncio
+    async def test_build_conversation_history_without_memory_manager_raises(self):
+        """记忆管理器未注入时必须显式失败，禁止静默返回空历史。"""
+        agent = AIAgent()
+
+        with pytest.raises(RuntimeError, match="记忆管理器未注入，无法构建对话历史"):
+            await agent._build_conversation_history("session-1")
+
+    @pytest.mark.asyncio
+    async def test_retrieve_relevant_memories_without_memory_manager_raises(self):
+        """记忆管理器未注入时必须显式失败，禁止静默返回空记忆。"""
+        agent = AIAgent()
+
+        with pytest.raises(RuntimeError, match="记忆管理器未注入，无法检索长期记忆"):
+            await agent._retrieve_relevant_memories("query", {})
+
+    @pytest.mark.asyncio
     async def test_process_normal_flow_returns_completed_response(self, monkeypatch):
         """正常流程应返回 completed 状态和最终回复。"""
         agent = AIAgent()
@@ -340,6 +356,10 @@ class TestProcessFlow:
             return None
 
         async def fake_build_conversation_history(session_id, max_turns=20):
+            return []
+
+        async def fake_retrieve_relevant_memories(user_input, context):
+            # 轻量实例未注入记忆管理器，mock 记忆检索返回空列表
             return []
 
         async def fake_recognize_intent(user_input):
@@ -371,6 +391,7 @@ class TestProcessFlow:
 
         monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
         monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
+        monkeypatch.setattr(agent, "_retrieve_relevant_memories", fake_retrieve_relevant_memories)
         monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
         monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
         monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
@@ -402,6 +423,10 @@ class TestProcessFlow:
         async def fake_build_conversation_history(session_id, max_turns=20):
             return []
 
+        async def fake_retrieve_relevant_memories(user_input, context):
+            # 轻量实例未注入记忆管理器，mock 记忆检索返回空列表
+            return []
+
         async def fake_recognize_intent(user_input):
             return "query"
 
@@ -428,6 +453,7 @@ class TestProcessFlow:
 
         monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
         monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
+        monkeypatch.setattr(agent, "_retrieve_relevant_memories", fake_retrieve_relevant_memories)
         monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
         monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
         monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
@@ -460,6 +486,10 @@ class TestProcessFlow:
         async def fake_build_conversation_history(session_id, max_turns=20):
             return []
 
+        async def fake_retrieve_relevant_memories(user_input, context):
+            # 轻量实例未注入记忆管理器，mock 记忆检索返回空列表
+            return []
+
         async def fake_recognize_intent(user_input):
             return "execute"
 
@@ -490,6 +520,7 @@ class TestProcessFlow:
 
         monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
         monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
+        monkeypatch.setattr(agent, "_retrieve_relevant_memories", fake_retrieve_relevant_memories)
         monkeypatch.setattr(agent.turn_coordinator, "recognize_intent", fake_recognize_intent)
         monkeypatch.setattr(agent.turn_coordinator, "extract_entities", fake_extract_entities)
         monkeypatch.setattr(agent.turn_coordinator, "create_plan", fake_create_plan)
@@ -764,16 +795,16 @@ class TestMapFinishReasonToState:
         )
         assert state is AgentState.TERMINAL_MAX_ROUNDS
 
-    def test_map_finish_reason_unknown_returns_terminal_end_turn(self):
-        """未知 finish_reason 应安全回退到 TERMINAL_END_TURN。"""
-        state = map_finish_reason_to_state(
-            finish_reason="unknown_reason", current_round=1, max_rounds=10
-        )
-        assert state is AgentState.TERMINAL_END_TURN
+    def test_map_finish_reason_unknown_raises(self):
+        """未知 finish_reason 应走显式错误路径（抛 ValueError）。"""
+        with pytest.raises(ValueError, match="未知的 finish_reason"):
+            map_finish_reason_to_state(
+                finish_reason="unknown_reason", current_round=1, max_rounds=10
+            )
 
-    def test_map_finish_reason_empty_string_returns_terminal_end_turn(self):
-        """空 finish_reason 应安全回退到 TERMINAL_END_TURN。"""
-        state = map_finish_reason_to_state(
-            finish_reason="", current_round=1, max_rounds=10
-        )
-        assert state is AgentState.TERMINAL_END_TURN
+    def test_map_finish_reason_empty_string_raises(self):
+        """空 finish_reason 应走显式错误路径（抛 ValueError）。"""
+        with pytest.raises(ValueError, match="未知的 finish_reason"):
+            map_finish_reason_to_state(
+                finish_reason="", current_round=1, max_rounds=10
+            )

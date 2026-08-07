@@ -155,8 +155,18 @@ class CostOptimizationService:
         if cache_suggestion:
             suggestions.append(cache_suggestion)
 
-        # 3. 闲置模型检测
-        idle_models = self._detect_idle_models(user_id, model_stats)
+        # 3. 闲置模型检测（失败时跳过该建议项，但显式标记失败原因）
+        try:
+            idle_models = self._detect_idle_models(user_id, model_stats)
+        except Exception as exc:
+            suggestions.append({
+                "type": "idle_models_error",
+                "title": "闲置模型检测失败",
+                "message": f"无法获取模型列表，闲置模型建议不可用: {exc}",
+                "impact": "low",
+                "error": str(exc),
+            })
+            idle_models = []
         if idle_models:
             suggestions.append({
                 "type": "idle_models",
@@ -191,35 +201,35 @@ class CostOptimizationService:
         start_date: date,
         end_date: date,
     ) -> List[Dict[str, Any]]:
-        """获取按模型分组的用量统计。"""
-        try:
-            rows = self.db.query(
-                UsageRecord.model,
-                func.sum(UsageRecord.total_cost).label("total_cost"),
-                func.sum(UsageRecord.input_tokens).label("total_input"),
-                func.sum(UsageRecord.output_tokens).label("total_output"),
-                func.count(UsageRecord.id).label("call_count"),
-            ).filter(
-                and_(
-                    UsageRecord.user_id == user_id,
-                    UsageRecord.created_at >= start_date,
-                    UsageRecord.created_at <= end_date,
-                )
-            ).group_by(UsageRecord.model).all()
+        """获取按模型分组的用量统计。
 
-            return [
-                {
-                    "model_name": row.model,
-                    "total_cost": float(row.total_cost or 0),
-                    "total_input": int(row.total_input or 0),
-                    "total_output": int(row.total_output or 0),
-                    "call_count": int(row.call_count or 0),
-                }
-                for row in rows
-            ]
-        except Exception as exc:
-            logger.warning(f"获取模型用量统计失败: {exc}")
-            return []
+        Raises:
+            Exception: 统计查询失败显式传播（禁止返回空列表伪装无数据）。
+        """
+        rows = self.db.query(
+            UsageRecord.model,
+            func.sum(UsageRecord.total_cost).label("total_cost"),
+            func.sum(UsageRecord.input_tokens).label("total_input"),
+            func.sum(UsageRecord.output_tokens).label("total_output"),
+            func.count(UsageRecord.id).label("call_count"),
+        ).filter(
+            and_(
+                UsageRecord.user_id == user_id,
+                UsageRecord.created_at >= start_date,
+                UsageRecord.created_at <= end_date,
+            )
+        ).group_by(UsageRecord.model).all()
+
+        return [
+            {
+                "model_name": row.model,
+                "total_cost": float(row.total_cost or 0),
+                "total_input": int(row.total_input or 0),
+                "total_output": int(row.total_output or 0),
+                "call_count": int(row.call_count or 0),
+            }
+            for row in rows
+        ]
 
     def _analyze_model_cost_efficiency(
         self,
@@ -284,31 +294,31 @@ class CostOptimizationService:
         start_date: date,
         end_date: date,
     ) -> Dict[str, Any]:
-        """获取缓存命中率统计。"""
-        try:
-            rows = self.db.query(
-                func.sum(UsageRecord.cache_hit_tokens).label("cache_tokens"),
-                func.sum(UsageRecord.input_tokens).label("total_input"),
-            ).filter(
-                and_(
-                    UsageRecord.user_id == user_id,
-                    UsageRecord.created_at >= start_date,
-                    UsageRecord.created_at <= end_date,
-                )
-            ).first()
+        """获取缓存命中率统计。
 
-            cache_tokens = int(rows.cache_tokens or 0) if rows else 0
-            total_input = int(rows.total_input or 0) if rows else 0
-            hit_rate = (cache_tokens / total_input * 100) if total_input > 0 else 0
+        Raises:
+            Exception: 统计查询失败显式传播（禁止返回全 0 造成命中率 0% 的误导）。
+        """
+        rows = self.db.query(
+            func.sum(UsageRecord.cache_hit_tokens).label("cache_tokens"),
+            func.sum(UsageRecord.input_tokens).label("total_input"),
+        ).filter(
+            and_(
+                UsageRecord.user_id == user_id,
+                UsageRecord.created_at >= start_date,
+                UsageRecord.created_at <= end_date,
+            )
+        ).first()
 
-            return {
-                "cache_tokens": cache_tokens,
-                "total_input": total_input,
-                "hit_rate": round(hit_rate, 2),
-            }
-        except Exception as exc:
-            logger.warning(f"获取缓存统计失败: {exc}")
-            return {"cache_tokens": 0, "total_input": 0, "hit_rate": 0}
+        cache_tokens = int(rows.cache_tokens or 0) if rows else 0
+        total_input = int(rows.total_input or 0) if rows else 0
+        hit_rate = (cache_tokens / total_input * 100) if total_input > 0 else 0
+
+        return {
+            "cache_tokens": cache_tokens,
+            "total_input": total_input,
+            "hit_rate": round(hit_rate, 2),
+        }
 
     def _analyze_cache_efficiency(self, cache_stats: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """分析缓存效率，提供优化建议。"""
@@ -334,20 +344,18 @@ class CostOptimizationService:
         user_id: str,
         model_stats: List[Dict[str, Any]],
     ) -> List[str]:
-        """检测闲置模型（有配置但无调用）。"""
+        """检测闲置模型（有配置但无调用）。
+
+        Raises:
+            Exception: 模型列表加载失败显式传播，由调用方在建议报告中标记失败原因。
+        """
         active_models = {s["model_name"] for s in model_stats if s["model_name"]}
-        # 从定价配置中获取所有已知模型
-        try:
-            from billing.pricing_manager import PricingManager
-            pricing = PricingManager(self.db)
-            all_models = pricing.list_models()
-            idle = [m for m in all_models if m not in active_models]
-            return idle[:5]  # 最多返回 5 个
-        except Exception as exc:
-            # PricingManager 不可用或 list_models 失败时静默降级为空列表，
-            # 但必须记录日志便于后续排查定价配置异常
-            logger.warning(f"检测闲置模型失败，降级返回空列表：{exc}", exc_info=exc)
-            return []
+        # 从定价配置中获取所有已知模型（get_all_pricing 返回 ModelPricing 列表）
+        from billing.pricing_manager import PricingManager
+        pricing = PricingManager(self.db)
+        all_models = [m.model for m in pricing.get_all_pricing() if m.model]
+        idle = [m for m in all_models if m not in active_models]
+        return idle[:5]  # 最多返回 5 个
 
     def _identify_expensive_models(
         self,

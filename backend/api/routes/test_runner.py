@@ -3,6 +3,7 @@
 供Claude Code等外部工具通过HTTP调用，测试系统各功能是否正常启用。
 """
 
+import asyncio
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -123,8 +124,30 @@ def _timed_run(name: str, label: str, category: str, fn: Callable, *args, **kwar
 # ---- 场景实现 ----
 
 def _run_health_basic() -> tuple:
-    """验证服务基础健康检查可达"""
-    return {"endpoint": "/health"}, "服务健康检查正常，进程运行中"
+    """验证服务基础健康检查可达（真实 HTTP 请求 /api/system/health 并断言 200）"""
+    import os
+
+    import httpx
+
+    raw_port = (os.getenv("BACKEND_PORT") or os.getenv("PORT") or "8000").strip() or "8000"
+    try:
+        port = int(raw_port)
+    except ValueError as exc:
+        raise RuntimeError(f"无效的端口配置: {raw_port}") from exc
+    url = f"http://127.0.0.1:{port}/api/system/health"
+    try:
+        resp = httpx.get(url, timeout=10.0)
+    except Exception as exc:
+        raise RuntimeError(f"/api/system/health 请求失败: {exc}") from exc
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"/api/system/health 返回 HTTP {resp.status_code}: {resp.text[:300]}"
+        )
+    return {
+        "endpoint": url,
+        "status_code": resp.status_code,
+        "body": resp.json(),
+    }, "服务健康检查正常（HTTP 200）"
 
 
 def _run_diagnostics_full(db: Session, current_user: User) -> tuple:
@@ -152,7 +175,9 @@ def _run_diagnostics_full(db: Session, current_user: User) -> tuple:
         "mcp": mcp_status,
     }
     if failed:
-        return detail, f"诊断完成: {len(passed)}通过 / {len(failed)}失败 ({', '.join(failed)})"
+        raise RuntimeError(
+            f"诊断失败: {len(passed)}通过 / {len(failed)}失败 ({', '.join(failed)})"
+        )
     return detail, f"诊断完成: 全部 {len(passed)} 项通过"
 
 
@@ -197,7 +222,9 @@ def _run_chat_nonstream(db: Session, current_user: User) -> tuple:
     """通过AIAgent发送非流式聊天消息并验证响应"""
     import asyncio
     import threading
+    from api.adapters.workflow_repository_adapter import WorkflowRepositoryAdapter
     from core.agent import AIAgent
+    from db.models import SessionLocal
 
     context = {
         "user_id": current_user.id,
@@ -207,7 +234,14 @@ def _run_chat_nonstream(db: Session, current_user: User) -> tuple:
         "output_mode": "final_only",
     }
 
-    agent = AIAgent()
+    # 与生产 chat 路由保持一致：构造必须注入完整持久化边界
+    # （db_session / workflow_repository / memory_session_factory），
+    # 否则能力注入与对话历史构建在缺依赖时 fail-closed 抛出
+    agent = AIAgent(
+        db_session=db,
+        workflow_repository=WorkflowRepositoryAdapter(db),
+        memory_session_factory=SessionLocal,
+    )
     coro = agent.process(
         "你好，请回复'功能测试通过'这一句话，不要多说任何其他内容。",
         context
@@ -290,32 +324,26 @@ def _run_skills_list(db: Session, current_user: User) -> tuple:
 
 
 def _run_tool_file_operation() -> tuple:
-    """验证文件列表和读取工具"""
+    """验证文件列表和读取工具；任一操作失败即抛错，由场景框架标记为失败"""
     import os
 
-    # 列出当前目录的 .py 文件
-    try:
-        py_files = [f for f in os.listdir(".") if f.endswith(".py")]
-        list_ok = len(py_files) > 0
-        list_count = len(py_files)
-    except Exception:
-        list_ok = False
-        list_count = 0
+    # 列出当前目录的 .py 文件；失败即抛错，禁止以 message 文案形式静默通过
+    py_files = [f for f in os.listdir(".") if f.endswith(".py")]
+    list_count = len(py_files)
+    if list_count == 0:
+        raise RuntimeError("当前目录未发现 .py 文件，文件列表工具验证失败")
 
     # 读取 main.py
-    try:
-        with open("main.py", "r", encoding="utf-8") as fh:
-            content = fh.read()
-        read_ok = bool(content)
-        preview = content[:100]
-    except Exception:
-        read_ok = False
-        preview = ""
+    with open("main.py", "r", encoding="utf-8") as fh:
+        content = fh.read()
+    if not content:
+        raise RuntimeError("main.py 读取内容为空，文件读取工具验证失败")
+    preview = content[:100]
 
     return {
-        "file_list": {"ok": list_ok, "file_count": list_count},
-        "file_read": {"ok": read_ok, "preview": preview},
-    }, f"文件工具正常: 列表={'通过' if list_ok else '失败'} ({list_count}个py文件), 读取={'通过' if read_ok else '失败'}"
+        "file_list": {"ok": True, "file_count": list_count},
+        "file_read": {"ok": True, "preview": preview},
+    }, f"文件工具正常: 列表通过 ({list_count}个py文件), 读取通过"
 
 
 def _run_scheduled_task_lifecycle(db: Session, current_user: User) -> tuple:
@@ -435,7 +463,9 @@ async def run_scenario(
 
     runner = SCENARIO_RUNNERS[name]
     start = time.perf_counter()
-    result = runner(db, current_user)
+    # 场景为同步函数且可能发起到自身的 HTTP 请求（health-basic），
+    # 必须在线程池执行，避免阻塞事件循环导致自请求死锁
+    result = await asyncio.to_thread(runner, db, current_user)
     total_ms = round((time.perf_counter() - start) * 1000, 2)
 
     passed = 1 if result.status == "ok" else 0
@@ -473,7 +503,9 @@ async def run_all_scenarios(
 
     for name in SCENARIO_DEFINITIONS:
         runner = SCENARIO_RUNNERS[name]
-        result = runner(db, current_user)
+        # 同步场景在线程池执行：health-basic 会向自身端口发起真实 HTTP
+        # 请求，若在事件循环线程同步阻塞则服务无法响应自己的请求（自死锁超时）
+        result = await asyncio.to_thread(runner, db, current_user)
         results.append(result)
         logger.bind(
             event="test_scenario_run",

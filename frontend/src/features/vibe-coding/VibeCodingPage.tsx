@@ -143,16 +143,18 @@ function VibeCodingPage() {
           streamUrl = `${notificationsStreamBase}?ticket=${encodeURIComponent(ticket)}`
         } catch (e) {
           if (cancelled) return
-          appLogger.warning({
+          // SEC-16 防泄露设计：ticket 失败即放弃通知推送连接（绝不降级把明文 api_key 放进 URL），
+          // 用户可见提示
+          appLogger.error({
             event: 'vibe_coding_notification_ticket_failed',
             module: 'vibe-coding',
             action: 'sse',
-            status: 'warning',
-            message: '获取通知 SSE ticket 失败，降级使用 api_key query 参数',
+            status: 'failure',
+            message: '获取通知 SSE ticket 失败，放弃连接（不降级使用 api_key query 参数）',
             extra: { error: e instanceof Error ? e.message : String(e) },
           })
-          // 降级：api_key query 参数（向后兼容）
-          streamUrl = `${notificationsStreamBase}?api_key=${encodeURIComponent(apiKey)}`
+          setError('通知实时推送连接建立失败（获取安全票据失败），请刷新页面后重试')
+          return
         }
       } else if (!hasCookie && !apiKey) {
         // 无 Cookie 也无 API Key，无法建立 SSE，直接放弃

@@ -10,7 +10,7 @@ ClaudeCodeAdapter 双模回归测试。
 5. ACP 模式 changed_files 从 tool_end 事件的 locations 提取
 6. ACP 模式 success=True 当 status="completed"
 7. ACP 模式 success=False 当 status="error"
-8. ACP 模式抛异常时降级到 subprocess
+8. ACP 模式抛异常时异常直接传播（禁止静默回退到 subprocess）
 9. 接口签名兼容：run_task/run_with_mode/is_available/enable_worktree/cleanup_worktree
 """
 
@@ -20,6 +20,7 @@ from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from loguru import logger
 
 from config.logging import sanitize_for_logging
@@ -303,12 +304,12 @@ class TestAcpAvailableExecution:
 
 
 class TestAcpExceptionFallback:
-    """ACP 模式抛异常时降级到 subprocess 测试。"""
+    """ACP 模式抛异常时的错误传播测试。"""
 
-    def test_acp_exception_falls_back_to_subprocess(
+    def test_acp_exception_propagates(
         self, tmp_path: Any,
     ) -> None:
-        """ACP 模式抛异常时降级到 subprocess（用例 8）。"""
+        """ACP 模式执行抛异常时直接传播，禁止静默回退到 subprocess（用例 8 新行为）。"""
         adapter = ClaudeCodeAdapter(project_dir=str(tmp_path), prefer_acp=True)
         adapter._available = True
         mock_service = _make_mock_service(
@@ -326,11 +327,8 @@ class TestAcpExceptionFallback:
         ), patch.object(
             adapter, "_get_file_snapshot", return_value={},
         ):
-            result = adapter.run_task(prompt="hello")
-
-        # 验证降级到 subprocess
-        assert result["success"] is True
-        assert result["output"] == "subprocess output"
+            with pytest.raises(RuntimeError, match="acp boom"):
+                adapter.run_task(prompt="hello")
 
 
 class TestInterfaceCompatibility:

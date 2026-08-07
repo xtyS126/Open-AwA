@@ -213,15 +213,15 @@ shell: bash
         result = ConfigManager._parse_markdown_frontmatter(content)
         assert result is None
 
-    def test_parse_invalid_yaml(self):
-        """无效 YAML 返回 None"""
+    def test_parse_invalid_yaml_raises(self):
+        """无效 YAML 必须显式抛错（配置损坏不得静默丢失）"""
         content = """---
 : invalid: yaml: [
 ---
 
 Content"""
-        result = ConfigManager._parse_markdown_frontmatter(content)
-        assert result is None
+        with pytest.raises(ValueError, match="Markdown frontmatter 失败"):
+            ConfigManager._parse_markdown_frontmatter(content)
 
     def test_filter_unknown_fields(self):
         """过滤未知配置字段"""

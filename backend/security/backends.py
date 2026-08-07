@@ -520,13 +520,17 @@ def get_sandbox_backend(backend_name: Optional[str] = None) -> SandboxBackend:
     2. settings.SANDBOX_BACKEND 配置值
     3. 默认 "restricted_python"
 
-    当 E2B 被请求但不可用时，自动回退到 RestrictedPythonBackend。
+    请求 E2B 但 E2B_API_KEY 未配置时显式抛出配置错误（fail-closed），
+    禁止静默回退 RestrictedPythonBackend 造成安全等级静默降低。
 
     Args:
         backend_name: 后端名称 ("restricted_python" 或 "e2b")，为 None 时从配置读取。
 
     Returns:
         SandboxBackend 实例。
+
+    Raises:
+        ValueError: 请求 E2B 后端但 E2B_API_KEY 未配置。
     """
     name = backend_name or getattr(settings, "SANDBOX_BACKEND", "restricted_python")
     logger.info(f"沙箱后端请求: {name!r}")
@@ -538,10 +542,10 @@ def get_sandbox_backend(backend_name: Optional[str] = None) -> SandboxBackend:
             api_key = secret.get_secret_value() if hasattr(secret, 'get_secret_value') else str(secret)
 
         if not api_key:
-            logger.warning(
-                "请求 E2B 后端但 E2B_API_KEY 未设置，回退到 RestrictedPythonBackend"
+            raise ValueError(
+                "请求 E2B 沙箱后端但 E2B_API_KEY 未配置："
+                "沙箱等级是安全决策，必须显式配置，禁止静默回退到 RestrictedPython"
             )
-            return RestrictedPythonBackend(timeout=settings.SANDBOX_TIMEOUT)
 
         logger.info("使用 E2B 远端沙箱后端（Firecracker microVM）")
         return E2BBackend(

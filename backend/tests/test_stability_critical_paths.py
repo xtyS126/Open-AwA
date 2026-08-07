@@ -29,8 +29,8 @@ async def test_sse_cancellation_propagates_without_done_frame() -> None:
 
 
 @pytest.mark.asyncio
-async def test_optional_startup_failure_keeps_service_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    """可选组件初始化失败不能阻止基础服务进入可用状态。"""
+async def test_optional_startup_failure_refuses_service_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """非可降级启动步骤（plugin_system）失败时必须拒绝启动（fail-fast，禁止带病启动）。"""
 
     async def succeed(*_args, **_kwargs) -> None:
         return None
@@ -59,9 +59,45 @@ async def test_optional_startup_failure_keeps_service_available(monkeypatch: pyt
     monkeypatch.setattr(main, "close_shared_client", succeed)
 
     lifespan = main.lifespan(main.app)
+    with pytest.raises(RuntimeError, match="插件系统不可用"):
+        await anext(lifespan)
+
+
+@pytest.mark.asyncio
+async def test_memory_runtime_prewarm_failure_is_degradable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_runtime 预热是可降级启动（CLAUDE.md 19.x）：失败记录到 startup_failures，服务仍进入可用状态。"""
+
+    async def succeed(*_args, **_kwargs) -> None:
+        return None
+
+    async def fail(*_args, **_kwargs) -> None:
+        raise RuntimeError("向量运行时不可用")
+
+    registry = MagicMock()
+    monkeypatch.setattr(main, "get_registry", lambda: registry)
+    monkeypatch.setattr(main, "_startup_infrastructure", succeed)
+    monkeypatch.setattr(main, "_startup_data_init", succeed)
+    monkeypatch.setattr(main, "_startup_owner_user_init", succeed)
+    monkeypatch.setattr(main, "prewarm_agent_memory", fail)
+    monkeypatch.setattr(main, "_startup_plugin_system", succeed)
+    monkeypatch.setattr(main, "_startup_background_tasks", succeed)
+    monkeypatch.setattr(main.task_runtime, "initialize", succeed)
+    monkeypatch.setattr(main, "_startup_autonomous_mode", succeed)
+    monkeypatch.setattr(main, "_startup_acp_service", succeed)
+    monkeypatch.setattr(main, "_startup_mcp_sse_origin", lambda _profiler: None)
+    monkeypatch.setattr(main, "_startup_mcp_preheat", succeed)
+    monkeypatch.setattr(main, "_shutdown_plugin_system", succeed)
+    monkeypatch.setattr(main, "_shutdown_autonomous_mode", succeed)
+    monkeypatch.setattr(main, "_shutdown_acp_service", succeed)
+    monkeypatch.setattr(main.task_runtime, "shutdown", succeed)
+    monkeypatch.setattr(main.scheduled_task_manager, "stop", succeed)
+    monkeypatch.setattr(main, "close_shared_client", succeed)
+
+    lifespan = main.lifespan(main.app)
     await anext(lifespan)
     try:
-        assert main.app.state.startup_failures == {"plugin_system": "RuntimeError"}
+        # 可降级启动失败：服务仍可用，失败状态暴露到运行期诊断
+        assert main.app.state.startup_failures == {"memory_runtime": "RuntimeError"}
     finally:
         with pytest.raises(StopAsyncIteration):
             await anext(lifespan)

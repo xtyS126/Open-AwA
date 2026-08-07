@@ -368,19 +368,12 @@ async def run_consolidation(
             model=settings.CONSOLIDATION_EXTRACT_MODEL or None,
         )
     )
-    try:
-        return await runner.run_if_due(
-            user_id=str(current_user.id),
-            force=True,
-            workspace_id=workspace_id,
-        )
-    except Exception as exc:
-        logger.warning(f"手动巩固执行异常（已捕获，不抛 500）: {exc}")
-        return {
-            "triggered": True,
-            "success": False,
-            "error": str(exc)[:500],
-        }
+    # 异常不在此层捕获：巩固执行失败由 FastAPI 转 500，禁止以 success=False 伪装成功返回
+    return await runner.run_if_due(
+        user_id=str(current_user.id),
+        force=True,
+        workspace_id=workspace_id,
+    )
 
 
 @router.get(

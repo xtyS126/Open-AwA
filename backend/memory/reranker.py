@@ -7,7 +7,8 @@
 - 云端重排：OpenAI 兼容 rerank API（支持 Qwen3-VL-Reranker 多模态），
   请求结构 {model, query, documents} → {results: [{index, relevance_score}]}
 
-重排为可选阶段：未配置或加载失败时静默跳过，检索结果退回融合排序。
+重排为可选阶段：未配置（MEMORY_RERANK_PROVIDER=off/空）时不启用；
+一旦显式配置，加载或调用失败直接抛错，检索不静默退回融合排序。
 """
 
 from __future__ import annotations
@@ -47,7 +48,8 @@ class LocalCrossEncoderReranker:
     """
     基于 sentence-transformers CrossEncoder 的本地重排器。
 
-    模型下载策略与嵌入模型一致：默认 ModelScope → HuggingFace 降级。
+    模型下载策略与嵌入模型一致：本地缓存命中优先，未命中时按
+    MODEL_DOWNLOAD_SOURCE 指定的唯一下载源下载，主源失败直接抛错。
     """
 
     provider_name = "local-cross-encoder"
@@ -108,38 +110,44 @@ class LocalCrossEncoderReranker:
                     return snapshots_dir
         return None
 
-    def _try_download_from_modelscope(self) -> Optional[str]:
-        """从魔搭社区下载模型，失败返回 None。"""
+    def _download_from_modelscope(self) -> str:
+        """从魔搭社区下载模型，失败直接抛错，不降级到其他下载源。"""
         try:
             from modelscope import snapshot_download
-        except ImportError:
-            logger.debug("modelscope 未安装，跳过魔搭社区下载")
-            return None
+        except ImportError as exc:
+            raise RuntimeError(
+                "下载源为 modelscope，但未安装 modelscope 包，"
+                "请执行 pip install modelscope"
+            ) from exc
         try:
             local_path = snapshot_download(self._modelscope_id)
-            logger.info(f"从魔搭社区下载重排模型成功: {self._modelscope_id}")
-            return local_path
         except Exception as exc:
-            logger.warning(f"从魔搭社区下载重排模型失败 ({self._modelscope_id}): {exc}")
-            return None
+            raise RuntimeError(
+                f"从魔搭社区下载重排模型失败 ({self._modelscope_id}): {exc}"
+            ) from exc
+        logger.info(f"从魔搭社区下载重排模型成功: {self._modelscope_id}")
+        return str(local_path)
 
-    def _try_download_from_huggingface(self) -> Optional[str]:
-        """从 HuggingFace 下载模型，失败返回 None。"""
+    def _download_from_huggingface(self) -> str:
+        """从 HuggingFace 下载模型，失败直接抛错，不降级到其他下载源。"""
         try:
             from huggingface_hub import snapshot_download as hf_snapshot_download
-        except ImportError:
-            logger.debug("huggingface_hub 未安装，跳过 HuggingFace 下载")
-            return None
+        except ImportError as exc:
+            raise RuntimeError(
+                "下载源为 huggingface，但未安装 huggingface_hub 包，"
+                "请执行 pip install huggingface_hub"
+            ) from exc
         try:
             local_path = hf_snapshot_download(self._huggingface_id)
-            logger.info(f"从 HuggingFace 下载重排模型成功: {self._huggingface_id}")
-            return local_path
         except Exception as exc:
-            logger.warning(f"从 HuggingFace 下载重排模型失败 ({self._huggingface_id}): {exc}")
-            return None
+            raise RuntimeError(
+                f"从 HuggingFace 下载重排模型失败 ({self._huggingface_id}): {exc}"
+            ) from exc
+        logger.info(f"从 HuggingFace 下载重排模型成功: {self._huggingface_id}")
+        return str(local_path)
 
     def _ensure_model(self):
-        """延迟加载模型：本地缓存 → ModelScope（默认）→ HuggingFace。"""
+        """延迟加载模型：本地缓存命中优先，未命中时按配置的唯一下载源下载。"""
         if self._model is not None:
             return
 
@@ -155,24 +163,17 @@ class LocalCrossEncoderReranker:
         from config.settings import settings as _settings
 
         preferred_source = (_settings.MODEL_DOWNLOAD_SOURCE or "modelscope").strip().lower()
-        downloaders = [
-            ("modelscope", self._try_download_from_modelscope),
-            ("huggingface", self._try_download_from_huggingface),
-        ]
-        if preferred_source != "modelscope":
-            downloaders.reverse()
-
-        for source_name, downloader in downloaders:
-            local_path = downloader()
-            if local_path:
-                self._model = self._CrossEncoder(local_path)
-                logger.info(
-                    f"从 {source_name} 下载并加载重排模型成功: {self.model_name}"
-                )
-                return
-
-        raise RuntimeError(
-            f"无法加载重排模型 {self.model_name}，ModelScope 和 HuggingFace 均下载失败"
+        if preferred_source not in {"modelscope", "huggingface"}:
+            raise ValueError(f"未知的模型下载源: {preferred_source}")
+        downloader = (
+            self._download_from_modelscope
+            if preferred_source == "modelscope"
+            else self._download_from_huggingface
+        )
+        local_path = downloader()
+        self._model = self._CrossEncoder(local_path)
+        logger.info(
+            f"从 {preferred_source} 下载并加载重排模型成功: {self.model_name}"
         )
 
     async def rerank(self, query: str, documents: List[str]) -> List[float]:
@@ -213,31 +214,30 @@ class CloudReranker:
         self.timeout = timeout
 
     async def rerank(self, query: str, documents: List[str]) -> List[float]:
-        """对候选文档打分。"""
+        """对候选文档打分。调用失败直接抛错，不允许重排阶段被静默跳过。"""
         if not documents:
             return []
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.endpoint,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self.model,
-                        "query": query,
-                        "documents": documents,
-                    },
-                    timeout=self.timeout,
-                )
-            response.raise_for_status()
-            payload = response.json()
-        except Exception as exc:
-            logger.warning(f"云端重排调用失败（跳过重排阶段）: {exc}")
-            return []
-
-        results = payload.get("results") or payload.get("data") or []
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "query": query,
+                    "documents": documents,
+                },
+                timeout=self.timeout,
+            )
+        response.raise_for_status()
+        payload = response.json()
+        results = payload.get("results") or payload.get("data")
+        if not isinstance(results, list):
+            raise RuntimeError(
+                f"云端重排响应缺少 results/data 字段: {str(payload)[:200]}"
+            )
         scored: Dict[int, float] = {}
         for item in results:
             idx = item.get("index")
@@ -270,27 +270,27 @@ def create_reranker(provider_type: Optional[str] = None) -> Optional[Reranker]:
 
     if normalized in {"local", "sentence-transformers", "cross-encoder"}:
         local_model = model_name or default_rerank_model("local")
-        # Spec 模型进程化：本地重排模型在独立子进程加载（空闲自动卸载）
+        # Spec 模型进程化：本地重排模型在独立子进程加载（空闲自动卸载）；
+        # 模型服务启用时启动/推理失败直接抛错，不回退主进程内加载
         if bool(_settings.MODEL_SERVICE_ENABLED):
-            try:
-                from model_service.client import (
-                    RemoteReranker,
-                    get_model_service_client,
-                )
+            from model_service.client import (
+                RemoteReranker,
+                get_model_service_client,
+            )
 
-                client = get_model_service_client()
-                client.configure(rerank_model=local_model)
-                logger.info(f"本地重排模型切换到模型服务进程: {local_model}")
-                return RemoteReranker(client)
-            except Exception as exc:
-                logger.warning(f"模型服务不可用，回退主进程内加载重排: {exc}")
+            client = get_model_service_client()
+            client.configure(rerank_model=local_model)
+            logger.info(f"本地重排模型切换到模型服务进程: {local_model}")
+            return RemoteReranker(client)
+        # 未开启模型服务时主进程内加载；依赖缺失或模型加载失败时直接抛错
         return LocalCrossEncoderReranker(model_name=local_model)
 
     if normalized in {"cloud", "api"}:
         api_key = _settings.MEMORY_RERANK_API_KEY or ""
         if not api_key:
-            logger.warning("云端重排已启用但未配置 MEMORY_RERANK_API_KEY，跳过重排阶段")
-            return None
+            raise ValueError(
+                "云端重排已启用但未配置 MEMORY_RERANK_API_KEY"
+            )
         cloud_model = model_name or default_rerank_model("cloud")
         return CloudReranker(
             api_key=api_key,
@@ -298,5 +298,4 @@ def create_reranker(provider_type: Optional[str] = None) -> Optional[Reranker]:
             endpoint=_settings.MEMORY_RERANK_API_ENDPOINT or "",
         )
 
-    logger.warning(f"未知的重排提供方类型: {normalized}，跳过重排阶段")
-    return None
+    raise ValueError(f"未知的重排提供方类型: {normalized}")

@@ -13,6 +13,9 @@ from im.adapter_base import IMAdapter, IMMessage, IMChannelConfig
 class TelegramAdapter(IMAdapter):
     """Telegram 渠道适配器。"""
 
+    # 连续轮询失败上限：超过后停止轮询并标记渠道错误状态（禁止无限重试）
+    MAX_CONSECUTIVE_POLL_FAILURES = 5
+
     def __init__(self, config: IMChannelConfig):
         super().__init__(config)
         self._base_url = f"https://api.telegram.org/bot{config.bot_token}"
@@ -20,6 +23,9 @@ class TelegramAdapter(IMAdapter):
         self._client: Optional[httpx.AsyncClient] = None
         self._poll_task: Optional[asyncio.Task] = None
         self._message_queue: asyncio.Queue[IMMessage] = asyncio.Queue()
+        self._consecutive_poll_failures = 0
+        # 渠道错误状态（非 None 表示渠道已进入错误状态，暴露给诊断）
+        self._channel_error: Optional[str] = None
 
     async def start(self) -> None:
         """启动适配器，验证 Bot Token 并开始轮询。"""
@@ -65,31 +71,38 @@ class TelegramAdapter(IMAdapter):
         logger.bind(event="telegram_stopped", module="im_telegram").info("Telegram 适配器已停止")
 
     async def send_message(self, chat_id: str, text: str) -> bool:
-        """发送消息到 Telegram。"""
-        if not self._client:
-            return False
-        try:
-            # Telegram 消息最大 4096 字符
-            if len(text) > 4096:
-                text = text[:4090] + "..."
+        """发送消息到 Telegram。
 
-            resp = await self._client.post(
-                f"{self._base_url}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+        失败时抛出结构化异常让路由层感知（禁止返回 False 被路由层忽略）。
+
+        Raises:
+            RuntimeError: 适配器未启动。
+            ValueError: Telegram API 返回错误。
+            Exception: 网络/HTTP 异常（显式传播）。
+        """
+        if not self._client:
+            raise RuntimeError("Telegram 适配器未启动，无法发送消息")
+
+        # Telegram 消息最大 4096 字符
+        if len(text) > 4096:
+            text = text[:4090] + "..."
+
+        resp = await self._client.post(
+            f"{self._base_url}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+        )
+        data = resp.json()
+        if not data.get("ok", False):
+            raise ValueError(
+                f"Telegram 发送消息失败: {data.get('description', 'unknown error')}"
             )
-            data = resp.json()
-            return data.get("ok", False)
-        except Exception as e:
-            logger.bind(
-                event="telegram_send_error",
-                module="im_telegram",
-                chat_id=chat_id,
-                error=str(e),
-            ).error(f"Telegram 发送消息失败: {e}")
-            return False
+        return True
 
     async def _poll_loop(self) -> None:
-        """Long polling 循环，获取 Telegram 更新。"""
+        """Long polling 循环，获取 Telegram 更新。
+
+        连续失败达到上限时停止轮询并标记渠道错误状态（禁止无限重试）。
+        """
         while self._running:
             try:
                 resp = await self._client.get(
@@ -98,14 +111,23 @@ class TelegramAdapter(IMAdapter):
                 )
                 data = resp.json()
                 if not data.get("ok"):
+                    self._consecutive_poll_failures += 1
+                    if self._consecutive_poll_failures >= self.MAX_CONSECUTIVE_POLL_FAILURES:
+                        self._mark_channel_error(
+                            f"连续 {self.MAX_CONSECUTIVE_POLL_FAILURES} 次轮询失败: "
+                            f"{data.get('description')}"
+                        )
+                        break
                     logger.bind(
                         event="telegram_poll_error",
                         module="im_telegram",
                         error=str(data.get("description")),
+                        consecutive_failures=self._consecutive_poll_failures,
                     ).warning(f"Telegram 轮询错误: {data.get('description')}")
                     await asyncio.sleep(5)
                     continue
 
+                self._consecutive_poll_failures = 0
                 updates = data.get("result", [])
                 for update in updates:
                     self._offset = update.get("update_id", 0) + 1
@@ -118,12 +140,33 @@ class TelegramAdapter(IMAdapter):
             except asyncio.CancelledError:
                 break
             except Exception as e:
+                self._consecutive_poll_failures += 1
+                if self._consecutive_poll_failures >= self.MAX_CONSECUTIVE_POLL_FAILURES:
+                    self._mark_channel_error(
+                        f"连续 {self.MAX_CONSECUTIVE_POLL_FAILURES} 次轮询异常: {e}"
+                    )
+                    break
                 logger.bind(
                     event="telegram_poll_exception",
                     module="im_telegram",
                     error=str(e),
+                    consecutive_failures=self._consecutive_poll_failures,
                 ).error(f"Telegram 轮询异常: {e}")
                 await asyncio.sleep(5)
+
+    def _mark_channel_error(self, reason: str) -> None:
+        """标记渠道错误状态并停止轮询（错误暴露给诊断）。"""
+        self._channel_error = reason
+        self._running = False
+        logger.bind(
+            event="telegram_channel_error",
+            module="im_telegram",
+            error=reason,
+        ).critical(f"Telegram 渠道进入错误状态: {reason}")
+
+    async def health_check(self) -> bool:
+        """健康检查：渠道处于错误状态时视为不健康。"""
+        return self._running and self._channel_error is None
 
     def _parse_message(self, tg_message: dict) -> Optional[IMMessage]:
         """将 Telegram 消息解析为统一格式。"""

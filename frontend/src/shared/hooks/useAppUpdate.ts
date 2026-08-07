@@ -56,15 +56,18 @@ export function useAppUpdate(): AppUpdateState {
         setStatus('idle')
       }
     } catch (e) {
-      // 后端未部署更新包 / 网络异常：静默降级，不打扰用户
-      appLogger.warning({
+      // 后端未部署更新包 / 网络异常：显式暴露 error 状态（与"无更新"区分），
+      // 由设置页展示"更新检查失败"提示，不静默降级为 idle
+      const message = e instanceof Error ? e.message : String(e)
+      appLogger.error({
         event: 'app_update_check_failed',
         module: 'app-update',
         action: 'check',
-        status: 'warning',
-        message: e instanceof Error ? e.message : String(e),
+        status: 'failure',
+        message,
       })
-      setStatus('idle')
+      setError(`更新检查失败：${message}`)
+      setStatus('error')
     } finally {
       checkingRef.current = false
     }

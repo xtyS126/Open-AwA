@@ -31,7 +31,13 @@ from loguru import logger
 from config.runtime_paths import DATA_DIR
 
 from .base_plugin import BasePlugin
-from .bundle_detector import BundleDetector, BundleFormat, BundleManifestAdapter
+from .bundle_detector import (
+    BundleDetector,
+    BundleFormat,
+    BundleLoadError,
+    BundleManifestAdapter,
+    BundleManifestError,
+)
 from .extension_protocol import ExtensionRegistry
 from .hot_update_manager import HotUpdateManager, RollbackManager
 from .plugin_lifecycle import PluginState, PluginStateMachine, TransitionExecutor
@@ -518,18 +524,18 @@ class PluginManager:
 
     def _read_plugin_json_file(self, path: str) -> Optional[Dict[str, Any]]:
         """
-        安全读取插件目录中的 JSON 文件，异常时返回 None。
+        读取插件目录中的 JSON 文件。
+
+        文件不存在时返回 None（允许无配置文件）；文件存在但解析失败或
+        顶层不是对象时抛出异常（显式报错，不静默降级为默认配置）。
         """
         if not os.path.exists(path):
             return None
-        try:
-            with open(path, "r", encoding="utf-8") as json_file:
-                payload = json.load(json_file)
-            if isinstance(payload, dict):
-                return payload
-        except Exception as e:
-            logger.warning(f"Failed to read plugin json file '{path}': {e}")
-        return None
+        with open(path, "r", encoding="utf-8") as json_file:
+            payload = json.load(json_file)
+        if isinstance(payload, dict):
+            return payload
+        raise ValueError(f"插件 JSON 文件顶层不是对象: {path}")
 
     def _resolve_plugin_config_path(self, metadata: Dict[str, Any]) -> Optional[str]:
         """
@@ -724,7 +730,11 @@ class PluginManager:
                         self.plugin_metadata[plugin_name] = plugin_info
                         self._runtime_permission_store.setdefault(plugin_name, set())
                         if plugin_name not in self.loaded_plugins:
-                            self.state_machine.set_state(plugin_name, PluginState.REGISTERED)
+                            # 扫描失败的插件进入 ERROR 状态（前端可见），正常插件进入 REGISTERED
+                            if plugin_info.get("scan_error"):
+                                self.state_machine.set_state(plugin_name, PluginState.ERROR)
+                            else:
+                                self.state_machine.set_state(plugin_name, PluginState.REGISTERED)
                         logger.debug(f"Discovered plugin: {plugin_name} at {plugin_path}")
 
             # 扫描当前目录下的子目录，检测 bundle 格式插件
@@ -744,7 +754,11 @@ class PluginManager:
                 self.plugin_metadata[plugin_name] = bundle_info
                 self._runtime_permission_store.setdefault(plugin_name, set())
                 if plugin_name not in self.loaded_plugins:
-                    self.state_machine.set_state(plugin_name, PluginState.REGISTERED)
+                    # 适配失败的 bundle 进入 ERROR 状态（前端可见），正常 bundle 进入 REGISTERED
+                    if bundle_info.get("scan_error"):
+                        self.state_machine.set_state(plugin_name, PluginState.ERROR)
+                    else:
+                        self.state_machine.set_state(plugin_name, PluginState.REGISTERED)
                 logger.debug(
                     f"Discovered bundle plugin ({bundle_info.get('bundle_format')}): "
                     f"{plugin_name} at {subdir_path}"
@@ -780,7 +794,40 @@ class PluginManager:
             if has_py_plugin:
                 return None
 
-        adapted = self._bundle_adapter.adapt(detection)
+        try:
+            adapted = self._bundle_adapter.adapt(detection)
+        except (BundleLoadError, BundleManifestError) as e:
+            # 适配失败的 bundle 不静默消失：以显式错误状态元数据进入发现结果
+            logger.bind(
+                event="bundle_adapt_failed",
+                plugin_path=str(plugin_dir),
+                error_type=type(e).__name__,
+            ).error(f"Bundle 插件适配失败: {plugin_dir} — {e}")
+            return {
+                "name": Path(plugin_dir).name,
+                "version": "0.0.0-error",
+                "description": f"Bundle 适配失败（{type(e).__name__}），无法使用",
+                "path": None,
+                "root_dir": str(plugin_dir),
+                "class_name": None,
+                "module": None,
+                "manifest": None,
+                "manifest_path": (
+                    str(detection.manifest_path) if detection.manifest_path else None
+                ),
+                "config_path": None,
+                "schema_path": None,
+                "default_config": {},
+                "security_scan": {
+                    "blocked": False,
+                    "reasons": [],
+                    "requested_permissions": [],
+                },
+                "requested_permissions": [],
+                "executable": False,
+                "scan_error": str(e),
+                "scan_error_type": type(e).__name__,
+            }
         if adapted is None:
             return None
 
@@ -1733,7 +1780,30 @@ class PluginManager:
                 module_name=module_name,
                 error_type=type(e).__name__,
             ).error(f"Error scanning plugin file {plugin_path}: {e}")
-            return None
+            # 扫描失败的插件不静默消失：以显式错误状态元数据进入发现结果（前端可见）
+            return {
+                "name": plugin_name,
+                "version": "0.0.0-error",
+                "description": f"插件扫描失败（{type(e).__name__}），无法使用",
+                "path": plugin_path,
+                "root_dir": os.path.dirname(os.path.abspath(plugin_path)),
+                "class_name": None,
+                "module": module_name,
+                "manifest": None,
+                "manifest_path": None,
+                "config_path": None,
+                "schema_path": None,
+                "default_config": {},
+                "security_scan": {
+                    "blocked": False,
+                    "reasons": [],
+                    "requested_permissions": [],
+                },
+                "requested_permissions": [],
+                "executable": False,
+                "scan_error": str(e),
+                "scan_error_type": type(e).__name__,
+            }
         finally:
             # 清理 sys.modules，避免扫描期临时模块残留
             sys.modules.pop(module_name, None)

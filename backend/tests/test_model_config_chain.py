@@ -57,12 +57,14 @@ def test_registry_contains_key_models():
 
     qwen_emb = get_embedding_spec("Qwen3-VL-Embedding")
     assert qwen_emb is not None
-    assert qwen_emb.kind == "cloud"
+    assert qwen_emb.kind == "local"  # 2B 开源权重本地模型，可经 API 以云端方式调用
+    assert qwen_emb.modelscope_id
     assert "multimodal" in qwen_emb.capabilities
 
     qwen_rerank = get_rerank_spec("Qwen3-VL-Reranker")
     assert qwen_rerank is not None
-    assert qwen_rerank.kind == "cloud"
+    assert qwen_rerank.kind == "local"  # 2B 开源权重本地模型，可经 API 以云端方式调用
+    assert qwen_rerank.modelscope_id
     assert "multimodal" in qwen_rerank.capabilities
 
 
@@ -160,8 +162,8 @@ async def test_cloud_reranker_api(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cloud_reranker_failure_returns_zeros(monkeypatch):
-    """云端重排调用失败时返回全 0（不抛异常，检索退回融合排序）。"""
+async def test_cloud_reranker_failure_propagates(monkeypatch):
+    """云端重排调用失败时直接抛错（不允许静默跳过重排阶段）。"""
 
     class FailingClient:
         def __init__(self, *args, **kwargs):
@@ -178,10 +180,38 @@ async def test_cloud_reranker_failure_returns_zeros(monkeypatch):
 
     monkeypatch.setattr("memory.reranker.httpx.AsyncClient", FailingClient)
     reranker = CloudReranker(api_key="secret")
-    scores = await reranker.rerank("query", ["doc1", "doc2"])
+    with pytest.raises(RuntimeError, match="network down"):
+        await reranker.rerank("query", ["doc1", "doc2"])
 
-    # 调用失败返回空列表，由 _apply_rerank 检测长度不匹配后跳过重排
-    assert scores == []
+
+@pytest.mark.asyncio
+async def test_cloud_reranker_missing_results_field_raises(monkeypatch):
+    """云端重排响应缺少 results/data 时抛错，拒绝全 0 伪结果。"""
+
+    class EmptyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"unexpected": "payload"}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return EmptyResponse()
+
+    monkeypatch.setattr("memory.reranker.httpx.AsyncClient", FakeClient)
+    reranker = CloudReranker(api_key="secret")
+    with pytest.raises(RuntimeError, match="results/data"):
+        await reranker.rerank("query", ["doc1", "doc2"])
 
 
 def test_create_reranker_disabled_by_default(monkeypatch):
@@ -234,7 +264,7 @@ async def test_apply_rerank_reorders_by_score():
 async def test_apply_rerank_no_reranker_returns_input():
     """未配置重排器时原样返回。"""
     manager = MagicMock(spec=MemoryManager)
-    manager._reranker = None
+    manager._get_reranker = MagicMock(return_value=None)
     memories = [_FakeMemory(1, "a"), _FakeMemory(2, "b")]
     result = await MemoryManager._apply_rerank(manager, "q", memories, limit=2)
 

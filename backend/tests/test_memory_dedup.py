@@ -203,6 +203,12 @@ async def test_add_long_term_memory_merges_when_duplicate_hit():
     """
     manager, factory, fake_vector_store = _build_manager_with_constant_embedding()
 
+    # 注入 LLM 合并回调（去重命中后必须由 LLM 合并，无回调时不再拼接兜底）
+    async def llm_merge(existing: str, new: str) -> str:
+        return f"{existing}；{new}"
+
+    manager.set_llm_merge_callback(llm_merge)
+
     # 第一次写入：search 返回空，正常写入
     fake_vector_store.search_results = []
     first_memory = await manager.add_long_term_memory(
@@ -230,7 +236,7 @@ async def test_add_long_term_memory_merges_when_duplicate_hit():
     # 去重信息已写入 metadata
     assert second_memory.memory_metadata["_dedup_info"]["deduplicated"] is True
     assert second_memory.memory_metadata["_dedup_info"]["merged_into"] == first_memory.id
-    # content 已合并（确定性回退：拼接两段）
+    # content 已由注入的 LLM 合并回调合并（两段内容均保留）
     assert "用户喜欢 Python" in second_memory.content
     assert "用户偏爱 Python 编程语言" in second_memory.content
     # DB 中只有一条记忆
@@ -415,13 +421,13 @@ async def test_find_duplicate_memory_returns_tuple_when_similarity_above_thresho
 
 
 @pytest.mark.asyncio
-async def test_find_duplicate_memory_returns_none_when_vector_search_raises():
+async def test_find_duplicate_memory_propagates_vector_search_error():
     """
-    场景：向量库 search 抛异常时返回 None，不抛错给上层。
+    场景：向量库 search 抛异常时直接传播，不允许跳过去重。
 
     Given vector_store.search 抛 RuntimeError
     When 调用 _find_duplicate_memory
-    Then 返回 None（去重降级为正常写入）
+    Then 异常向上传播（去重防线不得静默失效）
     """
     manager, factory, fake_vector_store = _build_manager_with_constant_embedding()
 
@@ -429,29 +435,28 @@ async def test_find_duplicate_memory_returns_none_when_vector_search_raises():
         raise RuntimeError("vector store offline")
 
     fake_vector_store.search = _raise
-    result = await manager._find_duplicate_memory(
-        content="测试",
-        embedding=[1.0, 0.0, 0.0],
-        user_id="user-1",
-    )
-    assert result is None
+    with pytest.raises(RuntimeError, match="vector store offline"):
+        await manager._find_duplicate_memory(
+            content="测试",
+            embedding=[1.0, 0.0, 0.0],
+            user_id="user-1",
+        )
 
 
 @pytest.mark.asyncio
-async def test_merge_memory_content_falls_back_to_concat_when_no_llm_callback():
+async def test_merge_memory_content_raises_without_callback_and_no_substring():
     """
-    场景：未注入 LLM 合并回调时使用确定性合并。
+    场景：未注入 LLM 合并回调且两段内容无包含关系时显式抛错。
 
     Given existing="用户喜欢 Python"
-    And new="用户偏爱 Python 编程语言"
+    And new="用户偏爱 Python 编程语言"（无包含关系）
     When 调用 _merge_memory_content（无 LLM 回调）
-    Then 返回拼接后的内容（含两段）
+    Then 抛出 RuntimeError（不做低质量拼接兜底）
     """
     manager, _, _ = _build_manager_with_constant_embedding()
 
-    result = await manager._merge_memory_content("用户喜欢 Python", "用户偏爱 Python 编程语言")
-    assert "用户喜欢 Python" in result
-    assert "用户偏爱 Python 编程语言" in result
+    with pytest.raises(RuntimeError, match="未注入 LLM 合并回调"):
+        await manager._merge_memory_content("用户喜欢 Python", "用户偏爱 Python 编程语言")
 
 
 @pytest.mark.asyncio
@@ -490,9 +495,9 @@ async def test_merge_memory_content_uses_llm_callback_when_injected():
 
 
 @pytest.mark.asyncio
-async def test_merge_memory_content_falls_back_when_llm_callback_raises():
+async def test_merge_memory_content_propagates_when_llm_callback_raises():
     """
-    场景：LLM 回调抛异常时回退到确定性合并。
+    场景：LLM 回调抛异常时直接传播，不降级为拼接。
     """
     manager, _, _ = _build_manager_with_constant_embedding()
 
@@ -500,10 +505,8 @@ async def test_merge_memory_content_falls_back_when_llm_callback_raises():
         raise RuntimeError("LLM service offline")
 
     manager.set_llm_merge_callback(_raise)
-    result = await manager._merge_memory_content("已有内容", "新增内容")
-    # 应回退到拼接（确定性合并）
-    assert "已有内容" in result
-    assert "新增内容" in result
+    with pytest.raises(RuntimeError, match="LLM service offline"):
+        await manager._merge_memory_content("已有内容", "新增内容")
 
 
 @pytest.mark.asyncio
@@ -557,6 +560,12 @@ async def test_add_long_term_memory_dedup_merges_extracted_from():
     """
     manager, factory, fake_vector_store = _build_manager_with_constant_embedding()
     fake_vector_store.search_results = []
+
+    # 注入 LLM 合并回调（去重命中后的合并必须显式提供）
+    async def llm_merge(existing: str, new: str) -> str:
+        return f"{existing}；{new}"
+
+    manager.set_llm_merge_callback(llm_merge)
 
     first_memory = await manager.add_long_term_memory(
         content="用户喜欢 Python",

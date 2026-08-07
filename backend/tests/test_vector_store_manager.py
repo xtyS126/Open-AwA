@@ -144,3 +144,31 @@ async def test_vector_store_preserves_legacy_collection_when_embedding_dimension
     assert manager.client.collection_exists(collection_name)
     assert manager.count(user_id="user-1") == 1
     manager.close()
+
+
+class EmptyVectorEmbeddingProvider:
+    """
+    测试专用嵌入提供方：总是返回空向量。
+    维度探测必须显式失败，不允许静默回退到哈希维度创建 collection。
+    """
+
+    provider_name = "test-empty-vector"
+
+    async def embed_texts(self, texts):
+        return [[] for _ in texts]
+
+
+def test_vector_store_dimension_probe_failure_raises_instead_of_hash_fallback(tmp_path):
+    """
+    嵌入维度探测未返回有效向量时，VectorStoreManager 初始化必须显式抛错，
+    禁止静默回退到 DEFAULT_HASH_DIMENSION 创建错误维度的 collection
+    （错误维度会在后续 upsert 时产生维度不匹配，属于隐式降级）。
+    """
+    import pytest
+
+    with pytest.raises(RuntimeError, match="探测嵌入模型维度失败"):
+        VectorStoreManager(
+            persist_directory=str(tmp_path / "probe_fail_db"),
+            collection_name="probe_fail_collection",
+            embedding_provider=EmptyVectorEmbeddingProvider(),
+        )

@@ -72,15 +72,12 @@ class PricingManager:
 
         Returns:
             元组，第一个元素表示是否唯一，第二个元素为重复项列表。
+
+        Raises:
+            Exception: 默认配置加载失败（显式传播，校验不能假装通过）。
         """
-        try:
-            from config.config_loader import config_loader
-            configurations = config_loader.load_default_configurations()
-        except Exception as exc:
-            logger.bind(module="pricing_manager", event="config_loader_error").warning(
-                f"从 JSON 加载默认配置失败: {exc}"
-            )
-            return (True, [])
+        from config.config_loader import config_loader
+        configurations = config_loader.load_default_configurations()
         return PricingManager._validate_configurations_uniqueness(configurations)
 
     @staticmethod
@@ -378,17 +375,14 @@ class PricingManager:
             key: (provider, model) 元组。
 
         Returns:
-            能力默认值字典，若不存在或加载失败则返回空字典。
+            能力默认值字典，该模型无条目时返回空字典。
+
+        Raises:
+            Exception: 能力配置文件加载失败（显式传播，禁止静默返回空字典）。
         """
-        try:
-            from config.config_loader import config_loader
-            capabilities = config_loader.load_model_capabilities()
-            return capabilities.get(key, {})
-        except Exception as exc:
-            logger.bind(module="pricing_manager", event="capability_load_error").warning(
-                f"从 JSON 加载模型能力失败: {exc}"
-            )
-            return {}
+        from config.config_loader import config_loader
+        capabilities = config_loader.load_model_capabilities()
+        return capabilities.get(key, {})
 
     def _normalize_pricing_payload(self, pricing_data: Dict) -> Dict:
         """
@@ -502,22 +496,17 @@ class PricingManager:
         从 pricing_data.json 中提取供应商信息，按 provider 分组。
         返回字典：{ provider_id: { name, base_url, models: [...] } }
 
-        读取失败时返回空字典，不影响主流程。
+        文件缺失或读取失败时显式传播异常（配置损坏必须可见，
+        禁止静默返回空字典造成目录缺失的假象）。
         """
-        try:
-            pricing_file = Path(__file__).parent.parent / "config" / "pricing" / "pricing_data.json"
-            if not pricing_file.exists():
-                return {}
-            with open(pricing_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.bind(module="pricing_manager", event="pricing_data_load_error").warning(
-                f"读取 pricing_data.json 失败: {exc}"
-            )
-            return {}
+        pricing_file = Path(__file__).parent.parent / "config" / "pricing" / "pricing_data.json"
+        if not pricing_file.exists():
+            raise FileNotFoundError(f"定价目录文件缺失: {pricing_file}")
+        with open(pricing_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
         if not isinstance(data, list):
-            return {}
+            raise ValueError(f"pricing_data.json 顶层结构必须是列表，实际: {type(data).__name__}")
 
         provider_names = {
             "openai": "OpenAI",
@@ -788,14 +777,8 @@ class PricingManager:
             新创建的记录数量。
         """
         self.ensure_pricing_schema()
-        try:
-            from config.config_loader import config_loader
-            pricing_data_list = config_loader.load_pricing_data()
-        except Exception as exc:
-            logger.bind(module="pricing_manager", event="pricing_data_load_error").warning(
-                f"从 JSON 加载价格数据失败: {exc}"
-            )
-            return 0
+        from config.config_loader import config_loader
+        pricing_data_list = config_loader.load_pricing_data()
 
         existing_keys = {
             (self.normalize_provider(m.provider), self.normalize_model(m.model))
@@ -831,14 +814,8 @@ class PricingManager:
             return 0
 
         # 从 config_loader 加载 JSON 配置（支持测试 mock）
-        try:
-            from config.config_loader import config_loader
-            configurations = config_loader.load_default_configurations()
-        except Exception as exc:
-            logger.bind(module="pricing_manager", event="config_loader_error").warning(
-                f"从 JSON 加载默认配置失败: {exc}"
-            )
-            return 0
+        from config.config_loader import config_loader
+        configurations = config_loader.load_default_configurations()
 
         if not configurations:
             return 0
@@ -914,14 +891,8 @@ class PricingManager:
         """将旧内置模型的首选项迁移为当前厂商模板，保留其余用户选择。"""
         self.ensure_configuration_schema()
 
-        try:
-            from config.config_loader import config_loader
-            configurations = config_loader.load_default_configurations()
-        except Exception as exc:
-            logger.bind(module="pricing_manager", event="config_loader_error").warning(
-                f"读取默认模型目录失败: {exc}"
-            )
-            return 0
+        from config.config_loader import config_loader
+        configurations = config_loader.load_default_configurations()
 
         current_defaults = {
             self.normalize_provider(item.get("provider")): self.normalize_model(item.get("model"))
@@ -1154,14 +1125,8 @@ class PricingManager:
     @staticmethod
     def _get_default_models_for_provider(provider: str) -> list:
         """从默认配置目录读取指定厂商的恢复模型，避免维护第二份过期清单。"""
-        try:
-            from config.config_loader import config_loader
-            configurations = config_loader.load_default_configurations()
-        except Exception as exc:
-            logger.bind(module="pricing_manager", event="config_loader_error").warning(
-                f"读取 {provider} 默认模型失败: {exc}"
-            )
-            configurations = []
+        from config.config_loader import config_loader
+        configurations = config_loader.load_default_configurations()
 
         provider_defaults = [
             {
@@ -1484,14 +1449,8 @@ class PricingManager:
         """
         self.ensure_configuration_schema()
 
-        try:
-            from config.config_loader import config_loader
-            capability_defaults_map = config_loader.load_model_capabilities()
-        except Exception as exc:
-            logger.bind(module="pricing_manager", event="capability_load_error").warning(
-                f"从 JSON 加载模型能力失败: {exc}"
-            )
-            return 0
+        from config.config_loader import config_loader
+        capability_defaults_map = config_loader.load_model_capabilities()
 
         configs = self.db.query(ModelConfiguration).all()
         updated_count = 0
@@ -1527,13 +1486,8 @@ class PricingManager:
         然后重新调用 initialize 方法把 JSON 中新增的条目 upsert 到数据库。
         """
         # 清空 config_loader 的缓存，确保下次读取从磁盘加载
-        try:
-            from config.config_loader import config_loader
-            config_loader.invalidate_cache()
-        except Exception as exc:
-            logger.bind(module="pricing_manager", event="cache_invalidate_error").warning(
-                f"清空 config_loader 缓存失败: {exc}"
-            )
+        from config.config_loader import config_loader
+        config_loader.invalidate_cache()
 
         # 重置 schema 确保标志，确保下次操作时重新检查 schema
         self._pricing_schema_ensured = False

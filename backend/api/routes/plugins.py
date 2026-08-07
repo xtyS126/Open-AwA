@@ -57,20 +57,18 @@ def __getattr__(name):
 
 def _read_json_file(path: str) -> Optional[Dict[str, Any]]:
     """
-    读取 JSON 文件并返回字典结构，异常时返回 None。
+    读取 JSON 文件并返回字典结构。
+
+    仅文件不存在时返回 None（表示无该文件）；文件存在但读取/解析失败或内容非对象时
+    抛异常显式报错，禁止静默降级为 None。
     """
     if not os.path.exists(path):
         return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-        if isinstance(payload, dict):
-            return payload
-        return None
-    except Exception as exc:
-        # JSON 文件读取/解析失败时降级为 None，记录 debug 便于排查插件配置加载问题
-        logger.debug(f"[plugins] JSON 文件读取失败: {path}, error={exc}")
-        return None
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload, dict):
+        raise ValueError(f"[plugins] JSON 文件内容必须是对象: {path}")
+    return payload
 
 
 def _write_json_file(path: str, payload: Dict[str, Any]) -> None:
@@ -394,19 +392,27 @@ def install_plugin(
     db.commit()
     db.refresh(new_plugin)
 
-    # 发现并加载插件到运行时
+    # 发现并加载插件到运行时；加载失败时在响应中携带显式标记，禁止静默返回假成功
+    loaded = False
+    load_error = ""
     if new_plugin.name not in pm.plugin_metadata:
         pm.discover_plugins()
     if new_plugin.name in pm.plugin_metadata:
         try:
             pm.load_plugin(new_plugin.name)
+            loaded = True
             logger.info(f"插件 '{new_plugin.name}' 安装后已成功加载")
         except Exception as exc:
-            logger.warning(f"插件 '{new_plugin.name}' 安装成功但加载失败: {exc}")
+            load_error = f"插件 '{new_plugin.name}' 安装成功但加载失败: {exc}"
+            logger.error(load_error)
     else:
-        logger.warning(f"插件 '{new_plugin.name}' 已注册到数据库但未在文件系统中发现")
+        load_error = f"插件 '{new_plugin.name}' 已注册到数据库但未在文件系统中发现"
+        logger.error(load_error)
 
-    return new_plugin
+    response = PluginResponse.model_validate(new_plugin)
+    response.runtime_loaded = loaded
+    response.runtime_state = "loaded" if loaded else f"error: {load_error}"
+    return response
 
 
 @router.delete("/{plugin_id}")
@@ -433,28 +439,29 @@ async def uninstall_plugin(
             plugin=plugin.name,
             action="uninstall",
         ).warning(f"尝试卸载内置插件 {plugin.name} 已被拦截")
-        # 记录审计日志（不阻塞 403 响应）
-        try:
-            audit_logger = AuditLogger(db)
-            await audit_logger.log(
-                user_id=str(current_user.id),
-                action="plugin:uninstall",
-                resource=plugin.name,
-                result="blocked",
-                details={"reason": "builtin_plugin_uninstallable"},
-            )
-        except Exception as audit_exc:
-            logger.warning(f"审计日志写入失败: {audit_exc}")
+        # 记录审计日志；写入失败时异常自然传播为 500（fail-closed），确保拦截行为可审计
+        audit_logger = AuditLogger(db)
+        await audit_logger.log(
+            user_id=str(current_user.id),
+            action="plugin:uninstall",
+            resource=plugin.name,
+            result="blocked",
+            details={"reason": "builtin_plugin_uninstallable"},
+        )
         raise HTTPException(status_code=403, detail="内置插件不可卸载或禁用")
 
-    # 从运行时卸载插件
+    # 从运行时卸载插件；卸载失败时在响应中携带显式标记，禁止静默保留运行时实例
     pm = _get_plugin_manager()
+    runtime_unloaded = True
+    runtime_error = ""
     if plugin.name in pm.loaded_plugins:
         try:
             pm.unload_plugin(plugin.name)
             logger.info(f"插件 '{plugin.name}' 已从运行时卸载")
         except Exception as exc:
-            logger.warning(f"插件 '{plugin.name}' 运行时卸载失败: {exc}")
+            runtime_unloaded = False
+            runtime_error = f"插件 '{plugin.name}' 运行时卸载失败: {exc}"
+            logger.error(runtime_error)
 
     # PERF-05: 同步 DB 删除与提交通过 to_thread 卸载到线程池
     def _delete_and_commit() -> None:
@@ -463,7 +470,11 @@ async def uninstall_plugin(
 
     await asyncio.to_thread(_delete_and_commit)
 
-    return {"message": "Plugin uninstalled successfully"}
+    return {
+        "message": "Plugin uninstalled successfully",
+        "runtime_unloaded": runtime_unloaded,
+        "runtime_error": runtime_error,
+    }
 
 
 @router.put(
@@ -515,8 +526,10 @@ async def toggle_plugin(
 
     await asyncio.to_thread(_toggle_and_commit)
 
-    # 同步运行时状态
+    # 同步运行时状态；加载/卸载失败时在响应中携带显式标记，禁止静默假成功
     pm = _get_plugin_manager()
+    runtime_ok = True
+    runtime_error = ""
     if plugin.enabled:
         # 启用：发现并加载
         if plugin.name not in pm.plugin_metadata:
@@ -526,7 +539,9 @@ async def toggle_plugin(
                 pm.load_plugin(plugin.name)
                 logger.info(f"插件 '{plugin.name}' 已启用并加载")
             except Exception as exc:
-                logger.warning(f"插件 '{plugin.name}' 启用后加载失败: {exc}")
+                runtime_ok = False
+                runtime_error = f"插件 '{plugin.name}' 启用后加载失败: {exc}"
+                logger.error(runtime_error)
     else:
         # 禁用：卸载
         if plugin.name in pm.loaded_plugins:
@@ -534,9 +549,15 @@ async def toggle_plugin(
                 pm.unload_plugin(plugin.name)
                 logger.info(f"插件 '{plugin.name}' 已禁用并卸载")
             except Exception as exc:
-                logger.warning(f"插件 '{plugin.name}' 禁用后卸载失败: {exc}")
+                runtime_ok = False
+                runtime_error = f"插件 '{plugin.name}' 禁用后卸载失败: {exc}"
+                logger.error(runtime_error)
 
-    return {"message": f"Plugin {'enabled' if plugin.enabled else 'disabled'}"}
+    return {
+        "message": f"Plugin {'enabled' if plugin.enabled else 'disabled'}",
+        "runtime_synced": runtime_ok,
+        "runtime_error": runtime_error,
+    }
 
 
 @router.put(

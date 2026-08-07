@@ -942,7 +942,7 @@ async def force_execute_discussion(
 
     # 3. 写入审计日志
     # [NOTE] AuditLogger 需要 db session，复用当前请求级 session
-    audit_logged = False
+    # 审计不可用时 fail-closed：拒绝旁路执行，禁止绕过审计放行高危操作
     try:
         from security.audit import AuditLogger
 
@@ -960,14 +960,7 @@ async def force_execute_discussion(
             },
             ip_address=None,
         )
-        audit_logged = True
-    except ImportError:
-        logger.bind(
-            event="audit_logger_unavailable",
-            module="discussions",
-        ).warning("security.audit.AuditLogger 不可用，降级到 loguru 记录")
     except Exception as exc:
-        # 审计日志失败不应阻断主流程，但必须记录
         logger.bind(
             event="force_execute_audit_failed",
             module="discussions",
@@ -975,18 +968,11 @@ async def force_execute_discussion(
             user_id=user_id,
             error=str(exc),
             error_type=type(exc).__name__,
-        ).error(f"审计日志写入失败: {exc}")
-
-    if not audit_logged:
-        # 降级：使用 loguru 绑定上下文记录
-        logger.bind(
-            event="force_execute_bypass",
-            module="discussions",
-            user_id=user_id,
-            discussion_id=discussion_id,
-            reason=payload.reason,
-            task_status_before=task.status,
-        ).warning(f"旁路执行审计（降级）: {discussion_id} by {user_id}")
+        ).error(f"审计日志写入失败，旁路执行已拒绝: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail="审计日志写入失败，旁路执行已拒绝",
+        ) from exc
 
     # 4. 调用 orchestrator 跳过投票直接执行
     orchestrator = _get_orchestrator()

@@ -14,14 +14,12 @@ Spec memory-quality-and-short-term-recovery 阶段 2 的核心模块。
 - 当计数达到阈值 N 时，asyncio.create_task 异步调用 run_if_due
 - 也可通过 force=True 强制触发（用于测试或运维手动触发）
 
-失败处理：
-- LLM 提炼失败 → 跳过提炼，但仍记录 fingerprint（避免重复调用），更新 watermark
-- add_long_term_memory 失败 → 跳过该条，继续处理下一条
+失败处理（不允许静默降级）：
+- LLM 提炼失败（异常 / 未注入提炼回调）→ 结果中显式记录 errors，
+  不推进 watermark、不持久化 fingerprint，失败批次保留供下次重试
+- add_long_term_memory 单条写入失败 → 收集到结果 errors 字段，不静默跳过
 - 整体异常 → 记录 ERROR 日志与 last_error，watermark 不更新（下次重试）
-
-回退策略：
-- 未注入 extract_callback 时，跳过 LLM 提炼，直接持久化 fingerprint 并更新 watermark
-  （用于测试环境与 LLM 不可达场景，保证 watermark 推进而非卡死）
+- 仅提炼成功的批次才推进 watermark 并持久化 fingerprint
 """
 
 from __future__ import annotations
@@ -161,50 +159,39 @@ class ConsolidationRunner:
         关键词即时路径：将单轮对话异步提交 LLM 提炼后写入长期记忆。
 
         与 :meth:`_consolidate` 的区别：输入来自内存中的本轮对话（尚未
-        落库为短期记忆），输出直接调用 add_long_term_memory。提炼失败或
-        无价值内容时静默跳过、不落原文，由 feedback.py 以 create_task
-        后台调用，不阻塞对话主流程。
+        落库为短期记忆），输出直接调用 add_long_term_memory。由 feedback.py
+        以 create_task 后台调用，不阻塞对话主流程；提炼失败通过异常传播，
+        由调用方（feedback 后台任务包装）显式记录，不产生假成功。
 
         Returns:
-            成功写入长期记忆的条数（0 表示跳过）。
+            字典 {"persisted": 成功写入条数, "errors": 写入失败明细列表}；
+            提炼回调失败时直接抛错（传播），不让调用方把失败误判为"无价值内容"。
         """
         if self._extract_callback is None:
-            logger.bind(
-                event="immediate_extract_no_callback",
-                module="memory",
-                user_id=user_id,
-            ).warning("即时提炼跳过：未注入提炼回调")
-            return 0
+            raise RuntimeError("未注入提炼回调，无法执行即时提炼")
         logger.bind(
             event="immediate_extract_start",
             module="memory",
             user_id=user_id,
         ).info(f"即时提炼触发 user_id={user_id}")
-        try:
-            messages_for_llm = [
-                {
-                    "id": None,
-                    "role": "user",
-                    "content": (user_input or "")[: self.SHORT_TERM_CONTENT_TRUNCATE],
-                    "session_id": None,
-                },
-                {
-                    "id": None,
-                    "role": "assistant",
-                    "content": (response or "")[: self.SHORT_TERM_CONTENT_TRUNCATE],
-                    "session_id": None,
-                },
-            ]
-            extracted = await self._extract_callback(messages_for_llm, user_id)
-        except Exception as exc:
-            logger.bind(
-                event="immediate_extract_failed",
-                module="memory",
-                user_id=user_id,
-            ).warning(f"即时提炼失败，跳过本轮持久化: {exc}")
-            return 0
+        messages_for_llm = [
+            {
+                "id": None,
+                "role": "user",
+                "content": (user_input or "")[: self.SHORT_TERM_CONTENT_TRUNCATE],
+                "session_id": None,
+            },
+            {
+                "id": None,
+                "role": "assistant",
+                "content": (response or "")[: self.SHORT_TERM_CONTENT_TRUNCATE],
+                "session_id": None,
+            },
+        ]
+        extracted = await self._extract_callback(messages_for_llm, user_id)
 
         count = 0
+        errors: List[str] = []
         for item in extracted or []:
             content = str(item.get("content", "")).strip()
             if not content or len(content) > self.memory_manager._MAX_LONG_TERM_CONTENT_CHARS:
@@ -219,12 +206,14 @@ class ConsolidationRunner:
                 )
                 count += 1
             except Exception as exc:
+                error_message = f"即时提炼写入单条失败（content={content[:50]}...）: {exc}"
                 logger.bind(
                     event="immediate_extract_add_failed",
                     module="memory",
                     user_id=user_id,
-                ).warning(f"即时提炼写入单条失败（跳过）: {exc}")
-        return count
+                ).warning(error_message)
+                errors.append(error_message)
+        return {"persisted": count, "errors": errors}
 
     def increment_conversation_count(
         self,
@@ -265,7 +254,7 @@ class ConsolidationRunner:
 
         实现已拆分为四个内部 helper（brooks-lint D2 Cognitive Overload）：
         - :meth:`_read_candidates`：增量读取短期记忆 + fingerprint 过滤
-        - :meth:`_extract_insights`：LLM 提炼高价值信息（含失败降级）
+        - :meth:`_extract_insights`：LLM 提炼高价值信息（失败显式记录 errors，不推进 watermark）
         - :meth:`_persist_extracted_memories`：循环 add_long_term_memory 写入
         - :meth:`_persist_fingerprints_and_watermark`：fingerprint 持久化 + watermark 推进
         """
@@ -315,15 +304,27 @@ class ConsolidationRunner:
                 "reason": "all_skipped_by_fingerprint",
             }
 
-        # 3. LLM 提炼
-        extracted_items = await self._extract_insights(candidates, user_id)
+        # 3. LLM 提炼（失败时显式记录 errors，不推进 watermark、不持久化 fingerprint）
+        extracted_items, extract_errors = await self._extract_insights(candidates, user_id)
+        if extract_errors:
+            return {
+                "triggered": True,
+                "success": False,
+                "processed": len(new_memories),
+                "skipped": len(new_memories) - len(candidates),
+                "extracted": 0,
+                "consolidated": 0,
+                "archived": 0,
+                "watermark": watermark,
+                "errors": extract_errors,
+            }
 
-        # 4. 写入长期记忆
-        consolidated_memory_ids = await self._persist_extracted_memories(
+        # 4. 写入长期记忆（单条失败收集到 errors，不静默跳过）
+        consolidated_memory_ids, persist_errors = await self._persist_extracted_memories(
             candidates, extracted_items, user_id, workspace_id
         )
 
-        # 5. 持久化 fingerprint + 更新 watermark
+        # 5. 持久化 fingerprint + 更新 watermark（仅提炼成功批次执行）
         new_watermark = await self._persist_fingerprints_and_watermark(
             candidates, consolidated_memory_ids, new_memories, user_id, workspace_id
         )
@@ -345,14 +346,16 @@ class ConsolidationRunner:
             consolidated=len(consolidated_memory_ids),
             archived=archived_count,
             watermark=new_watermark,
+            write_errors=len(persist_errors),
         ).info(
             f"记忆巩固完成 user_id={user_id}: "
             f"processed={len(new_memories)} skipped={len(new_memories) - len(candidates)} "
             f"extracted={len(extracted_items)} consolidated={len(consolidated_memory_ids)} "
             f"archived={archived_count} watermark={new_watermark}"
+            + (f" write_errors={len(persist_errors)}" if persist_errors else "")
         )
 
-        return {
+        result: Dict[str, Any] = {
             "triggered": True,
             "success": True,
             "processed": len(new_memories),
@@ -362,6 +365,9 @@ class ConsolidationRunner:
             "archived": archived_count,
             "watermark": new_watermark,
         }
+        if persist_errors:
+            result["errors"] = persist_errors
+        return result
 
     async def _filter_unprocessed_candidates(
         self,
@@ -388,15 +394,21 @@ class ConsolidationRunner:
         self,
         candidates: List[Tuple[ShortTermMemory, str]],
         user_id: str,
-    ) -> List[Dict[str, Any]]:
-        """调用 LLM 提炼高价值信息，失败时返回空列表（不阻塞 watermark 推进）。"""
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        """
+        调用 LLM 提炼高价值信息。
+
+        Returns:
+            (提炼结果列表, 错误明细列表)。失败时返回 ([], [错误信息])，
+            由调用方决定不推进 watermark；不再以空列表伪装"无价值内容"。
+        """
         if self._extract_callback is None:
             logger.bind(
                 event="consolidation_no_callback",
                 module="memory",
                 user_id=user_id,
-            ).debug("未注入 extract_callback，跳过 LLM 提炼阶段")
-            return []
+            ).warning("未注入 extract_callback，LLM 提炼不可用")
+            return [], ["未注入 extract_callback，LLM 提炼不可用"]
 
         try:
             messages_for_llm = []
@@ -413,14 +425,15 @@ class ConsolidationRunner:
                 if images:
                     entry["images"] = images
                 messages_for_llm.append(entry)
-            return await self._extract_callback(messages_for_llm, user_id)
+            return await self._extract_callback(messages_for_llm, user_id), []
         except Exception as exc:
+            error_message = f"LLM 提炼失败: {exc}"
             logger.bind(
                 event="consolidation_extract_failed",
                 module="memory",
                 user_id=user_id,
-            ).warning(f"LLM 提炼失败，跳过提炼阶段: {exc}")
-            return []
+            ).warning(error_message)
+            return [], [error_message]
 
     @staticmethod
     def _collect_memory_images(memory: ShortTermMemory) -> List[Dict[str, Any]]:
@@ -458,9 +471,16 @@ class ConsolidationRunner:
         extracted_items: List[Dict[str, Any]],
         user_id: str,
         workspace_id: str,
-    ) -> List[int]:
-        """对每条提炼结果调用 add_long_term_memory，单条失败被吞不阻塞整体流程。"""
+    ) -> Tuple[List[int], List[str]]:
+        """
+        对每条提炼结果调用 add_long_term_memory。
+
+        Returns:
+            (成功写入的 memory id 列表, 失败明细列表)。
+            单条写入失败收集到 errors，不静默跳过；无效内容（空/超长）仍按校验跳过。
+        """
         consolidated_memory_ids: List[int] = []
+        errors: List[str] = []
         candidate_ids = [m.id for m, _ in candidates]
         for item in extracted_items:
             content = str(item.get("content", "")).strip()
@@ -493,18 +513,22 @@ class ConsolidationRunner:
                 )
                 consolidated_memory_ids.append(memory.id)
             except ValueError as exc:
+                error_message = f"巩固写入跳过单条（{content[:50]}...）: {exc}"
                 logger.bind(
                     event="consolidation_add_skipped",
                     module="memory",
                     user_id=user_id,
-                ).warning(f"巩固写入跳过单条: {exc}")
+                ).warning(error_message)
+                errors.append(error_message)
             except Exception as exc:
+                error_message = f"巩固写入单条失败（{content[:50]}...）: {exc}"
                 logger.bind(
                     event="consolidation_add_failed",
                     module="memory",
                     user_id=user_id,
-                ).warning(f"巩固写入单条失败: {exc}")
-        return consolidated_memory_ids
+                ).warning(error_message)
+                errors.append(error_message)
+        return consolidated_memory_ids, errors
 
     async def _persist_fingerprints_and_watermark(
         self,
@@ -515,8 +539,10 @@ class ConsolidationRunner:
         workspace_id: str,
     ) -> int:
         """
-        持久化 fingerprint（即使提炼失败也标记已处理，避免重复 LLM 调用），
-        更新 watermark 与重置计数器，返回新 watermark。
+        持久化 fingerprint 并更新 watermark。
+
+        仅允许在提炼成功（无 extract_errors）的批次调用：失败批次不进入本方法，
+        watermark 与 fingerprint 保持原状，供下次运行重试。
         """
         await asyncio.to_thread(
             self._persist_fingerprints_sync,
@@ -753,18 +779,14 @@ class ConsolidationRunner:
                     # 同步 archive_status（向后兼容）
                     memory.archive_status = "archived"
                     archived_count += 1
-                    # 同步向量库元数据
-                    try:
-                        self.memory_manager.vector_store.update_memory_metadata(
-                            memory.id,
-                            archive_status="archived",
-                            confidence=memory.confidence,
-                            quality_score=memory.quality_score,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            f"向量库归档元数据同步失败 memory_id={memory.id}: {exc}"
-                        )
+                    # 同步向量库元数据；失败直接传播，DB 尚未提交（fail-closed），
+                    # 不允许"DB 已归档、向量仍返回"的静默分叉
+                    self.memory_manager.vector_store.update_memory_metadata(
+                        memory.id,
+                        archive_status="archived",
+                        confidence=memory.confidence,
+                        quality_score=memory.quality_score,
+                    )
             db.commit()
         return archived_count
 

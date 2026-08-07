@@ -35,7 +35,8 @@ def discover_agents() -> dict[str, ACPAgentConfig]:
     遍历本模块所在目录下的所有 .py 模块（除 __init__.py），动态导入每个模块
     并读取模块级变量 AGENT_CONFIG: ACPAgentConfig，按 agent_id 索引返回字典。
 
-    单个模块导入失败或缺少 AGENT_CONFIG 时跳过，不影响其他 agent 的发现。
+    单个模块导入失败时以禁用状态（enabled=False）显式暴露该 agent，
+    供 /api/acp/agents 展示为"可见不可用"，不静默消失。
 
     Returns:
         按 agent_id 索引的 ACPAgentConfig 字典。
@@ -52,10 +53,16 @@ def discover_agents() -> dict[str, ACPAgentConfig]:
         try:
             module = importlib.import_module(full_module_name)
         except Exception as e:
-            # 模块导入失败时记录 WARNING 日志，便于排查配置错误；不阻塞其他 agent 的发现
-            logger.warning(
-                f"加载 ACP agent 模块 {full_module_name} 失败: {e}",
+            # 导入失败的 agent 显式标记 broken 状态：以禁用配置暴露（可见不可用）
+            logger.error(
+                f"加载 ACP agent 模块 {full_module_name} 失败，以禁用状态暴露: {e}",
                 exc_info=True,
+            )
+            agents[module_name] = ACPAgentConfig(
+                agent_id=module_name,
+                name=f"{module_name}（加载失败）",
+                command="",
+                enabled=False,
             )
             continue
         agent_config = getattr(module, "AGENT_CONFIG", None)

@@ -14,7 +14,10 @@ let _dbFailTime = 0;
 
 function _getDB(): Promise<IDBPDatabase | null> {
   if (_dbPromise) return _dbPromise;
-  if (_dbFailTime > 0 && Date.now() - _dbFailTime < 30000) return Promise.resolve(null);
+  if (_dbFailTime > 0 && Date.now() - _dbFailTime < 30000) {
+    console.warn('[useChatDraft] IndexedDB 不可用，草稿无法保存');
+    return Promise.resolve(null);
+  }
 
   _dbPromise = openDB(DB_NAME, 2, {
     upgrade(db, oldVersion) {
@@ -23,53 +26,53 @@ function _getDB(): Promise<IDBPDatabase | null> {
       }
     },
   }).then((db) => db as IDBPDatabase)
-    .catch(() => { _dbFailTime = Date.now(); _dbPromise = null; return null; });
+    .catch(() => { _dbFailTime = Date.now(); _dbPromise = null; console.warn('[useChatDraft] IndexedDB 打开失败，草稿无法保存'); return null; });
 
   return _dbPromise;
 }
 
-async function _saveDraft(sessionId: string, text: string, cursorPosition: number): Promise<void> {
+/** 保存草稿，返回是否成功。失败时显式记录警告（草稿丢失可见），不静默忽略。 */
+async function _saveDraft(sessionId: string, text: string, cursorPosition: number): Promise<boolean> {
   const db = await _getDB();
   if (!db) {
-    // IndexedDB 不可用时回退到 localStorage，写入失败可忽略（草稿丢失不影响主流程）
-    try { localStorage.setItem(`${DRAFT_KEY_PREFIX}${sessionId}`, JSON.stringify({ text, cursorPosition })); } catch { /* localStorage 写入失败可忽略 */ }
-    return;
+    console.warn(`[useChatDraft] 草稿未保存：IndexedDB 不可用（sessionId=${sessionId}）`);
+    return false;
   }
   try {
     await db.put(DRAFT_STORE, { text, cursorPosition, updatedAt: Date.now() }, `${DRAFT_KEY_PREFIX}${sessionId}`);
-  } catch {
-    // IndexedDB 写入失败时回退到 localStorage，localStorage 写入失败可忽略
-    try { localStorage.setItem(`${DRAFT_KEY_PREFIX}${sessionId}`, JSON.stringify({ text, cursorPosition })); } catch { /* localStorage 写入失败可忽略 */ }
+    return true;
+  } catch (error) {
+    console.warn(`[useChatDraft] 草稿写入 IndexedDB 失败（sessionId=${sessionId}）:`, error);
+    return false;
   }
 }
 
 async function _loadDraft(sessionId: string): Promise<{ text: string; cursorPosition: number } | null> {
   const db = await _getDB();
   if (!db) {
-    try {
-      const raw = localStorage.getItem(`${DRAFT_KEY_PREFIX}${sessionId}`);
-      if (raw) return JSON.parse(raw);
-    } catch { return null; }
+    console.warn(`[useChatDraft] 草稿读取失败：IndexedDB 不可用（sessionId=${sessionId}）`);
     return null;
   }
   try {
     const draft = await db.get(DRAFT_STORE, `${DRAFT_KEY_PREFIX}${sessionId}`);
     return draft as { text: string; cursorPosition: number } | undefined || null;
-  } catch {
-    try {
-      const raw = localStorage.getItem(`${DRAFT_KEY_PREFIX}${sessionId}`);
-      if (raw) return JSON.parse(raw);
-    } catch { return null; }
+  } catch (error) {
+    console.warn(`[useChatDraft] 草稿读取 IndexedDB 失败（sessionId=${sessionId}）:`, error);
     return null;
   }
 }
 
 async function _clearDraft(sessionId: string): Promise<void> {
   const db = await _getDB();
-  if (!db) { localStorage.removeItem(`${DRAFT_KEY_PREFIX}${sessionId}`); return; }
-  // IndexedDB 删除失败可忽略，残留草稿不影响主流程
-  try { await db.delete(DRAFT_STORE, `${DRAFT_KEY_PREFIX}${sessionId}`); } catch { /* 删除失败可忽略 */ }
-  localStorage.removeItem(`${DRAFT_KEY_PREFIX}${sessionId}`);
+  if (!db) {
+    console.warn(`[useChatDraft] 草稿清除失败：IndexedDB 不可用（sessionId=${sessionId}）`);
+    return;
+  }
+  try {
+    await db.delete(DRAFT_STORE, `${DRAFT_KEY_PREFIX}${sessionId}`);
+  } catch (error) {
+    console.warn(`[useChatDraft] 草稿删除 IndexedDB 失败（sessionId=${sessionId}）:`, error);
+  }
 }
 
 interface UseChatDraftOptions {
@@ -99,7 +102,7 @@ export function useChatDraft({ sessionId, onRestore }: UseChatDraftOptions) {
   // 挂载时恢复草稿
   useEffect(() => {
     if (!sessionId) return;
-    _loadDraft(sessionId).then((draft) => {
+    void _loadDraft(sessionId).then((draft) => {
       if (draft && draft.text && onRestoreRef.current) {
         onRestoreRef.current(draft.text, draft.cursorPosition || 0);
       }
@@ -113,24 +116,25 @@ export function useChatDraft({ sessionId, onRestore }: UseChatDraftOptions) {
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (draftTextRef.current.trim()) {
-        _saveDraft(sessionRef.current, draftTextRef.current, draftCursorRef.current);
+        void _saveDraft(sessionRef.current, draftTextRef.current, draftCursorRef.current);
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       if (draftTextRef.current.trim()) {
-        _saveDraft(sessionRef.current, draftTextRef.current, draftCursorRef.current);
+        void _saveDraft(sessionRef.current, draftTextRef.current, draftCursorRef.current);
       }
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
 
-  const saveDraft = useCallback(async (text: string, cursorPosition: number = 0) => {
-    if (!sessionRef.current) return;
+  /** 保存草稿，返回是否成功（失败时已记录显式警告） */
+  const saveDraft = useCallback(async (text: string, cursorPosition: number = 0): Promise<boolean> => {
+    if (!sessionRef.current) return false;
     draftTextRef.current = text;
     draftCursorRef.current = cursorPosition;
-    await _saveDraft(sessionRef.current, text, cursorPosition);
+    return _saveDraft(sessionRef.current, text, cursorPosition);
   }, []);
 
   const clearDraft = useCallback(async () => {

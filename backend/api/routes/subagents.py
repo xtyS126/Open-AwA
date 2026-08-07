@@ -65,12 +65,8 @@ def _get_orchestrator() -> SubagentOrchestrator:
     if _orchestrator is None:
         with _orchestrator_lock:
             if _orchestrator is None:
-                # 尝试集成 WorktreeManager（Level 2 隔离），失败时降级为 Level 1
-                worktree_mgr = None
-                try:
-                    from core.task_runtime.worktree_manager import worktree_manager as worktree_mgr
-                except Exception as exc:
-                    logger.warning(f"WorktreeManager 加载失败，Level 2 隔离将降级: {exc}")
+                # WorktreeManager 加载失败时显式抛错，禁止静默降级隔离级别
+                from core.task_runtime.worktree_manager import worktree_manager as worktree_mgr
                 _orchestrator = SubagentOrchestrator(
                     max_parallel=4,
                     worktree_manager=worktree_mgr,
@@ -940,11 +936,12 @@ async def create_definition(
     db.commit()
     db.refresh(definition)
 
-    # 同步注册到运行时管理器
+    # 同步注册到运行时管理器；注册失败显式报错，禁止持久化成功但运行时不可用的状态
     try:
         _build_graph_from_definition(payload.graph_definition, payload.name, payload.description, manager)
     except Exception as exc:
-        logger.warning(f"图定义 {payload.name} 持久化成功但运行时注册失败: {exc}")
+        logger.error(f"图定义 {payload.name} 运行时注册失败: {exc}")
+        raise HTTPException(status_code=500, detail=f"图定义运行时注册失败: {exc}") from exc
 
     return definition
 
@@ -976,13 +973,14 @@ async def update_definition(
     if payload.graph_definition is not None:
         _validate_graph_definition(payload.graph_definition, manager)
         definition.graph_definition = payload.graph_definition.model_dump()
-        # 重建运行时图
+        # 重建运行时图；重建失败显式报错，禁止 DB 已更新但运行时旧图残留的假成功状态
         if definition.name in manager.graphs:
             del manager.graphs[definition.name]
         try:
             _build_graph_from_definition(payload.graph_definition, definition.name, definition.description, manager)
         except Exception as exc:
-            logger.warning(f"图定义 {definition.name} 运行时重建失败: {exc}")
+            logger.error(f"图定义 {definition.name} 运行时重建失败: {exc}")
+            raise HTTPException(status_code=500, detail=f"图定义运行时重建失败: {exc}") from exc
 
     db.commit()
     db.refresh(definition)
@@ -1098,7 +1096,12 @@ async def run_definition(
         db.add(history)
         db.commit()
     except Exception as exc:
-        logger.warning(f"执行历史持久化失败: {exc}")
+        # 持久化失败时在响应中携带显式失败标记，禁止静默丢失执行历史
+        logger.error(f"执行历史持久化失败: {exc}")
+        response["history_persisted"] = False
+        response["history_error"] = str(exc)[:300]
+    else:
+        response["history_persisted"] = True
 
     return response
 

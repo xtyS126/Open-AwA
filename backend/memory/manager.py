@@ -69,10 +69,12 @@ class MemoryManager:
         self._SHORT_QUERY_THRESHOLD = 4
         # Spec memory-quality-and-short-term-recovery：写入去重时合并内容的 LLM callback
         # 注入回调签名：async def merge(existing: str, new: str) -> str
-        # 未注入时回退到确定性合并（去重后拼接），保证测试与离线场景可重现
+        # 回调失败或未注入且两段内容无包含关系时直接抛错，不做低质量拼接兜底
         self._llm_merge_callback: Optional[Callable[[str, str], Awaitable[str]]] = None
-        # Spec memory-model-config-chain：检索重排器（可选，未配置/加载失败时为 None）
+        # Spec memory-model-config-chain：检索重排器（可选，未配置时为 None）；
+        # 重排器初始化失败时缓存异常并重新抛出，不静默退回融合排序
         self._reranker = None
+        self._reranker_failure: Optional[Exception] = None
         self._reranker_lock = Lock()
         logger.info("MemoryManager initialized")
 
@@ -80,12 +82,16 @@ class MemoryManager:
         """
         懒加载检索重排器（Spec memory-model-config-chain）。
 
-        重排器加载失败时记录警告并返回 None（检索退回融合排序），
-        不阻塞记忆检索主流程。
+        重排器加载失败时缓存异常并直接抛出（fail-fast），
+        不允许检索静默退回融合排序；后续调用复用缓存的失败原因。
         """
+        if self._reranker_failure is not None:
+            raise self._reranker_failure
         if self._reranker is not None:
             return self._reranker
         with self._reranker_lock:
+            if self._reranker_failure is not None:
+                raise self._reranker_failure
             if self._reranker is not None:
                 return self._reranker
             try:
@@ -93,8 +99,8 @@ class MemoryManager:
 
                 self._reranker = create_reranker()
             except Exception as exc:
-                logger.opt(exception=True).warning(f"重排器初始化失败（检索退回融合排序）: {exc}")
-                self._reranker = None
+                self._reranker_failure = exc
+                raise
             return self._reranker
 
     async def _apply_rerank(
@@ -107,33 +113,29 @@ class MemoryManager:
         对混合检索候选做二次相关性重排（Spec memory-model-config-chain）。
 
         重排分数与融合分数独立：候选数量大于 1 且重排器可用时，
-        按重排分数重新排序后截断到 limit；否则原样返回。
+        按重排分数重新排序后截断到 limit；否则原样返回（未配置重排）。
+        重排执行失败或分数不匹配时直接抛错，不允许静默跳过。
         """
         reranker = self._get_reranker()
         if reranker is None or len(memories) <= 1:
             return memories
-        try:
-            scores = await reranker.rerank(query, [m.content for m in memories])
-            if len(scores) != len(memories):
-                logger.warning(
-                    f"重排分数数量不匹配（{len(scores)} != {len(memories)}），跳过重排"
-                )
-                return memories
-            paired = sorted(
-                zip(memories, scores), key=lambda item: item[1], reverse=True
+        scores = await reranker.rerank(query, [m.content for m in memories])
+        if len(scores) != len(memories):
+            raise RuntimeError(
+                f"重排分数数量不匹配（{len(scores)} != {len(memories)}），"
+                f"重排器实现异常，拒绝使用不可信的重排结果"
             )
-            return [memory for memory, _ in paired[:limit]]
-        except Exception as exc:
-            logger.opt(exception=True).warning(
-                f"重排执行失败（检索退回融合排序）: {exc}"
-            )
-            return memories
+        paired = sorted(
+            zip(memories, scores), key=lambda item: item[1], reverse=True
+        )
+        return [memory for memory, _ in paired[:limit]]
 
     def set_llm_merge_callback(self, callback: Callable[[str, str], Awaitable[str]]) -> None:
         """
         注入 LLM 合并回调，用于写入去重时把新旧内容合并为提炼后的文本。
 
-        生产环境注入真实 LLM 调用，测试环境可不注入（回退到确定性合并）。
+        生产环境必须注入真实 LLM 调用；未注入时去重合并仅支持无损子串规则，
+        其余情况显式抛错，不产生低质量拼接结果。
         """
         self._llm_merge_callback = callback
 
@@ -151,10 +153,11 @@ class MemoryManager:
         """
         合并两段内容生成新的记忆文本。
 
-        优先调用注入的 LLM 合并回调，失败或未注入时回退到确定性合并：
-        - new_content 是 existing_content 的子串 → 保留 existing
-        - existing_content 是 new_content 的子串 → 用 new 替换
-        - 否则 → 拼接（去重换行）
+        - 注入 LLM 合并回调时：回调失败或返回空 → 直接抛错（传播），
+          不允许以低质量拼接作为静默兜底
+        - 未注入回调时：仅当两段内容存在无损包含关系时才可确定性合并
+          （new 是 existing 的子串 → 保留 existing；existing 是 new 的子串
+          → 用 new 替换）；其余情况无法保证合并质量，显式抛错
         """
         existing_normalized = str(existing_content or "").strip()
         new_normalized = str(new_content or "").strip()
@@ -165,19 +168,22 @@ class MemoryManager:
         if self._llm_merge_callback is not None:
             try:
                 merged = await self._llm_merge_callback(existing_normalized, new_normalized)
-                if merged and merged.strip():
-                    return merged.strip()[: self._MAX_LONG_TERM_CONTENT_CHARS]
             except Exception as exc:
-                logger.bind(
-                    event="memory_merge_llm_failed",
-                    module="memory",
-                ).warning(f"LLM 合并失败，回退到确定性合并: {exc}")
-        # 确定性合并回退：避免重复内容
+                raise RuntimeError(
+                    f"LLM 记忆合并失败，去重合并中止（不静默降级为拼接）: {exc}"
+                ) from exc
+            if not merged or not merged.strip():
+                raise RuntimeError("LLM 记忆合并回调未返回有效内容，去重合并中止")
+            return merged.strip()[: self._MAX_LONG_TERM_CONTENT_CHARS]
+        # 无损子串规则（不依赖 LLM 的确定性合并）
         if new_normalized in existing_normalized:
             return existing_normalized
         if existing_normalized in new_normalized:
             return new_normalized
-        return f"{existing_normalized}\n{new_normalized}"
+        raise RuntimeError(
+            "未注入 LLM 合并回调，且两段内容无包含关系，"
+            "无法执行去重合并；请为 MemoryManager 注入合并回调"
+        )
 
     async def _find_duplicate_memory(
         self,
@@ -204,19 +210,13 @@ class MemoryManager:
         Returns:
             (memory_id, similarity) 当且仅当 similarity > 阈值时返回，否则 None。
         """
-        try:
-            vector_hits = await self.vector_store.search(
-                content,
-                user_id=user_id,
-                limit=5,
-                include_archived=False,
-            )
-        except Exception as exc:
-            logger.bind(
-                event="memory_dedup_search_error",
-                module="memory",
-            ).warning(f"去重向量检索失败，跳过去重: {exc}")
-            return None
+        # 向量检索失败直接传播：去重防线不得静默失效（否则重复记忆会落库）
+        vector_hits = await self.vector_store.search(
+            content,
+            user_id=user_id,
+            limit=5,
+            include_archived=False,
+        )
 
         if not vector_hits:
             return None
@@ -401,18 +401,38 @@ class MemoryManager:
             "last_access": last_access.isoformat(),
         }
 
-    def _sync_runtime_layers(self, memory: LongTermMemory) -> None:
+    def _sync_runtime_layers(self, memory: LongTermMemory) -> Optional[str]:
+        """
+        同步运行时层（working_memory + 向量库元数据）。
+
+        向量 point 缺失（KeyError）说明 DB 行与向量库不一致：记录 ERROR 日志、
+        在记忆对象上标记 ``vector_sync_error`` 并返回错误信息——单条缺失不拖垮
+        列表/检索等读取路径；其余 Qdrant 异常（连接/存储故障）仍直接传播（fail-closed）。
+        写入路径（合并）必须检查返回值并显式抛错，维持 DB/向量一致性。
+        """
         last_access = self._ensure_aware_datetime(memory.last_access)
         self.working_memory.put(str(memory.id), self._build_runtime_payload(memory), user_id=memory.user_id)
-        self.vector_store.update_memory_metadata(
-            memory.id,
-            importance=memory.importance,
-            archive_status=memory.archive_status,
-            confidence=memory.confidence,
-            quality_score=memory.quality_score,
-            access_count=memory.access_count,
-            last_access=last_access.isoformat(),
-        )
+        try:
+            self.vector_store.update_memory_metadata(
+                memory.id,
+                importance=memory.importance,
+                archive_status=memory.archive_status,
+                confidence=memory.confidence,
+                quality_score=memory.quality_score,
+                access_count=memory.access_count,
+                last_access=last_access.isoformat(),
+            )
+        except KeyError as exc:
+            error_message = f"向量库缺少记忆 id={memory.id} 的 point，元数据同步失败: {exc}"
+            logger.bind(
+                event="memory_vector_sync_failed",
+                module="memory",
+                memory_id=memory.id,
+            ).error(error_message)
+            memory.vector_sync_error = error_message
+            return error_message
+        memory.vector_sync_error = None
+        return None
 
     def _evaluate_memory_in_session(
         self,
@@ -451,7 +471,9 @@ class MemoryManager:
             memory.archive_status = "archived"
         if commit:
             db.commit()
-        self._sync_runtime_layers(memory)
+        # 向量 point 缺失时返回该条目的显式错误状态（vector_sync_error），
+        # 不拖垮整个列表/质量报告
+        vector_sync_error = self._sync_runtime_layers(memory)
         return {
             "memory_id": memory.id,
             "confidence": round(memory.confidence, 4),
@@ -459,6 +481,7 @@ class MemoryManager:
             "archive_status": memory.archive_status,
             "importance": memory.importance,
             "access_count": memory.access_count,
+            "vector_sync_error": vector_sync_error,
         }
 
     def _add_short_term_memory_sync(
@@ -1035,7 +1058,11 @@ class MemoryManager:
             memory.quality_score = self._calculate_quality_score(memory, reference_time=now)
             db.commit()
             db.refresh(memory)
-            self._sync_runtime_layers(memory)
+            # 写入路径 fail-closed：合并后的向量元数据同步失败必须显式抛错，
+            # 不允许 DB 侧已合并、向量侧仍为旧状态的一致性分叉
+            sync_error = self._sync_runtime_layers(memory)
+            if sync_error:
+                raise RuntimeError(sync_error)
             db.expunge(memory)
             return memory
 
@@ -1060,7 +1087,7 @@ class MemoryManager:
         2. 长度校验（> 500 字符拒绝）
         3. 嵌入向量计算
         4. 去重查询（相似度 > 0.85）
-            - 命中：合并内容（LLM 或确定性回退）→ 更新已有 memory
+            - 命中：合并内容（LLM 合并或无损确定性合并，无法合并时显式抛错）→ 更新已有 memory
             - 未命中：写入新 memory
         5. 同步 vector_store 与 working_memory
         6. 返回 memory 对象，去重信息通过 memory_metadata._dedup_info 透出
@@ -1150,8 +1177,9 @@ class MemoryManager:
         """
         去重查询 + 合并写入。
 
-        命中时合并到已有记忆并返回 merged_memory；未命中或合并失败时返回 None
-        （让调用方回退到 :meth:`_write_new_memory`）。
+        命中时合并到已有记忆并返回 merged_memory；未命中（正常去重漏检）返回 None，
+        由调用方走 :meth:`_write_new_memory`。去重命中后的一切合并失败（目标消失、
+        合并函数返回 None、向量写入失败）都直接传播异常，不允许静默退化为重复写入。
         """
         duplicate = await self._find_duplicate_memory(
             scrubbed_content,
@@ -1171,14 +1199,15 @@ class MemoryManager:
             workspace_id,
         )
         if not existing_memory:
-            logger.bind(
-                event="memory_dedup_stale_hit",
-                module="memory",
-                duplicate_id=duplicate_id,
-            ).warning("去重命中的记忆已不存在，回退到正常写入")
-            return None
+            # 向量库命中但 DB 行不存在：向量库与数据库不一致，显式报错
+            raise RuntimeError(
+                f"去重命中的记忆 id={duplicate_id} 在数据库中不存在，"
+                f"向量库与数据库状态不一致"
+            )
 
         existing = existing_memory[0]
+        # 捕获合并前快照，向量写入失败时用于回滚 DB 合并（保证原子性）
+        snapshot = self._capture_memory_snapshot(existing)
         merged_content = await self._merge_memory_content(existing.content, scrubbed_content)
         if len(merged_content) > self._MAX_LONG_TERM_CONTENT_CHARS:
             merged_content = merged_content[: self._MAX_LONG_TERM_CONTENT_CHARS]
@@ -1202,25 +1231,42 @@ class MemoryManager:
             extracted_from,
         )
         if merged_memory is None:
-            return None
+            # 合并目标在合并过程中被并发删除，显式报错而非退化为重复写入
+            raise RuntimeError(
+                f"合并记忆 id={duplicate_id} 失败：合并目标已不存在"
+            )
 
-        await self.vector_store.upsert_memory(
-            merged_memory.id,
-            merged_content,
-            user_id=user_id,
-            importance=merged_memory.importance,
-            archive_status=merged_memory.archive_status,
-            metadata={
-                **(merged_memory.memory_metadata or {}),
-                "memory_layer": merged_memory.memory_layer,
-                "confidence": merged_memory.confidence,
-                "quality_score": merged_memory.quality_score,
-                "access_count": merged_memory.access_count,
-                "last_access": merged_memory.last_access.isoformat(),
-                "similarity_score": similarity_score,
-            },
-            embedding=merged_vector,
-        )
+        try:
+            await self.vector_store.upsert_memory(
+                merged_memory.id,
+                merged_content,
+                user_id=user_id,
+                importance=merged_memory.importance,
+                archive_status=merged_memory.archive_status,
+                metadata={
+                    **(merged_memory.memory_metadata or {}),
+                    "memory_layer": merged_memory.memory_layer,
+                    "confidence": merged_memory.confidence,
+                    "quality_score": merged_memory.quality_score,
+                    "access_count": merged_memory.access_count,
+                    "last_access": merged_memory.last_access.isoformat(),
+                    "similarity_score": similarity_score,
+                },
+                embedding=merged_vector,
+            )
+        except Exception:
+            # 向量写入失败：回滚 DB 侧已提交的合并，避免 DB/向量不一致
+            try:
+                await asyncio.to_thread(
+                    self._restore_memory_snapshot_sync, duplicate_id, snapshot
+                )
+            except Exception as rollback_exc:
+                logger.bind(
+                    event="memory_merge_rollback_failed",
+                    module="memory",
+                    memory_id=duplicate_id,
+                ).error(f"回滚合并记忆失败 memory_id={duplicate_id}: {rollback_exc}")
+            raise
         self.working_memory.put(
             str(merged_memory.id),
             self._build_runtime_payload(merged_memory),
@@ -1270,25 +1316,81 @@ class MemoryManager:
             memory_layer,
             dedup_info={"deduplicated": False},
         )
-        await self.vector_store.upsert_memory(
-            memory.id,
-            scrubbed_content,
-            user_id=user_id,
-            importance=memory.importance,
-            archive_status=memory.archive_status,
-            metadata={
-                **(memory.memory_metadata or {}),
-                "memory_layer": memory.memory_layer,
-                "confidence": memory.confidence,
-                "quality_score": memory.quality_score,
-                "access_count": memory.access_count,
-                "last_access": memory.last_access.isoformat(),
-            },
-            embedding=vector,
-        )
+        try:
+            await self.vector_store.upsert_memory(
+                memory.id,
+                scrubbed_content,
+                user_id=user_id,
+                importance=memory.importance,
+                archive_status=memory.archive_status,
+                metadata={
+                    **(memory.memory_metadata or {}),
+                    "memory_layer": memory.memory_layer,
+                    "confidence": memory.confidence,
+                    "quality_score": memory.quality_score,
+                    "access_count": memory.access_count,
+                    "last_access": memory.last_access.isoformat(),
+                },
+                embedding=vector,
+            )
+        except Exception:
+            # 向量写入失败：回滚刚插入的 DB 行，避免产生"DB 有行、向量无 point"的
+            # 缺失 point 状态（update_memory_metadata 对缺失 point 已改为显式抛错）
+            try:
+                await asyncio.to_thread(self._delete_long_term_memory_sync, memory.id)
+            except Exception as rollback_exc:
+                logger.bind(
+                    event="memory_write_rollback_failed",
+                    module="memory",
+                    memory_id=memory.id,
+                ).error(f"回滚新记忆失败 memory_id={memory.id}: {rollback_exc}")
+            raise
         self.working_memory.put(str(memory.id), self._build_runtime_payload(memory), user_id=user_id)
         logger.debug(f"Added long-term memory with importance {importance}")
         return memory
+
+    def _capture_memory_snapshot(self, memory: LongTermMemory) -> Dict[str, Any]:
+        """
+        捕获记忆合并前的字段快照，供向量写入失败时回滚 DB 合并使用。
+        """
+        return {
+            "content": memory.content,
+            "embedding": memory.embedding,
+            "importance": memory.importance,
+            "memory_metadata": dict(memory.memory_metadata or {}),
+            "access_count": memory.access_count,
+            "last_access": memory.last_access,
+            "confidence": memory.confidence,
+            "quality_score": memory.quality_score,
+            "similarity_hash": memory.similarity_hash,
+            "extracted_from": list(memory.extracted_from or []) if memory.extracted_from else None,
+        }
+
+    def _restore_memory_snapshot_sync(
+        self,
+        memory_id: int,
+        snapshot: Dict[str, Any],
+    ) -> None:
+        """
+        将合并后的记忆字段回滚到合并前快照（同步实现）。
+
+        用于向量写入失败时的补偿操作，保证 DB 与向量库状态一致。
+        """
+        with self.session_factory() as db:
+            memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+            if memory is None:
+                return
+            memory.content = snapshot["content"]
+            memory.embedding = snapshot["embedding"]
+            memory.importance = snapshot["importance"]
+            memory.memory_metadata = snapshot["memory_metadata"]
+            memory.access_count = snapshot["access_count"]
+            memory.last_access = snapshot["last_access"]
+            memory.confidence = snapshot["confidence"]
+            memory.quality_score = snapshot["quality_score"]
+            memory.similarity_hash = snapshot["similarity_hash"]
+            memory.extracted_from = snapshot["extracted_from"]
+            db.commit()
 
     @classmethod
     def _normalize_search_query(cls, query: str) -> str:
@@ -1613,35 +1715,32 @@ class MemoryManager:
         Returns:
             相关记忆列表，每项包含 content 和相关度分数
         """
-        try:
-            memories = await self.search_memories(
-                query=query,
-                limit=max_results * 2,  # 多取一些用于筛选
-                user_id=user_id,
-                workspace_id=workspace_id,
-                use_vector=True,
-            )
+        # 检索失败直接传播：调用方（manager_provider.prefetch 等）已有
+        # PrefetchStatus.FAILED 显式错误通道，不允许静默返回空
+        memories = await self.search_memories(
+            query=query,
+            limit=max_results * 2,  # 多取一些用于筛选
+            user_id=user_id,
+            workspace_id=workspace_id,
+            use_vector=True,
+        )
 
-            # 筛选高相关度记忆（仅按 min_score 过滤，取前 max_results）
-            results = []
-            for m in memories:
-                if m.importance >= min_score:
-                    results.append({
-                        "id": m.id,
-                        "content": m.content[:500],
-                        "importance": m.importance,
-                        "access_count": m.access_count,
-                        "created_at": str(m.created_at) if m.created_at else "",
-                        "type": m.type or "fact",
-                    })
+        # 筛选高相关度记忆（仅按 min_score 过滤，取前 max_results）
+        results = []
+        for m in memories:
+            if m.importance >= min_score:
+                results.append({
+                    "id": m.id,
+                    "content": m.content[:500],
+                    "importance": m.importance,
+                    "access_count": m.access_count,
+                    "created_at": str(m.created_at) if m.created_at else "",
+                    "type": m.type or "fact",
+                })
 
-            # 按重要度排序，取前 max_results
-            results.sort(key=lambda x: x["importance"], reverse=True)
-            return results[:max_results]
-
-        except Exception as e:
-            logger.bind(event="auto_memory_search_error").warning(f"自动记忆搜索失败: {str(e)}")
-            return []
+        # 按重要度排序，取前 max_results
+        results.sort(key=lambda x: x["importance"], reverse=True)
+        return results[:max_results]
 
     def _delete_long_term_memory_sync(self, memory_id: int) -> bool:
         with self.session_factory() as db:
@@ -1713,20 +1812,14 @@ class MemoryManager:
             # Spec memory-quality-and-short-term-recovery Task 9：同步 state 字段
             # 保持与 archive_status 一致，便于检索层用 state 过滤
             memory.state = target_state
+            # 先同步向量库元数据再提交 DB（fail-closed）：向量同步失败时抛错，
+            # DB 不提交，归档状态保持不变，避免"DB 已归档、向量仍返回"的分叉
+            self.vector_store.update_memory_metadata(
+                memory_id,
+                archive_status=archive_status,
+                state=target_state,
+            )
             db.commit()
-            # 同步向量库元数据，保证检索时过滤一致
-            try:
-                self.vector_store.update_memory_metadata(
-                    memory_id,
-                    archive_status=archive_status,
-                    state=target_state,
-                )
-            except Exception as exc:
-                # 向量库同步失败不影响 DB 已提交的归档状态，
-                # 但记录 warning 便于后续对账
-                logger.warning(
-                    f"向量库归档元数据同步失败 memory_id={memory_id}: {exc}"
-                )
             return True
 
     async def validate_long_term_memory(self, memory_id: int) -> bool:
@@ -1767,19 +1860,15 @@ class MemoryManager:
             memory.confidence = max(0.9, float(memory.confidence or 0))
             memory.archive_status = "active"
             memory.last_access = self._ensure_aware_datetime(datetime.now(timezone.utc))
+            # 先同步向量库元数据再提交 DB（fail-closed）：同步失败时抛错，
+            # DB 不提交，验证状态保持不变
+            self.vector_store.update_memory_metadata(
+                memory_id,
+                state="validated",
+                archive_status="active",
+                confidence=memory.confidence,
+            )
             db.commit()
-            # 同步向量库元数据，保证检索排序一致
-            try:
-                self.vector_store.update_memory_metadata(
-                    memory_id,
-                    state="validated",
-                    archive_status="active",
-                    confidence=memory.confidence,
-                )
-            except Exception as exc:
-                logger.warning(
-                    f"向量库验证元数据同步失败 memory_id={memory_id}: {exc}"
-                )
             return True
 
     async def archive_long_term_memory(

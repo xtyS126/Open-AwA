@@ -324,36 +324,6 @@ class TestBrowserExtendedSkill:
         assert "协议" in result["error"]
 
 
-class TestFetchWithHttpx:
-    """测试 _fetch_with_httpx 降级函数"""
-
-    import pytest
-
-    @pytest.mark.asyncio
-    async def test_fetch_valid_url(self):
-        """获取有效 URL 应返回内容"""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_response = MagicMock()
-            mock_response.text = "<html><body>Test</body></html>"
-            mock_response.status_code = 200
-            mock_response.headers = {"Content-Type": "text/html"}
-            mock_response.raise_for_status = MagicMock()
-
-            mock_client = MagicMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client.get = AsyncMock(return_value=mock_response)
-            mock_client_cls.return_value = mock_client
-
-            from core.builtin_tools.browser_extended import _fetch_with_httpx
-
-            result = await _fetch_with_httpx("https://example.com")
-            assert result["content"] == "<html><body>Test</body></html>"
-            assert result["status_code"] == 200
-
-
 @pytest.mark.asyncio
 class TestSnapshotWithPlaywright:
     """测试 _snapshot_with_playwright 函数"""

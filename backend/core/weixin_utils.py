@@ -61,13 +61,16 @@ def deserialize_skill_config(config_value: Any) -> Dict[str, Any]:
     统一解析技能配置字段，兼容字典对象、JSON 字符串和历史遗留的 YAML 字符串。
 
     解析优先级：字典对象 > JSON 字符串 > YAML 字符串。
-    所有解析失败的情况均静默返回空字典，不抛出异常。
+    解析失败时抛出异常，禁止静默返回空字典。
 
     参数:
         config_value: 待解析的配置值，可能是字典、JSON 字符串、YAML 字符串或 None
 
     返回:
-        解析后的配置字典，解析失败时返回空字典
+        解析后的配置字典
+
+    异常:
+        ValueError: 配置内容既不是合法 JSON 也不是合法 YAML 时抛出
     """
     if isinstance(config_value, dict):
         return dict(config_value)
@@ -79,27 +82,28 @@ def deserialize_skill_config(config_value: Any) -> Dict[str, Any]:
         return {}
 
     # 优先尝试 JSON 解析
+    loaded = None
     try:
         loaded = json.loads(text)
     except Exception as exc:
-        # JSON 解析失败时降级为 None，记录 debug 便于排查配置格式问题
-        # 后续会回退到 YAML 解析，无需 warning 级别
+        # JSON 解析失败时继续尝试 YAML，记录 debug 便于排查配置格式问题
         logger.debug(f"[weixin_utils] JSON 解析失败，将尝试 YAML: {exc}")
-        loaded = None
     if isinstance(loaded, dict):
         return loaded
 
     # 兼容历史遗留的 YAML 格式
+    import yaml
     try:
-        import yaml
         loaded = yaml.safe_load(text)
     except Exception as exc:
-        # YAML 解析失败时降级为空字典，记录 debug 便于排查配置格式异常
-        logger.debug(f"[weixin_utils] YAML 解析失败，降级为空字典: {exc}")
-        return {}
+        # YAML 解析失败必须显式报错，禁止静默返回空字典
+        raise ValueError(
+            f"技能配置解析失败，内容不是合法的 JSON/YAML 字典: {text[:200]}"
+        ) from exc
     if isinstance(loaded, dict):
         return loaded
-    return {}
+    # 配置既不是合法 JSON/YAML 也不是字典，属于数据损坏，必须显式报错
+    raise ValueError(f"技能配置解析失败，内容不是合法的 JSON/YAML 字典: {text[:200]}")
 
 
 def validate_qrcode_url(url: str) -> str:

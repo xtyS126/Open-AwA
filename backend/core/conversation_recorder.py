@@ -259,8 +259,10 @@ class ConversationRecorder:
                 db.add(ConversationRecord(**item))
             db.commit()
         except Exception as e:
+            # 落库失败必须回滚并向上传播，禁止记录静默丢失
             db.rollback()
             logger.error(f"Failed to flush conversation record batch: {e}")
+            raise
         finally:
             db.close()
 

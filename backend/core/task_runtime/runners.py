@@ -339,24 +339,15 @@ def _create_subagent_execution_bundle(
     # Task 15: 注入代理记忆 prompt，根据 memory_scope 从对应存储加载
     memory_scope = getattr(agent_def, "memory_scope", None) if agent_def else None
     if memory_scope is not None:
-        try:
-            memory_prompt = load_agent_memory_prompt(agent_id, memory_scope)
-            if memory_prompt:
-                sub_context["agent_memory"] = memory_prompt
-                logger.bind(
-                    module="task_runtime",
-                    agent_id=agent_id,
-                    agent_type=agent_type,
-                    memory_scope=memory_scope.value,
-                ).debug(f"已注入代理记忆: {agent_id}")
-        except Exception as exc:
-            # 记忆加载失败不阻断代理启动，仅记录警告
+        memory_prompt = load_agent_memory_prompt(agent_id, memory_scope)
+        if memory_prompt:
+            sub_context["agent_memory"] = memory_prompt
             logger.bind(
                 module="task_runtime",
                 agent_id=agent_id,
                 agent_type=agent_type,
-                error=str(exc),
-            ).warning(f"代理记忆加载失败，已跳过: {agent_id}")
+                memory_scope=memory_scope.value,
+            ).debug(f"已注入代理记忆: {agent_id}")
 
     try:
         sub_agent = AIAgent(

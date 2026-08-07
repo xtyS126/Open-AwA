@@ -223,11 +223,15 @@ class SkillPoolManager:
         """
         从已配置的技能市场获取可用技能列表。
         返回合并后的技能列表，包含名称/描述/版本/来源/作者等信息。
+
+        Raises:
+            RuntimeError: 所有市场源均获取失败时抛出（无可用源不返回静默空列表）。
         """
         import urllib.request
         import json as json_mod
 
         all_skills: list[dict] = []
+        source_errors: dict[str, str] = {}
         sources = [
             {"name": "clawhub", "url": "https://clawhub.ai/api/skills"},
             {"name": "skills.sh", "url": "https://skills.sh/api/skills"},
@@ -253,12 +257,33 @@ class SkillPoolManager:
                             "downloads": s.get("downloads", s.get("install_count", 0)),
                         })
             except Exception as e:
-                logger.bind(event="market_listing_error", source=src["name"]).warning(f"获取市场列表失败: {str(e)}")
+                logger.bind(event="market_listing_error", source=src["name"]).error(f"获取市场列表失败: {str(e)}")
+                source_errors[src["name"]] = str(e)
+
+        if source_errors and not all_skills:
+            # 双源全失败：返回结构化错误（不静默返回空列表伪装"无技能"）
+            detail = "; ".join(f"{name}: {err}" for name, err in source_errors.items())
+            raise RuntimeError(f"技能市场获取失败（无可用源）: {detail}")
+
+        # 单源失败：在结果中追加显式错误条目，失败源不静默消失
+        for src_name, error in source_errors.items():
+            all_skills.append({
+                "name": f"{src_name} 市场获取失败",
+                "description": error,
+                "version": "",
+                "source": src_name,
+                "source_url": "",
+                "author": "",
+                "downloads": 0,
+                "installed": False,
+                "source_error": error,
+            })
 
         # 合并已安装信息
         manifest = self.get_manifest()
         installed = set(manifest.get("skills", {}).keys())
         for skill in all_skills:
-            skill["installed"] = skill["name"] in installed
+            if not skill.get("source_error"):
+                skill["installed"] = skill["name"] in installed
 
         return all_skills

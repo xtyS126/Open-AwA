@@ -327,15 +327,8 @@ def test_execute_requires_action(plugin_instance):
 
 
 @pytest.mark.asyncio
-async def test_initialize_degrades_when_adapter_initialize_fails(plugin_instance):
-    """adapter.initialize 抛异常时，插件应降级为仅含 6 个下载工具并返回 True。
-
-    阶段 16 起，``plugin.py:initialize`` 在适配层失败分支仍会调用
-    ``_load_download_tools()`` 追加 6 个 B 站下载工具（含
-    ``bilibili_download_collection``），因为下载工具
-    不依赖 vendored openbiliclaw（仅依赖 ``api.routes`` / ``db.models``
-    / ``workflow`` 等已实现的稳定模块），可独立工作。
-    """
+async def test_initialize_fails_when_adapter_initialize_fails(plugin_instance):
+    """adapter.initialize 抛异常时，插件应返回 False（进入失败状态），不降级为空工具集。"""
     with patch(
         "plugins.bilibili_toolkit_builtin.plugin.importlib.util.find_spec"
     ) as mock_spec:
@@ -351,18 +344,11 @@ async def test_initialize_degrades_when_adapter_initialize_fails(plugin_instance
 
             result = await plugin_instance.initialize()
 
-    # 降级模式仍返回 True
-    assert result is True
-    # 工具列表应仅含 6 个下载工具（适配层失败，下载工具独立可用）
+    # 失败状态：返回 False，不降级
+    assert result is False
+    # 不残留降级工具集
     tools = plugin_instance.get_tools()
-    assert len(tools) == 6
-    tool_names: List[str] = [t["name"] for t in tools]
-    assert "bilibili_add_subscription" in tool_names
-    assert "bilibili_download_collection" in tool_names
-    assert "bilibili_list_subscriptions" in tool_names
-    assert "bilibili_trigger_download" in tool_names
-    assert "bilibili_get_download_status" in tool_names
-    assert "bilibili_list_videos" in tool_names
+    assert tools == []
     # 应记录告警
     warnings = plugin_instance.get_dependency_warnings()
     assert any("BilibiliToolkitAdapter.initialize" in w for w in warnings)

@@ -289,9 +289,6 @@ class Settings(BaseSettings):
     # 步骤快照最大保留数量（防止内存泄漏）
     AGENT_SNAPSHOT_MAX_COUNT: int = 50
 
-    # 模型降级策略：主模型失败时是否自动切换备用模型
-    AGENT_MODEL_FALLBACK_ENABLED: bool = True
-
     # 熔断器配置（保护 LLM/DB 等外部依赖，防止级联故障）
     # 连续失败多少次后进入 open 状态
     LLM_CB_FAILURE_THRESHOLD: int = 5

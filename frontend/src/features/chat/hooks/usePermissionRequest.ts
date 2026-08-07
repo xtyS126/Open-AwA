@@ -35,6 +35,8 @@ interface UsePermissionRequestReturn {
   deny: (requestId: string, reason?: string) => Promise<void>
   /** SSE 连接状态 */
   connected: boolean
+  /** 连接失败错误信息（用户可见提示，如 ticket 获取失败） */
+  connectionError: string | null
 }
 
 /** 重连延迟基数（毫秒） */
@@ -71,6 +73,7 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const [pendingRequests, setPendingRequests] = useState<PermissionRequest[]>([])
   const [connected, setConnected] = useState(false)
+  const [connectionError, setConnectionError] = useState<string | null>(null)
   const reconnectAttemptRef = useRef(0)
   const eventSourceRef = useRef<EventSource | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -152,15 +155,17 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
           if (cancelled || (err instanceof DOMException && err.name === 'AbortError')) {
             return
           }
-          appLogger.warning({
+          // SEC-16 防泄露设计：ticket 获取失败即放弃连接（绝不降级把明文 api_key 放进 URL），
+          // 用户可见提示重试
+          appLogger.error({
             event: 'permission_sse_ticket_fetch_failed',
             module: 'usePermissionRequest',
-            message: '获取 SSE ticket 失败，降级使用 api_key query 参数',
+            message: '获取 SSE ticket 失败，放弃连接（不降级使用 api_key query 参数）',
             extra: { error: err instanceof Error ? err.message : String(err) },
           })
-          // 降级：仍使用 api_key（向后兼容，但记录警告）
-          const url = `${baseUrl}?api_key=${encodeURIComponent(apiKey)}`
-          eventSource = new EventSource(url)
+          setConnected(false)
+          setConnectionError('权限通知连接建立失败（获取安全票据失败），请重试')
+          return
         } finally {
           ticketAbortController = null
         }
@@ -179,6 +184,7 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
       eventSource.onopen = () => {
         if (cancelled) return
         setConnected(true)
+        setConnectionError(null)
         reconnectAttemptRef.current = 0
         appLogger.info({
           event: 'permission_sse_connected',
@@ -215,6 +221,7 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
             module: 'usePermissionRequest',
             message: `SSE 连接断开已达最大重连次数 ${MAX_RECONNECT_ATTEMPTS}，停止重连`,
           })
+          setConnectionError('权限通知连接多次失败，已停止重连，请重试')
           return
         }
 
@@ -337,5 +344,6 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
     approveAlways,
     deny,
     connected,
+    connectionError,
   }
 }

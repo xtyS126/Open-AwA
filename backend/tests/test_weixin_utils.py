@@ -111,18 +111,25 @@ class TestDeserializeSkillConfig:
         result = deserialize_skill_config(yaml_text)
         assert result == {"account_id": "test_id", "token": "secret"}
 
-    def test_invalid_string_returns_empty_dict(self) -> None:
-        assert deserialize_skill_config("not json or yaml: [unterminated") == {}
+    def test_invalid_string_raises(self) -> None:
+        # 既不是合法 JSON 也不是合法 YAML，应抛异常而非静默返回空字典
+        with pytest.raises(ValueError):
+            deserialize_skill_config("not json or yaml: [unterminated")
 
-    def test_json_non_dict_returns_empty(self) -> None:
-        # JSON 解析成功但不是 dict
-        assert deserialize_skill_config("[1, 2, 3]") == {}
+    def test_json_non_dict_raises(self) -> None:
+        # JSON 解析成功但不是 dict，属于数据损坏，应抛异常
+        with pytest.raises(ValueError):
+            deserialize_skill_config("[1, 2, 3]")
 
-    def test_json_integer_returns_empty(self) -> None:
-        assert deserialize_skill_config(42) == {}
+    def test_json_integer_raises(self) -> None:
+        # 合法 JSON 但不是字典，应抛异常
+        with pytest.raises(ValueError):
+            deserialize_skill_config(42)
 
-    def test_json_list_returns_empty(self) -> None:
-        assert deserialize_skill_config([1, 2]) == {}
+    def test_json_list_raises(self) -> None:
+        # 传入列表不是字典，应抛异常
+        with pytest.raises(ValueError):
+            deserialize_skill_config([1, 2])
 
     def test_nested_json(self) -> None:
         data = {"weixin": {"account_id": "a1", "nested": {"deep": True}}}

@@ -239,24 +239,12 @@ async def test_search(
             error=error,
         )
 
-    try:
-        if payload.provider == "searxng":
-            return await _test_searxng(payload, test_query, start, _build_response)
-        if payload.provider == "duckduckgo":
-            return await _test_duckduckgo(test_query, start, _build_response)
-        # pattern 校验已限制 provider 取值，理论上不会到达
-        return _build_response(False, [], f"不支持的 provider: {payload.provider}")
-    except Exception as exc:
-        # 兜底：未预期的异常也以 success=False 返回，不抛 500
-        logger.bind(
-            event="search_test_error",
-            module="search",
-            action="test_search",
-            provider=payload.provider,
-            user_id=current_user.id,
-            error_type=type(exc).__name__,
-        ).opt(exception=True).error(f"搜索连通性测试异常: {exc}")
-        return _build_response(False, [], f"未知错误: {type(exc).__name__}")
+    if payload.provider == "searxng":
+        return await _test_searxng(payload, test_query, start, _build_response)
+    if payload.provider == "duckduckgo":
+        return await _test_duckduckgo(test_query, start, _build_response)
+    # pattern 校验已限制 provider 取值，理论上不会到达
+    return _build_response(False, [], f"不支持的 provider: {payload.provider}")
 
 
 async def _test_searxng(

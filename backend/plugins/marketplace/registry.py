@@ -125,6 +125,7 @@ class MarketplaceRegistry:
             return
 
         # 统计真实 install_count：按 plugin_id 聚合 status='success' 的下载数
+        # DB 查询失败时异常自然传播（不伪造 0 次安装），由启动边界显式记录失败
         install_counts: Dict[str, int] = {}
         if db_session_factory is not None:
             session = db_session_factory()
@@ -143,11 +144,6 @@ class MarketplaceRegistry:
                     .all()
                 )
                 install_counts = {row.plugin_id: int(row.cnt) for row in rows}
-            except Exception as e:
-                # 启动边界：DB 查询失败不应阻塞市场发现，install_count 降级为 0
-                logger.bind(event="marketplace_discover", module="marketplace").warning(
-                    f"查询插件下载统计失败，install_count 将全部置 0: {e}"
-                )
             finally:
                 session.close()
 

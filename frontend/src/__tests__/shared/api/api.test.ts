@@ -234,7 +234,7 @@ describe('parseSSELines', () => {
     })
   })
 
-  it('无效 JSON 触发日志警告', () => {
+  it('无效 JSON 触发错误回调（不吞块，内容缺失必须可见）', () => {
     const onEvent = vi.fn()
     const onError = vi.fn()
     const lines = ['data: invalid-json']
@@ -242,10 +242,14 @@ describe('parseSSELines', () => {
     parseSSELines(lines, onEvent, onError, 'chunk')
 
     expect(onEvent).not.toHaveBeenCalled()
-    expect(onError).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledTimes(1)
+    const error = onError.mock.calls[0][0] as Error & { retryable?: boolean }
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).toContain('SSE 数据块解析失败')
+    expect(error.retryable).toBe(true)
   })
 
-  it('tail 上下文使用正确的日志标识', () => {
+  it('tail 上下文的无效 JSON 同样触发错误回调', () => {
     const onEvent = vi.fn()
     const onError = vi.fn()
     const lines = ['data: invalid-json']
@@ -253,7 +257,10 @@ describe('parseSSELines', () => {
     parseSSELines(lines, onEvent, onError, 'tail')
 
     expect(onEvent).not.toHaveBeenCalled()
-    expect(onError).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledTimes(1)
+    const error = onError.mock.calls[0][0] as Error & { retryable?: boolean }
+    expect(error.message).toContain('tail')
+    expect(error.retryable).toBe(true)
   })
 
   it('处理空行数组', () => {

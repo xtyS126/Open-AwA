@@ -12,8 +12,10 @@
 
 关键约束：
 - 所有 HTTP 调用必须设置超时（asyncio.wait_for + httpx.Timeout）
-- 异常按来源隔离：单源失败不影响另一源合并
+- 上游拉取失败必须显式抛错，禁止以空字典伪装"同步完成"；
+  失败时保留旧数据（不写空目录），由调用方标记同步失败
 - 写入前必须保留 user_overrides 字段（input_price/output_price/cache_read_price/cache_write_price）
+- 旧数据文件损坏时显式抛错，禁止以空数据覆盖用户手动维护的行
 """
 
 from __future__ import annotations
@@ -297,20 +299,19 @@ async def fetch_models_dev(url: str, timeout: float = 30.0) -> Dict[str, Dict[st
         timeout: HTTP 超时秒数
 
     Returns:
-        {(provider, model_id): parsed_meta} 字典；拉取失败返回空字典
+        {(provider, model_id): parsed_meta} 字典。
+
+    Raises:
+        Exception: 拉取失败显式传播（禁止以空字典伪装拉取成功）。
     """
     result: Dict[str, Dict[str, Any]] = {}
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            raw = resp.json()
-    except Exception as exc:
-        logger.warning("models.dev 拉取失败: %s", exc)
-        return result
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        raw = resp.json()
 
     if not isinstance(raw, dict):
-        return result
+        raise ValueError(f"models.dev 响应顶层结构必须是对象，实际: {type(raw).__name__}")
 
     for provider_key, provider_data in raw.items():
         if not isinstance(provider_data, dict):
@@ -339,20 +340,19 @@ async def fetch_openrouter(url: str, timeout: float = 30.0) -> Dict[str, Dict[st
         timeout: HTTP 超时秒数
 
     Returns:
-        {"provider/model": parsed_meta} 字典；拉取失败返回空字典
+        {"provider/model": parsed_meta} 字典。
+
+    Raises:
+        Exception: 拉取失败显式传播（禁止以空字典伪装拉取成功）。
     """
     result: Dict[str, Dict[str, Any]] = {}
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            raw = resp.json()
-    except Exception as exc:
-        logger.warning("openrouter 拉取失败: %s", exc)
-        return result
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        raw = resp.json()
 
     if not isinstance(raw, dict):
-        return result
+        raise ValueError(f"openrouter 响应顶层结构必须是对象，实际: {type(raw).__name__}")
 
     data = raw.get("data") or []
     if not isinstance(data, list):
@@ -517,13 +517,10 @@ def write_json(
     # 读取现有 JSON（若不存在则视为空列表）
     old_data: List[Dict[str, Any]] = []
     if path.exists():
-        try:
-            with path.open("r", encoding="utf-8") as f:
-                loaded = json.load(f)
-                if isinstance(loaded, list):
-                    old_data = loaded
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("读取 %s 失败，将以空数据开始: %s", path, exc)
+        with path.open("r", encoding="utf-8") as f:
+            loaded = json.load(f)
+            if isinstance(loaded, list):
+                old_data = loaded
 
     old_map = {(r.get("provider"), r.get("model")): r for r in old_data}
     new_map = {(r.get("provider"), r.get("model")): r for r in data}
@@ -607,7 +604,8 @@ async def run_sync(
     sources = sources or ["models.dev", "openrouter"]
     sources_lower = {s.lower() for s in sources}
 
-    # 并行拉取两源，单源失败不影响另一源（fetch_* 内部已捕获异常并返回空字典）
+    # 并行拉取两源；任一源拉取失败会显式抛错，
+    # 整个同步失败并保留旧数据（禁止以空目录伪装同步完成）
     md_data: Dict[str, Dict[str, Any]] = {}
     or_data: Dict[str, Dict[str, Any]] = {}
 
@@ -622,25 +620,16 @@ async def run_sync(
     elif "openrouter" in sources_lower:
         or_data = await fetch_openrouter(settings.OPENROUTER_MODELS_URL, timeout=timeout)
 
-    # 兜底：fetch_* 异常时返回空字典，此处再防御性校验一次
-    if not isinstance(md_data, dict):
-        md_data = {}
-    if not isinstance(or_data, dict):
-        or_data = {}
-
     merged_catalog = merge_sources(md_data, or_data)
     new_rows = convert_to_openawa(merged_catalog)
 
-    # 读取旧数据用于统计
+    # 读取旧数据用于统计（文件损坏时显式抛错，禁止以空数据继续）
     old_data: List[Dict[str, Any]] = []
     if PRICING_DATA_PATH.exists():
-        try:
-            with PRICING_DATA_PATH.open("r", encoding="utf-8") as f:
-                loaded = json.load(f)
-                if isinstance(loaded, list):
-                    old_data = loaded
-        except (json.JSONDecodeError, OSError):
-            pass
+        with PRICING_DATA_PATH.open("r", encoding="utf-8") as f:
+            loaded = json.load(f)
+            if isinstance(loaded, list):
+                old_data = loaded
 
     stats = compute_stats(old_data, new_rows)
     synced_at = datetime_utcnow_iso()

@@ -29,7 +29,6 @@ class TestErrorCodeRegistry:
             ErrorCode.REQUEST_TIMEOUT,
             ErrorCode.DATABASE_UNAVAILABLE,
             ErrorCode.LLM_API_KEY_STALE,
-            ErrorCode.FAILOVER_TOTAL_TIMEOUT,
         ]
         for code in critical_codes:
             assert code in REGISTRY, f"关键错误码未注册: {code}"

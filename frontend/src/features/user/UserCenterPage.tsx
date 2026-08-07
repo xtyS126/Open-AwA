@@ -783,16 +783,12 @@ function SoulProfileTab() {
     setError(null)
     try {
       const [profileRes, probesRes] = await Promise.all([
-        getSoulProfile().catch(() => null),
-        getProbes().catch(() => null),
+        getSoulProfile(),
+        getProbes(),
       ])
 
-      if (profileRes) {
-        setProfile(profileRes.profile)
-      }
-      if (probesRes) {
-        setProbes(probesRes.probes.filter((p) => p.status === 'pending'))
-      }
+      setProfile(profileRes.profile)
+      setProbes(probesRes.probes.filter((p) => p.status === 'pending'))
     } catch {
       setError('加载 Soul 画像数据失败，请稍后重试')
     } finally {

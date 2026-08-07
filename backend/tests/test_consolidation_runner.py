@@ -237,6 +237,12 @@ async def test_watermark_advances_after_consolidation():
     _insert_short_term_memory(factory, "好的，我帮你处理", role="assistant")
     _insert_short_term_memory(factory, "用户偏好 FastAPI", role="user")
 
+    # 注入提炼回调（无 LLM 提炼回调时巩固失败且不推进 watermark）
+    async def extract_callback(messages, user_id):
+        return []
+
+    runner.set_extract_callback(extract_callback)
+
     result = await runner.run_if_due("user-1", force=True)
 
     assert result["triggered"] is True
@@ -268,6 +274,12 @@ async def test_watermark_skips_already_processed_memories():
         state = runner._get_or_create_state_in_session(db, "user-1", "default")
         state.last_short_term_memory_id = 2
         db.commit()
+
+    # 注入提炼回调（无 LLM 提炼回调时巩固失败且不推进 watermark）
+    async def extract_callback(messages, user_id):
+        return []
+
+    runner.set_extract_callback(extract_callback)
 
     result = await runner.run_if_due("user-1", force=True)
 
@@ -379,14 +391,15 @@ async def test_all_fingerprints_present_skips_llm_and_advances_watermark():
 
 
 @pytest.mark.asyncio
-async def test_llm_extract_failure_does_not_block_watermark_advance():
+async def test_llm_extract_failure_does_not_advance_watermark():
     """
-    场景：LLM 提炼失败时不阻塞 watermark 推进，但仍持久化 fingerprint。
+    场景：LLM 提炼失败时显式上报失败，watermark 不推进、fingerprint 不持久化。
 
     Given 短期记忆 id=1,2 + 注入会抛异常的 extract_callback
     When 调用 run_if_due(force=True)
-    Then extracted=0 但 watermark 仍推进
-    And fingerprint 表已记录（避免下次重试时重复调用 LLM）
+    Then success=False 且 errors 非空（失败显式上报）
+    And watermark 不推进（失败批次保留供重试）
+    And fingerprint 不持久化（不得误标已处理）
     """
     runner, manager, factory, _ = _build_runner()
     _insert_short_term_memory(factory, "消息 1", role="user")
@@ -399,16 +412,17 @@ async def test_llm_extract_failure_does_not_block_watermark_advance():
 
     result = await runner.run_if_due("user-1", force=True)
 
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["errors"], "失败必须显式记录到 errors"
     assert result["extracted"] == 0
     assert result["consolidated"] == 0
-    assert result["watermark"] == 2
-    # fingerprint 仍持久化，避免下次重试重复调用 LLM
+    assert result["watermark"] == 0
+    # fingerprint 未持久化，失败批次下次重试
     with factory() as db:
         fps = db.query(ConsolidationFingerprint).filter(
             ConsolidationFingerprint.user_id == "user-1",
         ).all()
-        assert len(fps) == 2
+        assert len(fps) == 0
 
 
 # ---------------- 巩固提炼结果写入测试 ----------------
@@ -490,15 +504,16 @@ async def test_invalid_extracted_item_skipped():
 
 
 @pytest.mark.asyncio
-async def test_consolidation_single_add_failure_swallowed_watermark_advances():
+async def test_consolidation_single_add_failure_collected_in_errors():
     """
-    场景：单条 add_long_term_memory 失败被吞，watermark 仍推进，不阻塞整体流程。
+    场景：单条 add_long_term_memory 失败时收集到结果 errors，不静默跳过。
 
     Given 短期记忆 id=1,2 + add_long_term_memory 抛异常 + extract_callback 正常返回
     When 调用 run_if_due(force=True)
-    Then success=True（单条失败不阻塞整体）
+    Then success=True（提炼成功，整体流程完成）
     And consolidated=0（无成功写入）
-    And watermark=2（仍推进，已处理条目不再重复 LLM 调用）
+    And errors 非空（写入失败显式上报）
+    And watermark=2（提炼成功批次正常推进，避免重复 LLM 调用）
     And state.last_error 未记录（不是整体异常）
     """
     runner, manager, factory, _ = _build_runner()
@@ -517,10 +532,11 @@ async def test_consolidation_single_add_failure_swallowed_watermark_advances():
         runner.set_extract_callback(extract_callback)
         result = await runner.run_if_due("user-1", force=True)
 
-    # 单条 add 失败被吞：success=True, consolidated=0, watermark 仍推进
+    # 单条 add 失败收集到 errors：success=True, consolidated=0, errors 非空
     assert result["success"] is True
     assert result["consolidated"] == 0
-    assert result["watermark"] == 2  # watermark 仍推进
+    assert result["errors"], "写入失败必须显式收集到 errors"
+    assert result["watermark"] == 2  # 提炼成功批次推进 watermark
 
 
 @pytest.mark.asyncio
@@ -740,15 +756,15 @@ def test_compute_fingerprint_returns_32_chars():
 
 
 @pytest.mark.asyncio
-async def test_no_callback_skips_llm_but_advances_watermark():
+async def test_no_callback_reports_failure_and_keeps_watermark():
     """
-    场景：未注入 extract_callback 时跳过 LLM 但 watermark 仍推进。
+    场景：未注入 extract_callback 时显式失败，watermark 不推进。
 
     Given 短期记忆 id=1,2 + 未注入 callback
     When 调用 run_if_due(force=True)
-    Then extracted=0, consolidated=0
-    And watermark 推进到 2
-    And fingerprint 已持久化（避免下次重试重复）
+    Then success=False 且 errors 非空（LLM 提炼不可用显式上报）
+    And watermark 保持 0（失败批次保留供重试）
+    And fingerprint 未持久化
     """
     runner, manager, factory, _ = _build_runner()
     _insert_short_term_memory(factory, "消息 1", role="user")
@@ -756,15 +772,16 @@ async def test_no_callback_skips_llm_but_advances_watermark():
 
     result = await runner.run_if_due("user-1", force=True)
 
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["errors"], "LLM 提炼不可用必须显式记录"
     assert result["extracted"] == 0
     assert result["consolidated"] == 0
-    assert result["watermark"] == 2
+    assert result["watermark"] == 0
     with factory() as db:
         fps = db.query(ConsolidationFingerprint).filter(
             ConsolidationFingerprint.user_id == "user-1",
         ).all()
-        assert len(fps) == 2
+        assert len(fps) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -806,11 +823,12 @@ async def test_extract_turn_async_persists_extracted_memories():
 
     runner.set_extract_callback(_fake_callback)
 
-    count = await runner.extract_turn_async(
+    result = await runner.extract_turn_async(
         "请记住我喜欢 Python", "好的", "user-1", "default"
     )
 
-    assert count == 2
+    assert result["persisted"] == 2
+    assert result["errors"] == []
     with factory() as db:
         memories = db.query(LongTermMemory).filter(
             LongTermMemory.user_id == "user-1"
@@ -826,13 +844,13 @@ async def test_extract_turn_async_persists_extracted_memories():
 
 
 @pytest.mark.asyncio
-async def test_extract_turn_async_failure_skips_without_original():
+async def test_extract_turn_async_failure_propagates():
     """
-    场景：LLM 提炼失败（回调抛异常）时静默跳过。
+    场景：LLM 提炼失败（回调抛异常）时异常传播，不产生假成功。
 
     Given 注入抛异常的 mock 回调
     When 调用 extract_turn_async
-    Then 返回 0（不抛异常）
+    Then 抛出 RuntimeError（由 feedback 后台任务包装显式记录）
     And 长期记忆表为空（原文不落库）
     """
     runner, manager, factory, _ = _build_runner()
@@ -842,9 +860,8 @@ async def test_extract_turn_async_failure_skips_without_original():
 
     runner.set_extract_callback(_failing_callback)
 
-    count = await runner.extract_turn_async("请记住 X", "好的", "user-1")
-
-    assert count == 0
+    with pytest.raises(RuntimeError, match="LLM 不可用"):
+        await runner.extract_turn_async("请记住 X", "好的", "user-1")
     with factory() as db:
         assert db.query(LongTermMemory).filter(
             LongTermMemory.user_id == "user-1"
@@ -852,19 +869,18 @@ async def test_extract_turn_async_failure_skips_without_original():
 
 
 @pytest.mark.asyncio
-async def test_extract_turn_async_without_callback_returns_zero():
+async def test_extract_turn_async_without_callback_raises():
     """
-    场景：未注入提炼回调时直接跳过。
+    场景：未注入提炼回调时显式抛错。
 
     Given runner 未 set_extract_callback
     When 调用 extract_turn_async
-    Then 返回 0 且不抛异常
+    Then 抛出 RuntimeError（提炼不可用不得伪装为"无价值内容"）
     """
     runner, manager, factory, _ = _build_runner()
 
-    count = await runner.extract_turn_async("请记住 X", "好的", "user-1")
-
-    assert count == 0
+    with pytest.raises(RuntimeError, match="未注入提炼回调"):
+        await runner.extract_turn_async("请记住 X", "好的", "user-1")
 
 
 @pytest.mark.asyncio
@@ -874,7 +890,7 @@ async def test_extract_turn_async_empty_result_skips():
 
     Given 注入返回 [] 的 mock 回调
     When 调用 extract_turn_async
-    Then 返回 0
+    Then 返回 {"persisted": 0, "errors": []}
     And 长期记忆表为空
     """
     runner, manager, factory, _ = _build_runner()
@@ -884,9 +900,9 @@ async def test_extract_turn_async_empty_result_skips():
 
     runner.set_extract_callback(_empty_callback)
 
-    count = await runner.extract_turn_async("今天天气不错", "是的", "user-1")
+    result = await runner.extract_turn_async("今天天气不错", "是的", "user-1")
 
-    assert count == 0
+    assert result == {"persisted": 0, "errors": []}
     with factory() as db:
         assert db.query(LongTermMemory).filter(
             LongTermMemory.user_id == "user-1"

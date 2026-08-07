@@ -4,7 +4,6 @@
 """
 from typing import Any, Callable, Optional
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from loguru import logger
 
 
@@ -167,13 +166,20 @@ class MagicCommandRegistry:
                     result = await executor._call_llm_api(prompt, llm_ctx)
                     if isinstance(result, dict) and result.get("ok"):
                         return result.get("response", "") or ""
-                    return ""
-                except Exception as exc:
-                    # 压缩过程 LLM 调用失败时降级返回空字符串，记录 debug 便于排查
+                    # 摘要 LLM 调用失败必须显式抛出，由 /compact 如实报错
+                    error_message = "未知错误"
+                    if isinstance(result, dict):
+                        error_obj = result.get("error") or {}
+                        if isinstance(error_obj, dict):
+                            error_message = str(error_obj.get("message") or "未知错误")
+                        else:
+                            error_message = str(error_obj)
+                    else:
+                        error_message = str(result)
                     logger.bind(module="magic_commands", event="compaction_llm_call_failed").debug(
-                        f"压缩对话上下文时 LLM 调用失败，降级返回空字符串：{exc}", exc_info=exc
+                        f"压缩对话上下文时 LLM 调用失败: {error_message}"
                     )
-                    return ""
+                    raise RuntimeError(f"压缩摘要 LLM 调用失败: {error_message}")
                 finally:
                     llm_db.close()
 
@@ -217,10 +223,12 @@ class MagicCommandRegistry:
                         },
                     }
                 else:
+                    # 摘要生成失败：如实返回失败状态，禁止伪装成功
                     return {
                         "action": "compact",
-                        "success": True,
-                        "message": "摘要生成失败，未执行压缩",
+                        "success": False,
+                        "message": f"摘要生成失败，未执行压缩: {result.get('error', '未知原因')}",
+                        "error": result.get("error"),
                         "stats": {
                             "current_tokens": current_tokens,
                             "max_tokens": budget.max_tokens,
@@ -255,10 +263,18 @@ class MagicCommandRegistry:
             memory_manager = MemoryManager(SessionLocal)
             await memory_manager.clear_short_term_memory(session_id=session_id)
         except Exception as exc:
+            # 清空上下文失败必须如实报告，禁止伪装成已清空
             logger.warning(f"/new 清空上下文失败: {exc}")
+            return {
+                "action": "new_session",
+                "success": False,
+                "message": f"清空上下文失败: {exc}",
+                "clear_context": False,
+            }
 
         return {
             "action": "new_session",
+            "success": True,
             "message": "开始新对话，历史已保存",
             "clear_context": True,
         }
@@ -273,10 +289,19 @@ class MagicCommandRegistry:
             memory_manager = MemoryManager(SessionLocal)
             await memory_manager.clear_short_term_memory(session_id=session_id)
         except Exception as exc:
+            # 清空上下文失败必须如实报告，禁止伪装成已清空
             logger.warning(f"/clear 清空上下文失败: {exc}")
+            return {
+                "action": "clear_context",
+                "success": False,
+                "message": f"清空上下文失败: {exc}",
+                "clear_context": False,
+                "save_to_memory": False,
+            }
 
         return {
             "action": "clear_context",
+            "success": True,
             "message": "上下文已清空（未保存到记忆）",
             "clear_context": True,
             "save_to_memory": False,
@@ -291,9 +316,6 @@ class MagicCommandRegistry:
 
     async def _handle_make_skill(self, context: dict) -> dict:
         """处理 /make-skill 命令 — 从当前对话生成可复用技能。"""
-        import json
-        import re
-        from pathlib import Path
         from memory.manager import MemoryManager
         from db.models import SessionLocal
 
@@ -322,110 +344,15 @@ class MagicCommandRegistry:
                 "message": "当前对话内容不足以生成技能，请先进行更有深度的对话",
             }
 
-        # 生成技能名称建议
-        from skills.pool_manager import SkillPoolManager
-        pool = SkillPoolManager()
-        existing = set(pool.get_manifest().get("skills", {}).keys())
-
-        # LLM 生成提示词
-        prompt = f"""基于以下对话历史，生成一个可复用的AI技能配置。
-
-对话内容:
-{conversation_text[:3000]}
-
-请以 JSON 格式输出技能定义（仅输出 JSON，不要其他内容）:
-{{
-    "name": "技能名称（英文，简短）",
-    "description": "技能描述（一句话中文）",
-    "instructions": "当技能被触发时模型需遵循的详细规则（Markdown 格式）",
-    "trigger_keywords": ["触发关键词1", "触发关键词2"],
-    "inputs": {{}},
-    "outputs": {{}}
-}}
-
-注意:
-1. 技能名称不要与已有技能重复
-2. 指令内容要具体、可操作
-3. 名称使用 snake_case"""
-
-        # 通过 LLM 生成技能配置
-        try:
-            # model_service 已删除，LLM 路径已废弃；except 自然降级到启发式生成
-            raise RuntimeError("LLM skill generation pending litellm_chat_completion migration")
-        except Exception as exc:
-            # LLM 不可用时使用启发式生成
-            logger.bind(module="magic_commands", event="skill_generation_llm_failed").debug(
-                f"LLM 生成技能配置失败，降级使用启发式生成：{exc}", exc_info=exc
-            )
-            skill_name = "custom_skill"
-            instructions = f"# 技能说明\n基于对话生成的技能。\n\n## 对话摘要\n{conversation_text[:500]}"
-            content = json.dumps({
-                "name": skill_name,
-                "description": "从对话中自定义生成的技能",
-                "instructions": instructions,
-                "trigger_keywords": [],
-            })
-
-        # 解析 LLM 输出
-        try:
-            # 尝试提取 JSON 块
-            json_match = re.search(r'\{[\s\S]*\}', content)
-            if json_match:
-                skill_def = json.loads(json_match.group())
-            else:
-                skill_def = json.loads(content)
-        except json.JSONDecodeError:
-            skill_name = "custom_" + re.sub(r'[^a-z0-9_]', '', conversation_text[:20].lower())
-            skill_def = {
-                "name": skill_name,
-                "description": "从对话中自定义生成的技能",
-                "instructions": conversation_text[:1000],
-                "trigger_keywords": [],
-            }
-
-        skill_name = skill_def.get("name", "custom_skill")
-        if skill_name in existing:
-            skill_name = f"{skill_name}_v2"
-
-        # 将技能保存到技能池
-        skill_dir = pool.pool_dir / skill_name
-        skill_dir.mkdir(parents=True, exist_ok=True)
-
-        # 生成 SKILL.md
-        skill_md = f"""# {skill_name}
-
-## 描述
-{skill_def.get('description', '从对话中生成的技能')}
-
-## 触发关键词
-{', '.join(skill_def.get('trigger_keywords', [])) or '无'}
-
-## 指令
-{skill_def.get('instructions', conversation_text[:500])}
-"""
-        (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
-
-        # 生成 skill.json
-        (skill_dir / "skill.json").write_text(json.dumps(skill_def, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        # 更新技能池清单
-        manifest = pool.get_manifest()
-        manifest.setdefault("skills", {})[skill_name] = {
-            "description": skill_def.get("description", ""),
-            "version": "1.0.0",
-            "source": "generated",
-            "enabled": True,
-            "installed_at": datetime.now(timezone.utc).isoformat(),
-        }
-        pool._save_manifest(manifest)
-
+        # LLM 生成路径当前不可用（model_service 已退役，等待 litellm 迁移）。
+        # 必须如实报错，禁止用启发式内容冒充 LLM 生成结果
+        logger.bind(module="magic_commands", event="skill_generation_llm_failed").debug(
+            "LLM 技能生成路径不可用"
+        )
         return {
             "action": "make_skill",
-            "success": True,
-            "message": f"技能 '{skill_name}' 已生成并保存",
-            "skill_name": skill_name,
-            "skill_dir": str(skill_dir),
-            "requires_confirmation": False,
+            "success": False,
+            "message": "技能生成失败：LLM 生成路径当前不可用（等待模型服务迁移完成）",
         }
 
     async def _handle_make_plan(self, context: dict) -> dict:
@@ -455,51 +382,15 @@ class MagicCommandRegistry:
                 "message": "当前对话内容不足，请先进行有实质内容的对话",
             }
 
-        prompt = f"""基于以下对话上下文，生成一个结构化的执行计划（JSON 格式，仅输出 JSON）:
-
-对话内容:
-{conversation_text[:3000]}
-
-输出格式:
-{{
-    "title": "计划标题",
-    "description": "计划简述",
-    "steps": [
-        {{"order": 1, "title": "步骤1标题", "description": "详细描述", "estimated_time": "预估时间"}},
-        {{"order": 2, "title": "步骤2标题", "description": "详细描述", "estimated_time": "预估时间"}}
-    ],
-    "expected_outcome": "预期成果"
-}}"""
-        try:
-            # model_service 已删除，LLM 路径已废弃；except 自然降级到占位计划
-            raise RuntimeError("LLM plan generation pending litellm_chat_completion migration")
-        except Exception as exc:
-            # LLM 不可用时降级返回占位计划，记录 debug 便于排查
-            logger.bind(module="magic_commands", event="plan_generation_llm_failed").debug(
-                f"LLM 生成计划失败，降级返回占位计划：{exc}", exc_info=exc
-            )
-            return {
-                "action": "make_plan",
-                "success": True,
-                "plan": {
-                    "title": "待定计划",
-                    "steps": [{"order": 1, "title": "分析需求", "description": conversation_text[:200]}],
-                },
-            }
-
-        import re as _re
-        import json as _json
-        try:
-            json_match = _re.search(r'\{[\s\S]*\}', content)
-            plan = _json.loads(json_match.group()) if json_match else _json.loads(content)
-        except _json.JSONDecodeError:
-            plan = {"title": "待定计划", "raw_output": content}
-
+        # LLM 生成路径当前不可用（model_service 已退役，等待 litellm 迁移）。
+        # 必须如实报错，禁止返回占位计划伪装成功
+        logger.bind(module="magic_commands", event="plan_generation_llm_failed").debug(
+            "LLM 计划生成路径不可用"
+        )
         return {
             "action": "make_plan",
-            "success": True,
-            "message": f"执行计划已生成: {plan.get('title', '')}",
-            "plan": plan,
+            "success": False,
+            "message": "计划生成失败：LLM 生成路径当前不可用（等待模型服务迁移完成）",
         }
 
     async def _handle_restart(self, context: dict) -> dict:

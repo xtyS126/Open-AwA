@@ -48,10 +48,6 @@ class ErrorCode:
     LLM_CONTEXT_LENGTH_EXCEEDED = "llm_context_length_exceeded"
     LLM_CALL_FAILED = "llm_call_failed"
 
-    # ===== 故障转移 =====
-    FAILOVER_TOTAL_TIMEOUT = "failover_total_timeout"
-    FAILOVER_ALL_CANDIDATES_FAILED = "failover_all_candidates_failed"
-
     # ===== 系统初始化 =====
     SYSTEM_ALREADY_INITIALIZED = "system_already_initialized"
     WEAK_PASSWORD = "weak_password"
@@ -144,16 +140,6 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "default_retryable": False,
         "default_status_code": 502,
         "user_message": "模型调用失败",
-    },
-    ErrorCode.FAILOVER_TOTAL_TIMEOUT: {
-        "default_retryable": True,
-        "default_status_code": 504,
-        "user_message": "故障转移链路总超时，请稍后重试",
-    },
-    ErrorCode.FAILOVER_ALL_CANDIDATES_FAILED: {
-        "default_retryable": True,
-        "default_status_code": 503,
-        "user_message": "所有候选模型均不可用，请稍后重试",
     },
     ErrorCode.SYSTEM_ALREADY_INITIALIZED: {
         "default_retryable": False,

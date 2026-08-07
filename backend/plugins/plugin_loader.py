@@ -48,15 +48,12 @@ class PluginLoader:
     def _get_base_plugin_types(cls) -> tuple[type, ...]:
         """
         同时兼容 `plugins.base_plugin` 与 `backend.plugins.base_plugin` 两种导入入口。
+        任一入口导入失败均自然传播（不静默吞掉），由扫描层以显式错误状态上报。
         """
         cls._ensure_project_root_on_sys_path()
         base_plugin_types: list[type] = [BasePlugin]
-        try:
-            backend_base_plugin = importlib.import_module("backend.plugins.base_plugin").BasePlugin
-        except Exception:
-            backend_base_plugin = None
-
-        if backend_base_plugin is not None and backend_base_plugin not in base_plugin_types:
+        backend_base_plugin = importlib.import_module("backend.plugins.base_plugin").BasePlugin
+        if backend_base_plugin not in base_plugin_types:
             base_plugin_types.append(backend_base_plugin)
         return tuple(base_plugin_types)
 

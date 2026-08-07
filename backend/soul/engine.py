@@ -103,7 +103,7 @@ class SoulEngine:
         获取用户画像（已合并用户手动编辑的覆盖层）。
 
         读取流程：内存缓存 / 数据库加载原始 AI 画像 → 应用 UserProfileOverride 覆盖层。
-        覆盖层合并失败时降级返回原始 AI 画像，不阻塞读取。
+        覆盖层查询/合并失败时显式传播（用户编辑内容不得静默丢弃）。
 
         Args:
             user_id: 用户ID
@@ -124,7 +124,7 @@ class SoulEngine:
         获取或创建用户画像（已合并用户手动编辑的覆盖层）。
 
         不存在时创建空画像并持久化，随后统一应用 UserProfileOverride 覆盖层。
-        覆盖层合并失败时降级返回原始 AI 画像，不阻塞读取。
+        覆盖层查询/合并失败时显式传播（用户编辑内容不得静默丢弃）。
 
         Args:
             user_id: 用户ID
@@ -217,14 +217,9 @@ class SoulEngine:
             del self._profiles[user_id]
 
         # 再删除数据库记录（若 db 提供）
+        # 删除失败显式传播：数据库记录残留会与内存清空产生不一致，必须可见
         if db is not None:
-            try:
-                delete_profile(db, user_id)
-            except Exception as exc:
-                # 持久化失败不阻塞内存清空，但需记录日志便于排查
-                logger.bind(user_id=user_id).opt(exception=True).warning(
-                    f"删除数据库画像记录失败: {exc}"
-                )
+            delete_profile(db, user_id)
 
         logger.info(f"已清除用户画像: {user_id}")
 
@@ -239,6 +234,10 @@ class SoulEngine:
         加载画像的内部统一入口：先查内存缓存，未命中且 db 提供时回查数据库。
 
         数据库命中后写入内存缓存，避免后续请求重复查库。
+        数据库加载失败显式传播（画像读取失败是真实错误，禁止降级为未命中）。
+
+        Raises:
+            Exception: 数据库加载失败（显式传播）。
         """
         cached = self._profiles.get(user_id)
         if cached is not None:
@@ -247,14 +246,7 @@ class SoulEngine:
         if db is None:
             return None
 
-        try:
-            db_profile = load_profile(db, user_id)
-        except Exception as exc:
-            # 数据库异常降级为未命中，不影响主流程
-            logger.bind(user_id=user_id).opt(exception=True).warning(
-                f"加载数据库画像失败，降级为内存模式: {exc}"
-            )
-            return None
+        db_profile = load_profile(db, user_id)
 
         if db_profile is not None:
             # 数据库命中后写入内存缓存
@@ -268,7 +260,12 @@ class SoulEngine:
         db: Optional[Session],
     ) -> None:
         """
-        持久化画像的内部统一入口：db 为 None 时打印 warning 并跳过持久化。
+        持久化画像的内部统一入口：db 为 None 时仅保留内存缓存（显式记录）。
+
+        持久化失败显式传播（画像静默丢失不可接受）。
+
+        Raises:
+            Exception: 数据库持久化失败（显式传播）。
         """
         if db is None:
             logger.bind(user_id=user_id).debug(
@@ -276,13 +273,7 @@ class SoulEngine:
             )
             return
 
-        try:
-            save_profile(db, user_id, profile)
-        except Exception as exc:
-            # 持久化失败不阻塞内存更新，但需记录日志便于排查
-            logger.bind(user_id=user_id).opt(exception=True).warning(
-                f"持久化画像到数据库失败: {exc}"
-            )
+        save_profile(db, user_id, profile)
 
     def _apply_overrides(
         self,
@@ -294,7 +285,7 @@ class SoulEngine:
         应用用户手动编辑的画像覆盖层。
 
         覆盖层优先级高于 AI 推断，实现"用户编辑 ⊕ AI 画像"的合并逻辑。
-        合并失败时降级返回原画像，不阻塞读取流程。
+        查询/合并失败显式传播（用户编辑内容不得静默丢弃）。
 
         Args:
             user_id: 用户ID
@@ -302,22 +293,18 @@ class SoulEngine:
             db: 数据库会话，None 时跳过覆盖层查询
 
         Returns:
-            Optional[OnionProfile]: 合并后的画像；无覆盖层或合并失败时返回原画像
+            Optional[OnionProfile]: 合并后的画像；无覆盖层时返回原画像
+
+        Raises:
+            Exception: 覆盖层查询或合并失败（显式传播）。
         """
         # 无画像或无 db 会话时直接返回，不应用覆盖层
         if profile is None or db is None:
             return profile
 
-        try:
-            db_override = db.query(UserProfileOverride).filter(
-                UserProfileOverride.user_id == user_id
-            ).first()
-        except Exception as exc:
-            # 查询异常降级为原画像，不阻塞读取
-            logger.bind(user_id=user_id).opt(exception=True).warning(
-                f"查询画像覆盖层失败，降级返回原画像: {exc}"
-            )
-            return profile
+        db_override = db.query(UserProfileOverride).filter(
+            UserProfileOverride.user_id == user_id
+        ).first()
 
         # 无覆盖层记录或空覆盖层时直接返回原画像
         if db_override is None:
@@ -330,19 +317,12 @@ class SoulEngine:
         # 内存缓存 _profiles 中的 AI 原始画像被污染
         profile_copy = copy.deepcopy(profile)
 
-        try:
-            overrides = ProfileOverrides(
-                user_id=db_override.user_id,
-                overrides=dict(overrides_data),
-                created_at=db_override.created_at,
-                updated_at=db_override.updated_at,
-            )
-            merged_profile = overrides.merge(profile_copy)
-            logger.bind(user_id=user_id).debug("画像覆盖层已合并")
-            return merged_profile
-        except Exception as exc:
-            # 合并失败降级返回原画像，不阻塞读取
-            logger.bind(user_id=user_id).opt(exception=True).warning(
-                f"合并画像覆盖层失败，降级返回原画像: {exc}"
-            )
-            return profile
+        overrides = ProfileOverrides(
+            user_id=db_override.user_id,
+            overrides=dict(overrides_data),
+            created_at=db_override.created_at,
+            updated_at=db_override.updated_at,
+        )
+        merged_profile = overrides.merge(profile_copy)
+        logger.bind(user_id=user_id).debug("画像覆盖层已合并")
+        return merged_profile

@@ -185,6 +185,12 @@ async def test_full_flow_remember_dedup_recall_consolidate_inject():
     """
     manager, factory, fake_vector_store = _build_manager_with_constant_embedding()
 
+    # 注入 LLM 合并回调（去重命中后的合并必须显式提供，不再拼接兜底）
+    async def llm_merge(existing: str, new: str) -> str:
+        return f"{existing}；{new}"
+
+    manager.set_llm_merge_callback(llm_merge)
+
     # ---------- 步骤 1：插入若干短期记忆（用于后续巩固与注入） ----------
     _insert_conversation_record(factory, session_id="s1", user_id="user-1")
     _insert_short_term_memory(
@@ -486,19 +492,16 @@ async def test_state_machine_transitions():
 
 
 @pytest.mark.asyncio
-async def test_consolidation_failure_skips_extract_but_advances_watermark():
+async def test_consolidation_failure_does_not_advance_watermark():
     """
-    验证 LLM 提炼失败时的回退策略。
-
-    Spec 回退策略（consolidation_runner.py 顶部注释）：
-    - LLM 提炼失败 → 跳过提炼，但仍记录 fingerprint（避免重复调用），更新 watermark
+    验证 LLM 提炼失败时的显式失败语义（不允许静默推进 watermark）。
 
     Given LLM 提炼回调抛异常
     When 调用 run_if_due(force=True)
-    Then 返回 success=True（整体未失败）
+    Then 返回 success=False，errors 非空（失败显式上报）
     And extracted=0（无提炼结果）
-    And watermark 已推进（避免下次重复调用 LLM）
-    And fingerprint 已持久化（避免下次重复处理）
+    And watermark 未推进（失败批次保留，下次运行重试）
+    And fingerprint 未持久化（避免误标已处理）
     """
     manager, factory, fake_vector_store = _build_manager_with_constant_embedding()
     fake_vector_store.search_results = []
@@ -517,20 +520,20 @@ async def test_consolidation_failure_skips_extract_but_advances_watermark():
 
     result = await runner.run_if_due("user-fail", force=True)
 
-    # 整体未失败（LLM 失败时回退到跳过提炼路径）
+    # 提炼失败：整体标记失败，errors 显式记录
     assert result["triggered"] is True
-    assert result["success"] is True
-    # extracted=0（提炼阶段失败，无结果写入长期记忆）
+    assert result["success"] is False
     assert result["extracted"] == 0
-    # watermark 已推进到短期记忆 ID（避免下次重复调用 LLM）
-    assert result["watermark"] >= 1
+    assert result["errors"], "失败必须显式记录到 errors"
+    # watermark 未推进（失败批次保留供重试）
+    assert result["watermark"] == 0
 
-    # fingerprint 已持久化（避免下次重复处理）
+    # fingerprint 未持久化（失败批次不得被误标为已处理）
     with factory() as db:
         fingerprints = db.query(ConsolidationFingerprint).all()
-        assert len(fingerprints) >= 1
+        assert len(fingerprints) == 0
 
-    # state watermark 已推进
+    # state watermark 未推进
     with factory() as db:
         state = (
             db.query(ConsolidationState)
@@ -538,5 +541,4 @@ async def test_consolidation_failure_skips_extract_but_advances_watermark():
             .first()
         )
         assert state is not None
-        assert state.last_short_term_memory_id >= 1
-        assert state.last_run_at is not None
+        assert state.last_short_term_memory_id == 0

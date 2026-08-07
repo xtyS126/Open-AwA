@@ -202,17 +202,11 @@ class ClaudeCodeAdapter:
         """
         # 优先尝试 ACP 模式
         if self.prefer_acp:
-            try:
-                acp_result = self._run_via_acp(prompt, cwd=cwd)
-                if acp_result is not None:
-                    return acp_result
-            except Exception as e:
-                logger.warning(
-                    f"ACP 模式执行失败，回退到 subprocess: {e}",
-                    exc_info=e,
-                )
+            acp_result = self._run_via_acp(prompt, cwd=cwd)
+            if acp_result is not None:
+                return acp_result
 
-        # 回退到 subprocess
+        # 回退到 subprocess（仅当 ACP SDK 缺失或 service 未初始化时由 _run_via_acp 返回 None 触发）
         return self._run_via_subprocess(prompt, mode=mode, cwd=cwd, **kwargs)
 
     def _run_via_acp(

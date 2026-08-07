@@ -489,6 +489,20 @@ function MemoryPage() {
 
   /* 失败时记录日志（不影响其他数据展示） */
   useEffect(() => {
+    if (statsQuery.error) {
+      const error = statsQuery.error
+      appLogger.error({
+        event: 'memory_page_load_stats_failed',
+        module: 'memory',
+        action: 'load_stats',
+        status: 'failure',
+        message: '加载记忆统计失败，统计数字不可用',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+  }, [statsQuery.error])
+
+  useEffect(() => {
     if (shortTermQuery.error) {
       const error = shortTermQuery.error
       appLogger.error({
@@ -687,8 +701,9 @@ function MemoryPage() {
     return <div className={styles.loading}>加载中...</div>
   }
 
-  /* 统计数值 —— 真实 stats，缺省时回退列表长度 */
+  /* 统计数值 —— 真实 stats 优先；stats 接口失败时显式标记不可用（不静默回退列表长度） */
   const stats = statsQuery.data
+  const statsLoadFailed = statsQuery.isError
   const longTermCount = stats ? stats.total_memories : longTermMemories.length
   const activeCount = stats ? stats.active_memories : longTermMemories.length
   const avgConfidence = stats ? stats.average_confidence : 0
@@ -733,7 +748,7 @@ function MemoryPage() {
             </div>
             <TrendUpIcon color="var(--color-primary)" />
           </div>
-          <p className={styles.statValue}>{longTermCount.toLocaleString()}</p>
+          <p className={styles.statValue}>{statsLoadFailed ? '—' : longTermCount.toLocaleString()}</p>
           <p className={styles.statLabel}>长期记忆</p>
         </div>
 
@@ -745,7 +760,7 @@ function MemoryPage() {
             </div>
             <span className={styles.sessionBadge}>未归档</span>
           </div>
-          <p className={styles.statValue}>{activeCount.toLocaleString()}</p>
+          <p className={styles.statValue}>{statsLoadFailed ? '—' : activeCount.toLocaleString()}</p>
           <p className={styles.statLabel}>活跃记忆</p>
         </div>
 
@@ -757,7 +772,7 @@ function MemoryPage() {
             </div>
             <TrendUpIcon color="var(--color-warning)" />
           </div>
-          <p className={styles.statValue}>{avgConfidence.toFixed(2)}</p>
+          <p className={styles.statValue}>{statsLoadFailed ? '—' : avgConfidence.toFixed(2)}</p>
           <p className={styles.statLabel}>平均置信度</p>
         </div>
 
@@ -769,12 +784,14 @@ function MemoryPage() {
             </div>
             <TrendUpIcon color="var(--color-chart-5)" />
           </div>
-          <p className={styles.statValue}>{vectorCount.toLocaleString()}</p>
+          <p className={styles.statValue}>{statsLoadFailed ? '—' : vectorCount.toLocaleString()}</p>
           <p className={styles.statLabel}>向量索引</p>
         </div>
       </div>
 
       {/* ========== 错误提示 ========== */}
+      {/* 统计接口失败：显式提示统计不可用（不静默回退列表长度展示不准确数字） */}
+      {statsLoadFailed && <div className={styles.errorMessage}>记忆统计加载失败，统计数字不可用，请刷新重试</div>}
       {loadError && <div className={styles.errorMessage}>{loadError}</div>}
       {actionError && <div className={styles.errorMessage}>{actionError}</div>}
       {consolidationResult && <div className={styles.successMessage}>{consolidationResult}</div>}

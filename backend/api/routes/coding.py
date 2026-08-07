@@ -120,10 +120,10 @@ async def _check_coding_permission(
 ) -> None:
     """检查 coding 模块权限。
 
-    管理员自动放行。其他用户通过 RBAC 校验：
-    - 用户无显式角色分配时降级放行（保持兼容性，BUILT_IN_ROLES 未含 coding 权限）
-    - 用户有显式角色分配但无对应权限时拒绝
-    - DB 异常时降级放行，避免 DB 故障导致服务不可用
+    管理员自动放行。其他用户一律通过 RBAC 校验：
+    - 无显式角色分配时按默认 viewer 角色判定（viewer 无 coding 权限，拒绝）
+    - 有显式角色分配但无对应权限时拒绝
+    - RBAC 检查异常时 fail-closed：拒绝访问并返回 500
 
     Args:
         current_user: 当前认证用户。
@@ -131,7 +131,7 @@ async def _check_coding_permission(
         db: 数据库会话。
 
     Raises:
-        HTTPException: 权限不足时抛 403。
+        HTTPException: 权限不足时抛 403；RBAC 检查失败时抛 500。
     """
     # 管理员直接放行
     if getattr(current_user, "role", None) == "admin":
@@ -139,23 +139,11 @@ async def _check_coding_permission(
 
     try:
         from security.rbac import RBACManager
-        from db.models import UserRole
 
         rbac = RBACManager(db)
         user_id = str(current_user.id)
 
-        # 检查是否有显式角色分配
-        user_role_record = (
-            db.query(UserRole)
-            .filter(UserRole.user_id == user_id)
-            .first()
-        )
-        if user_role_record is None:
-            # 无显式角色分配，BUILT_IN_ROLES 未含 coding 权限，降级放行
-            logger.info(f"用户 {user_id} 无显式角色分配，coding 权限降级放行")
-            return
-
-        # 有显式角色分配，按 RBAC 判定
+        # 无显式角色分配时由 check_permission 按默认 viewer 角色判定（无 coding 权限，拒绝）
         allowed = await rbac.check_permission(user_id, permission)
         if not allowed:
             raise HTTPException(
@@ -165,12 +153,15 @@ async def _check_coding_permission(
     except HTTPException:
         raise
     except Exception as exc:
-        # RBAC 检查异常时降级放行，避免 DB 故障导致服务不可用
+        # RBAC 检查异常时 fail-closed：拒绝访问，不降级放行
         logger.warning(
-            f"RBAC 检查异常，降级放行: user_id={current_user.id}, "
+            f"RBAC 检查异常，已拒绝访问: user_id={current_user.id}, "
             f"permission={permission}, error={exc}"
         )
-        return
+        raise HTTPException(
+            status_code=500,
+            detail="RBAC 权限检查失败，已拒绝访问",
+        ) from exc
 
 # ---- 可选依赖：Markdown 渲染与净化 ----
 # 故意放在模块顶层 try/except 中，避免在 requirements.txt 中强制依赖

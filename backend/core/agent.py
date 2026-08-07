@@ -110,7 +110,7 @@ class AIAgent:
         """绑定新的数据库会话到所有子引擎。
 
         通过子引擎暴露的公共 bind_db 方法更新，避免直接访问内部 _cache / _list_cache 私有属性。
-        保留 try/except 防御性边界：若子引擎未实现 bind_db，回退到旧逻辑并 warning。
+        子引擎未实现 bind_db 时 AttributeError 自然传播，禁止 setattr 兜底。
 
         注意：SkillRegistry 内部持有 db 引用与缓存（_cache/_list_cache），
         缓存的 Skill 对象绑定到旧 session，访问属性会触发 DetachedInstanceError。
@@ -119,20 +119,11 @@ class AIAgent:
         """
         # 委托给 skill_engine 公共方法（内部会同步更新 registry.db 并清空缓存）
         if hasattr(self, 'skill_engine') and self.skill_engine is not None:
-            try:
-                self.skill_engine.bind_db(db_session)
-            except AttributeError as e:
-                logger.warning(f"SkillEngine.bind_db 未实现，回退到旧逻辑: {e}")
-                # 回退：直接 setattr（仅作临时兼容，应在子引擎补齐 bind_db 后移除）
-                setattr(self.skill_engine, 'db_session', db_session)
+            self.skill_engine.bind_db(db_session)
 
         # 委托给 workflow_engine 公共方法
         if hasattr(self, 'workflow_engine') and self.workflow_engine is not None:
-            try:
-                self.workflow_engine.bind_db(db_session)
-            except AttributeError as e:
-                logger.warning(f"WorkflowEngine.bind_db 未实现，回退到旧逻辑: {e}")
-                setattr(self.workflow_engine, 'db_session', db_session)
+            self.workflow_engine.bind_db(db_session)
 
         # 更新 agent 自身的请求级 db_session 引用
         self._db_session_request = db_session
@@ -438,12 +429,12 @@ class AIAgent:
         """
         logger.info("Getting available skills")
         if self._db_session is None:
-            logger.info("No database session available, returning empty skill list")
-            return []
+            # 技能列表是能力注入的必需输入，DB 不可用时必须失败，禁止静默返回空列表
+            raise RuntimeError("数据库会话不可用，无法获取技能列表")
         try:
             registry = self.skill_engine.registry
             skills = registry.list_all()
-            
+
             skill_list = []
             for skill in skills:
                 stats = self.skill_engine.get_skill_statistics(skill.name)
@@ -459,7 +450,7 @@ class AIAgent:
                     'stats': stats,
                     'config': skill_config,
                 })
-            
+
             logger.info(f"Found {len(skill_list)} available skills")
             return skill_list
         except Exception as e:
@@ -468,7 +459,7 @@ class AIAgent:
                 module="agent",
                 error_type=type(e).__name__,
             ).opt(exception=True).error(f"获取可用技能列表失败: {e}")
-            return []
+            raise
     
     async def get_available_plugins(self) -> List[Dict[str, Any]]:
         """
@@ -517,7 +508,7 @@ class AIAgent:
                 module="agent",
                 error_type=type(e).__name__,
             ).opt(exception=True).error(f"获取可用插件列表失败: {e}")
-            return []
+            raise
     
     async def _build_conversation_history(self, session_id: str, max_turns: int = 20) -> list:
         """
@@ -526,7 +517,9 @@ class AIAgent:
         对单条消息内容做字符截断，防止超大消息撑爆上下文窗口。
         """
         if not self.memory_manager:
-            return []
+            # 记忆管理器未注入属于构造配置错误，必须显式失败，
+            # 禁止 LLM 在零历史下继续对话（与构建失败传播原则一致）
+            raise RuntimeError("记忆管理器未注入，无法构建对话历史")
         try:
             memories = await self.memory_manager.get_short_term_memories(
                 session_id=session_id, limit=max_turns
@@ -543,8 +536,10 @@ class AIAgent:
                     history.append({"role": mem.role, "content": content})
             return history
         except Exception as e:
+            # 对话历史是 LLM 上下文的核心输入，构建失败必须传播，
+            # 禁止 LLM 在零历史下继续对话
             logger.warning(f"构建对话历史失败: {e}")
-            return []
+            raise
 
     async def _check_and_handle_magic_command(
         self, user_input: str, context: Dict[str, Any]
@@ -629,19 +624,33 @@ class AIAgent:
                 "db": context.get("db"),
                 "request_id": context.get("request_id"),
             }
-            try:
-                result = await self.executor._call_llm_api(prompt, summary_ctx)
-                if isinstance(result, dict) and result.get("ok"):
-                    return result.get("response", "") or ""
-                return ""
-            except Exception as exc:
-                logger.warning(f"压缩摘要 LLM 调用失败: {exc}")
-                return ""
+            result = await self.executor._call_llm_api(prompt, summary_ctx)
+            if isinstance(result, dict) and result.get("ok"):
+                return result.get("response", "") or ""
+            # 摘要 LLM 调用失败必须显式抛出，由 CompactionManager 记录失败状态
+            error_message = "未知错误"
+            if isinstance(result, dict):
+                error_obj = result.get("error") or {}
+                if isinstance(error_obj, dict):
+                    error_message = str(error_obj.get("message") or "未知错误")
+                else:
+                    error_message = str(error_obj)
+            else:
+                error_message = str(result)
+            raise RuntimeError(f"压缩摘要 LLM 调用失败: {error_message}")
 
         compaction.set_llm_call(_compaction_llm_call)
 
         result = await compaction.compact(messages=messages)
         compressed_messages = result["messages"]
+        if result.get("error"):
+            # 压缩失败必须可见：记录错误事件，但保留原始历史继续对话（历史不能丢）
+            logger.bind(
+                event="auto_context_compression_failed",
+                module="agent",
+                original_count=len(messages),
+                error=str(result.get("error")),
+            ).error(f"上下文压缩失败，继续使用原始历史: {result.get('error')}")
 
         logger.bind(
             event="auto_context_compressed",
@@ -704,38 +713,23 @@ class AIAgent:
         role_id = context.get("role_id") if enable_role_engine else None
         soul_injection_enabled = True
         if role_id and hasattr(self, 'soul_state_manager') and self.soul_state_manager is not None:
-            try:
-                soul_injection_enabled = self.soul_state_manager.is_injection_enabled()
-                if not soul_injection_enabled:
-                    logger.bind(event="soul_injection_skipped", module="agent").info(
-                        f"灵魂注入已禁用，跳过角色引擎加载 (workspace_id={context.get('workspace_id', 'unknown')})"
-                    )
-            except Exception as e:
-                logger.bind(event="soul_state_check_error", module="agent").warning(
-                    f"灵魂状态检查失败，默认启用角色引擎: {e}"
+            soul_injection_enabled = self.soul_state_manager.is_injection_enabled()
+            if not soul_injection_enabled:
+                logger.bind(event="soul_injection_skipped", module="agent").info(
+                    f"灵魂注入已禁用，跳过角色引擎加载 (workspace_id={context.get('workspace_id', 'unknown')})"
                 )
         if role_id and soul_injection_enabled:
             request_db = context.get("db")
             if request_db is None:
-                logger.bind(event="role_engine_no_db", module="agent").warning(
-                    "context['db'] 不可用，跳过角色引擎加载"
-                )
-            else:
-                try:
-                    with ttft_stage_logger("role_engine", ttft_session_id, stage_started_at):
-                        role_engine = RoleEngine(db=request_db)
-                        role = role_engine.load_role(role_id)
-                        if role:
-                            context = role_engine.apply_role_to_context(role, context)
-                            if hasattr(self, 'soul_state_manager') and self.soul_state_manager is not None:
-                                try:
-                                    self.soul_state_manager.mark_injection_completed()
-                                except Exception as e:
-                                    logger.bind(event="soul_state_mark_error", module="agent").warning(
-                                        f"标记灵魂注入完成失败: {e}"
-                                    )
-                except Exception as e:
-                    logger.bind(event="role_engine_error", module="agent").warning(f"角色引擎加载失败: {e}")
+                # 角色注入被启用但 DB 不可用，属于配置不一致，必须失败而非静默跳过
+                raise RuntimeError("启用角色引擎但 context['db'] 不可用，无法加载角色")
+            with ttft_stage_logger("role_engine", ttft_session_id, stage_started_at):
+                role_engine = RoleEngine(db=request_db)
+                role = role_engine.load_role(role_id)
+                if role:
+                    context = role_engine.apply_role_to_context(role, context)
+                    if hasattr(self, 'soul_state_manager') and self.soul_state_manager is not None:
+                        self.soul_state_manager.mark_injection_completed()
         with ttft_stage_logger("inject_capabilities", ttft_session_id, stage_started_at):
             await self._inject_runtime_capabilities(context)
         build_multimodal_context(user_input, context)
@@ -768,18 +762,16 @@ class AIAgent:
         # 自动检索相关长期记忆（stream 路径）
         if context.get("retrieve_long_term_memory", True) and self.memory_manager:
             _memory_extra: Dict[str, Any] = {}
-            try:
-                with ttft_stage_logger("retrieve_memories", _ttft_session_id, _ttft_t0, extra_fields=_memory_extra):
-                    relevant_memories = await self._retrieve_relevant_memories(
-                        user_input=effective_user_input,
-                        context=context,
-                    )
-                    _memory_extra["memory_count"] = len(relevant_memories) if relevant_memories else 0
-                    if relevant_memories:
-                        context["vector_retrieved_memories"] = relevant_memories
-                        logger.info(f"Stream: 检索到 {len(relevant_memories)} 条相关长期记忆")
-            except (SQLAlchemyError, asyncio.TimeoutError, ValueError) as mem_err:
-                logger.warning(f"Stream 自动记忆检索失败: {mem_err}")
+            # 记忆检索失败必须传播，禁止 LLM 在缺失记忆的情况下继续对话
+            with ttft_stage_logger("retrieve_memories", _ttft_session_id, _ttft_t0, extra_fields=_memory_extra):
+                relevant_memories = await self._retrieve_relevant_memories(
+                    user_input=effective_user_input,
+                    context=context,
+                )
+                _memory_extra["memory_count"] = len(relevant_memories) if relevant_memories else 0
+                if relevant_memories:
+                    context["vector_retrieved_memories"] = relevant_memories
+                    logger.info(f"Stream: 检索到 {len(relevant_memories)} 条相关长期记忆")
         state["effective_user_input"] = effective_user_input
 
     async def process_stream(self, user_input: str, context: Dict[str, Any]):
@@ -1188,7 +1180,7 @@ class AIAgent:
                 module="agent",
                 error_type=type(e).__name__,
             ).opt(exception=True).error(f"检索相关经验失败: {e}")
-            return []
+            raise
 
     async def _retrieve_relevant_memories(
         self,
@@ -1199,7 +1191,9 @@ class AIAgent:
         使用长期记忆的混合检索能力获取相关记忆，并整理为可注入上下文的结构。
         """
         if not self.memory_manager:
-            return []
+            # 记忆管理器未注入属于构造配置错误，必须显式失败，
+            # 禁止在缺失记忆检索能力的情况下继续对话
+            raise RuntimeError("记忆管理器未注入，无法检索长期记忆")
 
         try:
             memories = await self.memory_manager.search_memories(
@@ -1225,7 +1219,7 @@ class AIAgent:
                 module="agent",
                 error_type=type(e).__name__,
             ).opt(exception=True).error(f"检索长期记忆失败: {e}")
-            return []
+            raise
 
     async def _execute_workflow_from_context(self, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """

@@ -211,6 +211,10 @@ class LongTermMemoryResponse(MemoryBase):
     source_type: str = Field(default="manual", description="记忆来源类型（llm_extracted/user_input/manual/plugin）")
     memory_layer: str = Field(default="semantic", description="记忆层级（core/episodic/semantic/working）")
     state: str = Field(default="active", description="状态机（active/validated/archived/deprecated）")
+    # 向量 point 缺失（DB/向量不一致）时的显式条目错误状态；正常时为 null。
+    # 该条目向量元数据未同步成功（如 archive_status/confidence 只存在于 DB 侧），
+    # 供前端展示与运维排查，不拖垮整个列表接口
+    vector_sync_error: Optional[str] = Field(default=None, description="该条目向量库元数据同步错误（null 表示正常）")
 
     class Config:
         """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
@@ -247,6 +251,8 @@ class MemoryQualityResponse(BaseModel):
     archive_status: str
     importance: float
     access_count: int
+    # 该条目向量库元数据同步错误（null 表示正常），向量 point 缺失时显式可见
+    vector_sync_error: Optional[str] = Field(default=None, description="该条目向量库元数据同步错误（null 表示正常）")
 
 
 class MemoryStatsResponse(BaseModel):

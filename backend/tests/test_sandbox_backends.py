@@ -365,13 +365,11 @@ class TestGetSandboxBackendFactory:
         backend = get_sandbox_backend("restricted_python")
         assert isinstance(backend, RestrictedPythonBackend)
 
-    def test_e2b_explicit_without_key_falls_back(self):
-        """E2B 请求但无 API key 时回退到 RestrictedPythonBackend。"""
+    def test_e2b_explicit_without_key_raises(self):
+        """E2B 请求但无 API key 时必须抛配置错误（fail-closed，禁止静默降级）。"""
         # 确保 E2B_API_KEY 未设置
-        backend = get_sandbox_backend("e2b")
-        assert isinstance(backend, RestrictedPythonBackend), (
-            f"期望 RestrictedPythonBackend（回退），实际 {type(backend)}"
-        )
+        with pytest.raises(ValueError, match="E2B_API_KEY"):
+            get_sandbox_backend("e2b")
 
     def test_backend_name_from_settings(self):
         """验证后端选择遵循 settings.SANDBOX_BACKEND。"""

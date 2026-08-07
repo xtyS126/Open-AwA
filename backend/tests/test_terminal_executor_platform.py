@@ -24,7 +24,9 @@ class TestResolveCommandForPlatform:
 
     def test_windows_builtin_echo_resolved_via_cmd(self) -> None:
         """Windows 下 echo 内建命令应通过 cmd.exe /c 包装。"""
-        with mock.patch("os.name", "nt"):
+        # 部分系统（Win11/ Git for Windows）存在 echo.exe 可执行文件，
+        # mock which 返回 None 以隔离内建包装分支
+        with mock.patch("os.name", "nt"), mock.patch("shutil.which", return_value=None):
             args, error = _resolve_command_for_platform("echo hello")
         assert error is None
         assert args[0] == "cmd.exe"
@@ -34,7 +36,7 @@ class TestResolveCommandForPlatform:
 
     def test_windows_builtin_dir_resolved_via_cmd(self) -> None:
         """Windows 下 dir 内建命令应通过 cmd.exe /c 包装。"""
-        with mock.patch("os.name", "nt"):
+        with mock.patch("os.name", "nt"), mock.patch("shutil.which", return_value=None):
             args, error = _resolve_command_for_platform("dir /b")
         assert error is None
         assert args[:2] == ["cmd.exe", "/c"]
@@ -102,8 +104,11 @@ class TestWindowsBuiltinExecution:
         assert "hello_world" in result["stdout"]
 
     @pytest.mark.asyncio
-    async def test_dir_executes_successfully(self) -> None:
+    @mock.patch("shutil.which", return_value=None)
+    async def test_dir_executes_successfully(self, mock_which) -> None:
         """dir 命令应成功执行并输出目录列表。"""
+        # 本机 Git for Windows 提供 dir.exe（coreutils 移植，不接受 /b 参数），
+        # mock which 返回 None 以走 cmd.exe /c 内建包装分支
         skill = TerminalExecutorSkill({"allowed_directories": ["."]})
         await skill.initialize()
         result = await skill.execute(action="run_command", command="dir /b", timeout=10)

@@ -10,6 +10,7 @@ const persistenceMocks = vi.hoisted(() => ({
   getActiveSessionId: vi.fn(() => ''),
   getConversationSummaries: vi.fn(() => []),
   setConversationSummaries: vi.fn(),
+  isChatPersistenceAvailable: vi.fn(() => true),
 }))
 
 vi.mock('@/features/chat/storage/chatPersistence', () => ({
@@ -20,6 +21,7 @@ vi.mock('@/features/chat/storage/chatPersistence', () => ({
   getActiveSessionId: persistenceMocks.getActiveSessionId,
   getConversationSummaries: persistenceMocks.getConversationSummaries,
   setConversationSummaries: persistenceMocks.setConversationSummaries,
+  isChatPersistenceAvailable: persistenceMocks.isChatPersistenceAvailable,
 }))
 
 vi.mock('@/features/chat/store/chatStoreEffects', () => ({
@@ -66,6 +68,7 @@ describe('useSessionStore - setSessionId', () => {
       pinnedConversations: [],
       conversationsVersion: 0,
       isLoading: false,
+      persistenceAvailable: true,
     })
     // 默认 loadMessages 返回空数组
     persistenceMocks.loadMessages.mockResolvedValue([])
@@ -154,5 +157,23 @@ describe('useSessionStore - setSessionId', () => {
     expect(useSessionStore.getState().messages).toBe(newMessages)
     expect(useSessionStore.getState().messages).toHaveLength(2)
     expect(useSessionStore.getState().messages[0].id).toBe('new-1')
+  })
+
+  it('IndexedDB 读取失败时显式记录错误并暴露持久化不可用状态（不静默返回空）', async () => {
+    // 无降级路径：读取失败必须可见 —— console.error + persistenceAvailable=false
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    persistenceMocks.loadMessages.mockRejectedValue(new Error('IndexedDB 打开失败'))
+    persistenceMocks.isChatPersistenceAvailable.mockReturnValue(false)
+
+    useSessionStore.getState().setSessionId('fail-session')
+
+    await flushMicrotasks()
+
+    expect(consoleErrorSpy).toHaveBeenCalled()
+    expect(useSessionStore.getState().persistenceAvailable).toBe(false)
+    // 失败时不得静默写入空消息覆盖已有内容
+    expect(useSessionStore.getState().messages).toHaveLength(0)
+
+    consoleErrorSpy.mockRestore()
   })
 })

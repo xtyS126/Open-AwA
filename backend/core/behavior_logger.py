@@ -189,8 +189,10 @@ class BehaviorLogger:
                 )
             db.commit()
         except Exception as exc:
+            # 行为日志落库失败必须回滚并向上传播，禁止审计记录静默丢失
             db.rollback()
             logger.error(f"Failed to flush behavior log batch: {exc}")
+            raise
         finally:
             db.close()
 

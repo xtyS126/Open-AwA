@@ -9,9 +9,9 @@
 - _calculate_cost：按 cherry-studio 公式计算 input/output/cache_read/cache_write 四项成本
 
 设计约束：
-- 计费失败不能影响 Agent 主流程（catch + log，不 raise）
+- 计费失败必须显式传播（计费记录是资金敏感数据，禁止静默吞掉后按 0 计费）
 - ENABLE_BILLING=False 时跳过计费
-- pricing 字段为 NULL 时按 0 处理（使用 is not None 检查，避免 or 陷阱）
+- pricing 缺失或字段损坏时抛出 PricingUnavailableError，禁止按 0 计费（免费计费漏洞）
 """
 from __future__ import annotations
 
@@ -24,6 +24,14 @@ from billing.token_counter import TokenBreakdown
 from billing.tracker import UsageTracker as _BaseUsageTracker
 
 logger = logging.getLogger(__name__)
+
+
+class PricingUnavailableError(RuntimeError):
+    """定价配置缺失或损坏，无法计算成本。
+
+    计费是资金敏感路径：定价不可用时必须显式报错，
+    禁止静默按 0 计费导致免费计费漏洞。
+    """
 
 
 class UsageTracker(_BaseUsageTracker):
@@ -62,7 +70,8 @@ class UsageTracker(_BaseUsageTracker):
         5. 调用 BudgetAlertService.check_and_generate_alerts 检查预警
         6. 返回 call_id
 
-        异常处理：计费失败不传播，仅记录 ERROR 日志，返回 None，不影响 Agent 主流程。
+        异常处理：计费失败（含定价缺失、DB 写入失败）显式传播异常，
+        由调用方感知（调用方在后台任务中调用时通过 done callback 记录）。
 
         Args:
             user_id: 用户 ID（int 或 str，内部统一转 str）。
@@ -74,17 +83,17 @@ class UsageTracker(_BaseUsageTracker):
             content_type: 内容类型，默认 chat。
 
         Returns:
-            成功时返回 call_id（如 "call_xxx"），跳过或失败时返回 None。
+            成功时返回 call_id（如 "call_xxx"），跳过计费时返回 None。
+
+        Raises:
+            PricingUnavailableError: 定价缺失或字段损坏（禁止按 0 计费）。
+            Exception: 计费记录写入失败等真实错误。
         """
         # 1. 检查 ENABLE_BILLING 开关
-        try:
-            from config.settings import settings
-            if not getattr(settings, "ENABLE_BILLING", True):
-                logger.debug("ENABLE_BILLING=False，跳过计费记录")
-                return None
-        except Exception as exc:
-            # settings 加载失败时默认开启计费，但记录警告
-            logger.warning("读取 ENABLE_BILLING 配置失败，按默认开启处理: %s", exc)
+        from config.settings import settings
+        if not getattr(settings, "ENABLE_BILLING", True):
+            logger.debug("ENABLE_BILLING=False，跳过计费记录")
+            return None
 
         # user_id 统一转 str（DB schema 为 String）
         user_id_str = str(user_id) if user_id is not None else ""
@@ -92,87 +101,76 @@ class UsageTracker(_BaseUsageTracker):
             logger.debug("user_id 为空，跳过计费记录")
             return None
 
-        try:
-            # 2. 查询定价
-            pricing = self._get_pricing(provider, model)
+        # 2. 查询定价（缺失时抛出 PricingUnavailableError）
+        pricing = self._get_pricing(provider, model)
 
-            # 3. 计算成本
-            cost = self._calculate_cost(token_breakdown, pricing)
+        # 3. 计算成本
+        cost = self._calculate_cost(token_breakdown, pricing)
 
-            # 4. 写入 usage_records 表
-            # 将 cache_read_cost + cache_write_cost 折入 input_cost，
-            # 保证 base 类的 total_cost = input_cost + output_cost 正确
-            # 完整明细存入 metadata.extra_data 便于审计
-            folded_input_cost = (
-                cost["input_cost"]
-                + cost["cache_read_cost"]
-                + cost["cache_write_cost"]
-            )
-            cache_hit = token_breakdown.cache_read_tokens > 0
+        # 4. 写入 usage_records 表
+        # 将 cache_read_cost + cache_write_cost 折入 input_cost，
+        # 保证 base 类的 total_cost = input_cost + output_cost 正确
+        # 完整明细存入 metadata.extra_data 便于审计
+        folded_input_cost = (
+            cost["input_cost"]
+            + cost["cache_read_cost"]
+            + cost["cache_write_cost"]
+        )
+        cache_hit = token_breakdown.cache_read_tokens > 0
 
-            metadata = {
-                "input_cost": cost["input_cost"],
-                "output_cost": cost["output_cost"],
-                "cache_read_cost": cost["cache_read_cost"],
-                "cache_write_cost": cost["cache_write_cost"],
-                "cache_read_tokens": token_breakdown.cache_read_tokens,
-                "cache_write_tokens": token_breakdown.cache_write_tokens,
-                "thoughts_tokens": token_breakdown.thoughts_tokens,
-                "method": token_breakdown.method,
-                "estimated": token_breakdown.estimated,
-            }
+        metadata = {
+            "input_cost": cost["input_cost"],
+            "output_cost": cost["output_cost"],
+            "cache_read_cost": cost["cache_read_cost"],
+            "cache_write_cost": cost["cache_write_cost"],
+            "cache_read_tokens": token_breakdown.cache_read_tokens,
+            "cache_write_tokens": token_breakdown.cache_write_tokens,
+            "thoughts_tokens": token_breakdown.thoughts_tokens,
+            "method": token_breakdown.method,
+            "estimated": token_breakdown.estimated,
+        }
 
-            currency = self._extract_currency(pricing)
+        currency = self._extract_currency(pricing)
 
-            record = self.create_usage_record(
-                user_id=user_id_str,
-                session_id=session_id,
-                provider=provider,
-                model=model,
-                content_type=content_type,
-                input_tokens=token_breakdown.input_tokens,
-                output_tokens=token_breakdown.output_tokens,
-                input_cost=folded_input_cost,
-                output_cost=cost["output_cost"],
-                currency=currency,
-                cache_hit=cache_hit,
-                duration_ms=duration_ms,
-                metadata=metadata,
-            )
+        record = self.create_usage_record(
+            user_id=user_id_str,
+            session_id=session_id,
+            provider=provider,
+            model=model,
+            content_type=content_type,
+            input_tokens=token_breakdown.input_tokens,
+            output_tokens=token_breakdown.output_tokens,
+            input_cost=folded_input_cost,
+            output_cost=cost["output_cost"],
+            currency=currency,
+            cache_hit=cache_hit,
+            duration_ms=duration_ms,
+            metadata=metadata,
+        )
 
-            call_id = record.call_id if record else None
+        call_id = record.call_id if record else None
 
-            # 5. 触发预警检查（计费扣减已通过 usage_records 写入完成）
-            self._trigger_alert_check(user_id_str)
+        # 5. 触发预警检查（计费扣减已通过 usage_records 写入完成）
+        self._trigger_alert_check(user_id_str)
 
-            return call_id
-
-        except Exception as exc:
-            # 计费失败不传播，仅记录 ERROR 日志
-            logger.error(
-                "计费扣减失败 user_id=%s provider=%s model=%s: %s",
-                user_id_str, provider, model, exc,
-                exc_info=True,
-            )
-            return None
+        return call_id
 
     def _get_pricing(self, provider: str, model: str) -> Optional[Any]:
         """查询指定 provider/model 的定价配置
 
         延迟导入 PricingManager 避免循环依赖。
-        不在此处捕获异常：定价查询失败应传播到 record_llm_call 的外层 try/except，
-        由其统一记录 ERROR 日志并返回 None（计费失败语义）。
-        返回 None 仅表示"未配置定价"（非异常），此时仍写入 0 成本记录。
+        定价缺失（返回 None）时由 _calculate_cost 抛出 PricingUnavailableError，
+        禁止写入 0 成本记录。
 
         Args:
             provider: 供应商名称。
             model: 模型名称。
 
         Returns:
-            ModelPricing ORM 对象，或 None（未配置定价）。
+            ModelPricing ORM 对象，或 None（未配置定价，上层抛 PricingUnavailableError）。
 
         Raises:
-            Exception: 定价查询过程中发生异常（由上层捕获）。
+            Exception: 定价查询过程中发生异常（显式传播）。
         """
         from billing.pricing_manager import PricingManager
         pricing_manager = PricingManager(self.db)
@@ -204,12 +202,14 @@ class UsageTracker(_BaseUsageTracker):
         公式（单价单位：USD / 百万 token）：
         - input_cost = input_tokens * input_price / 1e6
         - output_cost = output_tokens * output_price / 1e6
-        - cache_read_cost = cache_read_tokens * (cache_read_price or 0) / 1e6
-        - cache_write_cost = cache_write_tokens * (cache_write_price or 0) / 1e6
+        - cache_read_cost = cache_read_tokens * cache_read_price / 1e6
+        - cache_write_cost = cache_write_tokens * cache_write_price / 1e6
         - total_cost = input_cost + output_cost + cache_read_cost + cache_write_cost
 
-        pricing 为 None 时所有成本按 0 处理（仍记录 token 用量）。
-        定价字段为 NULL 时按 0 处理（使用 _safe_pricing_value 避免 or 陷阱）。
+        pricing 为 None，或必填定价字段（input_price/output_price）缺失/损坏时，
+        抛出 PricingUnavailableError，禁止按 0 计费（免费计费漏洞）。
+        可选缓存单价字段（cache_read_price/cache_write_price，DB 可空）
+        为 None 表示"未配置缓存单价"，按 0 处理属合法语义。
 
         Args:
             breakdown: Token 计数明细。
@@ -218,20 +218,27 @@ class UsageTracker(_BaseUsageTracker):
         Returns:
             成本字典，含 input_cost / output_cost / cache_read_cost /
             cache_write_cost / total_cost 五个键。
+
+        Raises:
+            PricingUnavailableError: 定价缺失或必填字段损坏。
         """
         if pricing is None:
-            return {
-                "input_cost": 0.0,
-                "output_cost": 0.0,
-                "cache_read_cost": 0.0,
-                "cache_write_cost": 0.0,
-                "total_cost": 0.0,
-            }
+            raise PricingUnavailableError(
+                "未配置模型定价，无法计算成本（禁止按 0 计费）"
+            )
 
-        input_price = self._safe_pricing_value(getattr(pricing, "input_price", None))
-        output_price = self._safe_pricing_value(getattr(pricing, "output_price", None))
-        cache_read_price = self._safe_pricing_value(getattr(pricing, "cache_read_price", None))
-        cache_write_price = self._safe_pricing_value(getattr(pricing, "cache_write_price", None))
+        input_price = self._safe_pricing_value(
+            getattr(pricing, "input_price", None), "input_price"
+        )
+        output_price = self._safe_pricing_value(
+            getattr(pricing, "output_price", None), "output_price"
+        )
+        cache_read_price = self._safe_optional_pricing_value(
+            getattr(pricing, "cache_read_price", None), "cache_read_price"
+        )
+        cache_write_price = self._safe_optional_pricing_value(
+            getattr(pricing, "cache_write_price", None), "cache_write_price"
+        )
 
         input_cost = breakdown.input_tokens * input_price / 1_000_000
         output_cost = breakdown.output_tokens * output_price / 1_000_000
@@ -248,26 +255,60 @@ class UsageTracker(_BaseUsageTracker):
         }
 
     @staticmethod
-    def _safe_pricing_value(value: Any) -> float:
-        """安全提取定价字段值，None 视为 0
+    def _safe_pricing_value(value: Any, field_name: str) -> float:
+        """提取必填定价字段；缺失或损坏时抛出 PricingUnavailableError
 
-        避免 `getattr(x, 'field', 0) or 0` 的 or 陷阱：
-        当字段值为 0（免费模型）时，`0 or 0` 仍返回 0，结果正确；
-        但当字段值为 None（未配置）时，`None or 0` 也返回 0。
-        使用 is not None 检查更明确，符合项目规范。
+        input_price/output_price 是 DB 非空列，为 None 或无法转换为数值时
+        说明定价数据损坏，必须显式报错，禁止静默按 0 计费（免费计费漏洞）。
+        字段值为 0（免费模型）是合法值，正常返回 0.0。
 
         Args:
             value: 原始字段值（int / float / None）。
+            field_name: 字段名（用于错误信息）。
 
         Returns:
-            float 类型的单价，None 时返回 0.0。
+            float 类型的单价。
+
+        Raises:
+            PricingUnavailableError: 字段为 None 或无法转换为数值。
+        """
+        if value is None:
+            raise PricingUnavailableError(
+                f"必填定价字段 {field_name} 缺失（None），无法计算成本（禁止按 0 计费）"
+            )
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise PricingUnavailableError(
+                f"定价字段 {field_name} 损坏，无法转换为数值: {value!r}（禁止按 0 计费）"
+            ) from None
+
+    @staticmethod
+    def _safe_optional_pricing_value(value: Any, field_name: str) -> float:
+        """提取可选定价字段；None 视为未配置（按 0 处理），损坏时报错
+
+        cache_read_price/cache_write_price 是 DB 可空列，None 表示
+        "未配置缓存单价"，按 0 处理是合法业务语义；
+        但字段损坏（无法转换数值）仍必须显式报错，不得静默按 0。
+
+        Args:
+            value: 原始字段值（int / float / None）。
+            field_name: 字段名（用于错误信息）。
+
+        Returns:
+            float 类型的单价。
+
+        Raises:
+            PricingUnavailableError: 字段损坏（无法转换为数值）。
         """
         if value is None:
             return 0.0
         try:
             return float(value)
         except (TypeError, ValueError):
-            return 0.0
+            raise PricingUnavailableError(
+                f"定价字段 {field_name} 损坏，无法转换为数值: {value!r}"
+            ) from None
 
     def _trigger_alert_check(self, user_id: str) -> None:
         """触发预算预警检查

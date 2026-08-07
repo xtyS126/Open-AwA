@@ -264,7 +264,7 @@ async def test_manager_get_all_resources(reset_manager_singleton):
 
 @pytest.mark.asyncio
 async def test_manager_get_all_resources_handles_errors(reset_manager_singleton):
-    """单个 Server 获取资源失败时不应影响其他 Server。"""
+    """单个 Server 获取资源失败时应显式标记错误，不静默跳过。"""
     manager = MCPManager()
 
     mock_client1 = MagicMock()
@@ -285,9 +285,14 @@ async def test_manager_get_all_resources_handles_errors(reset_manager_singleton)
 
     resources = await manager.get_all_resources()
 
-    # server1 失败被跳过，server2 正常返回
-    assert len(resources) == 1
-    assert resources[0]["uri"] == "file:///ok.txt"
+    # server1 失败以显式 error 条目标记，server2 正常返回
+    error_entries = [r for r in resources if r.get("error")]
+    ok_entries = [r for r in resources if not r.get("error")]
+    assert len(error_entries) == 1
+    assert error_entries[0]["server_id"] == "server1"
+    assert "获取资源列表失败" in error_entries[0]["error"]
+    assert len(ok_entries) == 1
+    assert ok_entries[0]["uri"] == "file:///ok.txt"
 
 
 @pytest.mark.asyncio

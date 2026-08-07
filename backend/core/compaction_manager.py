@@ -539,7 +539,8 @@ class CompactionManager:
 
         logger.info("MicroCompact 不足以降低 token，执行全量压缩")
 
-        # 断路器保护：连续失败达上限时跳过压缩，避免反复触发失败的 LLM 调用
+        # 断路器保护：连续失败达上限时跳过压缩，避免反复触发失败的 LLM 调用。
+        # 跳过必须通过 error 字段显式告知调用方，禁止静默继续
         if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
             logger.warning(
                 f"断路器触发：连续摘要生成失败 {self._consecutive_failures} 次，"
@@ -550,6 +551,10 @@ class CompactionManager:
                 "messages": messages,
                 "summary": previous_summary,
                 "summary_message": None,
+                "error": (
+                    f"摘要生成连续失败 {self._consecutive_failures} 次（断路器触发），"
+                    f"上下文未压缩，原始历史已保留"
+                ),
             }
 
         # 分离消息（使用 micro_compacted 以利用已清除的工具输出）
@@ -561,19 +566,21 @@ class CompactionManager:
                 "messages": micro_compacted,
                 "summary": previous_summary,
                 "summary_message": None,
+                "error": "上下文无历史消息可供摘要，未执行压缩",
             }
 
         # 生成摘要（失败时 generate_summary 内部已递增断路器计数）
         summary = await self.generate_summary(head_messages, previous_summary)
 
         if not summary:
-            # 摘要生成失败，返回 MicroCompact 后的消息列表
+            # 摘要生成失败：返回显式失败状态，历史保留但调用方可见错误
             logger.warning("摘要生成失败，使用 MicroCompact 后的消息列表")
             return {
                 "compacted": False,
                 "messages": micro_compacted,
                 "summary": previous_summary,
                 "summary_message": None,
+                "error": "摘要生成失败，上下文未压缩（原始历史已保留）",
             }
 
         # 构建摘要系统消息

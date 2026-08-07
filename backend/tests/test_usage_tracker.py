@@ -5,8 +5,8 @@
 2. 成本计算公式（input/output/cache_read/cache_write）
 3. 含 cache_read_tokens 的成本计算
 4. ENABLE_BILLING=False 时跳过
-5. pricing 查询失败时不抛异常（不传播）
-6. pricing 为 None 或字段为 NULL 时按 0 处理
+5. pricing 查询失败时显式传播异常（不静默返回 None）
+6. pricing 为 None 或字段为 NULL 时抛 PricingUnavailableError（禁止 0 计费）
 7. 触发预算扣减（通过写入 usage_records 实现）
 8. 触发预警检查（BudgetAlertService.check_and_generate_alerts）
 """
@@ -21,7 +21,7 @@ from sqlalchemy.orm import sessionmaker
 
 from billing.models import ModelPricing, UsageRecord
 from billing.token_counter import TokenBreakdown
-from billing.usage_tracker import UsageTracker
+from billing.usage_tracker import PricingUnavailableError, UsageTracker
 from db.models import Base
 
 
@@ -259,12 +259,12 @@ class TestRecordLlmCallBillingSwitch:
 
 
 class TestRecordLlmCallErrorHandling:
-    """验证 record_llm_call 的异常隔离行为"""
+    """验证 record_llm_call 的异常传播行为"""
 
-    async def test_record_llm_call_does_not_propagate_errors(
+    async def test_record_llm_call_propagates_pricing_query_errors(
         self, usage_tracker, db_session
     ):
-        """pricing 查询失败时不抛异常，返回 None"""
+        """pricing 查询失败时异常必须显式传播（禁止静默返回 None）"""
         _make_pricing(db_session)
 
         breakdown = TokenBreakdown(input_tokens=100, output_tokens=50)
@@ -274,17 +274,16 @@ class TestRecordLlmCallErrorHandling:
             "billing.pricing_manager.PricingManager.get_pricing",
             side_effect=RuntimeError("模拟定价查询失败"),
         ):
-            call_id = await usage_tracker.record_llm_call(
-                user_id="user-1",
-                session_id="sess-1",
-                provider="openai",
-                model="gpt-4o",
-                token_breakdown=breakdown,
-            )
+            with pytest.raises(RuntimeError, match="模拟定价查询失败"):
+                await usage_tracker.record_llm_call(
+                    user_id="user-1",
+                    session_id="sess-1",
+                    provider="openai",
+                    model="gpt-4o",
+                    token_breakdown=breakdown,
+                )
 
-        # 不抛异常，返回 None
-        assert call_id is None
-        # 不应写入记录
+        # 不应写入记录（失败可见，不产生 0 成本记录）
         assert db_session.query(UsageRecord).count() == 0
 
 
@@ -292,10 +291,10 @@ class TestRecordLlmCallErrorHandling:
 
 
 class TestCalculateCostHandlesNullPricing:
-    """验证 _calculate_cost 在 pricing 缺失或字段为 NULL 时的容错"""
+    """验证 _calculate_cost 在 pricing 缺失或字段为 NULL 时显式报错"""
 
-    def test_calculate_cost_handles_null_pricing(self, usage_tracker):
-        """pricing 为 None 时所有成本按 0 处理"""
+    def test_calculate_cost_null_pricing_raises(self, usage_tracker):
+        """pricing 为 None 时必须抛 PricingUnavailableError（禁止 0 计费）"""
         breakdown = TokenBreakdown(
             input_tokens=1000,
             output_tokens=500,
@@ -303,19 +302,14 @@ class TestCalculateCostHandlesNullPricing:
             cache_write_tokens=100,
         )
 
-        cost = usage_tracker._calculate_cost(breakdown, None)
+        with pytest.raises(PricingUnavailableError):
+            usage_tracker._calculate_cost(breakdown, None)
 
-        assert cost["input_cost"] == 0.0
-        assert cost["output_cost"] == 0.0
-        assert cost["cache_read_cost"] == 0.0
-        assert cost["cache_write_cost"] == 0.0
-        assert cost["total_cost"] == 0.0
-
-    def test_calculate_cost_handles_null_pricing_fields(
+    def test_calculate_cost_null_cache_fields_are_zero(
         self, usage_tracker, db_session
     ):
-        """pricing 字段为 NULL 时按 0 处理（cache_read_price / cache_write_price 为 None）"""
-        # 创建 pricing，cache_read_price 和 cache_write_price 为 None
+        """缓存单价为 NULL（未配置）时按 0 处理；必填字段仍正常计算"""
+        # 创建 pricing，cache_read_price 和 cache_write_price 为 None（DB 可空列）
         pricing = _make_pricing(
             db_session,
             input_price=5.0,
@@ -336,11 +330,47 @@ class TestCalculateCostHandlesNullPricing:
         # input / output 正常计算
         assert cost["input_cost"] == pytest.approx(0.005, rel=1e-6)
         assert cost["output_cost"] == pytest.approx(0.0075, rel=1e-6)
-        # cache 字段为 NULL，按 0 处理
+        # cache 字段为 NULL（未配置缓存单价），按 0 处理
         assert cost["cache_read_cost"] == 0.0
         assert cost["cache_write_cost"] == 0.0
         # total = input + output + 0 + 0
         assert cost["total_cost"] == pytest.approx(0.0125, rel=1e-6)
+
+    def test_calculate_cost_null_required_fields_raise(
+        self, usage_tracker, db_session
+    ):
+        """必填定价字段（input_price）为 NULL 时必须抛 PricingUnavailableError"""
+        # 直接构造必填字段为 None 的 pricing 对象
+        pricing = _make_pricing(
+            db_session,
+            input_price=5.0,
+            output_price=15.0,
+        )
+        pricing.input_price = None
+
+        breakdown = TokenBreakdown(
+            input_tokens=1000,
+            output_tokens=500,
+        )
+
+        with pytest.raises(PricingUnavailableError, match="input_price"):
+            usage_tracker._calculate_cost(breakdown, pricing)
+
+    def test_calculate_cost_corrupt_price_field_raises(
+        self, usage_tracker, db_session
+    ):
+        """定价字段损坏（非数值）时必须抛 PricingUnavailableError"""
+        pricing = _make_pricing(
+            db_session,
+            input_price=5.0,
+            output_price=15.0,
+        )
+        pricing.output_price = "corrupt"
+
+        breakdown = TokenBreakdown(input_tokens=100, output_tokens=50)
+
+        with pytest.raises(PricingUnavailableError, match="output_price"):
+            usage_tracker._calculate_cost(breakdown, pricing)
 
     def test_calculate_cost_with_zero_pricing(self, usage_tracker, db_session):
         """pricing 字段为 0（免费模型）时成本应为 0，不被 or 陷阱误判"""
@@ -368,30 +398,24 @@ class TestCalculateCostHandlesNullPricing:
         assert cost["cache_write_cost"] == 0.0
         assert cost["total_cost"] == 0.0
 
-    async def test_record_llm_call_with_no_pricing_record(
+    async def test_record_llm_call_with_no_pricing_record_raises(
         self, usage_tracker, db_session
     ):
-        """pricing 记录不存在时仍写入 usage_records（成本为 0），不抛异常"""
+        """pricing 记录不存在时必须抛 PricingUnavailableError，禁止写 0 成本记录"""
         # 不创建 pricing 记录
         breakdown = TokenBreakdown(input_tokens=100, output_tokens=50)
 
-        call_id = await usage_tracker.record_llm_call(
-            user_id="user-1",
-            session_id="sess-1",
-            provider="unknown_provider",
-            model="unknown_model",
-            token_breakdown=breakdown,
-        )
+        with pytest.raises(PricingUnavailableError):
+            await usage_tracker.record_llm_call(
+                user_id="user-1",
+                session_id="sess-1",
+                provider="unknown_provider",
+                model="unknown_model",
+                token_breakdown=breakdown,
+            )
 
-        # 应返回 call_id（记录写入成功），成本为 0
-        assert call_id is not None
-        record = db_session.query(UsageRecord).first()
-        assert record is not None
-        assert record.input_cost == 0.0
-        assert record.output_cost == 0.0
-        assert record.total_cost == 0.0
-        assert record.input_tokens == 100
-        assert record.output_tokens == 50
+        # 不应写入任何记录（计费失败可见，不产生 0 成本记录）
+        assert db_session.query(UsageRecord).count() == 0
 
 
 # ==================== 预算扣减与预警触发测试 ====================

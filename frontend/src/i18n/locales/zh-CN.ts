@@ -422,6 +422,7 @@ const zhCN: Record<string, string> = {
   "skillMarket.uninstalling": "卸载中...",
   "skillMarket.installed": "已安装 (卸载)",
   "skillMarket.empty": "未找到匹配的技能",
+  "skillMarket.loadFailed": "技能市场加载失败，请稍后重试",
   "skillMarket.installFailed": "安装 {name} 失败",
 
   // ===== 仪表盘 =====

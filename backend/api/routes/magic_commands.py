@@ -124,9 +124,8 @@ async def trigger_compact(
                 result = await executor._call_llm_api(prompt, llm_ctx)
                 if isinstance(result, dict) and result.get("ok"):
                     return result.get("response", "") or ""
-                return ""
-            except Exception:
-                return ""
+                # 非 ok 结果是显式失败：抛错向上传播，禁止以空串静默降级
+                raise RuntimeError(f"LLM 调用失败，返回结果: {result}")
             finally:
                 llm_db.close()
 
@@ -148,7 +147,7 @@ async def trigger_compact(
                 }
             else:
                 return {
-                    "success": True,
+                    "success": False,
                     "compressed": False,
                     "message": "摘要生成失败，未执行压缩",
                     "stats": {

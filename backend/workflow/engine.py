@@ -475,22 +475,28 @@ class WorkflowEngine:
         return rendered
 
     def _resolve_placeholder(self, expression: str, runtime: Dict[str, Any]) -> Any:
+        """解析占位符表达式。
+
+        解析失败（路径断裂、值不存在）必须显式抛错，
+        让工作流定义错误在执行前暴露，禁止静默返回 None 走错分支。
+
+        Raises:
+            ValueError: 表达式为空或路径断裂。
+        """
         parts = [part for part in expression.strip().split(".") if part]
         if not parts:
-            return None
+            raise ValueError(f"占位符表达式为空: {expression!r}")
 
         root_name = parts[0]
-        if root_name == "context":
-            current: Any = runtime["context"]
-        elif root_name == "steps":
-            current = runtime["steps"]
-        elif root_name == "last_result":
-            current = runtime["last_result"]
+        if root_name in {"context", "steps", "last_result"}:
+            current: Any = runtime[root_name]
+            remaining_parts = parts[1:]
         else:
+            # 裸名称（如 {{user_name}}）默认从 context 查找
             current = runtime["context"]
-            parts.insert(0, root_name)
+            remaining_parts = [root_name, *parts[1:]]
 
-        for part in parts[1:] if root_name in {"context", "steps", "last_result"} else parts:
+        for part in remaining_parts:
             if isinstance(current, dict):
                 current = current.get(part)
             elif isinstance(current, list) and part.isdigit():
@@ -498,11 +504,9 @@ class WorkflowEngine:
             else:
                 current = getattr(current, part, None)
             if current is None:
-                logger.bind(
-                    module="workflow.engine", event="placeholder_resolve_failed",
-                    expression=" ".join(parts), broken_at=part
-                ).warning(f"占位符解析失败，路径在 '{part}' 处断裂，返回 None")
-                break
+                raise ValueError(
+                    f"占位符解析失败: {expression!r}，路径在 {part!r} 处断裂（值不存在）"
+                )
         return current
 
     def _evaluate_condition(self, expression: str, runtime: Dict[str, Any]) -> bool:
@@ -533,10 +537,11 @@ class WorkflowEngine:
             compiled = compile(tree, "<workflow-condition>", "eval")
             return bool(eval(compiled, {"__builtins__": safe_builtins}, safe_locals))
         except Exception as exc:
-            logger.bind(module="workflow", action="evaluate_condition").warning(
-                f"Condition evaluation failed: {exc}"
-            )
-            return False
+            # 求值失败必须显式抛错（工作流进入失败状态），
+            # 禁止静默返回 False 让业务走错分支
+            raise ValueError(
+                f"条件表达式求值失败: {expression!r}: {exc}"
+            ) from exc
 
     def _to_namespace(self, value: Any) -> Any:
         if isinstance(value, dict):

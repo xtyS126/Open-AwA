@@ -305,11 +305,13 @@ class TestCircuitBreaker:
         assert result["compacted"] is False
         assert small_compaction._consecutive_failures == 1
         assert call_count == 1
+        # 摘要失败必须通过 error 字段显式可见
+        assert result.get("error") is not None
 
     async def test_circuit_breaker_triggers_after_max_failures(
         self, small_compaction, large_messages
     ):
-        """连续失败达上限后，后续调用应直接跳过压缩（不调用 LLM）"""
+        """连续失败达上限后，后续调用应直接跳过压缩（不调用 LLM），且返回显式错误状态"""
         call_count = 0
 
         async def failing_llm_call(prompt, **kwargs):
@@ -324,6 +326,8 @@ class TestCircuitBreaker:
             result = await small_compaction.compact(messages=large_messages)
             assert result["compacted"] is False
             assert small_compaction._consecutive_failures == i + 1
+            # 每次失败都必须返回显式错误字段
+            assert result.get("error") is not None
 
         # 断路器应已触发
         assert small_compaction._consecutive_failures >= MAX_CONSECUTIVE_FAILURES
@@ -335,6 +339,9 @@ class TestCircuitBreaker:
         assert result["messages"] == large_messages
         # LLM 调用次数仍为 3（第 4 次未调用 LLM）
         assert call_count == MAX_CONSECUTIVE_FAILURES
+        # 断路器跳过必须返回显式错误字段，禁止静默继续
+        assert result.get("error") is not None
+        assert "断路器" in result["error"]
 
     async def test_circuit_breaker_resets_on_success(
         self, small_compaction, large_messages
@@ -381,10 +388,11 @@ class TestCircuitBreaker:
             assert result["compacted"] is False
             assert small_compaction._consecutive_failures == i + 1
 
-        # 断路器触发后，应直接返回未压缩消息
+        # 断路器触发后，应直接返回未压缩消息，且携带显式错误字段
         result = await small_compaction.compact(messages=large_messages)
         assert result["compacted"] is False
         assert result["messages"] == large_messages
+        assert result.get("error") is not None
 
 
 class TestMicroCompact:

@@ -520,10 +520,10 @@ agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 
 | 类型 | 本地模型（ModelScope 默认下载） | 云端模型（OpenAI 兼容 API） |
 |------|------|------|
-| 嵌入 | `all-MiniLM-L6-v2`（384 维）、`bge-small-zh-v1.5`（512 维，中文推荐）、`bge-m3`（1024 维） | `Qwen3-VL-Embedding`（多模态）、`text-embedding-3-small` |
-| 重排 | `ms-marco-MiniLM-L6-v2`（CrossEncoder）、`bge-reranker-v2-m3` | `Qwen3-VL-Reranker`（多模态） |
+| 嵌入 | `all-MiniLM-L6-v2`（384 维）、`bge-small-zh-v1.5`（512 维，中文推荐）、`bge-m3`（1024 维）、`Qwen3-VL-Embedding-2B`（多模态本地嵌入） | `text-embedding-3-small`（通用 OpenAI 兼容） |
+| 重排 | `ms-marco-MiniLM-L6-v2`（CrossEncoder）、`bge-reranker-v2-m3`、`Qwen3-VL-Reranker-2B`（多模态本地重排） | 通用 OpenAI 兼容重排器（请求结构 `{model, query, documents}`） |
 
-- **加载链**（本地模型）：本地缓存 → ModelScope（默认源，国内网络友好）→ HuggingFace 降级；`MODEL_DOWNLOAD_SOURCE=huggingface` 可切换
+- **加载链**（本地模型）：单一下载源，无自动降级链。默认 ModelScope（国内网络友好），`MODEL_DOWNLOAD_SOURCE=huggingface` 显式切换；下载失败必须显式报错，禁止静默切换下载源
 - **配置项**（settings 或 DB `vector_model_config` 表，DB 优先）：`MEMORY_EMBEDDING_PROVIDER`（local/cloud/hash）、`MEMORY_EMBEDDING_MODEL`、`MEMORY_EMBEDDING_API_KEY/ENDPOINT`、`MEMORY_RERANK_PROVIDER`（local/cloud/off）、`MEMORY_RERANK_MODEL`、`MEMORY_RERANK_API_KEY/ENDPOINT`
 - **模型端点**：`GET /api/models/vector/registry`（注册表+下载状态）、`POST /api/models/vector/download`（后台下载）、`GET /api/models/vector/download/status`、`GET/PUT /api/models/vector/config`
 - **检索接入**：`MemoryManager.search_memories` 混合检索（BM25+向量融合）后，配置了重排器时对 3 倍候选做二次相关性重排再截断；未配置或重排失败时静默退回融合排序
@@ -820,7 +820,7 @@ git commit -m "[Type] 变更描述"
 ## 19.1 2026-07-10 回归新增陷阱
 
 - **首次初始化与 E2E 隔离**：Playwright 的全新临时数据库必须配套独立 `INITIALIZED_MARKER_PATH`，或由全局 setup 先完成 `/api/system/init`；否则前端会跳到 `/setup`，依赖 `#apiKey` 的登录助手会让后续 E2E 全部级联失败。首次部署向导需单独覆盖。
-- **Qdrant 缺失 point**：数据库记忆行可能早于向量 point 写入；更新元数据时记录 warning 并跳过缺失 point，不能让记忆 API 失败。
+- **Qdrant 缺失 point 必须显式可见**：数据库记忆行可能早于向量 point 写入；读路径在条目上暴露 `vector_sync_error` 字段（可见而非静默跳过），写路径（更新/删除元数据）遇缺失 point 必须 fail-closed 抛错，禁止吞掉后继续。
 - **显式 provider 凭证错误**：模型列表接口收到请求体中的 api_key/api_endpoint 后，远端认证失败必须返回结构化错误；仅后台使用已保存配置时允许回退本地模型列表。
 - **Windows shell 内建命令**：`command_executor.py` 保持 `shell=False`，对 echo/pwd 使用平台内建适配，不得改为 shell=True。
 - **WebSocket/SSE E2E**：使用独立临时数据库、向量路径和端口，避免锁定生产数据库或 Qdrant；WebSocket 必须同时验证 Origin 与子协议 token，SSE 必须检查 text/event-stream 和 [DONE]。
@@ -834,6 +834,14 @@ git commit -m "[Type] 变更描述"
 - **Loguru 全局控制台 sink 不得持有 pytest 捕获流**：`init_logging()` 使用 `sys.__stderr__` 而非按用例替换的 `sys.stderr`；否则日志测试重新初始化后，捕获流关闭会导致后续任意日志出现 `Logging error in Loguru Handler`。
 - **Windows 命令模板输出必须显式 UTF-8 容错解码**：`command_executor.py` 的白名单 `subprocess.run(..., text=True)` 必须传 `encoding="utf-8", errors="replace"`；依赖系统 GBK 会在 Git 等 UTF-8 输出时使 reader thread 触发 `UnicodeDecodeError`。
 - **后端全量 pytest 分组运行目录**：完整串行套件已多次超过 15 分钟；按 8 组覆盖时必须在 `backend` 工作目录执行、关闭共享 coverage 数据文件并每次最多并发两组。否则 ACP 路由测试会因 `os.getcwd()` 落在白名单外产生伪 400。
+
+## 19.9 2026-08-08 无兜底专项（全仓兜底代码清理）新增陷阱
+
+- **项目硬约束：禁止兜底/降级/静默容错代码**。任何"失败后悄悄继续、返回空值、切换备用路径"的行为都视为缺陷：主路径应被修好而非降级。修复三原则：(a) 异常自然传播；(b) 显式结构化错误结果（如 `{ok: False, error: {code, message}}`）；(c) 安全敏感路径（RBAC/审计/E2B/SSRF/WS 鉴权）fail-closed。豁免仅限：瞬时重试（`retry.py`/`circuit_breaker.py`）、显式配置开关、可选字段默认值、前端 i18n 回退与 ErrorBoundary/Suspense、API Key→JWT→Cookie 认证链、`LITELLM_LOCAL_MODEL_COST_MAP` 离线价格表。新增代码若出现"except 吞异常 + 返回默认值"必须自我审查。
+- **failover 模块已删除**：`core/failover.py` 整文件删除（执行链与监控统计均移除）；`GET /api/models/failover/circuit-breakers`、`failover/chains`、`failover/events`、`latency/stats`、`latency/providers` 5 个监控端点已从 `api/routes/models.py` 移除。禁止重新引入 provider 故障转移与降级监控；新代码引用 `core.failover` 将直接 ImportError。
+- **MCP_SSE_ALLOWED_ORIGINS 生产必须显式配置**：`main.py` 启动时 fail-closed——环境变量未配置或为空时拒绝启动（`RuntimeError: 未配置 MCP_SSE_ALLOWED_ORIGINS`）。生产部署与隔离 E2E 实例必须设置逗号分隔的允许 origin 列表；测试 conftest 在 `pytest_configure` 中设置 `https://localhost`。
+- **E2E 场景同步执行必须线程池卸载**：`api/routes/test_runner.py` 的 `run_scenario`/`run_all_scenarios` 用 `await asyncio.to_thread(runner, ...)` 执行同步场景。禁止改回事件循环内直接调用——health-basic 场景会向自身端口发起真实 HTTP，同步阻塞事件循环会自请求死锁（10 秒超时）。chat-nonstream 场景构造 `AIAgent` 必须注入完整持久化边界（`db_session`/`workflow_repository`/`memory_session_factory`），与生产 chat 路由一致；缺注入时 fail-closed 抛错是预期行为。
+- **隔离 E2E 实例需完整复制模型目录**：隔离数据库验证 `chat-nonstream` 时，除 `provider_credentials` 外还必须复制 `model_configurations`（默认模型目录）与 `model_pricing`（价格表），否则模型解析回退到默认 openai/gpt-5.5 并因无 Key 报 `llm_api_key_missing`（生产库因目录含 deepseek 默认模型而正常）。
 
 ## 19.2 2026-07-23 聊天刷新恢复新增陷阱
 
@@ -867,7 +875,7 @@ git commit -m "[Type] 变更描述"
 ## 19.3 2026-08-04 记忆体验重设计新增陷阱
 
 - **长期记忆禁止直存对话原文**：`core/feedback.py` 关键词即时路径必须经 `ConsolidationRunner.extract_turn_async` 后台 LLM 提炼（≤200 字事实 + 模型评估 importance/source_type）后入库；原文只允许存在于短期记忆层。定位方法：长期记忆列表出现 `User asked: ...` 前缀或 importance 恒为 0.7 的内容；修复方向：检查 feedback `_should_persist` 分支是否又恢复了 `persist_content` 原文直存。
-- **手动巩固在 LLM 不可用时仍推进 watermark**：`POST /api/memory/consolidation/run`（以及自动巩固）在未配置提炼模型时返回 `extracted=0` 但仍持久化 fingerprint 并推进 watermark（防死循环的设计行为）；测试环境手动触发会永久消耗真实短期记忆的提炼机会。定位方法：consolidation/run 返回 processed>0 且 extracted=0；修复方向：验证链路避免在无 LLM 配置环境触发，或为 force 路径增加 dry-run。
+- **手动巩固 watermark 仅在成功时推进**：`POST /api/memory/consolidation/run`（以及自动巩固）的 fingerprint 持久化与 watermark 推进只发生在提炼成功后；未配置提炼模型时返回 `extracted=0` 且不消耗短期记忆提炼机会。定位方法：consolidation/run 返回 processed>0 且 extracted=0；修复方向：检查是否又恢复了"失败仍推进 watermark"的防死循环分支（已删除，异常自然传播）。
 - **mock ConsolidationRunner 必须设置整数阈值**：测试注入 `FeedbackLayer.set_consolidation_runner` 的 mock 必须设置 `_conversation_threshold=10` 与 `increment_conversation_count` 返回值，否则 `_trigger_consolidation_check_async` 中 `count >= threshold` 对 MagicMock 比较抛 TypeError。
 - **前端 React Hooks 不得在 early return 之后声明**：MemoryPage 等组件的 useMemo/useCallback 必须在 loading early return 之前声明，否则数据到达后首帧渲染 Hook 数量不一致，触发 "Rendered more hooks than during the previous render"。
 - **真实库上验证状态变更 API 后必须恢复**：用 `validate`/`deprecate` 做连通性验证会真实修改用户记忆状态（validated/deprecated），验证后须将 `state`/`archive_status` 恢复为 `active` 并还原 confidence 原值（SQLite 直改可行；Qdrant 元数据被服务锁定，可用 `archive_long_term_memory(id, "active")` 或接受向量侧差异）。

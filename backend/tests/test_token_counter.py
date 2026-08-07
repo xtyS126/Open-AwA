@@ -1,11 +1,11 @@
 """billing/token_counter.py 单元测试。
 
-覆盖四层 token 计数策略：
+覆盖 token 计数策略：
 1. count_from_usage - 解析 OpenAI / Anthropic usage 字段
 2. count_from_stream - 累计流式 chunk 的 usage
-3. estimate_with_tiktoken - tiktoken 估算（按 model 选 encoding）
-4. estimate_with_ratio - 字符比率兜底
-以及统一入口 count_tokens 的优先级调度。
+3. estimate_with_tiktoken - tiktoken 估算（按 model 选 encoding，失败显式传播）
+4. estimate_with_ratio - 字符比率估算工具
+以及统一入口 count_tokens 的优先级调度（usage 缺失时显式标记 unknown）。
 """
 
 import sys
@@ -195,12 +195,12 @@ class TestEstimateWithTiktoken:
         # cl100k_base 编码同一段文本也应在合理范围
         assert 6 <= tokens <= 10
 
-    def test_estimate_with_tiktoken_unavailable(self):
-        """tiktoken import 失败时返回 0"""
+    def test_estimate_with_tiktoken_unavailable_raises(self):
+        """tiktoken 未安装（必需依赖缺失）时必须显式传播 ImportError"""
         # 通过 sys.modules 注入 None 模拟 tiktoken 未安装
         with patch.dict(sys.modules, {"tiktoken": None}):
-            tokens = estimate_with_tiktoken("Hello world", "gpt-4o")
-            assert tokens == 0
+            with pytest.raises(ImportError):
+                estimate_with_tiktoken("Hello world", "gpt-4o")
 
     def test_estimate_with_tiktoken_empty_text(self):
         """空文本返回 0"""
@@ -252,7 +252,7 @@ class TestEstimateWithRatio:
 
 
 class TestCountTokensPriority:
-    """测试 count_tokens 统一入口的四层优先级"""
+    """测试 count_tokens 统一入口的优先级调度"""
 
     def test_count_tokens_priority_usage(self):
         """usage 非 None 时优先使用 count_from_usage"""
@@ -286,30 +286,19 @@ class TestCountTokensPriority:
         assert breakdown.output_tokens == 40
         assert breakdown.estimated is False
 
-    def test_count_tokens_priority_tiktoken(self):
-        """无 usage/stream 且 provider 含 openai 时使用 tiktoken"""
+    def test_count_tokens_without_usage_marks_unknown(self):
+        """usage 完全缺失时必须显式标记 method=unknown，不做估算伪装"""
         breakdown = count_tokens(
             text="Hello world, this is a test.",
             provider="openai",
             model="gpt-4o",
         )
-        assert breakdown.method == "tiktoken"
-        assert breakdown.input_tokens > 0
+        assert breakdown.method == "unknown"
+        assert breakdown.input_tokens == 0
         assert breakdown.estimated is True
 
-    def test_count_tokens_priority_ratio(self):
-        """非 openai provider 且无 usage/stream 时使用字符比率兜底"""
-        breakdown = count_tokens(
-            text="Hello world, this is a test.",
-            provider="anthropic",
-            model="claude-3-5-sonnet",
-        )
-        assert breakdown.method == "ratio"
-        assert breakdown.input_tokens > 0
-        assert breakdown.estimated is True
-
-    def test_count_tokens_stream_without_usage_falls_through(self):
-        """stream_chunks 提供但未携带 usage 时降级到 tiktoken/ratio"""
+    def test_count_tokens_stream_without_usage_marks_unknown(self):
+        """stream_chunks 提供但未携带 usage 时显式标记 method=unknown"""
         chunks = [{"content": "Hello"}, {"content": " world"}]
         breakdown = count_tokens(
             text="Hello world",
@@ -317,18 +306,18 @@ class TestCountTokensPriority:
             model="gpt-4o",
             stream_chunks=chunks,
         )
-        # 流中没有 usage，降级到 tiktoken（openai provider）
-        assert breakdown.method == "tiktoken"
-        assert breakdown.input_tokens > 0
+        assert breakdown.method == "unknown"
+        assert breakdown.input_tokens == 0
+        assert breakdown.output_tokens == 0
 
-    def test_count_tokens_empty_text_no_usage(self):
-        """空文本且无 usage/stream 时返回 0"""
+    def test_count_tokens_empty_text_no_usage_marks_unknown(self):
+        """空文本且无 usage/stream 时同样显式标记 unknown（不伪装估算）"""
         breakdown = count_tokens(
             text="",
             provider="anthropic",
             model="claude-3-5-sonnet",
         )
-        assert breakdown.method == "ratio"
+        assert breakdown.method == "unknown"
         assert breakdown.input_tokens == 0
 
 

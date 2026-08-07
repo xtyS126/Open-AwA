@@ -769,7 +769,16 @@ class WeixinAutoReplyService:
             state["last_error_at"] = now_iso
             await self._save_state(runtime.account_id, state)
             if exc.code == "WEIXIN_TOKEN_EXPIRED":
-                self._persist_binding_status(user_id, "expired", runtime.account_id)
+                try:
+                    self._persist_binding_status(user_id, "expired", runtime.account_id)
+                except Exception as persist_exc:
+                    # 持久化失败显式记录到状态，禁止静默丢失 binding_status 变更
+                    logger.bind(
+                        module="weixin.auto_reply",
+                        user_id=user_id,
+                    ).error(f"持久化 binding_status 失败: {persist_exc}")
+                    state["last_error"] = f"binding_status 持久化失败: {persist_exc}"
+                    state["last_error_at"] = now_iso
             return {
                 "ok": exc.code == "WEIXIN_TIMEOUT",
                 "status": state["last_poll_status"],
@@ -831,7 +840,18 @@ class WeixinAutoReplyService:
                             db.commit()
                     except Exception as exc:
                         db.rollback()
-                        logger.warning(f"[weixin] 持久化多媒体资产失败，继续处理消息: {exc}")
+                        # 多媒体资产持久化失败：该消息显式标记为错误状态并跳过，禁止静默丢失资产
+                        logger.error(f"[weixin] 持久化多媒体资产失败: {exc}")
+                        error_count += 1
+                        state["last_error"] = f"多媒体资产持久化失败: {exc}"
+                        state["last_error_at"] = now_iso
+                        self._record_processed_message(
+                            state,
+                            inbound,
+                            status="error",
+                            error=f"多媒体资产持久化失败: {exc}",
+                        )
+                        continue
                 existing = processed_messages.get(inbound["message_id"])
                 if existing and existing.get("status") == "sent":
                     duplicate_count += 1
@@ -922,7 +942,16 @@ class WeixinAutoReplyService:
                 except WeixinAdapterError as exc:
                     error_count += 1
                     if exc.code == "WEIXIN_TOKEN_EXPIRED":
-                        self._persist_binding_status(user_id, "expired", runtime.account_id)
+                        try:
+                            self._persist_binding_status(user_id, "expired", runtime.account_id)
+                        except Exception as persist_exc:
+                            # 持久化失败显式记录到状态，禁止静默丢失 binding_status 变更
+                            logger.bind(
+                                module="weixin.auto_reply",
+                                user_id=user_id,
+                            ).error(f"持久化 binding_status 失败: {persist_exc}")
+                            state["last_error"] = f"binding_status 持久化失败: {persist_exc}"
+                            state["last_error_at"] = now_iso
                     logger.bind(
                         module="weixin.auto_reply",
                         user_id=user_id,
@@ -998,41 +1027,40 @@ class WeixinAutoReplyService:
         """
         加载主用户在 Web UI 中的最近对话历史（排除微信渠道的会话），
         用于在生成微信回复时注入跨渠道上下文。
+
+        加载失败时抛异常显式报错：调用方跳过本轮回复并记录错误状态，
+        禁止以空上下文让 AI 零上下文回复。
         """
-        try:
-            memories = (
-                db.query(ShortTermMemory)
-                .filter(
-                    ShortTermMemory.role.in_(["user", "assistant"]),
-                    ShortTermMemory.workspace_id == "default",
-                )
-                .order_by(ShortTermMemory.timestamp.desc())
-                .limit(max_turns * 8)
-                .all()
+        memories = (
+            db.query(ShortTermMemory)
+            .filter(
+                ShortTermMemory.role.in_(["user", "assistant"]),
+                ShortTermMemory.workspace_id == "default",
             )
+            .order_by(ShortTermMemory.timestamp.desc())
+            .limit(max_turns * 8)
+            .all()
+        )
 
-            # 过滤掉微信渠道的 session，只保留主用户的 Web UI 对话
-            web_conversations: List[Dict[str, str]] = []
-            seen_session_ids: set = set()
-            for mem in memories:
-                sid = str(mem.session_id or "")
-                if "weixin:" in sid:
-                    continue
-                if sid not in seen_session_ids:
-                    seen_session_ids.add(sid)
-                web_conversations.append({
-                    "role": mem.role,
-                    "content": str(mem.content or "")[:400],
-                })
-                if len(web_conversations) >= max_turns * 2:
-                    break
+        # 过滤掉微信渠道的 session，只保留主用户的 Web UI 对话
+        web_conversations: List[Dict[str, str]] = []
+        seen_session_ids: set = set()
+        for mem in memories:
+            sid = str(mem.session_id or "")
+            if "weixin:" in sid:
+                continue
+            if sid not in seen_session_ids:
+                seen_session_ids.add(sid)
+            web_conversations.append({
+                "role": mem.role,
+                "content": str(mem.content or "")[:400],
+            })
+            if len(web_conversations) >= max_turns * 2:
+                break
 
-            # 按时间正序排列
-            web_conversations.reverse()
-            return web_conversations
-        except Exception as exc:
-            logger.warning(f"[weixin] 加载主用户 Web 对话历史失败: {exc}")
-            return []
+        # 按时间正序排列
+        web_conversations.reverse()
+        return web_conversations
 
     @staticmethod
     def _load_weixin_conversation_history(
@@ -1042,29 +1070,28 @@ class WeixinAutoReplyService:
     ) -> List[Dict[str, str]]:
         """
         加载当前微信联系人的对话历史。
+
+        加载失败时抛异常显式报错：调用方跳过本轮回复并记录错误状态，
+        禁止以空上下文让 AI 零上下文回复。
         """
-        try:
-            memories = (
-                db.query(ShortTermMemory)
-                .filter(
-                    ShortTermMemory.session_id == session_id,
-                    ShortTermMemory.role.in_(["user", "assistant"]),
-                    ShortTermMemory.workspace_id == "default",
-                )
-                .order_by(ShortTermMemory.timestamp.desc())
-                .limit(max_turns)
-                .all()
+        memories = (
+            db.query(ShortTermMemory)
+            .filter(
+                ShortTermMemory.session_id == session_id,
+                ShortTermMemory.role.in_(["user", "assistant"]),
+                ShortTermMemory.workspace_id == "default",
             )
-            history = []
-            for mem in reversed(memories):
-                history.append({
-                    "role": mem.role,
-                    "content": str(mem.content or "")[:400],
-                })
-            return history
-        except Exception as exc:
-            logger.warning(f"[weixin] 加载微信对话历史失败: {exc}")
-            return []
+            .order_by(ShortTermMemory.timestamp.desc())
+            .limit(max_turns)
+            .all()
+        )
+        history = []
+        for mem in reversed(memories):
+            history.append({
+                "role": mem.role,
+                "content": str(mem.content or "")[:400],
+            })
+        return history
 
     @staticmethod
     def _build_cross_channel_system_prompt(
@@ -1200,7 +1227,10 @@ class WeixinAutoReplyService:
         self.adapter.clear_account_state(account_id)
 
     def _persist_binding_status(self, user_id: str, status: str, account_id: str) -> None:
-        """将 binding_status 变更持久化到数据库，确保 token 过期等状态不会因内存刷新丢失。"""
+        """将 binding_status 变更持久化到数据库，确保 token 过期等状态不会因内存刷新丢失。
+
+        持久化失败时抛异常显式报错（调用方负责记录错误状态），禁止静默丢失状态变更。
+        """
         db = self.session_factory()
         try:
             binding = db.query(WeixinBinding).filter(WeixinBinding.user_id == user_id).first()
@@ -1213,12 +1243,9 @@ class WeixinAutoReplyService:
                     account_id=account_id,
                     new_status=status,
                 ).info("weixin binding_status 已持久化")
-        except Exception as exc:
+        except Exception:
             db.rollback()
-            logger.bind(
-                module="weixin.auto_reply",
-                user_id=user_id,
-            ).warning(f"持久化 binding_status 失败: {exc}")
+            raise
         finally:
             db.close()
 

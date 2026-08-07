@@ -33,13 +33,15 @@ from api.routes.preview_proxy import router as preview_proxy_router
 class _DummyUser:
     """测试用 DummyUser，仅暴露 id/username/role 三个字段。"""
 
-    def __init__(self, user_id: str, username: str) -> None:
+    def __init__(self, user_id: str, username: str, role: str = "user") -> None:
         self.id = user_id
         self.username = username
-        self.role = "user"
+        self.role = role
 
 
 _USER_A = _DummyUser("user-a", "alice")
+# RBAC fail-closed 后，preview 属于 coding:read 权限范畴，渲染类测试使用管理员身份
+_ADMIN_USER = _DummyUser("admin-1", "admin", role="admin")
 
 
 def _override_user(user: _DummyUser):
@@ -92,10 +94,12 @@ def project_root(tmp_path: Path) -> Path:
 
 
 @contextmanager
-def _coding_client(project_root: Path, user: Optional[_DummyUser] = _USER_A):
+def _coding_client(project_root: Path, user: Optional[_DummyUser] = _ADMIN_USER):
     """构造 coding 路由的 TestClient，将默认项目目录指向临时目录。
 
     使用 contextmanager + patch 形式，避免装饰器注入 mock 时的位置参数混乱。
+    默认使用管理员身份：preview 端点已启用 RBAC fail-closed（coding:read），
+    渲染类测试不关心权限分支，统一走管理员放行路径。
     """
     with patch("api.routes.coding.DEFAULT_PROJECT_DIR", str(project_root)):
         app = FastAPI()
@@ -318,6 +322,26 @@ class TestUnknownFileType:
         body = response.json()
         assert body["type"] == "text"
         assert "纯文本内容" in body["content"]
+
+
+# ==================== RBAC fail-closed 测试 ====================
+
+
+class TestRbacFailClosed:
+    """非管理员访问 coding 预览端点应被拒绝（fail-closed）。
+
+    删除兜底后：无显式角色分配的用户按默认 viewer 角色判定（无 coding 权限），
+    一律 403，禁止降级放行。
+    """
+
+    def test_non_admin_rejected_from_preview(self, project_root: Path) -> None:
+        """role=user 且无 coding:read 权限的用户访问 preview 应 403。"""
+        with _coding_client(project_root, user=_USER_A) as client:
+            response = client.get(
+                "/api/coding/preview/file", params={"path": "docs/plain.txt"}
+            )
+
+        assert response.status_code == 403
 
 
 # ==================== 反向代理测试 ====================

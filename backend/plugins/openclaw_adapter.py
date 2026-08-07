@@ -447,14 +447,14 @@ class OpenClawAdapter:
 
         Returns:
             AdaptedManifest 实例；若目录中无 OpenClaw manifest 则返回 None。
+
+        Raises:
+            OpenClawManifestError: manifest 存在但解析或适配失败时抛出，
+                由调用方显式处理，不静默跳过发现。
         """
         manifest_path = plugin_dir / OPENCLAW_MANIFEST_FILENAME
         if not manifest_path.exists():
             return None
 
-        try:
-            manifest = self.parse_manifest_file(manifest_path)
-            return self.adapt(manifest)
-        except OpenClawManifestError as e:
-            logger.error(f"OpenClaw manifest 适配失败: {manifest_path} — {e}")
-            return None
+        manifest = self.parse_manifest_file(manifest_path)
+        return self.adapt(manifest)

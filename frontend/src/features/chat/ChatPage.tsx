@@ -44,6 +44,7 @@ function ChatPage() {
   // 数组/对象字段使用 shallow 做浅比较，避免内容相同时的假阳性重渲染
   // 分域 Store 拆分后，各域状态独立订阅，互不影响
   const messages = useSessionStore(s => s.messages, shallow)
+  const persistenceAvailable = useSessionStore(s => s.persistenceAvailable)
   const conversations = useSessionStore(s => s.conversations, shallow)
   // 标量字段使用简单 selector（默认 === 比较）
   const isLoading = useSessionStore(s => s.isLoading)
@@ -145,7 +146,15 @@ function ChatPage() {
     approve: approvePermission,
     approveAlways: approveAlwaysPermission,
     deny: denyPermission,
+    connectionError: permissionConnectionError,
   } = usePermissionRequest(sessionId)
+
+  // 权限通知 SSE 连接失败（如 ticket 获取失败）时用户可见提示
+  useEffect(() => {
+    if (permissionConnectionError) {
+      addToast(permissionConnectionError, 'error')
+    }
+  }, [permissionConnectionError, addToast])
 
   const {
     getLocalMessagesForRestore,
@@ -777,6 +786,13 @@ function ChatPage() {
           新对话
         </button>
       </div>
+
+      {/* 本地消息缓存不可用提示：IndexedDB 打开失败时页面明确告知，历史消息由服务端恢复 */}
+      {!persistenceAvailable && (
+        <div className={styles['persistence-warning']} role="alert">
+          本地消息缓存不可用，消息历史将无法在本地保存，刷新页面后将从服务端恢复
+        </div>
+      )}
 
       <div className={styles['chat-body']}>
         {historySidebarOpen && isCompactViewport && (

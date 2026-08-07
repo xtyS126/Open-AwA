@@ -57,10 +57,16 @@ export async function loadServerPreferences(): Promise<void> {
 
 /**
  * 在本地状态已更新后，将单个偏好变更同步到服务端。
- * 触发即忘，不阻塞 UI。
+ * 触发即忘，不阻塞 UI；失败时记录显式警告并返回 false（标记"未同步"状态）。
+ * @returns 是否同步成功
  */
-export function syncPreferenceToServer(key: string, value: unknown): void {
-  userAPI.updatePreferences({ [key]: value }).catch(() => {
-    // 静默失败，localStorage 已更新
-  })
+export function syncPreferenceToServer(key: string, value: unknown): Promise<boolean> {
+  return userAPI.updatePreferences({ [key]: value })
+    .then(() => true)
+    .catch((error: unknown) => {
+      // 失败显式警告：跨设备偏好已分叉（本地已更新、服务端未同步）
+      console.warn(`[preferenceSync] 偏好 "${key}" 同步到服务端失败，跨设备偏好将不一致:`,
+        error instanceof Error ? error.message : String(error))
+      return false
+    })
 }

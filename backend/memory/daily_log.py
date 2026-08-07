@@ -121,11 +121,16 @@ class DailyLogManager:
         self,
         start_date: date,
         end_date: date,
-    ) -> list[dict]:
+    ) -> dict:
         """
         获取日期范围内的日志文件。
+
+        Returns:
+            含 logs（成功读取的日志列表）与 errors（读取失败明细）的字典；
+            单个文件损坏不影响其他日期日志的读取，但失败必须显式上报。
         """
         logs = []
+        errors = []
         current = start_date
         while current <= end_date:
             log_path = self.get_log_path(current)
@@ -140,16 +145,17 @@ class DailyLogManager:
                         "content": content[:2000],
                         "has_more": len(content) > 2000,
                     })
-                except Exception:
+                except Exception as exc:
+                    error_message = f"读取日志文件失败 {log_path}: {exc}"
                     logger.bind(module="daily_log", event="log_read_error", path=str(log_path)).warning(
-                        "读取日志文件失败，跳过该文件"
+                        error_message
                     )
-                    pass
+                    errors.append(error_message)
             current = date.fromordinal(current.toordinal() + 1)
-        return logs
+        return {"logs": logs, "errors": errors}
 
-    def get_recent_logs(self, days: int = 7) -> list[dict]:
-        """获取最近 N 天的日志。"""
+    def get_recent_logs(self, days: int = 7) -> dict:
+        """获取最近 N 天的日志（含 errors 字段）。"""
         today = date.today()
         start = date.fromordinal(today.toordinal() - days + 1)
         return self.get_logs_for_range(start, today)

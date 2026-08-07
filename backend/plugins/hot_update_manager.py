@@ -349,7 +349,7 @@ class HotUpdateManager:
         }
 
     def _load_persisted_state(self) -> None:
-        """读取持久化发布描述；损坏文件只降级为空状态。"""
+        """读取持久化发布描述；损坏文件重命名保留证据并显式告警，不静默当作空状态。"""
         if self._state_path is None or not self._state_path.exists():
             return
         try:
@@ -361,7 +361,25 @@ class HotUpdateManager:
                 raise ValueError("插件热更新状态 routes 必须是对象")
             self._persisted_routes = deepcopy(routes)
         except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
-            logger.warning(f"读取插件热更新状态失败，使用空状态: {exc}")
+            logger.bind(
+                module="plugins.hot_update",
+                event="persisted_state_corrupt",
+                state_path=str(self._state_path),
+            ).error(
+                f"插件热更新状态文件损坏，已重命名保留证据（灰度路由将不恢复）: {exc}"
+            )
+            # fail-safe 显式化：损坏文件重命名保留，禁止当作空状态被后续写入覆盖
+            corrupt_path = self._state_path.with_name(
+                f"{self._state_path.name}.corrupt-{int(datetime.now(timezone.utc).timestamp())}"
+            )
+            try:
+                os.replace(self._state_path, corrupt_path)
+            except OSError as rename_error:
+                logger.bind(
+                    module="plugins.hot_update",
+                    event="persisted_state_rename_failed",
+                    state_path=str(self._state_path),
+                ).error(f"重命名损坏的热更新状态文件失败: {rename_error}")
             self._persisted_routes = {}
 
     def _persist_state_locked(self) -> None:

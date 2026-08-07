@@ -310,20 +310,14 @@ def _append_builtin_tools(
     tools: List[Dict[str, Any]],
     seen_names: Set[str],
 ) -> None:
-    """追加内置工具；可选运行时不可用时保持降级。"""
-    try:
-        from core.builtin_tools.manager import builtin_tool_manager
+    """追加内置工具；加载失败时直接抛错，禁止静默剔除工具。"""
+    from core.builtin_tools.manager import builtin_tool_manager
 
-        for tool_definition in builtin_tool_manager.get_tool_definitions():
-            function_name = tool_definition.get("function", {}).get("name", "")
-            if function_name and function_name not in seen_names:
-                seen_names.add(function_name)
-                tools.append(tool_definition)
-    except Exception:
-        logger.bind(
-            module="agent_capability_builder",
-            event="builtin_tools_load_error",
-        ).warning("加载内置工具定义失败，跳过内置工具")
+    for tool_definition in builtin_tool_manager.get_tool_definitions():
+        function_name = tool_definition.get("function", {}).get("name", "")
+        if function_name and function_name not in seen_names:
+            seen_names.add(function_name)
+            tools.append(tool_definition)
 
 
 def _append_task_runtime_tools(
@@ -331,19 +325,13 @@ def _append_task_runtime_tools(
     tools: List[Dict[str, Any]],
     seen_names: Set[str],
 ) -> None:
-    """追加任务运行时工具；可选运行时不可用时保持降级。"""
-    try:
-        from core.task_runtime.definitions import list_agent_types
+    """追加任务运行时工具；加载失败时直接抛错，禁止静默剔除工具。"""
+    from core.task_runtime.definitions import list_agent_types
 
-        list_agent_types()
-        model_hint = build_configured_model_hint(capabilities)
-        for tool_definition in build_task_runtime_tool_definitions(model_hint):
-            function_name = tool_definition.get("function", {}).get("name", "")
-            if function_name and function_name not in seen_names:
-                seen_names.add(function_name)
-                tools.append(tool_definition)
-    except Exception:
-        logger.bind(
-            module="agent_capability_builder",
-            event="task_tools_load_error",
-        ).warning("加载任务运行时工具定义失败，跳过任务工具")
+    list_agent_types()
+    model_hint = build_configured_model_hint(capabilities)
+    for tool_definition in build_task_runtime_tool_definitions(model_hint):
+        function_name = tool_definition.get("function", {}).get("name", "")
+        if function_name and function_name not in seen_names:
+            seen_names.add(function_name)
+            tools.append(tool_definition)

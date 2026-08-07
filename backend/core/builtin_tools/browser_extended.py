@@ -180,33 +180,6 @@ def _build_snapshot_text(page_content: str, url: str) -> str:
     return header + text
 
 
-async def _fetch_with_httpx(url: str, timeout: int = BROWSER_ACTION_TIMEOUT) -> Dict[str, Any]:
-    """
-    使用 httpx 获取页面内容（Playwright 不可用时的降级方案）。
-
-    Args:
-        url: 目标网页 URL
-        timeout: 请求超时（秒）
-
-    Returns:
-        包含 content、status_code、headers 的响应字典
-    """
-    import httpx
-
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        response = await client.get(url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; Open-AwA/1.0)",
-            "Accept": "text/html,application/json,text/plain,*/*",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        })
-        response.raise_for_status()
-        return {
-            "content": response.text,
-            "status_code": response.status_code,
-            "headers": dict(response.headers),
-        }
-
-
 async def _screenshot_with_playwright(url: str, timeout: int = BROWSER_ACTION_TIMEOUT) -> Dict[str, Any]:
     """
     使用 Playwright 截取页面截图。
@@ -384,31 +357,23 @@ class BrowserExtendedSkill:
         """
         获取页面文本快照。
 
-        优先使用 Playwright 获取 JS 渲染后的内容；
-        如果 Playwright 不可用，降级为 httpx 直接获取 HTML。
+        使用 Playwright 获取 JS 渲染后的内容；
+        Playwright 失败时直接返回错误结果，禁止降级为 httpx 抓取原始 HTML
+        （SPA 页面原始 HTML 内容为空，降级产物会伪装成有效快照）。
         """
         logger.info(f"浏览器快照: {url}")
 
-        # 主路径：Playwright 渲染
+        # 主路径：Playwright 渲染（失败时返回其错误结果，不做降级）
         result = await _snapshot_with_playwright(url, self.timeout)
         if result.get("success"):
             return result
 
-        # 降级路径：httpx 直接获取 HTML
-        logger.info(f"Playwright 快照不可用，降级为 httpx: {url}")
-        try:
-            resp = await _fetch_with_httpx(url, self.timeout)
-            snapshot_text = _build_snapshot_text(resp["content"], url)
-            return {
-                "success": True,
-                "snapshot": snapshot_text[:MAX_SNAPSHOT_LENGTH],
-                "page_title": "",
-                "url": url,
-                "render_engine": "httpx",
-            }
-        except Exception as e:
-            logger.error(f"页面快照失败: url={url}, error={e}")
-            return {"success": False, "error": f"页面快照失败: {str(e)}"}
+        logger.error(f"页面快照失败: url={url}, error={result.get('error', '未知错误')}")
+        return {
+            "success": False,
+            "error": f"页面快照失败: {result.get('error', '未知错误')}",
+            "url": url,
+        }
 
     async def _navigate(self, url: str) -> Dict[str, Any]:
         """

@@ -60,20 +60,18 @@ class ProbeGenerator:
         if not any(flags.values()):
             return []
 
+        # 探针生成失败显式传播（不静默吞）：由调用方决定补偿采样策略，
+        # 未生成的探针不会在下次采样中被重复忽略
         generated: List[InterestProbe] = []
 
-        try:
-            if flags.get("low_confidence"):
-                generated.extend(await self._generate_low_confidence_probes(user_id, db))
+        if flags.get("low_confidence"):
+            generated.extend(await self._generate_low_confidence_probes(user_id, db))
 
-            if flags.get("new_interest"):
-                generated.extend(await self._generate_new_interest_probes(user_id, db))
+        if flags.get("new_interest"):
+            generated.extend(await self._generate_new_interest_probes(user_id, db))
 
-            if flags.get("periodic_review"):
-                generated.extend(await self._generate_periodic_review_probes(user_id, db))
-        except Exception as exc:
-            # 兜底捕获：探针生成失败不应阻断主流程，记录警告日志
-            logger.bind(user_id=user_id).opt(exception=True).warning(f"探针生成失败: {exc}")
+        if flags.get("periodic_review"):
+            generated.extend(await self._generate_periodic_review_probes(user_id, db))
 
         return generated
 

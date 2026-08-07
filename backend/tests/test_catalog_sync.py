@@ -286,8 +286,8 @@ async def test_fetch_openrouter_converts_pricing(monkeypatch):
     assert result["openai/gpt-4o"]["pricing"]["output"] == pytest.approx(10.0, rel=1e-6)
 
 
-async def test_fetch_returns_empty_on_http_error(monkeypatch):
-    """HTTP 4xx/5xx 应返回空字典而非抛出异常。"""
+async def test_fetch_raises_on_http_error(monkeypatch):
+    """HTTP 4xx/5xx 必须显式抛错（禁止以空字典伪装拉取成功）。"""
     transport = httpx.MockTransport(lambda request: httpx.Response(500, json={"error": "server"}))
 
     real_client_init = httpx.AsyncClient.__init__
@@ -298,11 +298,10 @@ async def test_fetch_returns_empty_on_http_error(monkeypatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
 
-    md_result = await fetch_models_dev("https://models.dev/api.json", timeout=5.0)
-    or_result = await fetch_openrouter("https://openrouter.ai/api/v1/models", timeout=5.0)
-
-    assert md_result == {}
-    assert or_result == {}
+    with pytest.raises(Exception):
+        await fetch_models_dev("https://models.dev/api.json", timeout=5.0)
+    with pytest.raises(Exception):
+        await fetch_openrouter("https://openrouter.ai/api/v1/models", timeout=5.0)
 
 
 # ── merge_sources 集成测试 ───────────────────────────────────────────────────────
@@ -706,8 +705,8 @@ async def test_run_sync_writes_file_when_not_dry_run(tmp_path, monkeypatch):
     assert stats["dry_run"] is False
 
 
-async def test_run_sync_handles_source_failure_gracefully(tmp_path, monkeypatch):
-    """单源失败时应继续处理另一源，不抛出异常。"""
+async def test_run_sync_raises_on_source_failure(tmp_path, monkeypatch):
+    """任一源拉取失败时同步必须显式抛错（禁止假同步完成），且不写文件。"""
     original_init = httpx.AsyncClient.__init__
 
     def patched_init(self, *args, **kwargs):
@@ -726,9 +725,11 @@ async def test_run_sync_handles_source_failure_gracefully(tmp_path, monkeypatch)
         original_init(self, *args, **kwargs)
 
     monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
-    monkeypatch.setattr("billing.catalog_sync.PRICING_DATA_PATH", tmp_path / "pricing_data.json")
+    fake_path = tmp_path / "pricing_data.json"
+    monkeypatch.setattr("billing.catalog_sync.PRICING_DATA_PATH", fake_path)
 
-    stats = await run_sync(dry_run=True)
+    with pytest.raises(Exception):
+        await run_sync(dry_run=False)
 
-    # models.dev 失败，但 openrouter 数据应被解析
-    assert stats["added"] >= 1
+    # 失败时不得写入文件（保留旧数据）
+    assert not fake_path.exists()

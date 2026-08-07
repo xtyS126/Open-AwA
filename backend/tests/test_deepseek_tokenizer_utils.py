@@ -260,30 +260,32 @@ class TestSpecialTokensConstants:
 class TestTryLoadDeepseekTokenizer:
     """测试 tokenizer 加载函数"""
 
-    def test_returns_none_when_dir_not_found(self):
-        """目录不存在时返回 None"""
-        result = try_load_deepseek_tokenizer(tokenizer_dir="/nonexistent/path")
-        assert result is None
+    def test_raises_when_dir_not_found(self):
+        """目录不存在时必须显式传播异常（不返回 None 伪装）"""
+        with pytest.raises(Exception):
+            try_load_deepseek_tokenizer(tokenizer_dir="/nonexistent/path")
 
-    def test_default_dir_does_not_crash(self):
-        """默认路径调用不抛出异常"""
-        result = try_load_deepseek_tokenizer()
-        assert result is None or hasattr(result, "encode")
+    def test_raises_when_transformers_missing(self, monkeypatch):
+        """transformers 未安装时必须显式传播 ImportError"""
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "transformers":
+                raise ImportError("transformers 未安装")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        with pytest.raises(ImportError):
+            try_load_deepseek_tokenizer(tokenizer_dir="/nonexistent/path")
 
 
 class TestCountTokensWithRealTokenizer:
     """测试真实 tokenizer 计数"""
 
-    def test_returns_none_when_tokenizer_unavailable(self):
-        """tokenizer 不可用时返回 None"""
-        result = count_tokens_with_real_tokenizer(
-            "hello", tokenizer_dir="/nonexistent/path"
-        )
-        assert result is None
-
-    def test_default_dir_does_not_crash(self):
-        """默认路径调用不抛出异常"""
-        result = count_tokens_with_real_tokenizer("测试文本")
-        assert result is None or (
-            "token_count" in result and "method" in result
-        )
+    def test_raises_when_tokenizer_unavailable(self):
+        """tokenizer 不可用（目录不存在）时必须显式传播异常"""
+        with pytest.raises(Exception):
+            count_tokens_with_real_tokenizer(
+                "hello", tokenizer_dir="/nonexistent/path"
+            )

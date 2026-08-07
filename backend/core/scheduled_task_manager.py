@@ -193,13 +193,15 @@ class ScheduledTaskManager:
                     args=(task_id,),
                 )
             except Exception as exc:
-                # 注册失败不影响 API 主流程，仅记录日志
+                # 注册失败必须向上传播（API 层返回失败），
+                # 禁止任务创建成功但永不执行的静默状态
                 logger.bind(
                     event="scheduled_task_register_error",
                     module="scheduled_tasks",
                     task_id=task_id,
                     error_type=type(exc).__name__,
                 ).warning(f"failed to register task to APScheduler: {exc}")
+                raise
 
     async def unregister_task(self, task_id: int) -> None:
         """
@@ -219,12 +221,14 @@ class ScheduledTaskManager:
                 # schedule 已不存在（可能已自动过期或从未注册），静默忽略
                 pass
             except Exception as exc:
+                # 注销失败必须向上传播，禁止任务已删除但仍在调度的静默状态
                 logger.bind(
                     event="scheduled_task_unregister_error",
                     module="scheduled_tasks",
                     task_id=task_id,
                     error_type=type(exc).__name__,
                 ).warning(f"failed to unregister task from APScheduler: {exc}")
+                raise
 
     async def register_external_schedule(
         self,
@@ -244,10 +248,10 @@ class ScheduledTaskManager:
             func: 异步可调用对象
 
         Returns:
-            True 表示注册成功，False 表示调度器未启动或注册失败
+            True 表示注册成功；调度器未启动或注册失败时抛出异常
         """
         if not self._started or self._scheduler is None:
-            return False
+            raise RuntimeError("调度器未启动，无法注册外部定时任务")
 
         async with self._register_lock:
             try:
@@ -264,13 +268,14 @@ class ScheduledTaskManager:
                 )
                 return True
             except Exception as exc:
+                # 注册失败必须向上传播，禁止返回 False 掩盖注册异常
                 logger.bind(
                     event="external_schedule_register_error",
                     module="scheduled_tasks",
                     schedule_id=schedule_id,
                     error_type=type(exc).__name__,
                 ).warning(f"failed to register external schedule: {exc}")
-                return False
+                raise
 
     async def _register_all_pending_tasks(self) -> None:
         """

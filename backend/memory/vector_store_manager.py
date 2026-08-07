@@ -1,7 +1,7 @@
 """
 向量存储管理模块，负责长期记忆的向量化存储与语义检索。
 默认使用 Qdrant 嵌入式模式作为持久化后端，原生支持 dense + sparse 混合检索。
-根据环境自动选择可用的嵌入提供方，并保留哈希嵌入作为兜底。
+嵌入提供方由显式配置决定；配置缺失或依赖不可用时直接抛错，不静默降级。
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ class VectorSearchHit:
 class HashEmbeddingProvider:
     """
     轻量哈希嵌入提供方。
-    主要用于开发、测试以及缺少外部模型依赖时的兜底场景。
+    无语义信息，仅用于开发、测试或显式配置选择 hash 的场景。
     """
 
     provider_name = "hash"
@@ -222,9 +222,9 @@ class SentenceTransformerEmbeddingProvider:
     """
     基于 sentence-transformers 的本地嵌入提供方。
 
-    模型下载策略（Spec memory-model-config-chain）：默认优先从魔搭社区
-    （ModelScope）下载（国内网络友好），失败后降级 HuggingFace，最后兜底
-    本地缓存；下载源可通过 MODEL_DOWNLOAD_SOURCE 切换为 huggingface。
+    模型下载策略（Spec memory-model-config-chain）：本地缓存命中优先，
+    未命中时按 MODEL_DOWNLOAD_SOURCE 指定的唯一下载源下载（默认 modelscope，
+    可切换 huggingface）；主源失败直接抛错，不跨源降级。
     """
 
     provider_name = "sentence-transformers"
@@ -255,43 +255,49 @@ class SentenceTransformerEmbeddingProvider:
         spec = get_embedding_spec(self.model_name)
         return spec.dimension if spec else None
 
-    def _try_download_from_modelscope(self) -> Optional[str]:
+    def _download_from_modelscope(self) -> str:
         """
-        尝试从魔搭社区下载模型，返回本地路径。
-        下载失败时返回 None。
+        从魔搭社区下载模型，返回本地路径。
+        下载失败直接抛错，不降级到其他下载源。
         """
         try:
             from modelscope import snapshot_download
-        except ImportError:
-            logger.debug("modelscope 未安装，跳过魔搭社区下载")
-            return None
+        except ImportError as exc:
+            raise RuntimeError(
+                "下载源为 modelscope，但未安装 modelscope 包，"
+                "请执行 pip install modelscope"
+            ) from exc
 
         try:
             local_path = snapshot_download(self._modelscope_id)
-            logger.info(f"从魔搭社区下载模型成功: {self._modelscope_id} -> {local_path}")
-            return local_path
         except Exception as exc:
-            logger.warning(f"从魔搭社区下载模型失败 ({self._modelscope_id}): {exc}")
-            return None
+            raise RuntimeError(
+                f"从魔搭社区下载模型失败 ({self._modelscope_id}): {exc}"
+            ) from exc
+        logger.info(f"从魔搭社区下载模型成功: {self._modelscope_id} -> {local_path}")
+        return str(local_path)
 
-    def _try_download_from_huggingface(self) -> Optional[str]:
+    def _download_from_huggingface(self) -> str:
         """
-        尝试从 HuggingFace 下载模型，返回本地路径。
-        下载失败时返回 None。
+        从 HuggingFace 下载模型，返回本地路径。
+        下载失败直接抛错，不降级到其他下载源。
         """
         try:
             from huggingface_hub import snapshot_download as hf_snapshot_download
-        except ImportError:
-            logger.debug("huggingface_hub 未安装，跳过 HuggingFace 下载")
-            return None
+        except ImportError as exc:
+            raise RuntimeError(
+                "下载源为 huggingface，但未安装 huggingface_hub 包，"
+                "请执行 pip install huggingface_hub"
+            ) from exc
 
         try:
             local_path = hf_snapshot_download(self._huggingface_id)
-            logger.info(f"从 HuggingFace 下载模型成功: {self._huggingface_id} -> {local_path}")
-            return local_path
         except Exception as exc:
-            logger.warning(f"从 HuggingFace 下载模型失败 ({self._huggingface_id}): {exc}")
-            return None
+            raise RuntimeError(
+                f"从 HuggingFace 下载模型失败 ({self._huggingface_id}): {exc}"
+            ) from exc
+        logger.info(f"从 HuggingFace 下载模型成功: {self._huggingface_id} -> {local_path}")
+        return str(local_path)
 
     def _find_cached_model_path(self) -> Optional[str]:
         """
@@ -341,10 +347,10 @@ class SentenceTransformerEmbeddingProvider:
 
     def _ensure_model(self):
         """
-        延迟初始化模型，按优先级尝试加载（Spec memory-model-config-chain）：
-        1. 本地缓存（离线优先）
-        2. 默认下载源 ModelScope（国内网络友好），失败后降级 HuggingFace
-        （MODEL_DOWNLOAD_SOURCE=huggingface 时交换 2/3 顺序）
+        延迟初始化模型（Spec memory-model-config-chain）：
+        1. 本地缓存命中优先（有文件直接用，非兜底）
+        2. 未命中时按 MODEL_DOWNLOAD_SOURCE 指定的唯一下载源下载（默认
+           modelscope，可切换 huggingface）；主源失败直接抛错，不跨源降级
         """
         if self._model is not None:
             return
@@ -362,26 +368,17 @@ class SentenceTransformerEmbeddingProvider:
         from config.settings import settings as _settings
 
         preferred_source = (_settings.MODEL_DOWNLOAD_SOURCE or "modelscope").strip().lower()
-        downloaders = [
-            ("modelscope", self._try_download_from_modelscope),
-            ("huggingface", self._try_download_from_huggingface),
-        ]
-        if preferred_source != "modelscope":
-            # 显式切到 HuggingFace 优先
-            downloaders.reverse()
-
-        for source_name, downloader in downloaders:
-            local_path = downloader()
-            if local_path:
-                self._model = self._SentenceTransformer(local_path, cache_folder=_cache_dir)
-                logger.info(
-                    f"从 {source_name} 下载并加载嵌入模型成功: {self.model_name} -> {local_path}"
-                )
-                return
-
-        raise RuntimeError(
-            f"无法加载模型 {self.model_name}，ModelScope 和 HuggingFace 均下载失败。"
-            f"请检查网络连接，或安装 modelscope: pip install modelscope"
+        if preferred_source not in {"modelscope", "huggingface"}:
+            raise ValueError(f"未知的模型下载源: {preferred_source}")
+        downloader = (
+            self._download_from_modelscope
+            if preferred_source == "modelscope"
+            else self._download_from_huggingface
+        )
+        local_path = downloader()
+        self._model = self._SentenceTransformer(local_path, cache_folder=_cache_dir)
+        logger.info(
+            f"从 {preferred_source} 下载并加载嵌入模型成功: {self.model_name} -> {local_path}"
         )
 
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:
@@ -400,9 +397,11 @@ def create_embedding_provider(provider_type: Optional[str] = None) -> EmbeddingP
     2. settings.MEMORY_EMBEDDING_PROVIDER（local | cloud | hash | 空=自动）
     3. 注册表模型名解析：MEMORY_EMBEDDING_MODEL 指定注册表内模型时按 kind 决定
 
-    local：sentence-transformers 本地推理（ModelScope 默认下载链）
+    local：sentence-transformers 本地推理（MODEL_DOWNLOAD_SOURCE 唯一下载源）
     cloud：OpenAI 兼容 Embeddings API（支持 Qwen3-VL-Embedding 多模态）
-    hash：无语义降级（开发/测试兜底）
+    hash：无语义哈希嵌入（仅限显式选择，用于开发/测试）
+
+    配置缺失、依赖不可用或模型加载失败时直接抛错，不静默降级。
     """
     from config.settings import settings as _settings
     from memory.model_registry import (
@@ -441,31 +440,20 @@ def create_embedding_provider(provider_type: Optional[str] = None) -> EmbeddingP
     )
     if normalized in {"local", "sentence-transformers"} or not normalized:
         # Spec 模型进程化：开启模型服务时本地模型在独立子进程加载推理，
-        # 主进程不占模型内存（空闲自动卸载、按需加载）
+        # 主进程不占模型内存（空闲自动卸载、按需加载）；模型服务启用时
+        # 启动/推理失败直接抛错，不回退主进程内加载
         if bool(_settings.MODEL_SERVICE_ENABLED):
-            try:
-                from model_service.client import (
-                    RemoteEmbeddingProvider,
-                    get_model_service_client,
-                )
-
-                client = get_model_service_client()
-                client.configure(embedding_model=local_model)
-                logger.info(f"本地嵌入模型切换到模型服务进程: {local_model}")
-                return RemoteEmbeddingProvider(client)
-            except Exception as exc:
-                logger.warning(f"模型服务不可用，回退主进程内加载: {exc}")
-        try:
-            return SentenceTransformerEmbeddingProvider(model_name=local_model)
-        except RuntimeError as exc:
-            if normalized:
-                # 显式选择 local 但依赖缺失时直接报错，不静默降级
-                raise
-            logger.warning(
-                f"sentence-transformers 不可用，自动降级到 Hash 嵌入模式；"
-                f"向量检索质量将下降。原因: {exc}"
+            from model_service.client import (
+                RemoteEmbeddingProvider,
+                get_model_service_client,
             )
-            return HashEmbeddingProvider()
+
+            client = get_model_service_client()
+            client.configure(embedding_model=local_model)
+            logger.info(f"本地嵌入模型切换到模型服务进程: {local_model}")
+            return RemoteEmbeddingProvider(client)
+        # 未开启模型服务时主进程内加载；依赖缺失或模型加载失败时直接抛错
+        return SentenceTransformerEmbeddingProvider(model_name=local_model)
 
     raise ValueError(f"未知的嵌入提供方类型: {normalized}")
 
@@ -523,7 +511,12 @@ def _probe_dimension_in_thread(provider: EmbeddingProvider) -> int:
             return len(vectors[0])
     finally:
         loop.close()
-    return DEFAULT_HASH_DIMENSION
+    # 探测失败不允许静默回退到哈希维度：用错误维度创建 collection 会在后续
+    # upsert 时产生维度不匹配，属于隐式降级，必须显式抛错
+    raise RuntimeError(
+        f"嵌入提供方 {provider.provider_name} 维度探测未返回有效向量，"
+        "拒绝回退到哈希维度创建向量库"
+    )
 
 
 def _detect_dense_dimension(provider: EmbeddingProvider) -> int:
@@ -553,27 +546,22 @@ def _sync_vector_model_config_from_db() -> None:
     模型名、API Key/Endpoint、下载源）在服务初始化时叠加到 settings 之上，
     使 MemoryManager/VectorStoreManager 创建 provider 时读到最新配置。
 
-    DB 键（小写）映射到 settings 字段（大写前缀 MEMORY_）；同步失败仅记录警告，
-    不影响向量存储初始化（回退 env 默认值）。
+    DB 键（小写）映射到 settings 字段（大写前缀 MEMORY_）。同步失败直接抛错：
+    前端已保存的配置被静默忽略属于配置失效，必须在启动期显式暴露。
     """
-    try:
-        from db.models import SessionLocal, VectorModelConfig
+    from db.models import SessionLocal, VectorModelConfig
 
-        with SessionLocal() as db:
-            rows = db.query(VectorModelConfig).all()
-        if not rows:
-            return
-        for row in rows:
-            field_name = f"MEMORY_{row.key.upper()}"
-            if hasattr(settings, field_name):
-                setattr(settings, field_name, row.value)
-        logger.info(
-            f"已从 DB 同步向量模型配置: {sorted(row.key for row in rows)}"
-        )
-    except Exception as exc:
-        logger.opt(exception=True).warning(
-            f"向量模型配置同步失败（回退 env 默认值）: {exc}"
-        )
+    with SessionLocal() as db:
+        rows = db.query(VectorModelConfig).all()
+    if not rows:
+        return
+    for row in rows:
+        field_name = f"MEMORY_{row.key.upper()}"
+        if hasattr(settings, field_name):
+            setattr(settings, field_name, row.value)
+    logger.info(
+        f"已从 DB 同步向量模型配置: {sorted(row.key for row in rows)}"
+    )
 
 
 class VectorStoreManager:
@@ -645,22 +633,17 @@ class VectorStoreManager:
         )
 
     def _get_dense_dimension(self, collection_name: str) -> Optional[int]:
-        """读取 collection 的稠密向量维度，旧格式或读取失败时返回 None。"""
-        try:
-            with self._client_lock:
-                collection = self.client.get_collection(collection_name)
-            vectors = collection.config.params.vectors
-            vector_params = vectors.get(DENSE_VECTOR_NAME) if isinstance(vectors, dict) else None
-            dimension = getattr(vector_params, "size", None)
-            return dimension if isinstance(dimension, int) and dimension > 0 else None
-        except Exception as exc:
-            logger.bind(
-                event="vector_collection_dimension_read_failed",
-                module="vector_store",
-                collection=collection_name,
-                error_type=type(exc).__name__,
-            ).warning(f"读取向量 collection 维度失败: {exc}")
-            return None
+        """
+        读取 collection 的稠密向量维度。
+        None 仅表示旧格式 collection 未配置 dense 向量字段（维度信息缺失）；
+        读取失败（Qdrant 异常）直接抛错，不允许维度变更检测被静默关闭。
+        """
+        with self._client_lock:
+            collection = self.client.get_collection(collection_name)
+        vectors = collection.config.params.vectors
+        vector_params = vectors.get(DENSE_VECTOR_NAME) if isinstance(vectors, dict) else None
+        dimension = getattr(vector_params, "size", None)
+        return dimension if isinstance(dimension, int) and dimension > 0 else None
 
     def _ensure_collection_dimension(self, dimension: int) -> None:
         """为当前嵌入维度选择兼容 collection，保留旧 collection 以避免丢失用户数据。"""
@@ -784,21 +767,14 @@ class VectorStoreManager:
         if not sanitized:
             return
 
-        # Qdrant 不允许设置 None 值，若需删除字段应使用 delete_payload；此处仅做覆盖更新
-        try:
-            with self._client_lock:
-                self.client.set_payload(
-                    collection_name=self.collection_name,
-                    payload=sanitized,
-                    points=[int(memory_id)],
-                )
-        except KeyError:
-            # 数据库中可能存在尚未写入向量库的历史记忆，不能因此阻断记忆列表接口。
-            logger.warning(
-                "向量记录不存在，跳过元数据同步: memory_id={}, collection={}",
-                memory_id,
-                self.collection_name,
-                exc_info=True,
+        # Qdrant 不允许设置 None 值，若需删除字段应使用 delete_payload；此处仅做覆盖更新。
+        # 向量 point 缺失（KeyError）说明 DB 行与向量库不一致，属于数据完整性错误，
+        # 直接抛错让调用方感知，不允许静默跳过（写入路径已保证两者原子性）。
+        with self._client_lock:
+            self.client.set_payload(
+                collection_name=self.collection_name,
+                payload=sanitized,
+                points=[int(memory_id)],
             )
 
     async def search(
@@ -814,24 +790,11 @@ class VectorStoreManager:
         通过 query_filter 实现用户隔离与归档过滤。
         """
         query_filter = self._build_filter(user_id=user_id, include_archived=include_archived)
-        # 防御性检查：embedding 返回空列表时 [0] 会触发 IndexError，
-        # 此时跳过向量检索返回空结果，避免整个 SSE 流因 numpy 错误中断
-        try:
-            embedded = await self.embedding_provider.embed_texts([query_text])
-        except Exception as exc:
-            logger.bind(
-                event="vector_search_embedding_error",
-                module="vector_store",
-                error_type=type(exc).__name__,
-            ).opt(exception=True).warning(f"嵌入查询失败，跳过向量检索: {exc}")
-            return []
+        # 嵌入失败直接传播异常：记忆召回静默丢失属于数据完整性失效，
+        # 上层（manager_provider 等）已有显式 DEGRADED/FAILED 通道承接
+        embedded = await self.embedding_provider.embed_texts([query_text])
         if not embedded or not embedded[0]:
-            logger.bind(
-                event="vector_search_empty_embedding",
-                module="vector_store",
-                query_len=len(query_text),
-            ).warning("嵌入返回空结果，跳过向量检索")
-            return []
+            raise RuntimeError("嵌入提供方返回空向量，无法执行向量检索")
         dense_vector = embedded[0]
         self._ensure_collection_dimension(len(dense_vector))
         sparse_vector = compute_sparse_vector(query_text)

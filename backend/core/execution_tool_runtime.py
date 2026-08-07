@@ -610,91 +610,82 @@ class ExecutionToolRuntimeMixin:
                 func_args.setdefault("session_id", str(context.get("session_id", "") or ""))
             # 构造包含 ToolUseContext 的工具执行上下文副本，避免污染原 context
             tool_exec_context = {**context, "_tool_use_context": _tool_use_context}
-            # 优先通过 ToolRegistry 执行（支持权限检查、截断、统计等）
-            _tool_reg = None
+            # 通过 ToolRegistry 执行（支持权限检查、截断、统计等）。
+            # ToolRegistry 不可用时 fail-closed：禁止绕过权限检查直接执行
+            from core.tool_registry import tool_registry as _tool_reg
             try:
-                from core.tool_registry import tool_registry as _tool_reg
-            except ImportError:
-                pass  # ToolRegistry 不可用时回退到直接执行
-            if _tool_reg is not None:
-                try:
-                    registered_tool = _tool_reg.get(func_name)
-                    if registered_tool and registered_tool.execute:
-                        exec_result = await _tool_reg.execute(func_name, func_args, tool_exec_context)
-                        _builtin_reg_output = {
-                            "ok": exec_result.status.value == "completed",
-                            "result": exec_result.result,
-                            "error": exec_result.error,
-                            "tool_name": func_name,
-                            "truncated": exec_result.truncated,
-                            "output_path": exec_result.output_path,
-                            "execution_time_ms": exec_result.execution_time_ms,
-                        }
-                        return await self._apply_post_tool_use_hooks(_builtin_reg_output, func_name, context)
-                except ImportError:
-                    pass  # ToolRegistry 模块不可用时回退到直接执行
-                except PermissionError:
-                    # 权限拒绝：尝试通过实时推送队列请求用户授权
-                    reply = await self._request_user_permission(
-                        tool_name=func_name,
-                        tool_args=func_args,
-                        context=context,
-                    )
-                    if reply == "reject":
-                        return {
-                            "ok": False,
-                            "error": f"用户拒绝权限: {func_name}",
-                            "tool_name": func_name,
-                            "denied_by": "user",
-                        }
-                    # 用户允许（once/always），重新执行工具
-                    try:
-                        exec_result = await _tool_reg.execute(func_name, func_args, tool_exec_context)
-                        _builtin_reg_output = {
-                            "ok": exec_result.status.value == "completed",
-                            "result": exec_result.result,
-                            "error": exec_result.error,
-                            "tool_name": func_name,
-                            "truncated": exec_result.truncated,
-                            "output_path": exec_result.output_path,
-                            "execution_time_ms": exec_result.execution_time_ms,
-                        }
-                        return await self._apply_post_tool_use_hooks(_builtin_reg_output, func_name, context)
-                    except PermissionError:
-                        # 用户授权后仍被拒绝（可能是 always 规则尚未持久化生效）
-                        return {
-                            "ok": False,
-                            "error": f"权限不足: {func_name}",
-                            "tool_name": func_name,
-                            "denied_by": "security",
-                        }
-                except Exception:
-                    # ToolRegistry 执行意外失败时记录日志并拒绝执行，
-                    # 不得回退到未经过权限检查的 builtin_tool_manager 路径
+                registered_tool = _tool_reg.get(func_name)
+                if registered_tool is None or not registered_tool.execute:
+                    # 工具未在 ToolRegistry 注册，拒绝执行（防止绕过权限检查）
                     logger.bind(
                         module="executor",
-                        event="tool_registry_execution_failed",
+                        event="tool_not_registered_denied",
                         tool_name=func_name,
-                    ).exception(f"ToolRegistry 执行异常，已拒绝回退到直接执行: {func_name}")
+                    ).warning(f"工具 {func_name} 未在 ToolRegistry 注册，已拒绝执行")
                     return {
                         "ok": False,
-                        "error": f"Tool registry execution failed for {func_name}",
+                        "error": f"工具 {func_name} 未在 ToolRegistry 注册，已拒绝执行",
                         "tool_name": func_name,
                     }
-            # 回退：直接通过 builtin_tool_manager 执行（仅当 ToolRegistry 完全不可用时）
-            from core.builtin_tools.manager import builtin_tool_manager
-            try:
-                result = await builtin_tool_manager.execute_tool(builtin_name, func_args, context=context)
-                ok = bool(result.get("success"))
-                _builtin_output = {"ok": ok, "result": result, "tool_name": func_name}
-                return await self._apply_post_tool_use_hooks(_builtin_output, func_name, context)
-            except Exception as exc:
+                exec_result = await _tool_reg.execute(func_name, func_args, tool_exec_context)
+                _builtin_reg_output = {
+                    "ok": exec_result.status.value == "completed",
+                    "result": exec_result.result,
+                    "error": exec_result.error,
+                    "tool_name": func_name,
+                    "truncated": exec_result.truncated,
+                    "output_path": exec_result.output_path,
+                    "execution_time_ms": exec_result.execution_time_ms,
+                }
+                return await self._apply_post_tool_use_hooks(_builtin_reg_output, func_name, context)
+            except PermissionError:
+                # 权限拒绝：尝试通过实时推送队列请求用户授权
+                reply = await self._request_user_permission(
+                    tool_name=func_name,
+                    tool_args=func_args,
+                    context=context,
+                )
+                if reply == "reject":
+                    return {
+                        "ok": False,
+                        "error": f"用户拒绝权限: {func_name}",
+                        "tool_name": func_name,
+                        "denied_by": "user",
+                    }
+                # 用户允许（once/always），重新执行工具
+                try:
+                    exec_result = await _tool_reg.execute(func_name, func_args, tool_exec_context)
+                    _builtin_reg_output = {
+                        "ok": exec_result.status.value == "completed",
+                        "result": exec_result.result,
+                        "error": exec_result.error,
+                        "tool_name": func_name,
+                        "truncated": exec_result.truncated,
+                        "output_path": exec_result.output_path,
+                        "execution_time_ms": exec_result.execution_time_ms,
+                    }
+                    return await self._apply_post_tool_use_hooks(_builtin_reg_output, func_name, context)
+                except PermissionError:
+                    # 用户授权后仍被拒绝（可能是 always 规则尚未持久化生效）
+                    return {
+                        "ok": False,
+                        "error": f"权限不足: {func_name}",
+                        "tool_name": func_name,
+                        "denied_by": "security",
+                    }
+            except Exception:
+                # ToolRegistry 执行意外失败时记录日志并拒绝执行，
+                # 不得回退到未经过权限检查的 builtin_tool_manager 路径
                 logger.bind(
                     module="executor",
-                    event="builtin_execution_error",
-                    tool_name=builtin_name,
-                ).error(f"内置工具执行异常: {exc}")
-                return {"ok": False, "error": f"Builtin tool execution error: {str(exc)}"}
+                    event="tool_registry_execution_failed",
+                    tool_name=func_name,
+                ).exception(f"ToolRegistry 执行异常，已拒绝回退到直接执行: {func_name}")
+                return {
+                    "ok": False,
+                    "error": f"Tool registry execution failed for {func_name}",
+                    "tool_name": func_name,
+                }
 
         # 任务运行时工具（task_spawn_agent / task_send_message / task_stop_agent / task_create_team 等）
         if func_name.startswith("task_"):
