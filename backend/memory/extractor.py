@@ -73,11 +73,20 @@ def _build_extract_user_prompt(messages: List[Dict[str, Any]]) -> str:
     # 压缩为 LLM 友好格式：仅保留 id/role/content，session_id 转为短哈希避免泄露
     compact: List[Dict[str, Any]] = []
     for m in messages:
-        compact.append({
+        entry: Dict[str, Any] = {
             "id": m.get("id"),
             "role": m.get("role", "user"),
             "content": (m.get("content") or "")[:500],  # 单条截断 500 字
-        })
+        }
+        # 多模态记忆：携带图片附件 URL（如有）。视觉理解模型配置后，
+        # LLM 可基于图片 URL 理解内容并在提炼结果中附带 caption；
+        # 未配置视觉模型时 URL 仅作为文本引用，不影响提炼流程
+        images = m.get("images")
+        if isinstance(images, list) and images:
+            entry["images"] = [
+                {"url": img.get("url", "")} for img in images if isinstance(img, dict) and img.get("url")
+            ]
+        compact.append(entry)
     return f"请从以下短期记忆中提炼高价值信息：\n\n{json.dumps(compact, ensure_ascii=False)}"
 
 

@@ -1050,6 +1050,7 @@ class MemoryManager:
         workspace_id: str = "default",
         memory_layer: str = "semantic",
         extracted_from: Optional[List[int]] = None,
+        images: Optional[List[Dict[str, Any]]] = None,
     ) -> LongTermMemory:
         """
         写入一条长期记忆，自动执行 PII 脱敏 + 去重合并。
@@ -1075,12 +1076,18 @@ class MemoryManager:
         """
         scrubbed_content, vector = await self._scrub_and_embed(content, embedding)
 
+        # 多模态图片引用（Spec 多模态记忆）：写入 memory_metadata["images"]，
+        # 供记忆页展示与多模态检索（配置视觉/多模态嵌入模型后启用）
+        metadata = dict(memory_metadata or {})
+        if images:
+            metadata["images"] = [dict(img) for img in images if isinstance(img, dict)]
+
         merged = await self._try_dedup_merge(
             scrubbed_content,
             vector,
             importance=importance,
             user_id=user_id,
-            memory_metadata=memory_metadata,
+            memory_metadata=metadata,
             source_type=source_type,
             workspace_id=workspace_id,
             extracted_from=extracted_from,
@@ -1093,7 +1100,7 @@ class MemoryManager:
             vector,
             importance=importance,
             user_id=user_id,
-            memory_metadata=memory_metadata,
+            memory_metadata=metadata,
             source_type=source_type,
             workspace_id=workspace_id,
             memory_layer=memory_layer,

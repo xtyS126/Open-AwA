@@ -4,7 +4,11 @@
 """
 
 import asyncio
+import base64
+import json
 import time
+import uuid
+from pathlib import Path
 from typing import Dict, List, Any, Optional
 from loguru import logger
 
@@ -29,6 +33,74 @@ class FeedbackLayer:
     def set_memory_manager(self, memory_manager):
         """注入 MemoryManager 实例,供后续反馈收集时写入记忆和对话记录."""
         self.memory_manager = memory_manager
+
+    # ------------------------------------------------------------------
+    # 多模态记忆：图片附件落盘（Spec 多模态记忆）
+    # ------------------------------------------------------------------
+    _MEMORY_IMAGE_MIME_EXT = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+    }
+
+    async def _persist_image_attachments(
+        self,
+        context: Dict[str, Any],
+        user_id: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """把本轮聊天中的图片附件落盘到上传目录，返回短期记忆用的图片事件列表。
+
+        图片 base64 → 文件（var/data/uploads/chat，与 /api/chat/upload 同目录），
+        访问 URL 为 /api/chat/uploads/{filename}（带所有权校验）。
+        视觉理解模型未配置时仅保留图片引用；配置后记忆提炼可基于 URL 理解图片内容。
+        """
+        attachments = context.get("attachments") or []
+        if not attachments:
+            return []
+        try:
+            from config.runtime_paths import UPLOADS_DIR
+        except ImportError:
+            return []
+
+        events: List[Dict[str, Any]] = []
+        for attachment in attachments:
+            try:
+                if not isinstance(attachment, dict) or attachment.get("type") != "image":
+                    continue
+                data = attachment.get("data", "")
+                mime_type = str(attachment.get("mime_type") or "")
+                if not data:
+                    continue
+                # base64 可能带 data: URI 前缀（data:image/png;base64,...）
+                if "," in data and data.startswith("data:"):
+                    data = data.split(",", 1)[1]
+                raw = base64.b64decode(data)
+                if not raw:
+                    continue
+                ext = self._MEMORY_IMAGE_MIME_EXT.get(mime_type, ".png")
+                filename = f"{uuid.uuid4().hex}{ext}"
+                UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+                file_path = UPLOADS_DIR / filename
+                await asyncio.to_thread(file_path.write_bytes, raw)
+                metadata = {
+                    "owner_id": str(user_id or ""),
+                    "original_name": str(attachment.get("file_name") or filename),
+                    "mime_type": mime_type,
+                    "purpose": "memory",
+                }
+                meta_path = UPLOADS_DIR / f"{filename}.meta.json"
+                await asyncio.to_thread(meta_path.write_text, json.dumps(metadata, ensure_ascii=False), "utf-8")
+                events.append({
+                    "kind": "image_attachment",
+                    "url": f"/api/chat/uploads/{filename}",
+                    "mime_type": mime_type,
+                    "file_name": str(attachment.get("file_name") or ""),
+                })
+            except Exception as exc:
+                logger.warning(f"图片附件落盘失败（记忆链路跳过该图）: {exc}")
+        return events
 
     def set_consolidation_runner(self, runner):
         """
@@ -154,7 +226,19 @@ class FeedbackLayer:
         user_id = context.get("user_id")
         continuation = context.get("continuation")
         is_subagent_continuation = isinstance(continuation, dict) and continuation.get("source") == "subagent"
-        
+        # 多模态记忆：把本轮图片附件落盘并记录到短期记忆（tool_events），
+        # 供记忆巩固提炼时把图片引用带入长期记忆
+        image_events = await self._persist_image_attachments(context, user_id)
+        if image_events:
+            # 兼容历史数据：tool_events 可能被双重 JSON 序列化为字符串，解析后合并
+            if isinstance(tool_events, str):
+                try:
+                    parsed = json.loads(tool_events)
+                    tool_events = parsed if isinstance(parsed, list) else []
+                except (ValueError, TypeError):
+                    tool_events = []
+            tool_events = list(tool_events or []) + image_events
+
         try:
             if is_subagent_continuation:
                 merge_with_last_assistant = bool(continuation.get("merge_with_last_assistant", True))

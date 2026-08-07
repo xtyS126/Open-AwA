@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { conversationAPI, memoryAPI } from '@/shared/api/api'
+import { API_BASE_URL } from '@/shared/api/client'
 import { ShortTermMemory, LongTermMemory } from '@/shared/types/api'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { appLogger } from '@/shared/utils/logger'
@@ -43,9 +44,21 @@ interface MemoryListItem {
   state: string
   accessCount: number
   time: string
+  /** 多模态记忆：关联的图片引用列表（url/mime_type/file_name） */
+  images?: Array<{ url: string; mime_type?: string; file_name?: string }>
   onDelete: (() => void) | null
   onValidate: (() => void) | null
   onDeprecate: (() => void) | null
+}
+
+/** 将记忆图片的 API 相对路径解析为可展示的绝对 URL（APP 跨源场景） */
+function resolveMemoryImageUrl(path: string): string {
+  if (API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')) {
+    const base = API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0, -4) : API_BASE_URL
+    return `${base}${path}`
+  }
+  // 同源部署（后端托管前端静态资源）：相对路径直接可用
+  return path
 }
 
 /* 权重滑块组件入参 */
@@ -632,6 +645,11 @@ function MemoryPage() {
     for (const mem of longTermMemories) {
       const validated = mem.state === 'validated'
       const archived = mem.state === 'archived' || mem.archive_status === 'archived'
+      // 多模态记忆：从 memory_metadata.images 提取图片引用
+      const metadata = (mem as Record<string, unknown>).memory_metadata as
+        | { images?: Array<{ url: string; mime_type?: string; file_name?: string }> }
+        | undefined
+      const images = Array.isArray(metadata?.images) ? metadata!.images! : []
       items.push({
         key: `lt-${mem.id}`,
         content: mem.content,
@@ -642,6 +660,7 @@ function MemoryPage() {
         state: mem.state ?? 'active',
         accessCount: mem.access_count ?? 0,
         time: mem.created_at || mem.last_access || '',
+        images,
         onDelete: archived ? null : () => void handleDeleteLongTerm(mem.id),
         onValidate: validated ? null : () => void handleValidateLongTerm(mem.id),
         onDeprecate: archived || validated ? null : () => void handleDeprecateLongTerm(mem.id),
@@ -913,6 +932,27 @@ function MemoryPage() {
                             </span>
                           </div>
                         </div>
+                        {/* 多模态记忆：图片附件缩略图（点击查看原图） */}
+                        {item.images && item.images.length > 0 && (
+                          <div className={styles.memoryImages}>
+                            {item.images.map((img, imgIndex) => (
+                              <button
+                                key={`${item.key}-img-${imgIndex}`}
+                                type="button"
+                                className={styles.memoryImageThumb}
+                                onClick={() => window.open(resolveMemoryImageUrl(img.url), '_blank', 'noopener')}
+                                aria-label={img.file_name || `记忆图片 ${imgIndex + 1}`}
+                              >
+                                <img
+                                  src={resolveMemoryImageUrl(img.url)}
+                                  alt={img.file_name || `记忆图片 ${imgIndex + 1}`}
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <div className={styles.memoryItemBottom}>
                           <span className={styles.memoryTime}>
                             {formatRelativeTime(item.time)}

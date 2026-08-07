@@ -381,6 +381,38 @@
   margin-top: var(--space-3);
 }
 
+/* 多模态记忆：图片附件缩略图行 */
+.memoryImages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.memoryImageThumb {
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-bg-tertiary);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.memoryImageThumb:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.memoryImageThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 /* 时间文字 —— xs 三级色 */
 .memoryTime {
   font-size: var(--text-xs);

@@ -399,15 +399,20 @@ class ConsolidationRunner:
             return []
 
         try:
-            messages_for_llm = [
-                {
+            messages_for_llm = []
+            for m, _ in candidates:
+                entry = {
                     "id": m.id,
                     "role": m.role,
                     "content": (m.content or "")[: self.SHORT_TERM_CONTENT_TRUNCATE],
                     "session_id": m.session_id,
                 }
-                for m, _ in candidates
-            ]
+                # 多模态记忆：携带短期记忆中的图片附件引用（URL），
+                # 配置视觉理解模型后提炼 LLM 可基于图片 URL 理解内容
+                images = self._collect_memory_images(m)
+                if images:
+                    entry["images"] = images
+                messages_for_llm.append(entry)
             return await self._extract_callback(messages_for_llm, user_id)
         except Exception as exc:
             logger.bind(
@@ -416,6 +421,36 @@ class ConsolidationRunner:
                 user_id=user_id,
             ).warning(f"LLM 提炼失败，跳过提炼阶段: {exc}")
             return []
+
+    @staticmethod
+    def _collect_memory_images(memory: ShortTermMemory) -> List[Dict[str, Any]]:
+        """从短期记忆的 tool_events 中提取图片附件引用（Spec 多模态记忆）。
+
+        图片由 FeedbackLayer 落盘后以 image_attachment 事件写入 tool_events，
+        提炼时透传到长期记忆的 memory_metadata.images 供记忆页展示。
+        """
+        tool_events = getattr(memory, "tool_events", None) or []
+        # 兼容历史数据：tool_events 可能被双重 JSON 序列化为字符串（既有缺陷），
+        # 解析回列表后再提取图片引用，避免图片记忆丢失
+        if isinstance(tool_events, str):
+            try:
+                import json as _json
+                tool_events = _json.loads(tool_events)
+            except (ValueError, TypeError):
+                return []
+            if not isinstance(tool_events, list):
+                return []
+        images = []
+        for event in tool_events:
+            if not isinstance(event, dict):
+                continue
+            if event.get("kind") == "image_attachment" and event.get("url"):
+                images.append({
+                    "url": event["url"],
+                    "mime_type": event.get("mime_type", ""),
+                    "file_name": event.get("file_name", ""),
+                })
+        return images
 
     async def _persist_extracted_memories(
         self,
@@ -437,6 +472,16 @@ class ConsolidationRunner:
                     extracted_from = [source_id]
                 else:
                     extracted_from = list(candidate_ids)
+                # 多模态记忆：提炼结果可携带 images（由 LLM 基于图片 URL 理解后
+                # 附带 caption，或由提炼回调直接透传来源短期记忆的图片引用）。
+                # LLM 未返回 images 时，从来源短期记忆的 tool_events 提取图片引用，
+                # 确保聊天图片附件随巩固进入长期记忆
+                item_images = item.get("images") or []
+                if not isinstance(item_images, list) or not item_images:
+                    item_images = []
+                    for m, _ in candidates:
+                        if m.id in (extracted_from or []):
+                            item_images.extend(self._collect_memory_images(m))
                 memory = await self.memory_manager.add_long_term_memory(
                     content=content,
                     importance=float(item.get("importance", 0.5)),
@@ -444,6 +489,7 @@ class ConsolidationRunner:
                     source_type=item.get("source_type", "llm_extracted"),
                     workspace_id=workspace_id,
                     extracted_from=extracted_from,
+                    images=item_images or None,
                 )
                 consolidated_memory_ids.append(memory.id)
             except ValueError as exc:
