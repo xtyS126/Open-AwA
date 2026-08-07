@@ -78,9 +78,12 @@ EMBEDDING_MODELS: Dict[str, EmbeddingModelSpec] = {
     ),
     "Qwen3-VL-Embedding": EmbeddingModelSpec(
         name="Qwen3-VL-Embedding",
-        kind="cloud",
-        label="Qwen3-VL-Embedding（多模态云端嵌入）",
-        description="Qwen3 系列多模态嵌入模型，支持文本与图像输入，经 OpenAI 兼容 /embeddings 接口调用",
+        kind="local",
+        label="Qwen3-VL-Embedding-2B（多模态本地嵌入）",
+        description="Qwen3 系列多模态嵌入模型（2B 开源权重），支持文本与图像输入；"
+        "也可经 OpenAI 兼容 /embeddings 接口以云端方式调用",
+        modelscope_id="Qwen/Qwen3-VL-Embedding-2B",
+        huggingface_id="Qwen/Qwen3-VL-Embedding-2B",
         capabilities=["multimodal", "text", "image"],
     ),
     "text-embedding-3-small": EmbeddingModelSpec(
@@ -113,9 +116,12 @@ RERANK_MODELS: Dict[str, RerankModelSpec] = {
     ),
     "Qwen3-VL-Reranker": RerankModelSpec(
         name="Qwen3-VL-Reranker",
-        kind="cloud",
-        label="Qwen3-VL-Reranker（多模态云端重排）",
-        description="Qwen3 系列多模态重排模型，支持文本与图像相关性打分，经 API 调用",
+        kind="local",
+        label="Qwen3-VL-Reranker-2B（多模态本地重排）",
+        description="Qwen3 系列多模态重排模型（2B 开源权重），支持文本与图像相关性打分；"
+        "也可经 API 以云端方式调用",
+        modelscope_id="Qwen/Qwen3-VL-Reranker-2B",
+        huggingface_id="Qwen/Qwen3-VL-Reranker-2B",
         capabilities=["multimodal", "text", "image"],
     ),
 }

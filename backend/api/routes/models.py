@@ -556,6 +556,8 @@ def model_downloaded_path(modelscope_id: str) -> bool:
     candidates = (
         models_dir / "sentence_transformers" / f"models--{hf_org}--{normalized}" / "snapshots",
         models_dir / "modelscope" / "models" / modelscope_id,
+        # modelscope SDK 新缓存格式：AI-ModelScope--bge-reranker-v2-m3/snapshots/master/
+        models_dir / "modelscope" / "models" / normalized,
     )
     for base in candidates:
         if not base.is_dir():
@@ -566,6 +568,12 @@ def model_downloaded_path(modelscope_id: str) -> bool:
                     return True
         elif (base / "config.json").is_file():
             return True
+        # modelscope 新格式：snapshots 子目录存在时遍历其 revision 目录
+        snap_dir = base / "snapshots"
+        if snap_dir.is_dir():
+            for snapshot in snap_dir.iterdir():
+                if (snapshot / "config.json").is_file():
+                    return True
     return False
 
 
