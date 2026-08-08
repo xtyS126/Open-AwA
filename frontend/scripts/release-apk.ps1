@@ -21,11 +21,16 @@ $pkg = Get-Content (Join-Path $root "package.json") -Raw | ConvertFrom-Json
 $version = $pkg.version
 Write-Host "构建版本: $version"
 
-# 2. versionCode：显式参数优先，否则从上个 manifest 递增（首次为 1）
+# 2. versionCode：显式参数优先，否则从 build.gradle 当前 versionCode 递增（首次为 1）
+# 递增基准必须用 build.gradle（git 版本控制的真实现状）而非 manifest：
+# manifest 可能滞后于设备已装版本（历史上 v0.03 手动构建过 versionCode 5，
+# manifest 却停留在 2/3），从 manifest 递增会发布出比设备更低的 versionCode，
+# 导致设备端 OTA 检查永远 has_update=false、永不提示更新。
 if ($VersionCode -eq 0) {
-    if (Test-Path $manifestPath) {
-        $old = Get-Content $manifestPath -Raw | ConvertFrom-Json
-        $VersionCode = [int]$old.version_code + 1
+    $gradle = Join-Path $root "android\app\build.gradle"
+    $gradleContent = [System.IO.File]::ReadAllText($gradle, [System.Text.Encoding]::UTF8)
+    if ($gradleContent -match 'versionCode (\d+)') {
+        $VersionCode = [int]$Matches[1] + 1
     } else {
         $VersionCode = 1
     }

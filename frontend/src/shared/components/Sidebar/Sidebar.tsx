@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Link, useLocation } from '@/shared/routing'
+import { Link, useLocation, useNavigate } from '@/shared/routing'
 import {
   MessageSquare, LayoutDashboard, CreditCard, Zap,
   Clock, Blocks, Brain, Settings, Award, Radio,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { useMobileNavStore } from '@/shared/store/mobileNavStore'
+import { useAuthStore } from '@/shared/store/authStore'
 import { useI18nStore } from '@/i18n'
 import { UserFloatingArea } from '../UserFloatingArea'
 import { Tooltip } from '@/shared/components/ui'
@@ -53,6 +54,30 @@ const renderIcon = (type: string, size = 18) => {
     case 'userProfile': return <Layers size={size} />
     default: return <MessageSquare size={size} />
   }
+}
+
+/**
+ * 移动端左上角用户区：替代原汉堡按钮位置，展示头像 + 姓名，点击进入用户中心。
+ * 完整导航抽屉仍由底部 Tab Bar "更多"入口打开（useMobileNavStore 共享开关）。
+ */
+function MobileUserArea() {
+  const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  if (!user) return null
+  const initial = (user.username || 'U')[0].toUpperCase()
+  return (
+    <button
+      type="button"
+      className={styles['mobile-user-area']}
+      onClick={() => navigate('/user')}
+      title="用户中心"
+      aria-label="用户中心"
+      data-testid="mobile-user-area"
+    >
+      <span className={styles['mobile-user-avatar']}>{initial}</span>
+      <span className={styles['mobile-user-name']}>{user.username}</span>
+    </button>
+  )
 }
 
   function Sidebar() {
@@ -113,9 +138,6 @@ const renderIcon = (type: string, size = 18) => {
     settings: true,
   })
 
-  /* 汉堡菜单按钮引用：用于抽屉关闭后将焦点返回到触发按钮，符合无障碍焦点流转规范 */
-  const menuBtnRef = useRef<HTMLButtonElement>(null)
-
   /* 滑动手势状态：touchStartRef 记录起始 x 坐标，dragOffset 记录当前拖动偏移量（仅向左为负）*/
   const touchStartRef = useRef<number | null>(null)
   const dragOffsetRef = useRef(0)
@@ -145,14 +167,6 @@ const renderIcon = (type: string, size = 18) => {
       document.body.style.overflow = ''
     }
     return () => { document.body.style.overflow = '' }
-  }, [mobileOpen])
-
-  /* 焦点管理：抽屉从打开变为关闭时，焦点返回汉堡菜单按钮，便于键盘用户继续操作 */
-  useEffect(() => {
-    if (!mobileOpen && menuBtnRef.current) {
-      // 延迟一帧避免与点击事件冲突
-      requestAnimationFrame(() => menuBtnRef.current?.focus())
-    }
   }, [mobileOpen])
 
   /* 滑动手势：touchstart 记录起始坐标 */
@@ -216,18 +230,8 @@ const renderIcon = (type: string, size = 18) => {
 
   return (
     <>
-      {/* 移动端汉堡菜单按钮 */}
-      <button
-        ref={menuBtnRef}
-        className={styles['mobile-menu-btn']}
-        data-testid="mobile-menu-btn"
-        onClick={toggleMobile}
-        title={t('sidebar.menu')}
-        aria-label={t('sidebar.menu')}
-        aria-expanded={mobileOpen}
-      >
-        <Menu size={22} />
-      </button>
+      {/* 移动端左上角用户区：头像 + 姓名，点击进入用户中心（替代原汉堡按钮） */}
+      <MobileUserArea />
 
       {/* 移动端遮罩层：始终渲染，通过 visible 类切换可见性实现 opacity 渐变 */}
       <div

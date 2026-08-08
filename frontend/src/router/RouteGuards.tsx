@@ -81,7 +81,7 @@ export function RootGuard() {
   } else if (isSystemInitialized === null) {
     // 初始化状态无法确认时停止认证跳转，避免把服务故障误判为首次部署或未登录。
     content = (
-      <main id="main-content" tabIndex={-1} className="loading-fallback">
+      <main id="main-content" tabIndex={-1} className="reconnect-page">
         <p>暂时无法连接服务，无法确认系统初始化状态。</p>
         <button type="button" onClick={() => window.location.reload()}>重新连接</button>
       </main>

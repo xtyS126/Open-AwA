@@ -162,6 +162,55 @@ input:focus, textarea:focus {
   color: var(--color-text-secondary);
 }
 
+/* 加载占位容器：垂直水平居中，避免骨架屏内容卡在左上角 */
+.loading-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  padding: var(--space-5);
+  color: var(--color-text-secondary);
+}
+
+/* 重连提示页（无法确认系统初始化状态）：独立占满视口并居中展示 */
+.reconnect-page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.reconnect-page p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.reconnect-page button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-5);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.reconnect-page button:active {
+  transform: scale(0.98);
+}
+
 /* 统一按钮样式变体 */
 
 .btn-danger {
