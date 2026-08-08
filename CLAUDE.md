@@ -978,3 +978,12 @@ All API routes use prefix `settings.API_V1_STR` (`/api`) except MCP, billing, ma
 
 - **WS 鉴权必须支持 API Key 与 JWT 双路径**：`api/security/ws_auth.py` 的 `resolve_ws_user_from_token`（API Key compare_digest → owner；JWT decode → user）是 chat/terminal/weixin 共用的唯一实现源。terminal.py 曾只认 JWT（decode_access_token），APP（API Key 登录）下 WS 永远 4002 被拒 → 前端无限重连。**任何新增 WS 端点必须使用该函数**，禁止重复实现 decode_access_token 单路径。
 - **terminal.py 是绑定导入**：测试 monkeypatch 必须 patch `terminal_route.resolve_ws_user_from_token`（模块内绑定名），patch `api.security.ws_auth.resolve_ws_user_from_token`（模块属性）对绑定导入不生效。
+
+## 19.10 2026-08-08 APP OTA 更新与移动端布局新增陷阱
+
+- **OTA versionCode 递增基准必须是 build.gradle 而非 manifest**：manifest.json 只是发布产物，可能滞后于设备已装版本（v0.03 时手动构建过 versionCode 5，manifest 却停留在 2/3）；从 manifest 递增会发布比设备更低的 versionCode，`update-check` 恒返回 `has_update=false`，APP 永不弹更新提示。定位方法：设备 `dumpsys package com.openawa.mobile | grep versionCode` 大于 manifest `version_code`，而后端日志只有部署验证时的 update-check 请求、没有设备的；修复方向：`release-apk.ps1` 从 build.gradle 当前 versionCode +1（显式参数可覆盖），发布后必须验证 `version_code > 设备已装`。
+- **release-apk.ps1 读 manifest.json 必须显式 `-Encoding UTF8`**：manifest 是 UTF-8 无 BOM 且含中文 changelog，PowerShell 5.1 的 Get-Content 默认按 ANSI(GBK) 解码出乱码，`ConvertFrom-Json` 直接抛 "Invalid object passed in"；写回必须 `WriteAllText(…, New-Object System.Text.UTF8Encoding $false)` 保持无 BOM。
+- **构建 APK 前必须先 `npx cap sync android`**：release-apk.ps1 直接 gradle assembleDebug，若 android 工程 assets 是旧 dist，产物是"旧前端 + 新版本号"；判别方法：新版本 APK 大小与旧版一字不差（如 6314014 bytes）。gradle 日志中 `:app:mergeDebugAssets` 显示 UP-TO-DATE 也说明 dist 未变。
+- **loading-fallback 是全局工具类，必须有 CSS 定义**：`RouteGuards.tsx`/`AppShell.tsx` 多处使用 `loading-fallback`（加载占位与重连页），global.css 曾完全缺失该定义导致"暂时无法连接服务"页内容裸渲染卡左上角；重连页另用 `reconnect-page`（min-height:100vh + flex 居中）。定位方法：grep 全局 CSS 无 `.loading-fallback` 匹配；修复方向：任何新增的全局类必须在 `src/styles/global.css` 补定义并带主题 token。
+- **uiautomator dump 看不到 WebView 内部 DOM**：弹窗、按钮、文本等 WebView 渲染内容在 uiautomator XML 中不可见（仅系统原生 UI 如安装对话框可见），APP 内 UI 验证必须用 CDP（`adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` + `frontend/scripts/cdp-helper.cjs eval`）；git-bash 下 adb pull/shell 访问 /sdcard 路径需 `MSYS_NO_PATHCONV=1` 或双斜杠，否则被 MSYS 转成 Windows 路径。
+- **移动端抽屉打开入口统一走底部 Tab Bar "更多"**：Sidebar 左上角汉堡按钮已删除（原位置改为 MobileUserArea 头像+姓名，点击进 /user），移动端完整导航只能经 `useMobileNavStore.openDrawer`（MobileTabBar "更多"）打开；新增移动端导航入口时不得在左上角再造汉堡按钮，测试驱动抽屉也走 store 而非按钮。

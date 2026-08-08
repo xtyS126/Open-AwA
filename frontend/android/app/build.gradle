@@ -14,7 +14,8 @@ android {
         // 版本规则（用户约定）：
         // - versionName 形如 0.XX：每次修复小数点后 +1（0.01 → 0.02 → ...）
         // - 整数位（个位）永远保持 0，除非用户明确要求提升
-        // - versionCode 单调递增（安装标识），当前设备已装 4，从 5 开始
+        // - versionCode 单调递增（安装标识）：由 scripts/release-apk.ps1 从本文件当前值 +1 自动管理，
+        //   禁止回退（设备已装版本若高于新值，OTA 检查恒返回无更新、永不弹窗）
         versionCode 6
         versionName "0.04"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
