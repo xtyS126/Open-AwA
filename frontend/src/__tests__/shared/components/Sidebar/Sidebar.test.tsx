@@ -340,4 +340,32 @@ describe('Sidebar 移动端用户菜单', () => {
     })
     expect(screen.queryByTestId('user-menu')).not.toBeInTheDocument()
   })
+
+  it('非聊天页（设置/记忆/技能等）不渲染头像用户区', () => {
+    // 记忆页
+    const memory = render(
+      <MemoryRouter initialEntries={['/memory']}>
+        <Sidebar />
+      </MemoryRouter>
+    )
+    expect(screen.queryByTestId('mobile-user-area')).not.toBeInTheDocument()
+    memory.unmount()
+
+    // 技能页
+    const skills = render(
+      <MemoryRouter initialEntries={['/skills']}>
+        <Sidebar />
+      </MemoryRouter>
+    )
+    expect(screen.queryByTestId('mobile-user-area')).not.toBeInTheDocument()
+    skills.unmount()
+
+    // 设置页
+    render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <Sidebar />
+      </MemoryRouter>
+    )
+    expect(screen.queryByTestId('mobile-user-area')).not.toBeInTheDocument()
+  })
 })

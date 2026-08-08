@@ -67,11 +67,14 @@ const renderIcon = (type: string, size = 18) => {
  */
 function MobileUserArea() {
   const navigate = useNavigate()
+  const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const { t } = useI18nStore()
   const [open, setOpen] = useState(false)
-  if (!user) return null
+  /* 仅在聊天页显示：设置/记忆/技能等页面顶部有各自导航，不重复展示用户区浮层 */
+  const isChatPage = location.pathname === '/chat' || location.pathname.startsWith('/chat/')
+  if (!isChatPage || !user) return null
   const initial = (user.username || 'U')[0].toUpperCase()
 
   /* 退出登录：接口失败也清除本地会话并回登录页（与 UserFloatingArea 行为一致） */
