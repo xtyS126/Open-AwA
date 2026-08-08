@@ -310,14 +310,15 @@
   display: none;
 }
 
-/* ---- 移动端左上角用户区（替代原汉堡按钮）：头像 + 姓名，点击进入用户中心 ---- */
+/* ---- 移动端左上角用户区（替代原汉堡按钮）：头像 + 姓名，点击弹出用户菜单 ---- */
 .mobile-user-area {
   display: none;
   position: fixed;
-  /* 避开顶部状态栏/刘海：safe-area-top 之上再加 24px，明显低于贴顶位置 */
-  top: calc(var(--safe-area-top) + 24px);
+  /* 头像常驻侧边栏（抽屉）上方：safe-area-top 之上 12px，抽屉已下调至 60px 处开始 */
+  top: calc(var(--safe-area-top) + 12px);
   left: 8px;
-  z-index: 999;
+  /* 高于抽屉（1000）与遮罩（999）：抽屉打开时头像仍清晰可见、可点击 */
+  z-index: 1002;
   height: 40px;
   align-items: center;
   gap: 8px;
@@ -372,8 +373,8 @@
 
 .user-menu {
   position: fixed;
-  /* 定位在用户区（safe-area-top + 24px + 40px 高）正下方 */
-  top: calc(var(--safe-area-top) + 24px + 48px);
+  /* 定位在用户区（safe-area-top + 12px + 40px 高 + 8px 间距）正下方，与下调后的抽屉顶部齐平 */
+  top: calc(var(--safe-area-top) + 60px);
   left: 8px;
   z-index: 1201;
   min-width: 180px;
@@ -464,7 +465,9 @@
 
   .sidebar {
     position: fixed;
-    top: 0;
+    /* 抽屉整体下调：从头像区（safe-area-top + 12px + 40px 高 + 8px 间距）下方开始，
+       头像常驻其上方不被遮挡；safe-area-top 去 cover 后恒为 0，60px 即头像区底部间距 */
+    top: calc(var(--safe-area-top) + 60px);
     left: 0;
     bottom: 0;
     z-index: 1000;
