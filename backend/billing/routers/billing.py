@@ -154,6 +154,10 @@ class ModelConfigCreateRequest(BaseModel):
     # 模态标签（JSON 数组字符串，如 '["text","image"]'）
     input_modality: Optional[str] = None
     output_modality: Optional[str] = None
+    # 生图模型标记：手动指定该配置用于图像生成（SD / GPT-Image / Qwen-Image 系列），不参与聊天
+    is_image_generation: bool = False
+    # 生图模型用途与限制描述：供 AI 在生图时准确选择模型
+    image_generation_usage: Optional[str] = None
 
 
 class ModelConfigUpdateRequest(BaseModel):
@@ -175,6 +179,9 @@ class ModelConfigUpdateRequest(BaseModel):
     # 模态标签（JSON 数组字符串，如 '["text","image"]'）
     input_modality: Optional[str] = None
     output_modality: Optional[str] = None
+    # 生图模型标记与用途描述（可选，更新时显式传才生效）
+    is_image_generation: Optional[bool] = None
+    image_generation_usage: Optional[str] = None
 
 
 class RetentionUpdateRequest(BaseModel):
@@ -299,6 +306,8 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "is_multimodal": getattr(config, "is_multimodal", False),
         "input_modality": _parse_modality(getattr(config, "input_modality", None)),
         "output_modality": _parse_modality(getattr(config, "output_modality", None)),
+        "is_image_generation": bool(getattr(config, "is_image_generation", False)),
+        "image_generation_usage": getattr(config, "image_generation_usage", None),
         "model_spec": spec,
         "status": getattr(config, "status", "active"),
         "created_at": config.created_at.isoformat() if config.created_at else None,

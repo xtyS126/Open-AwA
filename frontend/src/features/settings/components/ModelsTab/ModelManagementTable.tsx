@@ -82,6 +82,8 @@ export function ModelManagementTable({
               // 判断模型类型：多模态 / 视觉 / 纯文本
               const isMultimodal = !!config.is_multimodal
               const supportsVision = !!config.supports_vision
+              // 生图模型：仅用于图像生成，不参与聊天
+              const isImageGeneration = !!config.is_image_generation
               return (
                 <tr key={config.id} className={isSelected ? styles['selected-row'] : ''}>
                   {/* 模型名称列：品牌图标 + 名称 + 默认徽标 */}
@@ -113,9 +115,11 @@ export function ModelManagementTable({
                   <td style={{ color: 'var(--color-text-secondary)' }}>
                     {providerNameMap[config.provider] || config.provider}
                   </td>
-                  {/* 类型列：使用 Badge 组件（对齐 Canvas）*/}
+                  {/* 类型列：使用 Badge 组件（对齐 Canvas）；生图模型显示独立徽标 */}
                   <td>
-                    {isMultimodal ? (
+                    {isImageGeneration ? (
+                      <Badge variant="warning" text="生图" />
+                    ) : isMultimodal ? (
                       <Badge variant="primary" text="对话+推理" />
                     ) : supportsVision ? (
                       <Badge variant="primary" text="对话+图像" />
@@ -145,7 +149,7 @@ export function ModelManagementTable({
                   {/* 操作列：编辑 + 删除按钮（边框样式，对齐 Canvas）*/}
                   <td style={{ textAlign: 'right' }}>
                     <div className={styles['table-actions']} style={{ justifyContent: 'flex-end' }}>
-                      {!config.is_default && (
+                      {!config.is_default && !isImageGeneration && (
                         <button
                           className={styles['provider-card-config-btn']}
                           onClick={() => onSetDefault(config.id)}

@@ -360,6 +360,10 @@ class PricingManager:
                 self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN input_modality TEXT"))
             if "output_modality" not in columns:
                 self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN output_modality TEXT"))
+            if "is_image_generation" not in columns:
+                self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN is_image_generation BOOLEAN DEFAULT 0"))
+            if "image_generation_usage" not in columns:
+                self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN image_generation_usage TEXT"))
             if "credential_id" not in columns:
                 self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN credential_id INTEGER REFERENCES provider_credentials(id)"))
 
@@ -1240,6 +1244,12 @@ class PricingManager:
         provider = normalized.get("provider") or ""
         model = normalized.get("model") or ""
 
+        # 生图模型仅用于图像生成，禁止同时标记为默认聊天模型（fail-closed）
+        if normalized.get("is_image_generation") and normalized.get("is_default"):
+            raise ValueError(
+                "生图模型仅用于图像生成，不能设为默认聊天模型，请取消其中一个标记"
+            )
+
         existing = self.db.query(ModelConfiguration).filter(
             ModelConfiguration.provider == provider,
             ModelConfiguration.model == model,
@@ -1289,6 +1299,18 @@ class PricingManager:
         
         if config:
             normalized = self._normalize_configuration_payload(config_data)
+
+            # 生图模型仅用于图像生成，禁止同时标记为默认聊天模型（fail-closed）
+            target_is_image = normalized.get(
+                "is_image_generation", getattr(config, "is_image_generation", False)
+            )
+            target_is_default = normalized.get(
+                "is_default", getattr(config, "is_default", False)
+            )
+            if target_is_image and target_is_default:
+                raise ValueError(
+                    "生图模型仅用于图像生成，不能设为默认聊天模型，请取消其中一个标记"
+                )
 
             if normalized.get("is_default", False):
                 self.db.query(ModelConfiguration).filter(
@@ -1380,13 +1402,18 @@ class PricingManager:
         config = self.db.query(ModelConfiguration).filter(
             ModelConfiguration.id == config_id
         ).first()
-        
+
         if config:
+            # 生图模型仅用于图像生成，禁止设为默认聊天模型（fail-closed）
+            if getattr(config, "is_image_generation", False):
+                raise ValueError(
+                    "生图模型仅用于图像生成，不能设为默认聊天模型"
+                )
             config.is_default = True
             config.updated_at = datetime.now(timezone.utc)
             self.db.commit()
             self.db.refresh(config)
-        
+
         return config
 
     def get_model_defaults(self, provider: str, model: str) -> Dict:

@@ -16,8 +16,8 @@ android {
         // - 整数位（个位）永远保持 0，除非用户明确要求提升
         // - versionCode 单调递增（安装标识）：由 scripts/release-apk.ps1 从本文件当前值 +1 自动管理，
         //   禁止回退（设备已装版本若高于新值，OTA 检查恒返回无更新、永不弹窗）
-        versionCode 15
-        versionName "0.13"
+        versionCode 16
+        versionName "0.14"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

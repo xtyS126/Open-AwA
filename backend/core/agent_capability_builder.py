@@ -159,9 +159,26 @@ def collect_configured_model_capabilities(
         configurations = pricing_manager.get_active_configurations()
 
         provider_models: Dict[str, List[str]] = {}
+        # 生图模型目录：仅用于图像生成（SD / GPT-Image / Qwen-Image 系列），不参与聊天模型候选
+        image_entries: List[Dict[str, Any]] = []
         for config in configurations:
             provider = pricing_manager.normalize_provider(getattr(config, "provider", None))
             if not provider:
+                continue
+
+            # 生图模型：单独收集并携带用途/限制描述，供 AI 生图时准确选择模型
+            if getattr(config, "is_image_generation", False):
+                base_model = pricing_manager.normalize_model(getattr(config, "model", None))
+                if base_model:
+                    image_entries.append(
+                        {
+                            "provider": provider,
+                            "model": base_model,
+                            "label": f"{provider}:{base_model}",
+                            "is_image_generation": True,
+                            "usage": getattr(config, "image_generation_usage", None) or "",
+                        }
+                    )
                 continue
 
             candidates: List[str] = []
@@ -202,12 +219,18 @@ def collect_configured_model_capabilities(
         if len(entries) > len(summary_labels) and summary:
             summary = f"{summary} 等"
 
+        image_summary = "、".join(entry["label"] for entry in image_entries[:12])
+        if len(image_entries) > 12 and image_summary:
+            image_summary = f"{image_summary} 等"
+
         payload = {
             "count": len(entries),
             "provider_count": len(providers),
             "entries": entries,
             "providers": providers,
             "summary": summary,
+            "image_entries": image_entries,
+            "image_summary": image_summary,
         }
         context["configured_model_catalog"] = payload
         return payload

@@ -262,6 +262,23 @@ class ExecutionPromptBuilder:
             "仅传 provider 时，系统会自动选用该 provider 的默认或已选模型。"
         )
 
+        # 生图模型目录：仅供图像生成（SD / GPT-Image / Qwen-Image 系列），用途描述辅助准确选型
+        image_entries = (
+            catalog.get("image_entries")
+            if isinstance(catalog.get("image_entries"), list)
+            else []
+        )
+        if image_entries:
+            lines.append("可用生图模型（仅用于图像生成，不可作为聊天模型；需要生图时选择合适模型调用生图工具）：")
+            for entry in image_entries[:12]:
+                if not isinstance(entry, dict):
+                    continue
+                label = str(entry.get("label", "")).strip()
+                if not label:
+                    continue
+                usage = str(entry.get("usage", "")).strip()
+                lines.append(f"- {label}" + (f"（用途/限制：{usage}）" if usage else ""))
+
     @staticmethod
     def _append_mcp(lines: list[str], capabilities: Dict[str, Any]) -> None:
         mcp = (

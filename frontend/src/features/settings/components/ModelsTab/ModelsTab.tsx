@@ -44,6 +44,8 @@ interface ModelsTabProps {
     description: string
     input_modality: string[]
     output_modality: string[]
+    is_image_generation: boolean
+    image_generation_usage: string
   }
   /** 是否正在保存编辑 */
   savingEdit: boolean
@@ -56,6 +58,8 @@ interface ModelsTabProps {
     display_name: string
     description: string
     is_default: boolean
+    is_image_generation: boolean
+    image_generation_usage: string
   }
 
   /** 切换添加表单显示 */
@@ -298,6 +302,26 @@ export function ModelsTab({
                   })}
                 </div>
               </div>
+              <div className={`${styles['form-group']} ${styles['checkbox-group']}`}>
+                <input
+                  type="checkbox"
+                  id="is-image-generation-edit"
+                  checked={editConfigForm.is_image_generation}
+                  onChange={(e) => onEditFormChange('is_image_generation', e.target.checked)}
+                />
+                <label htmlFor="is-image-generation-edit">生图模型（SD / GPT-Image / Qwen-Image 系列，标记后仅用于图像生成，不参与聊天）</label>
+              </div>
+              {editConfigForm.is_image_generation && (
+                <div className={styles['form-group']}>
+                  <label>用途与限制（生图模型必填，供 AI 准确选择模型）</label>
+                  <textarea
+                    rows={3}
+                    value={editConfigForm.image_generation_usage}
+                    onChange={(e) => onEditFormChange('image_generation_usage', e.target.value)}
+                    placeholder="例如：写实风格插画，支持 1024x1024 / 1536x1024，单张生成，不能生成文字内容"
+                  />
+                </div>
+              )}
             </div>
             <div className={styles['modal-footer']}>
               <button className="btn" onClick={onCancelEdit}>取消</button>

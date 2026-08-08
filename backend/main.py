@@ -57,6 +57,7 @@ from api.routes.notifications import router as notifications_router
 from api.adapters.ask_user_adapter import AskUserPortAdapter
 from api.adapters.workflow_repository_adapter import WorkflowRepositoryAdapter
 from plugins.bilibili_toolkit_builtin.api.routes import router as bilibili_toolkit_router
+from plugins.image_generation_builtin.api.routes import router as image_generation_router
 
 from billing.routers import billing
 from config.logging import (
@@ -660,6 +661,30 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                         module="main",
                         plugin="bilibili-toolkit-builtin",
                     ).info("已注册系统内置插件 bilibili-toolkit-builtin")
+
+                # 注册 image-generation-builtin 系统内置插件（如不存在）
+                existing_image_generation = db.query(PluginModel).filter(
+                    PluginModel.name == "image-generation-builtin"
+                ).first()
+                if not existing_image_generation:
+                    new_image_generation = PluginModel(
+                        id=str(uuid.uuid4()),
+                        name="image-generation-builtin",
+                        version="1.0.0",
+                        enabled=True,
+                        config={},
+                        category="builtin",
+                        author="Open-AwA Team",
+                        source="builtin",
+                        is_uninstallable=False,
+                        dependencies=[],
+                    )
+                    db.add(new_image_generation)
+                    logger.bind(
+                        event="builtin_plugin_seeded",
+                        module="main",
+                        plugin="image-generation-builtin",
+                    ).info("已注册系统内置插件 image-generation-builtin")
 
                 # 注册 user-profile-builtin 系统内置插件（如不存在）
                 existing_user_profile = db.query(PluginModel).filter(
@@ -1630,6 +1655,8 @@ app.include_router(preview_proxy_router)
 # 通知 HTTP API，前缀 /api/notifications 已内置在 router 定义中
 app.include_router(notifications_router)
 app.include_router(bilibili_toolkit_router, prefix=settings.API_V1_STR)
+# 生图内置插件路由，前缀 /api/image-generation 已内置在 router 定义中
+app.include_router(image_generation_router, prefix=settings.API_V1_STR)
 app.include_router(pets_router, prefix=settings.API_V1_STR)
 # [NEW] Task 3: 多 Agent 讨论任务路由，前缀 /api/discussions 已内置在 router 定义中
 app.include_router(discussions.router)

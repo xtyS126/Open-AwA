@@ -34,6 +34,10 @@ export interface ModelConfiguration {
   // 模态标签：输入/输出方向各自支持的模态列表
   input_modality?: string[]
   output_modality?: string[]
+  // 生图模型标记：标记后该配置仅用于图像生成（SD / GPT-Image / Qwen-Image 系列），不参与聊天
+  is_image_generation?: boolean
+  // 生图模型用途与限制描述：供 AI 在生图时准确选择模型
+  image_generation_usage?: string | null
   // Model metadata
   model_spec?: ModelSpec | null
   status?: string
@@ -226,6 +230,8 @@ export const modelsAPI = {
     sort_order?: number
     input_modality?: string
     output_modality?: string
+    is_image_generation?: boolean
+    image_generation_usage?: string
   }) => api.post('/billing/configurations', data),
 
   updateConfiguration: (configId: number, data: {
@@ -242,6 +248,8 @@ export const modelsAPI = {
     sort_order?: number
     input_modality?: string
     output_modality?: string
+    is_image_generation?: boolean
+    image_generation_usage?: string
   }) => api.put(`/billing/configurations/${configId}`, data),
 
   deleteConfiguration: (configId: number) =>

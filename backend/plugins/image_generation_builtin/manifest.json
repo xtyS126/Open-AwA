@@ -1,0 +1,17 @@
+{
+  "name": "image-generation-builtin",
+  "version": "1.0.0",
+  "pluginApiVersion": "1.0.0",
+  "description": "生图内置插件：通过已标记为生图模型的配置（SD / GPT-Image / Qwen-Image 系列）生成图片，支持 OpenAI 兼容、DashScope 原生与 SD WebUI 原生三种协议",
+  "author": "Open-AwA Team",
+  "permissions": ["network:http"],
+  "auto_authorize_permissions": true,
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "image_generate",
+      "version": "1.0.0",
+      "config": {}
+    }
+  ]
+}

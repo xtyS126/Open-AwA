@@ -212,7 +212,27 @@ def build_configured_model_hint(capabilities: Dict[str, Any], limit: int = 12) -
         return "当前未发现可枚举的已配置模型；若省略 provider 和 model，将回退到系统默认配置。"
 
     suffix = " 等" if len(entries) > len(labels) else ""
-    return f"当前可选的已配置模型: {'、'.join(labels)}{suffix}。"
+    hint = f"当前可选的已配置模型: {'、'.join(labels)}{suffix}。"
+
+    # 生图模型目录：仅供图像生成，用途描述辅助选择；生图类工具选择模型时优先参考
+    image_entries = (
+        configured_models.get("image_entries")
+        if isinstance(configured_models.get("image_entries"), list)
+        else []
+    )
+    if image_entries:
+        image_lines: List[str] = []
+        for entry in image_entries[:limit]:
+            if not isinstance(entry, dict):
+                continue
+            label = str(entry.get("label", "")).strip()
+            if not label:
+                continue
+            usage = str(entry.get("usage", "")).strip()
+            image_lines.append(f"{label}" + (f"（用途/限制：{usage}）" if usage else ""))
+        hint += f" 可用生图模型（仅用于图像生成，不可聊天）: {'、'.join(image_lines)}。"
+
+    return hint
 
 
 def match_keywords_against(

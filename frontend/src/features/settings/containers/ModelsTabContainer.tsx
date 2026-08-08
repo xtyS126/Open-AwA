@@ -42,6 +42,8 @@ interface NewConfigState {
   display_name: string
   description: string
   is_default: boolean
+  is_image_generation: boolean
+  image_generation_usage: string
 }
 
 /** 编辑配置表单状态 */
@@ -50,6 +52,8 @@ interface EditConfigFormState {
   description: string
   input_modality: string[]
   output_modality: string[]
+  is_image_generation: boolean
+  image_generation_usage: string
 }
 
 export function ModelsTabContainer() {
@@ -63,6 +67,8 @@ export function ModelsTabContainer() {
     display_name: '',
     description: '',
     is_default: false,
+    is_image_generation: false,
+    image_generation_usage: '',
   })
 
   // 提供商模型列表（用于添加表单的模型下拉框）
@@ -75,6 +81,8 @@ export function ModelsTabContainer() {
     description: '',
     input_modality: ['text'],
     output_modality: ['text'],
+    is_image_generation: false,
+    image_generation_usage: '',
   })
   const [savingConfigEdit, setSavingConfigEdit] = useState(false)
 
@@ -136,15 +144,20 @@ export function ModelsTabContainer() {
     }
 
     try {
+      // 生图模型不可作为聊天模型，标记生图后强制取消默认模型
+      const isImageGeneration = newConfig.is_image_generation
+      const isDefault = isImageGeneration ? false : newConfig.is_default
       await modelsAPI.createConfiguration({
         provider: newConfig.provider,
         model: newConfig.model,
         display_name: newConfig.display_name || undefined,
         description: newConfig.description || undefined,
-        is_default: newConfig.is_default,
+        is_default: isDefault,
+        is_image_generation: isImageGeneration,
+        image_generation_usage: isImageGeneration ? newConfig.image_generation_usage.trim() : undefined,
       })
       showNotification({ type: 'success', text: '添加成功' })
-      setNewConfig({ provider: '', model: '', display_name: '', description: '', is_default: false })
+      setNewConfig({ provider: '', model: '', display_name: '', description: '', is_default: false, is_image_generation: false, image_generation_usage: '' })
       setShowAddForm(false)
       setProviderModels([])
       await loadModelsData()
@@ -193,6 +206,8 @@ export function ModelsTabContainer() {
       description: config.description || '',
       input_modality: config.input_modality?.length ? [...config.input_modality] : ['text'],
       output_modality: config.output_modality?.length ? [...config.output_modality] : ['text'],
+      is_image_generation: !!config.is_image_generation,
+      image_generation_usage: config.image_generation_usage || '',
     })
   }, [])
 
@@ -218,11 +233,15 @@ export function ModelsTabContainer() {
     if (!editingConfigId) return
     setSavingConfigEdit(true)
     try {
+      // 生图模型不可作为聊天模型，标记生图后强制取消默认模型
+      const isImageGeneration = editConfigForm.is_image_generation
       await modelsAPI.updateConfiguration(editingConfigId, {
         display_name: editConfigForm.display_name || undefined,
         description: editConfigForm.description || undefined,
         input_modality: JSON.stringify(editConfigForm.input_modality),
         output_modality: JSON.stringify(editConfigForm.output_modality),
+        is_image_generation: isImageGeneration,
+        image_generation_usage: isImageGeneration ? editConfigForm.image_generation_usage.trim() : undefined,
       })
       showNotification({ type: 'success', text: '模型信息保存成功' })
       setEditingConfigId(null)

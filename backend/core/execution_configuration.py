@@ -443,6 +443,20 @@ class ExecutionConfigurationMixin:
                 raise
 
         if config:
+            # 生图模型（SD / GPT-Image / Qwen-Image 等）仅用于图像生成，禁止作为聊天模型，
+            # 命中即显式报错，不静默回退到其它模型
+            if getattr(config, "is_image_generation", False):
+                return {
+                    "ok": False,
+                    "error": self._build_error(
+                        "llm_model_is_image_only",
+                        "该模型被标记为生图模型，仅可用于图像生成，不能作为聊天模型",
+                        {
+                            "provider": config.provider,
+                            "model": config.model,
+                        }
+                    )
+                }
             provider = provider or config.provider
             model = model or config.model
             # 从加密存储中解密 API 密钥

@@ -238,6 +238,11 @@ class ModelConfiguration(Base):
     input_modality: Mapped[str] = mapped_column(Text, nullable=True)
     output_modality: Mapped[str] = mapped_column(Text, nullable=True)
 
+    # 生图模型标记：手动指定该配置用于图像生成（SD / GPT-Image / Qwen-Image 系列），不参与聊天
+    is_image_generation: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 生图模型用途与限制描述：供 AI 在生图时准确选择模型（如支持尺寸、风格、内容限制等）
+    image_generation_usage: Mapped[str] = mapped_column(Text, nullable=True)
+
     # Model metadata
     model_spec: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active")

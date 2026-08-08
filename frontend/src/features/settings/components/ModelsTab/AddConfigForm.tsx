@@ -17,6 +17,8 @@ interface AddConfigFormProps {
     display_name: string
     description: string
     is_default: boolean
+    is_image_generation: boolean
+    image_generation_usage: string
   }
   /** 供应商列表 */
   providers: ModelProvider[]
@@ -108,13 +110,36 @@ export function AddConfigForm({
         <div className={`${styles['form-group']} ${styles['checkbox-group']}`}>
           <input
             type="checkbox"
+            id="is-image-generation-new"
+            checked={newConfig.is_image_generation}
+            onChange={(e) => onFieldChange('is_image_generation', e.target.checked)}
+          />
+          <label htmlFor="is-image-generation-new">生图模型（SD / GPT-Image / Qwen-Image 系列）</label>
+        </div>
+        <div className={`${styles['form-group']} ${styles['checkbox-group']}`}>
+          <input
+            type="checkbox"
             id="is-default-new"
             checked={newConfig.is_default}
+            disabled={newConfig.is_image_generation}
             onChange={(e) => onFieldChange('is_default', e.target.checked)}
           />
           <label htmlFor="is-default-new">设为默认模型</label>
         </div>
       </div>
+      {newConfig.is_image_generation && (
+        <div className={styles['form-row']}>
+          <div className={styles['form-group']}>
+            <label>用途与限制（生图模型必填，供 AI 准确选择模型）</label>
+            <textarea
+              rows={3}
+              value={newConfig.image_generation_usage}
+              onChange={(e) => onFieldChange('image_generation_usage', e.target.value)}
+              placeholder="例如：写实风格插画，支持 1024x1024 / 1536x1024，单张生成，不能生成文字内容"
+            />
+          </div>
+        </div>
+      )}
       <div className={styles['form-actions']}>
         <button className={`btn btn-primary`} onClick={onAdd} disabled={adding}>
           {adding ? '添加中...' : '添加'}
