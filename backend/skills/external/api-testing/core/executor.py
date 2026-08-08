@@ -55,6 +55,7 @@ class TestExecutor:
         self.exception_handler = ExceptionHandler()
         self._client: Optional[httpx.AsyncClient] = None
         self._auth_token_obtained: Optional[str] = None
+        self._csrf_token: Optional[str] = None
 
     # ========================================================================
     # 生命周期
@@ -87,7 +88,7 @@ class TestExecutor:
 
     async def _ensure_auth_token(self):
         """
-        确保存在有效的认证 Token
+        确保存在有效的认证 Token 与 CSRF Token
 
         优先级:
             1. 配置中直接提供的 auth_token
@@ -95,23 +96,41 @@ class TestExecutor:
         """
         if self.config.auth_token:
             self._auth_token_obtained = self.config.auth_token
-            return
-
-        if self.config.auth_username and self.config.auth_password:
+        elif self.config.auth_username and self.config.auth_password:
             await self._login_and_get_token()
+
+        # 获取 CSRF Token（双提交 Cookie 模式：状态变更请求需 X-CSRF-Token header；
+        # 即使 Bearer 认证豁免 CSRF，httpx cookie jar 记住 csrf-token 响应的 Cookie 后也会触发校验）
+        if self._auth_token_obtained:
+            await self._obtain_csrf_token()
+
+    async def _obtain_csrf_token(self):
+        """通过已认证的会话获取 CSRF Token，供状态变更请求附加"""
+        try:
+            client = await self._get_client()
+            resp = await client.get(
+                "/api/auth/csrf-token",
+                headers={"Authorization": f"Bearer {self._auth_token_obtained}"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                self._csrf_token = data.get("csrf_token") or data.get("token") or ""
+        except Exception as e:
+            if self.config.verbose:
+                logger.warning(f"获取 CSRF Token 失败: {e}")
 
     async def _login_and_get_token(self):
         """通过用户凭证自动登录获取 Token"""
         try:
             client = await self._get_client()
             # 先获取 CSRF Token
-            csrf_resp = await client.get("/api/v1/auth/csrf-token")
+            csrf_resp = await client.get("/api/auth/csrf-token")
             csrf_data = csrf_resp.json()
             csrf_token = csrf_data.get("token", "")
 
             # 执行登录
             login_resp = await client.post(
-                "/api/v1/auth/login",
+                "/api/auth/login",
                 json={
                     "username": self.config.auth_username,
                     "password": self.config.auth_password,
@@ -146,6 +165,14 @@ class TestExecutor:
         elif test_case.requires_auth and not self._auth_token_obtained:
             if self.config.verbose:
                 logger.debug(f"用例 [{test_case.id}] 需要认证但无可用 Token")
+
+        # 状态变更请求附加 CSRF Token（双提交 Cookie 模式），防止被中间件 403 拒绝
+        if (
+            test_case.method in ("POST", "PUT", "PATCH", "DELETE")
+            and self._csrf_token
+            and "X-CSRF-Token" not in headers
+        ):
+            headers["X-CSRF-Token"] = self._csrf_token
 
         return headers
 
@@ -185,6 +212,15 @@ class TestExecutor:
 
         method = test_case.method.value
         url = test_case.path
+        # 状态变更请求在执行前动态刷新 CSRF Token：
+        # 双提交模式下每个 csrf-token 端点响应都会轮换 Cookie，
+        # 用例间并发执行会让旧的 raw token 与最新 Cookie 失配（invalid_csrf_token 403）
+        if (
+            test_case.requires_auth
+            and method in ("POST", "PUT", "PATCH", "DELETE")
+            and self._auth_token_obtained
+        ):
+            await self._obtain_csrf_token()
         headers = self._get_auth_headers(test_case)
         query_params = test_case.query_params
         body = test_case.body
@@ -378,6 +414,9 @@ class TestExecutor:
                 f"开始执行 {len(active_cases)} 个测试用例 "
                 f"(基础URL: {self.config.base_url}, 并发数: {self.config.max_concurrency})"
             )
+
+        # 先确保认证 Token 就绪（直传 token 或用户名密码登录），否则 requires_auth 用例会 401
+        await self._ensure_auth_token()
 
         return await self.execute_batch(active_cases)
 

@@ -170,7 +170,9 @@ def sanitize_for_logging(value: Any, key_name: str = "") -> Any:
     if isinstance(value, str):
         return _mask_secret_text(value)
 
-    return value
+    # 未知类型对象（异常实例、datetime、Path 等）统一转字符串，
+    # 保证日志缓冲与 /api/logs 响应始终可 JSON 序列化
+    return str(value)
 
 
 def _patch_record(record: Dict[str, Any], service_name: str) -> None:
@@ -189,7 +191,11 @@ def _patch_record(record: Dict[str, Any], service_name: str) -> None:
     extra["event"] = extra.get("event") or "app_log"
 
     record["message"] = sanitize_for_logging(record.get("message"))
-    record["extra"] = sanitize_for_logging(extra)
+    # 脱敏后的 extra 同时用于 record 与缓冲区条目；
+    # 此前缓冲区直接使用未脱敏的局部变量 extra，异常对象（如 httpx.ConnectError）
+    # 会原样进入 _LOG_BUFFER，导致 /api/logs 序列化时抛 PydanticSerializationError
+    sanitized_extra = sanitize_for_logging(extra)
+    record["extra"] = sanitized_extra
 
     level_obj = record.get("level")
     level_name = getattr(level_obj, "name", "")
@@ -203,7 +209,7 @@ def _patch_record(record: Dict[str, Any], service_name: str) -> None:
         "event": str(extra.get("event", "")),
         "message": str(record.get("message", "")),
         "request_id": str(extra.get("request_id", "")),
-        "extra": extra,
+        "extra": sanitized_extra,
     }
 
     # 从 record 中提取异常堆栈（loguru 在 logger.exception() 时写入 record["exception"]）
@@ -226,9 +232,9 @@ def _patch_record(record: Dict[str, Any], service_name: str) -> None:
                     f"[logging] traceback 格式化失败: {fmt_exc}\n"
                 )
 
-    # 从 extra 中提取结构化错误字段
+    # 从 extra 中提取结构化错误字段（使用脱敏后的值，保证可 JSON 序列化）
     for err_field in ("error_type", "error_message", "error_code", "status_code"):
-        val = extra.get(err_field)
+        val = sanitized_extra.get(err_field)
         if val and err_field not in log_event:
             log_event[err_field] = val
 

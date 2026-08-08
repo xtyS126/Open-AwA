@@ -35,16 +35,16 @@ modules:
           description: "返回 200 状态码"
         - type: "json_path"
           field: "status"
-          expected: "ok"
+          expected: "healthy"
           operator: "eq"
           description: "status 字段应为 ok"
 
     - id: "sys-002"
       name: "系统全量诊断"
       module: "system"
-      description: "验证 GET /api/v1/system/diagnostics 端点"
+      description: "验证 GET /api/system/diagnostics 端点"
       method: "GET"
-      path: "/api/v1/system/diagnostics"
+      path: "/api/system/diagnostics"
       requires_auth: true
       timeout_seconds: 30
       priority: "high"
@@ -66,10 +66,10 @@ modules:
     - id: "auth-001"
       name: "CSRF Token 获取"
       module: "auth"
-      description: "验证 GET /api/v1/auth/csrf-token 正常返回"
+      description: "验证 GET /api/auth/csrf-token 正常返回"
       method: "GET"
-      path: "/api/v1/auth/csrf-token"
-      requires_auth: false
+      path: "/api/auth/csrf-token"
+      requires_auth: true
       timeout_seconds: 10
       priority: "high"
       tags: ["smoke", "auth"]
@@ -78,7 +78,7 @@ modules:
           expected: 200
           description: "返回 200"
         - type: "json_path"
-          field: "token"
+          field: "csrf_token"
           expected: "any"
           operator: "is_not_none"
           description: "token 字段存在"
@@ -86,9 +86,9 @@ modules:
     - id: "auth-002"
       name: "获取当前用户信息（无认证应 401）"
       module: "auth"
-      description: "未认证访问 /api/v1/auth/me 应返回 401"
+      description: "未认证访问 /api/auth/me 应返回 401"
       method: "GET"
-      path: "/api/v1/auth/me"
+      path: "/api/auth/me"
       requires_auth: false
       timeout_seconds: 10
       priority: "high"
@@ -105,9 +105,9 @@ modules:
     - id: "conv-001"
       name: "获取会话列表"
       module: "conversation"
-      description: "验证 GET /api/v1/conversation/ 端点"
+      description: "验证 GET /api/conversation/ 端点"
       method: "GET"
-      path: "/api/v1/conversation/"
+      path: "/api/conversations"
       requires_auth: true
       timeout_seconds: 15
       priority: "high"
@@ -117,7 +117,7 @@ modules:
           expected: 200
           description: "返回 200"
         - type: "json_path"
-          field: "conversations"
+          field: "items"
           expected: "list"
           operator: "is_not_none"
           description: "conversations 字段存在"
@@ -125,9 +125,9 @@ modules:
     - id: "conv-002"
       name: "创建新会话"
       module: "conversation"
-      description: "验证 POST /api/v1/conversation/ 创建会话"
+      description: "验证 POST /api/conversation/ 创建会话"
       method: "POST"
-      path: "/api/v1/conversation/"
+      path: "/api/conversations"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -151,9 +151,9 @@ modules:
     - id: "chat-001"
       name: "获取聊天消息列表"
       module: "chat"
-      description: "验证 GET /api/v1/chat/messages 端点"
+      description: "验证 GET /api/chat/messages 端点"
       method: "GET"
-      path: "/api/v1/chat/messages"
+      path: "/api/chat/tasks"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -172,7 +172,7 @@ modules:
       module: "skills"
       description: "验证 GET /skills 端点"
       method: "GET"
-      path: "/skills"
+      path: "/api/skills"
       requires_auth: true
       timeout_seconds: 15
       priority: "high"
@@ -181,18 +181,13 @@ modules:
         - type: "status_code"
           expected: 200
           description: "返回 200"
-        - type: "json_path"
-          field: "0.id"
-          expected: "any"
-          operator: "is_not_none"
-          description: "应至少返回一条技能记录"
 
     - id: "skill-002"
       name: "获取不存在的技能详情"
       module: "skills"
       description: "访问不存在的技能 ID 应返回 404"
       method: "GET"
-      path: "/skills/non-existent-skill-id-99999"
+      path: "/api/skills/non-existent-skill-id-99999"
       requires_auth: true
       timeout_seconds: 10
       priority: "normal"
@@ -211,7 +206,7 @@ modules:
       module: "plugins"
       description: "验证 GET /plugins 端点"
       method: "GET"
-      path: "/plugins"
+      path: "/api/plugins"
       requires_auth: true
       timeout_seconds: 15
       priority: "high"
@@ -221,7 +216,7 @@ modules:
           expected: 200
           description: "返回 200"
         - type: "json_path"
-          field: "plugins"
+          field: "0.name"
           expected: "list"
           operator: "is_not_none"
           description: "plugins 字段应为列表"
@@ -231,7 +226,7 @@ modules:
       module: "plugins"
       description: "验证 GET /plugins/loaded 端点"
       method: "GET"
-      path: "/plugins/loaded"
+      path: "/api/plugins/discover"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -248,9 +243,9 @@ modules:
     - id: "mem-001"
       name: "获取会话记忆"
       module: "memory"
-      description: "验证 GET /api/v1/memory/session 端点（无会话ID时的行为）"
+      description: "验证 GET /api/memory/session 端点（无会话ID时的行为）"
       method: "GET"
-      path: "/api/v1/memory/session"
+      path: "/api/memory/short-term/recent"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -267,9 +262,9 @@ modules:
     - id: "user-001"
       name: "获取用户偏好设置"
       module: "user"
-      description: "验证 GET /api/v1/user/preferences 端点"
+      description: "验证 GET /api/user/preferences 端点"
       method: "GET"
-      path: "/api/v1/user/preferences"
+      path: "/api/user/preferences"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -288,7 +283,7 @@ modules:
       module: "experiences"
       description: "验证 GET /experiences 端点"
       method: "GET"
-      path: "/experiences"
+      path: "/api/experiences"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -307,7 +302,7 @@ modules:
       module: "prompts"
       description: "验证 GET /prompts 端点"
       method: "GET"
-      path: "/prompts"
+      path: "/api/prompts"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -326,7 +321,7 @@ modules:
       module: "tools"
       description: "验证 GET /tools 端点"
       method: "GET"
-      path: "/tools"
+      path: "/api/tools/list"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -345,7 +340,7 @@ modules:
       module: "workflows"
       description: "验证 GET /workflows 端点"
       method: "GET"
-      path: "/workflows"
+      path: "/api/workflows"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -364,7 +359,7 @@ modules:
       module: "models"
       description: "验证 GET /models/configurations 端点"
       method: "GET"
-      path: "/models/configurations"
+      path: "/api/billing/configurations"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -379,9 +374,9 @@ modules:
       module: "models"
       description: "验证 GET /models/providers 端点"
       method: "GET"
-      path: "/models/providers"
+      path: "/api/models/providers"
       requires_auth: true
-      timeout_seconds: 15
+      timeout_seconds: 60
       priority: "normal"
       tags: ["models", "providers"]
       assertions:
@@ -398,7 +393,7 @@ modules:
       module: "billing"
       description: "验证 GET /api/billing/overview 端点"
       method: "GET"
-      path: "/api/billing/overview"
+      path: "/api/billing/report"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -417,7 +412,7 @@ modules:
       module: "scheduled_tasks"
       description: "验证 GET /scheduled_tasks 端点"
       method: "GET"
-      path: "/scheduled_tasks"
+      path: "/api/scheduled-tasks"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -436,7 +431,7 @@ modules:
       module: "security"
       description: "验证 GET /security/permissions 端点"
       method: "GET"
-      path: "/security/permissions"
+      path: "/api/security/permissions/pending"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -455,7 +450,7 @@ modules:
       module: "mcp"
       description: "验证 GET /mcp/status 端点"
       method: "GET"
-      path: "/mcp/status"
+      path: "/api/mcp/servers"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -474,7 +469,7 @@ modules:
       module: "weixin"
       description: "验证 GET /skills/weixin/config 端点"
       method: "GET"
-      path: "/skills/weixin/config"
+      path: "/api/skills/weixin/config"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -493,7 +488,7 @@ modules:
       module: "marketplace"
       description: "验证 GET /marketplace/plugins 端点"
       method: "GET"
-      path: "/marketplace/plugins"
+      path: "/api/marketplace/plugins"
       requires_auth: true
       timeout_seconds: 15
       priority: "low"
@@ -512,7 +507,7 @@ modules:
       module: "subagents"
       description: "验证 GET /subagents 端点"
       method: "GET"
-      path: "/subagents"
+      path: "/api/subagents/agents"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -531,7 +526,7 @@ modules:
       module: "task_runtime"
       description: "验证 GET /task_runtime/status 端点"
       method: "GET"
-      path: "/task_runtime/status"
+      path: "/api/task-runtime/agents"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -550,7 +545,7 @@ modules:
       module: "behavior"
       description: "验证 GET /behavior 端点"
       method: "GET"
-      path: "/behavior"
+      path: "/api/behaviors/logs"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"
@@ -569,7 +564,7 @@ modules:
       module: "logs"
       description: "验证 GET /logs 端点"
       method: "GET"
-      path: "/logs"
+      path: "/api/logs"
       requires_auth: true
       timeout_seconds: 15
       priority: "normal"

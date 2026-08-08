@@ -231,11 +231,10 @@ async def run_full_test_suite(
         await executor.close()
 
     # 4. 生成报告
-    report = build_and_save_report(
-        results=results,
-        output_dir=output_dir,
-        config=config,
-    )
+    # build_and_save_report 返回的是已保存文件路径列表，摘要需由报告对象提供
+    generator = ReportGenerator(output_dir=output_dir)
+    report = generator.build_report(results, config=config)
+    generator.save_report(report)
 
     # 5. 打印摘要
     s = report.summary

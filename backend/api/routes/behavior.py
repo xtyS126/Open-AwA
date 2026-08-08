@@ -6,7 +6,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 from db.models import get_db, BehaviorLog, User
@@ -190,7 +190,7 @@ async def get_behavior_logs(
     action_type: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-) -> Dict[str, Any]:
+) -> List[Dict[str, Any]]:
     """
     获取当前用户的行为日志，按用户ID过滤防止信息泄露。
     支持分页和按行为类型筛选。
