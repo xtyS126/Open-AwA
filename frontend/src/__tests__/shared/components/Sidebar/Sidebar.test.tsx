@@ -66,6 +66,24 @@ describe('Sidebar', () => {
     expect(pluginLink.className).toMatch(/active/)
   })
 
+  it('记忆/技能/设置菜单项带移动端隐藏标记（底部 Tab Bar 已有直达）', () => {
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <Sidebar />
+      </MemoryRouter>
+    )
+
+    const memoryLink = screen.getByRole('link', { name: '记忆' })
+    const skillsLink = screen.getByRole('link', { name: '技能' })
+    const settingsLink = screen.getByRole('link', { name: '设置' })
+    expect(memoryLink.className).toContain(styles['mobile-hidden-item'])
+    expect(skillsLink.className).toContain(styles['mobile-hidden-item'])
+    expect(settingsLink.className).toContain(styles['mobile-hidden-item'])
+
+    // 定时任务等常规入口不受影响
+    expect(screen.getByRole('link', { name: '定时任务' }).className).not.toContain(styles['mobile-hidden-item'])
+  })
+
   it('点击问题反馈按钮打开反馈面板', () => {
     render(
       <MemoryRouter initialEntries={['/chat']}>

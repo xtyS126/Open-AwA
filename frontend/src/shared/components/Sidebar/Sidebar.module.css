@@ -447,6 +447,11 @@
 
 /* ---- 移动端响应式（≤ 768px，对应 --breakpoint-md 令牌）：固定抽屉 + 遮罩 ---- */
 @media (max-width: 768px) {
+  /* 移动端抽屉内隐藏底部 Tab Bar 已有直达入口的菜单项（记忆/技能/设置），桌面端侧边栏保留 */
+  .mobile-hidden-item {
+    display: none;
+  }
+
   /* 移动端显示左上角用户区 */
   .mobile-user-area {
     display: flex;

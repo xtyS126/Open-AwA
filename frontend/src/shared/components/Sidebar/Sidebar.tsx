@@ -26,6 +26,8 @@ interface MenuItem {
   path: string
   label: string
   iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'im' | 'roleMarket' | 'subagents' | 'vibeCoding' | 'discussions' | 'userProfile' | 'pets'
+  /** 移动端抽屉（≤768px）隐藏：底部 Tab Bar 已有直达入口，抽屉内不重复展示（桌面端侧边栏保留） */
+  mobileHidden?: boolean
 }
 
 interface MenuGroup {
@@ -181,13 +183,13 @@ function MobileUserArea() {
         { path: '/roles', label: t('sidebar.roles'), iconType: 'roles' as const },
         { path: '/role-market', label: t('sidebar.roleMarket'), iconType: 'roleMarket' as const },
         { path: '/pets', label: t('sidebar.pets'), iconType: 'pets' as const },
-        { path: '/skills', label: t('sidebar.skills'), iconType: 'skills' as const },
+        { path: '/skills', label: t('sidebar.skills'), iconType: 'skills' as const, mobileHidden: true },
         { path: '/scheduled-tasks', label: t('sidebar.scheduledTasks'), iconType: 'scheduledTasks' as const },
         { path: '/workflows', label: t('sidebar.workflows'), iconType: 'scheduledTasks' as const },
         { path: '/subagents', label: t('sidebar.subagents'), iconType: 'subagents' as const },
         { path: '/discussions', label: t('sidebar.discussions'), iconType: 'discussions' as const },
         { path: '/plugins/manage', label: t('sidebar.plugins'), iconType: 'plugins' as const },
-        { path: '/memory', label: t('sidebar.memory'), iconType: 'memory' as const },
+        { path: '/memory', label: t('sidebar.memory'), iconType: 'memory' as const, mobileHidden: true },
         { path: '/experience', label: t('sidebar.experience'), iconType: 'experience' as const },
       ]
     },
@@ -196,7 +198,7 @@ function MobileUserArea() {
       title: t('sidebar.settings'),
       items: [
         { path: '/user', label: t('user.center'), iconType: 'userProfile' as const },
-        { path: '/settings', label: t('sidebar.settings'), iconType: 'settings' as const },
+        { path: '/settings', label: t('sidebar.settings'), iconType: 'settings' as const, mobileHidden: true },
         { path: '/im', label: t('sidebar.im'), iconType: 'im' as const },
       ]
     }
@@ -388,7 +390,7 @@ function MobileUserArea() {
                     <Link
                       key={item.path}
                       to={item.path}
-                      className={`${styles['sidebar-item']} ${active ? styles['active'] : ''}`}
+                      className={`${styles['sidebar-item']} ${active ? styles['active'] : ''} ${item.mobileHidden ? styles['mobile-hidden-item'] : ''}`}
                       data-testid="sidebar-item"
                       aria-current={active ? 'page' : undefined}
                     >
