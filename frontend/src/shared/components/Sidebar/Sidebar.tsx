@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Link, useLocation, useNavigate } from '@/shared/routing'
+import { Link, useLocation } from '@/shared/routing'
 import {
   MessageSquare, LayoutDashboard, CreditCard, Zap,
   Clock, Blocks, Brain, Settings, Award, Radio,
@@ -8,18 +8,13 @@ import {
   MessagesSquare,
   MessageSquareWarning,
   Layers,
-  LogOut,
-  UserRound,
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { useMobileNavStore } from '@/shared/store/mobileNavStore'
-import { useAuthStore } from '@/shared/store/authStore'
 import { useI18nStore } from '@/i18n'
 import { UserFloatingArea } from '../UserFloatingArea'
 import { Tooltip } from '@/shared/components/ui'
 import { useIssueFeedbackStore } from '@/shared/store/issueFeedbackStore'
-import { authAPI } from '@/shared/api/api'
-import { appLogger } from '@/shared/utils/logger'
 import styles from './Sidebar.module.css'
 
 interface MenuItem {
@@ -60,99 +55,6 @@ const renderIcon = (type: string, size = 18) => {
     case 'userProfile': return <Layers size={size} />
     default: return <MessageSquare size={size} />
   }
-}
-
-/**
- * 移动端左上角用户区：替代原汉堡按钮位置，展示头像 + 姓名。
- * 点击后停留在当前页面（不整页跳转），弹出用户菜单浮层：
- * 用户中心入口 / 退出登录；完整导航抽屉仍由底部 Tab Bar "更多"打开。
- */
-function MobileUserArea() {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const user = useAuthStore((s) => s.user)
-  const logout = useAuthStore((s) => s.logout)
-  const { t } = useI18nStore()
-  const [open, setOpen] = useState(false)
-  /* 仅在聊天页显示：设置/记忆/技能等页面顶部有各自导航，不重复展示用户区浮层 */
-  const isChatPage = location.pathname === '/chat' || location.pathname.startsWith('/chat/')
-  if (!isChatPage || !user) return null
-  const initial = (user.username || 'U')[0].toUpperCase()
-
-  /* 退出登录：接口失败也清除本地会话并回登录页（与 UserFloatingArea 行为一致） */
-  const handleLogout = async () => {
-    try {
-      await authAPI.logout()
-    } catch (error) {
-      appLogger.warning({
-        event: 'logout_api_failed',
-        module: 'auth',
-        message: 'logout api call failed',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
-    }
-    logout()
-    navigate('/login', { replace: true })
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        className={styles['mobile-user-area']}
-        onClick={() => setOpen((o) => !o)}
-        title={t('user.center')}
-        aria-label={t('user.center')}
-        aria-expanded={open}
-        data-testid="mobile-user-area"
-      >
-        <span className={styles['mobile-user-avatar']}>{initial}</span>
-        <span className={styles['mobile-user-name']}>{user.username}</span>
-      </button>
-      {/* 用户菜单浮层：点击头像在当前页弹出，遮罩点击关闭，不卸载当前页面 */}
-      {open && (
-        <>
-          <div
-            className={styles['user-menu-overlay']}
-            data-testid="user-menu-overlay"
-            onClick={() => setOpen(false)}
-          />
-          <div
-            className={styles['user-menu']}
-            role="menu"
-            aria-label={t('user.center')}
-            data-testid="user-menu"
-          >
-            <div className={styles['user-menu-header']}>
-              <span className={styles['mobile-user-avatar']}>{initial}</span>
-              <span className={styles['user-menu-name']}>{user.username}</span>
-            </div>
-            <button
-              type="button"
-              role="menuitem"
-              className={styles['user-menu-item']}
-              onClick={() => {
-                setOpen(false)
-                navigate('/user')
-              }}
-            >
-              <UserRound size={16} />
-              {t('user.center')}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className={styles['user-menu-item']}
-              onClick={handleLogout}
-            >
-              <LogOut size={16} />
-              {t('user.logout')}
-            </button>
-          </div>
-        </>
-      )}
-    </>
-  )
 }
 
   function Sidebar() {
@@ -305,9 +207,6 @@ function MobileUserArea() {
 
   return (
     <>
-      {/* 移动端左上角用户区：头像 + 姓名，点击进入用户中心（替代原汉堡按钮） */}
-      <MobileUserArea />
-
       {/* 移动端遮罩层：始终渲染，通过 visible 类切换可见性实现 opacity 渐变 */}
       <div
         className={`${styles['mobile-overlay']} ${mobileOpen ? styles['visible'] : ''}`}

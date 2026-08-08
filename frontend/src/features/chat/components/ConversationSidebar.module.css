@@ -404,3 +404,113 @@
     min-width: min(280px, 85vw);
   }
 }
+
+/* ---- 移动端用户信息卡片（历史侧栏顶部，位于"历史对话"标题上方）---- */
+/* 默认隐藏：桌面端历史侧栏常驻，用户信息由侧边栏底部用户区承担，不重复展示 */
+.user-card {
+  display: none;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.user-card-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text);
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.user-card-btn:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.user-card-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.user-card-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-card-chevron {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  transition: transform var(--transition-fast);
+}
+
+/* 展开态：箭头旋转 180 度 */
+.user-card-btn[aria-expanded='true'] .user-card-chevron {
+  transform: rotate(180deg);
+}
+
+/* 菜单遮罩：fixed 相对历史侧栏（transform 建立包含块）定位，inset 覆盖整个侧栏区域 */
+.user-card-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1190;
+  background: transparent;
+}
+
+/* 用户菜单浮层：fixed 相对侧栏定位，位于卡片（safe-area-top + 52px 高）正下方 */
+.user-card-menu {
+  position: fixed;
+  top: calc(var(--safe-area-top) + 58px);
+  left: 8px;
+  z-index: 1200;
+  min-width: 180px;
+  padding: var(--space-1);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.user-card-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.user-card-menu-item:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text);
+}
+
+/* 移动端（≤ 768px，对应 --breakpoint-md 令牌）：历史侧栏内显示用户信息卡片 */
+@media (max-width: 768px) {
+  .user-card {
+    display: block;
+  }
+}

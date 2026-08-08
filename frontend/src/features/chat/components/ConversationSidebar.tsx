@@ -1,8 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { Virtuoso } from 'react-virtuoso'
-import { PanelLeft, Plus, Search, PencilLine, Trash2, RotateCcw } from 'lucide-react'
+import { ChevronDown, LogOut, PanelLeft, Plus, Search, PencilLine, Trash2, RotateCcw, UserRound } from 'lucide-react'
 import type { ConversationSessionSummary } from '@/features/chat/types'
 import { useI18nStore, t as i18nT } from '@/i18n'
+import { useNavigate } from '@/shared/routing'
+import { useAuthStore } from '@/shared/store/authStore'
+import { authAPI } from '@/shared/api/api'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './ConversationSidebar.module.css'
 
 interface ConversationSidebarProps {
@@ -42,6 +46,91 @@ function formatTimestamp(value?: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
+}
+
+/**
+ * 历史侧栏移动端用户信息卡片：头像 + 用户名，点击展开用户中心/退出登录菜单。
+ * 聊天页左上角头像入口已删除，用户信息统一在历史侧栏顶部展示（仅移动端 ≤768px 显示）。
+ */
+function MobileUserCard() {
+  const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.logout)
+  const { t } = useI18nStore()
+  const [open, setOpen] = useState(false)
+  if (!user) return null
+  const initial = (user.username || 'U')[0].toUpperCase()
+
+  /* 退出登录：接口失败也清除本地会话并回登录页（与桌面端用户区行为一致） */
+  const handleLogout = async () => {
+    try {
+      await authAPI.logout()
+    } catch (error) {
+      appLogger.warning({
+        event: 'logout_api_failed',
+        module: 'auth',
+        message: 'logout api call failed',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+    logout()
+    navigate('/login', { replace: true })
+  }
+
+  return (
+    <div className={styles['user-card']}>
+      <button
+        type="button"
+        className={styles['user-card-btn']}
+        onClick={() => setOpen((o) => !o)}
+        aria-label={t('user.center')}
+        aria-expanded={open}
+        data-testid="history-user-card"
+      >
+        <span className={styles['user-card-avatar']}>{initial}</span>
+        <span className={styles['user-card-name']}>{user.username}</span>
+        <ChevronDown size={14} className={styles['user-card-chevron']} />
+      </button>
+      {/* 用户菜单浮层：fixed 定位相对历史侧栏（transform 建立包含块），遮罩 inset 覆盖整个侧栏区域 */}
+      {open && (
+        <>
+          <div
+            className={styles['user-card-overlay']}
+            data-testid="history-user-card-overlay"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className={styles['user-card-menu']}
+            role="menu"
+            aria-label={t('user.center')}
+            data-testid="history-user-card-menu"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className={styles['user-card-menu-item']}
+              onClick={() => {
+                setOpen(false)
+                navigate('/user')
+              }}
+            >
+              <UserRound size={16} />
+              {t('user.center')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className={styles['user-card-menu-item']}
+              onClick={handleLogout}
+            >
+              <LogOut size={16} />
+              {t('user.logout')}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
 }
 
 function ConversationSidebar(props: ConversationSidebarProps) {
@@ -237,6 +326,8 @@ function ConversationSidebar(props: ConversationSidebarProps) {
 
   return (
     <aside className={`${styles['sidebar']} ${open ? '' : styles['closed']}`.trim()} aria-label="聊天历史侧边栏">
+      {/* 移动端用户信息卡片：位于"历史对话"标题上方（仅 ≤768px 显示） */}
+      <MobileUserCard />
       <div className={styles['header']}>
         <span className={styles['title']}>{t('chat.history.title')}</span>
         <div className={styles['headerActions']}>

@@ -310,119 +310,6 @@
   display: none;
 }
 
-/* ---- 移动端左上角用户区（替代原汉堡按钮）：头像 + 姓名，点击弹出用户菜单 ---- */
-.mobile-user-area {
-  display: none;
-  position: fixed;
-  /* 头像常驻侧边栏（抽屉）上方：safe-area-top 之上 12px，抽屉已下调至 60px 处开始 */
-  top: calc(var(--safe-area-top) + 12px);
-  left: 8px;
-  /* 高于抽屉（1000）与遮罩（999）：抽屉打开时头像仍清晰可见、可点击 */
-  z-index: 1002;
-  height: 40px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 6px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
-  color: var(--color-text);
-  cursor: pointer;
-  transition: background var(--transition-fast), transform var(--transition-fast);
-}
-
-.mobile-user-area:hover {
-  background: transparent;
-}
-
-.mobile-user-area:active {
-  background: var(--color-bg-tertiary);
-  transform: scale(0.96);
-}
-
-.mobile-user-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.mobile-user-name {
-  font-size: 14px;
-  font-weight: 500;
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ---- 移动端用户菜单浮层：点击头像在当前页弹出，不再整页跳转 ---- */
-.user-menu-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  background: transparent;
-}
-
-.user-menu {
-  position: fixed;
-  /* 定位在用户区（safe-area-top + 12px + 40px 高 + 8px 间距）正下方，与下调后的抽屉顶部齐平 */
-  top: calc(var(--safe-area-top) + 60px);
-  left: 8px;
-  z-index: 1201;
-  min-width: 180px;
-  padding: var(--space-1);
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
-}
-
-.user-menu-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.user-menu-name {
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
-  color: var(--color-text);
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-menu-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-secondary);
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.user-menu-item:hover {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text);
-}
-
 /* 移动端遮罩层（始终渲染，通过 .visible 类切换可见性以实现 opacity 渐变过渡）*/
 .mobile-overlay {
   display: none;
@@ -451,11 +338,6 @@
   /* 移动端抽屉内隐藏底部 Tab Bar 已有直达入口的菜单项（记忆/技能/设置），桌面端侧边栏保留 */
   .mobile-hidden-item {
     display: none;
-  }
-
-  /* 移动端显示左上角用户区 */
-  .mobile-user-area {
-    display: flex;
   }
 
   /* 移动端始终渲染遮罩 DOM，通过 .visible 类切换可见性 */
