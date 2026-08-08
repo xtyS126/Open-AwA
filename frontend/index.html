@@ -2,8 +2,13 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <!-- 移动端 viewport：viewport-fit=cover 支持全面屏安全区域，maximum-scale=5 保留缩放能力（不设置 user-scalable=no 以保持可访问性） -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
+    <!-- 移动端 viewport：使用默认 viewport-fit=auto（禁止写回 cover）——
+         Android 15+/16 强制 edge-to-edge（targetSdk 36）下 cover 让 WebView 内容延伸到状态栏后，
+         env(safe-area-inset-top) 返回真实状态栏高度（真机 top=状态栏+24px≈60px+），
+         而 MuMu 等旧系统镜像模拟器 env() 恒为 0（top=24px），两端位置不一致。
+         auto 模式 WebView 自动把布局限制在系统安全区内，env() 两端恒为 0，视觉完全一致。
+         maximum-scale=5 保留缩放能力（不设置 user-scalable=no 以保持可访问性） -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
     <!-- 主题色：根据系统深浅色模式动态切换状态栏与窗口标题颜色（信号青主色） -->
     <meta name="theme-color" content="#0f766e" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />

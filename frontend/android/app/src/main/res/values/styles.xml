@@ -13,6 +13,10 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- windowBackground 按深浅模式与前端页面背景一致（values-night 提供深色值）：
+             去掉 viewport-fit=cover 后 Android 15+ 强制全面屏（edge to edge）下，WebView 布局
+             限制在安全区内，状态栏/导航栏区域显示该背景，必须与页面 color-bg 无缝衔接 -->
+        <item name="android:windowBackground">@color/window_background</item>
     </style>
 
 

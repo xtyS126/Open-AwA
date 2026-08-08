@@ -5,4 +5,7 @@
     <color name="colorPrimaryDark">#0f766e</color>
     <color name="colorAccent">#0f766e</color>
     <color name="splash_background">#0b1220</color>
+    <!-- 浅色模式下原生层 window 背景：与前端 tokens.css light 主题 color-bg #ffffff 一致，
+         去掉 viewport-fit=cover 后 Android 15+ 强制全面屏（edge to edge）的状态栏区域显示该背景，需与页面无缝衔接 -->
+    <color name="window_background">#ffffff</color>
 </resources>

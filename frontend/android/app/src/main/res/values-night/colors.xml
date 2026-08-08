@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色模式下原生层 window 背景：与前端 tokens.css dark 主题 color-bg #0f172a 一致 -->
+    <color name="window_background">#0f172a</color>
+</resources>
