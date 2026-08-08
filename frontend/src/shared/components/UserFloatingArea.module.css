@@ -82,3 +82,11 @@
   display: none;
 }
 
+/* 移动端（≤ 768px，对应 --breakpoint-md 令牌）：抽屉底部用户区整体隐藏——
+   移动端用户中心/退出登录入口由聊天页左上角头像菜单承担，
+   抽屉里重复的 admin 跳转入口（点击进 /user）不再展示 */
+@media (max-width: 768px) {
+  .floating-area {
+    display: none;
+  }
+}
