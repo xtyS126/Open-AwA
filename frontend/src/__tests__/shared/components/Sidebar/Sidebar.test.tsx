@@ -6,12 +6,13 @@ import { RouterTestProvider as MemoryRouter } from '@/shared/routing/testing'
 import { useI18nStore } from '@/i18n'
 import { useIssueFeedbackStore } from '@/shared/store/issueFeedbackStore'
 import { useMobileNavStore } from '@/shared/store/mobileNavStore'
+import { useAuthStore } from '@/shared/store/authStore'
 import styles from '@/shared/components/Sidebar/Sidebar.module.css'
 
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
   weixinAPI: { getConfig: vi.fn().mockResolvedValue({ data: {} }) },
-  authAPI: { getMe: vi.fn().mockResolvedValue({ data: {} }) },
+  authAPI: { getMe: vi.fn().mockResolvedValue({ data: {} }), logout: vi.fn().mockResolvedValue({ data: {} }) },
   billingAPI: { getSummary: vi.fn().mockResolvedValue({ data: {} }) },
   chatAPI: { getHistory: vi.fn().mockResolvedValue({ data: [] }) },
   modelsAPI: { getConfigurations: vi.fn().mockResolvedValue({ data: { configurations: [] } }) },
@@ -262,5 +263,81 @@ describe('Sidebar 移动端滑动手势与遮罩', () => {
     await waitFor(() => {
       expect(document.body.style.overflow).not.toBe('hidden')
     })
+  })
+})
+
+/**
+ * Sidebar 移动端用户菜单测试
+ *
+ * 验证点：
+ * 1. 点击头像弹出用户菜单（不再整页跳转 /user，停留当前页）
+ * 2. 点击遮罩关闭菜单
+ * 3. 点击"用户中心"菜单项关闭菜单并进入用户中心
+ */
+describe('Sidebar 移动端用户菜单', () => {
+  beforeEach(() => {
+    useI18nStore.getState().setLocale('zh-CN')
+    // 注入已登录用户，否则 MobileUserArea 不渲染
+    useAuthStore.setState({
+      user: { id: '1', username: 'admin', role: 'owner' },
+      isAuthenticated: true,
+      isInitialized: true,
+    })
+  })
+
+  afterEach(() => {
+    useAuthStore.setState({ user: null, isAuthenticated: false })
+  })
+
+  function renderSidebarWithUser() {
+    return render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <Sidebar />
+      </MemoryRouter>
+    )
+  }
+
+  it('点击头像打开用户菜单，停留在当前页（不整页跳转）', () => {
+    renderSidebarWithUser()
+
+    // 菜单初始不可见
+    expect(screen.queryByTestId('user-menu')).not.toBeInTheDocument()
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('mobile-user-area'))
+    })
+
+    // 菜单出现，含用户中心与退出登录菜单项
+    expect(screen.getByTestId('user-menu')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '用户中心' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '退出登录' })).toBeInTheDocument()
+  })
+
+  it('点击遮罩关闭用户菜单', () => {
+    renderSidebarWithUser()
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('mobile-user-area'))
+    })
+    expect(screen.getByTestId('user-menu')).toBeInTheDocument()
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('user-menu-overlay'))
+    })
+    expect(screen.queryByTestId('user-menu')).not.toBeInTheDocument()
+  })
+
+  it('点击"用户中心"菜单项关闭菜单', () => {
+    renderSidebarWithUser()
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('mobile-user-area'))
+    })
+    expect(screen.getByTestId('user-menu')).toBeInTheDocument()
+
+    act(() => {
+      fireEvent.click(screen.getByRole('menuitem', { name: '用户中心' }))
+    })
+    expect(screen.queryByTestId('user-menu')).not.toBeInTheDocument()
   })
 })

@@ -8,6 +8,8 @@ import {
   MessagesSquare,
   MessageSquareWarning,
   Layers,
+  LogOut,
+  UserRound,
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { useMobileNavStore } from '@/shared/store/mobileNavStore'
@@ -16,6 +18,8 @@ import { useI18nStore } from '@/i18n'
 import { UserFloatingArea } from '../UserFloatingArea'
 import { Tooltip } from '@/shared/components/ui'
 import { useIssueFeedbackStore } from '@/shared/store/issueFeedbackStore'
+import { authAPI } from '@/shared/api/api'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './Sidebar.module.css'
 
 interface MenuItem {
@@ -57,26 +61,92 @@ const renderIcon = (type: string, size = 18) => {
 }
 
 /**
- * 移动端左上角用户区：替代原汉堡按钮位置，展示头像 + 姓名，点击进入用户中心。
- * 完整导航抽屉仍由底部 Tab Bar "更多"入口打开（useMobileNavStore 共享开关）。
+ * 移动端左上角用户区：替代原汉堡按钮位置，展示头像 + 姓名。
+ * 点击后停留在当前页面（不整页跳转），弹出用户菜单浮层：
+ * 用户中心入口 / 退出登录；完整导航抽屉仍由底部 Tab Bar "更多"打开。
  */
 function MobileUserArea() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.logout)
+  const { t } = useI18nStore()
+  const [open, setOpen] = useState(false)
   if (!user) return null
   const initial = (user.username || 'U')[0].toUpperCase()
+
+  /* 退出登录：接口失败也清除本地会话并回登录页（与 UserFloatingArea 行为一致） */
+  const handleLogout = async () => {
+    try {
+      await authAPI.logout()
+    } catch (error) {
+      appLogger.warning({
+        event: 'logout_api_failed',
+        module: 'auth',
+        message: 'logout api call failed',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+    logout()
+    navigate('/login', { replace: true })
+  }
+
   return (
-    <button
-      type="button"
-      className={styles['mobile-user-area']}
-      onClick={() => navigate('/user')}
-      title="用户中心"
-      aria-label="用户中心"
-      data-testid="mobile-user-area"
-    >
-      <span className={styles['mobile-user-avatar']}>{initial}</span>
-      <span className={styles['mobile-user-name']}>{user.username}</span>
-    </button>
+    <>
+      <button
+        type="button"
+        className={styles['mobile-user-area']}
+        onClick={() => setOpen((o) => !o)}
+        title={t('user.center')}
+        aria-label={t('user.center')}
+        aria-expanded={open}
+        data-testid="mobile-user-area"
+      >
+        <span className={styles['mobile-user-avatar']}>{initial}</span>
+        <span className={styles['mobile-user-name']}>{user.username}</span>
+      </button>
+      {/* 用户菜单浮层：点击头像在当前页弹出，遮罩点击关闭，不卸载当前页面 */}
+      {open && (
+        <>
+          <div
+            className={styles['user-menu-overlay']}
+            data-testid="user-menu-overlay"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className={styles['user-menu']}
+            role="menu"
+            aria-label={t('user.center')}
+            data-testid="user-menu"
+          >
+            <div className={styles['user-menu-header']}>
+              <span className={styles['mobile-user-avatar']}>{initial}</span>
+              <span className={styles['user-menu-name']}>{user.username}</span>
+            </div>
+            <button
+              type="button"
+              role="menuitem"
+              className={styles['user-menu-item']}
+              onClick={() => {
+                setOpen(false)
+                navigate('/user')
+              }}
+            >
+              <UserRound size={16} />
+              {t('user.center')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className={styles['user-menu-item']}
+              onClick={handleLogout}
+            >
+              <LogOut size={16} />
+              {t('user.logout')}
+            </button>
+          </div>
+        </>
+      )}
+    </>
   )
 }
 
