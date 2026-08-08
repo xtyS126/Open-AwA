@@ -989,3 +989,10 @@ All API routes use prefix `settings.API_V1_STR` (`/api`) except MCP, billing, ma
 - **移动端抽屉打开入口统一走底部 Tab Bar "更多"**：Sidebar 左上角汉堡按钮已删除（原位置改为 MobileUserArea 头像+姓名，点击进 /user），移动端完整导航只能经 `useMobileNavStore.openDrawer`（MobileTabBar "更多"）打开；新增移动端导航入口时不得在左上角再造汉堡按钮，测试驱动抽屉也走 store 而非按钮。
 - **禁止恢复 viewport-fit=cover**：Android 15+/16 强制 edge-to-edge（targetSdk 36）下 cover 让 WebView 内容延伸到状态栏后，`env(safe-area-inset-top)` 在真机返回真实状态栏高度（fixed 定位元素 top = 状态栏+偏移 ≈ 60px+），而 MuMu 等旧系统镜像模拟器 env() 恒为 0（top=24px），两端位置不一致。修复方向：index.html 保持默认 auto（WebView 自动把布局限制在安全区，env() 两端恒 0），原生 windowBackground 已按深浅模式对齐页面 color-bg（values/values-night colors.xml 的 `window_background`）使状态栏区域无缝衔接。定位方法：真机与模拟器 fixed 元素 top 不同；禁止为"沉浸式"改回 cover。
 - **Android XML 资源注释禁止 `--` 字符串**：AAPT 对 XML 注释内连续两个连字符直接报 "注释中不允许出现字符串 --" 致 `mergeDebugResources` 失败；"edge-to-edge" 与 CSS 变量名 "--color-bg" 都不能写进 XML 注释，改写为 "edge to edge" / "color-bg"。
+
+## 19.11 2026-08-09 日志与 api-testing 新增陷阱
+
+- **loguru 日志缓冲区必须全路径脱敏**：`config/logging.py` `_patch_record` 的 `log_event["extra"]` 必须用 `sanitize_for_logging` 后的值（`sanitized_extra`），禁止使用未脱敏的局部浅拷贝 `extra`——异常对象（`httpx.ConnectError` 等）经任何未脱敏字段进入 `_LOG_BUFFER` 后，`/api/logs` 经 FastAPI jsonable_encoder 序列化时抛 `PydanticSerializationError`（500）。定位方法：错误日志出现 "Unable to serialize unknown type: <class 'httpx.ConnectError'>" 且 `/api/logs` 稳定 500；修复方向：统一用脱敏后的 extra 构建缓冲区条目，结构化错误字段（error_type/error_message/error_code/status_code）同样取脱敏值。
+- **FastAPI 函数返回类型注解即 response_model**：路由函数返回类型注解与返回值不一致（如注解 `Dict[str, Any]` 实际返回 list）会 500 `dict_type`；`behavior.py` 的 `get_behavior_logs` 注解必须为 `List[Dict[str, Any]]`。新增路由必须保证注解与返回结构精确一致。
+- **api-testing skill 运行三要素**：必须在 `backend/skills/external/api-testing` 目录执行 `python -m core.__init__ --auth-token <API_KEY>`（不传 token 全部认证用例 401）；CSRF 双提交模式下每个 csrf-token 响应都会轮换 Cookie，并发用例须在状态变更请求执行前动态重新获取 token（否则 invalid_csrf_token 403）；`/api/models/providers` 对全部 provider 顺序连通性检查约 53 秒，用例 timeout_seconds 需 ≥60。
+- **api-testing 报告文件不得入库**：`reports/` 是运行产物，已加入 `api-testing/.gitignore`；提交时禁止 `git add` 报告文件。
