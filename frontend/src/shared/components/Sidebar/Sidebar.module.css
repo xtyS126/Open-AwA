@@ -314,7 +314,8 @@
 .mobile-user-area {
   display: none;
   position: fixed;
-  top: 8px;
+  /* 避开顶部状态栏/刘海：safe-area-top 之上再加 24px，明显低于贴顶位置 */
+  top: calc(var(--safe-area-top) + 24px);
   left: 8px;
   z-index: 999;
   height: 40px;
