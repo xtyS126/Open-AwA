@@ -1,0 +1,77 @@
+<style>
+  .icon-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:22px}
+  .icon-option{border:1px solid #e6e0ef;border-radius:26px;overflow:hidden;background:#fff;cursor:pointer;transition:.2s ease}
+  .icon-option:hover{transform:translateY(-3px);box-shadow:0 20px 44px rgba(76,56,108,.14)}
+  .icon-option.selected{border-color:#7c5cff;box-shadow:0 0 0 3px rgba(124,92,255,.15),0 20px 44px rgba(76,56,108,.14)}
+  .stage{min-height:308px;padding:24px;background:radial-gradient(circle at 18% 8%,rgba(255,170,116,.26),transparent 34%),linear-gradient(145deg,#fff9f5,#f5efff 58%,#ebe8ff);display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .hero-icon{width:164px;height:164px;border-radius:42px;display:grid;place-items:center;background:linear-gradient(145deg,#7654ff,#a675ff);box-shadow:0 24px 48px rgba(104,72,201,.27),inset 0 1px 0 rgba(255,255,255,.32)}
+  .size-row{display:flex;align-items:end;gap:20px;margin-top:24px;padding:12px 18px;border-radius:18px;background:rgba(255,255,255,.7);box-shadow:0 12px 30px rgba(85,61,120,.1)}
+  .size-sample{display:flex;flex-direction:column;align-items:center;gap:7px;color:#745f83;font-size:10px;font-weight:700}
+  .mini{display:grid;place-items:center;background:linear-gradient(145deg,#7654ff,#a675ff);box-shadow:0 6px 12px rgba(80,55,150,.2)}
+  .web{width:22px;height:22px;border-radius:6px}.app{width:40px;height:40px;border-radius:12px}.desk{width:54px;height:54px;border-radius:15px}
+  .copy{padding:20px 21px 23px}.copy h3{margin:0 0 8px;font-size:18px}.copy p{margin:0;color:#6f6378;font-size:13px;line-height:1.58}
+  .tradeoff{margin-top:12px;padding-top:11px;border-top:1px solid #f0ebf4;font-size:12px;color:#8a7b94}
+  .recommend{display:inline-block;margin-top:12px;padding:5px 9px;border-radius:999px;background:#f0ebff;color:#6647d9;font-weight:750;font-size:11px}
+  @media(max-width:900px){.icon-grid{grid-template-columns:1fr}}
+</style>
+
+<h2>选择全新的抽象图标构形</h2>
+<p class="subtitle">三个方案都不承载具体含义，也不使用原图中的字母、表情或结构。重点比较轮廓独特性、轻快感和小尺寸清晰度。</p>
+
+<div class="icon-grid">
+  <div class="icon-option card" data-choice="soft-crystal" onclick="toggleSelect(this)">
+    <div class="stage">
+      <div class="hero-icon">
+        <svg width="118" height="118" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+          <defs><linearGradient id="sc-a" x1="18" y1="16" x2="102" y2="105" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF6F0"/><stop offset=".48" stop-color="#FFD5C2"/><stop offset="1" stop-color="#F5E9FF"/></linearGradient></defs>
+          <path d="M60 17C73 17 83 28 82 41C95 38 106 47 106 60C106 73 95 82 82 79C83 92 73 103 60 103C47 103 37 92 38 79C25 82 14 73 14 60C14 47 25 38 38 41C37 28 47 17 60 17Z" fill="url(#sc-a)"/>
+          <path d="M60 35C68 35 74 42 73 50C81 48 88 53 88 60C88 67 81 72 73 70C74 78 68 85 60 85C52 85 46 78 47 70C39 72 32 67 32 60C32 53 39 48 47 50C46 42 52 35 60 35Z" fill="#835CFF" fill-opacity=".9"/>
+          <rect x="54" y="54" width="12" height="12" rx="4" transform="rotate(45 54 54)" fill="#FFF8F4"/>
+        </svg>
+      </div>
+      <div class="size-row">
+        <div class="size-sample"><div class="mini web"><svg width="16" height="16" viewBox="0 0 120 120"><path d="M60 17C73 17 83 28 82 41C95 38 106 47 106 60C106 73 95 82 82 79C83 92 73 103 60 103C47 103 37 92 38 79C25 82 14 73 14 60C14 47 25 38 38 41C37 28 47 17 60 17Z" fill="#FFF0E8"/><path d="M60 35C68 35 74 42 73 50C81 48 88 53 88 60C88 67 81 72 73 70C74 78 68 85 60 85C52 85 46 78 47 70C39 72 32 67 32 60C32 53 39 48 47 50C46 42 52 35 60 35Z" fill="#835CFF"/></svg></div>网页</div>
+        <div class="size-sample"><div class="mini app"><svg width="29" height="29" viewBox="0 0 120 120"><path d="M60 17C73 17 83 28 82 41C95 38 106 47 106 60C106 73 95 82 82 79C83 92 73 103 60 103C47 103 37 92 38 79C25 82 14 73 14 60C14 47 25 38 38 41C37 28 47 17 60 17Z" fill="#FFF0E8"/><path d="M60 35C68 35 74 42 73 50C81 48 88 53 88 60C88 67 81 72 73 70C74 78 68 85 60 85C52 85 46 78 47 70C39 72 32 67 32 60C32 53 39 48 47 50C46 42 52 35 60 35Z" fill="#835CFF"/></svg></div>APP</div>
+        <div class="size-sample"><div class="mini desk"><svg width="39" height="39" viewBox="0 0 120 120"><path d="M60 17C73 17 83 28 82 41C95 38 106 47 106 60C106 73 95 82 82 79C83 92 73 103 60 103C47 103 37 92 38 79C25 82 14 73 14 60C14 47 25 38 38 41C37 28 47 17 60 17Z" fill="#FFF0E8"/><path d="M60 35C68 35 74 42 73 50C81 48 88 53 88 60C88 67 81 72 73 70C74 78 68 85 60 85C52 85 46 78 47 70C39 72 32 67 32 60C32 53 39 48 47 50C46 42 52 35 60 35Z" fill="#835CFF"/></svg></div>桌面</div>
+      </div>
+    </div>
+    <div class="copy"><h3>A. 软晶单元</h3><p>一个轮廓完整、内外层次明确的非对称圆润构形。视觉像软胶与糖霜，但不指代任何对象。</p><div class="tradeoff">优势：缩到 16px 仍清楚，三端适配最稳。取舍：整体更规整，动感较弱。</div><span class="recommend">推荐</span></div>
+  </div>
+
+  <div class="icon-option card" data-choice="jelly-layers" onclick="toggleSelect(this)">
+    <div class="stage">
+      <div class="hero-icon">
+        <svg width="118" height="118" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+          <defs><linearGradient id="jl-a" x1="18" y1="16" x2="98" y2="102" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF7EE"/><stop offset="1" stop-color="#FFB18F"/></linearGradient><linearGradient id="jl-b" x1="31" y1="22" x2="88" y2="101" gradientUnits="userSpaceOnUse"><stop stop-color="#E9DDFF"/><stop offset="1" stop-color="#9B74FF"/></linearGradient></defs>
+          <rect x="18" y="27" width="72" height="34" rx="17" transform="rotate(-18 18 27)" fill="url(#jl-a)"/>
+          <rect x="29" y="40" width="72" height="34" rx="17" transform="rotate(12 29 40)" fill="url(#jl-b)" fill-opacity=".94"/>
+          <rect x="18" y="66" width="72" height="34" rx="17" transform="rotate(-9 18 66)" fill="#FFF3F8" fill-opacity=".95"/>
+        </svg>
+      </div>
+      <div class="size-row">
+        <div class="size-sample"><div class="mini web"><svg width="16" height="16" viewBox="0 0 120 120"><rect x="18" y="27" width="72" height="34" rx="17" transform="rotate(-18 18 27)" fill="#FFD2BD"/><rect x="29" y="40" width="72" height="34" rx="17" transform="rotate(12 29 40)" fill="#9B74FF"/><rect x="18" y="66" width="72" height="34" rx="17" transform="rotate(-9 18 66)" fill="#FFF3F8"/></svg></div>网页</div>
+        <div class="size-sample"><div class="mini app"><svg width="29" height="29" viewBox="0 0 120 120"><rect x="18" y="27" width="72" height="34" rx="17" transform="rotate(-18 18 27)" fill="#FFD2BD"/><rect x="29" y="40" width="72" height="34" rx="17" transform="rotate(12 29 40)" fill="#9B74FF"/><rect x="18" y="66" width="72" height="34" rx="17" transform="rotate(-9 18 66)" fill="#FFF3F8"/></svg></div>APP</div>
+        <div class="size-sample"><div class="mini desk"><svg width="39" height="39" viewBox="0 0 120 120"><rect x="18" y="27" width="72" height="34" rx="17" transform="rotate(-18 18 27)" fill="#FFD2BD"/><rect x="29" y="40" width="72" height="34" rx="17" transform="rotate(12 29 40)" fill="#9B74FF"/><rect x="18" y="66" width="72" height="34" rx="17" transform="rotate(-9 18 66)" fill="#FFF3F8"/></svg></div>桌面</div>
+      </div>
+    </div>
+    <div class="copy"><h3>B. 果冻叠片</h3><p>三个透明感圆角片层轻轻错位，强调轻盈、弹性和层次，不建立任何象征关系。</p><div class="tradeoff">优势：最可爱、最有材质感。取舍：小尺寸时片层容易合并，favicon 辨识度较弱。</div></div>
+  </div>
+
+  <div class="icon-option card" data-choice="playful-ribbon" onclick="toggleSelect(this)">
+    <div class="stage">
+      <div class="hero-icon">
+        <svg width="118" height="118" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+          <defs><linearGradient id="pr-a" x1="18" y1="19" x2="101" y2="101" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF0E9"/><stop offset=".45" stop-color="#FFB493"/><stop offset="1" stop-color="#F1E6FF"/></linearGradient></defs>
+          <path d="M30 25C18 35 20 51 33 59C46 67 69 57 82 65C95 73 96 91 83 98C68 106 48 96 52 82C56 67 82 62 91 47C100 32 88 17 72 20C57 23 54 42 41 44C28 46 21 34 30 25Z" fill="url(#pr-a)"/>
+          <path d="M39 34C34 41 37 48 46 49C58 51 68 39 80 39C89 39 93 46 88 53" stroke="#8B61FF" stroke-width="10" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="size-row">
+        <div class="size-sample"><div class="mini web"><svg width="16" height="16" viewBox="0 0 120 120"><path d="M30 25C18 35 20 51 33 59C46 67 69 57 82 65C95 73 96 91 83 98C68 106 48 96 52 82C56 67 82 62 91 47C100 32 88 17 72 20C57 23 54 42 41 44C28 46 21 34 30 25Z" fill="#FFD0BD"/><path d="M39 34C34 41 37 48 46 49C58 51 68 39 80 39C89 39 93 46 88 53" stroke="#8B61FF" stroke-width="10" stroke-linecap="round"/></svg></div>网页</div>
+        <div class="size-sample"><div class="mini app"><svg width="29" height="29" viewBox="0 0 120 120"><path d="M30 25C18 35 20 51 33 59C46 67 69 57 82 65C95 73 96 91 83 98C68 106 48 96 52 82C56 67 82 62 91 47C100 32 88 17 72 20C57 23 54 42 41 44C28 46 21 34 30 25Z" fill="#FFD0BD"/><path d="M39 34C34 41 37 48 46 49C58 51 68 39 80 39C89 39 93 46 88 53" stroke="#8B61FF" stroke-width="10" stroke-linecap="round"/></svg></div>APP</div>
+        <div class="size-sample"><div class="mini desk"><svg width="39" height="39" viewBox="0 0 120 120"><path d="M30 25C18 35 20 51 33 59C46 67 69 57 82 65C95 73 96 91 83 98C68 106 48 96 52 82C56 67 82 62 91 47C100 32 88 17 72 20C57 23 54 42 41 44C28 46 21 34 30 25Z" fill="#FFD0BD"/><path d="M39 34C34 41 37 48 46 49C58 51 68 39 80 39C89 39 93 46 88 53" stroke="#8B61FF" stroke-width="10" stroke-linecap="round"/></svg></div>桌面</div>
+      </div>
+    </div>
+    <div class="copy"><h3>C. 跃动折带</h3><p>一条连续、柔软的曲面形成不规则闭合节奏，造型自由、轻快，并刻意保持不可命名。</p><div class="tradeoff">优势：动感与个性最强。取舍：轮廓复杂，适合启动图和大图标，小尺寸需另做简化版。</div></div>
+  </div>
+</div>

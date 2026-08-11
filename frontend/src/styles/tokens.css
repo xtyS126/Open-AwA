@@ -10,27 +10,41 @@
  */
 
 :root {
+  /* 品牌刷新：抽象软晶单元与三端共享基础色板 */
+  --brand-violet: #7654ff;
+  --brand-violet-deep: #5e3fd6;
+  --brand-violet-light: #a678ff;
+  --brand-peach: #ffb18f;
+  --brand-peach-light: #ffd8c8;
+  --brand-cream: #fff9f5;
+  --brand-lavender: #f3edff;
+  --brand-ink: #342b40;
+  --brand-muted: #786c82;
+  --brand-border: #e8e0ee;
+  --domain-rail-width: 68px;
+  --domain-subnav-width: 248px;
+
   /* ============================================================
    * 颜色体系 — 语义色板（从 global.css 抽取集中管理）
    * ============================================================
-   * 设计语言「信号中枢 / Signal Nexus」：主色为信号青（teal-700 #0f766e）。
-   * 与通用 SaaS 蓝决裂，呼应 APP 首屏"局域网信号发现"的雷达/信号强度语言。
+   * 设计语言「软晶单元」：主色统一为紫罗兰，暖桃色只作为少量视觉焦点。
+   * 成功、警告和错误继续使用独立语义色，不随品牌主色变化。
    */
 
-  /* 主色调 — 信号青 */
-  /* a11y: --color-primary 选 teal-700 #0f766e，与白色文本对比度约 5.44:1，满足 WCAG AA 4.5:1 */
-  --color-primary: #0f766e;
-  --color-primary-hover: #115e59;
-  --color-primary-dark: #134e4a;
-  --color-primary-ring: rgba(13, 148, 136, 0.2);
-  --color-primary-soft-bg: rgba(13, 148, 136, 0.1);
-  --color-primary-softer-bg: rgba(13, 148, 136, 0.08);
-  --color-primary-softest-bg: rgba(13, 148, 136, 0.05);
-  --color-primary-subtle: rgba(13, 148, 136, 0.08);
-  /* 信号渐变：通信设备的 teal→cyan 发光过渡 */
-  --color-primary-gradient: linear-gradient(135deg, #0f766e 0%, #0891b2 100%);
-  /* 信号光晕：流式输出/激活态的辉光投影 */
-  --color-glow: 0 0 16px rgba(13, 148, 136, 0.35);
+  /* 主色调 — 软晶紫罗兰 */
+  /* a11y: --color-primary #7654ff 与白色文本对比度约 4.68:1，满足 WCAG AA 4.5:1 */
+  --color-primary: #7654ff;
+  --color-primary-hover: #5e3fd6;
+  --color-primary-dark: #5e3fd6;
+  --color-primary-ring: rgba(118, 84, 255, 0.24);
+  --color-primary-soft-bg: rgba(118, 84, 255, 0.12);
+  --color-primary-softer-bg: rgba(118, 84, 255, 0.09);
+  --color-primary-softest-bg: rgba(118, 84, 255, 0.06);
+  --color-primary-subtle: rgba(118, 84, 255, 0.1);
+  /* 软晶渐变：主紫罗兰到浅紫罗兰 */
+  --color-primary-gradient: linear-gradient(135deg, #7654ff 0%, #a678ff 100%);
+  /* 软晶光晕：流式输出与激活态的低幅度辉光 */
+  --color-glow: 0 0 16px rgba(118, 84, 255, 0.32);
 
   /* 背景色 */
   --color-bg: #ffffff;
@@ -157,6 +171,7 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 20px;
+  --radius-2xl: 28px;
   --radius-full: 9999px;
 
   /* ============================================================
@@ -239,19 +254,18 @@
  * 暗色主题覆写
  * ============================================================ */
 .dark {
-  /* 主色调 — 暗色下亮度提升（信号青 teal-400） */
-  /* a11y: --color-primary #2dd4bf 与深色背景对比度高，满足 WCAG AA */
-  --color-primary: #2dd4bf;
-  --color-primary-hover: #5eead4;
-  --color-primary-dark: #14b8a6;
-  --color-primary-ring: rgba(45, 212, 191, 0.3);
-  --color-primary-soft-bg: rgba(45, 212, 191, 0.15);
-  --color-primary-softer-bg: rgba(45, 212, 191, 0.1);
-  --color-primary-softest-bg: rgba(45, 212, 191, 0.05);
-  --color-primary-subtle: rgba(45, 212, 191, 0.12);
-  --color-primary-gradient: linear-gradient(135deg, #0f766e 0%, #06b6d4 100%);
-  /* 暗色下光晕透明度提升，信号感更强 */
-  --color-glow: 0 0 20px rgba(45, 212, 191, 0.45);
+  /* 主色调 — 暗色主题继续沿用软晶紫罗兰 */
+  --color-primary: #7654ff;
+  --color-primary-hover: #5e3fd6;
+  --color-primary-dark: #5e3fd6;
+  --color-primary-ring: rgba(166, 120, 255, 0.38);
+  --color-primary-soft-bg: rgba(166, 120, 255, 0.18);
+  --color-primary-softer-bg: rgba(166, 120, 255, 0.13);
+  --color-primary-softest-bg: rgba(166, 120, 255, 0.08);
+  --color-primary-subtle: rgba(166, 120, 255, 0.15);
+  --color-primary-gradient: linear-gradient(135deg, #7654ff 0%, #a678ff 100%);
+  /* 暗色下使用浅紫罗兰提高光晕可见度 */
+  --color-glow: 0 0 20px rgba(166, 120, 255, 0.42);
 
   /* 背景色 */
   --color-bg: #0f172a;

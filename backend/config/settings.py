@@ -243,6 +243,13 @@ class Settings(BaseSettings):
     # 默认允许 var/workspace 与 Open-AwA 项目根目录；可在 .env 通过 ACP_ALLOWED_WORKDIRS=path1,path2 覆盖。
     ACP_ALLOWED_WORKDIRS: str = ""
 
+    # 工作台项目允许根使用 JSON，避免 Windows 驱动器冒号与分隔符歧义。
+    # 全局根只对管理员或显式单用户部署生效；普通多用户使用按 user_id 映射。
+    WORKBENCH_ALLOWED_ROOTS: str = ""
+    WORKBENCH_ALLOWED_ROOTS_BY_USER: str = "{}"
+    WORKBENCH_SINGLE_USER_MODE: bool = True
+    WORKBENCH_LOCAL_RUNTIME_ENABLED: bool = True
+
     LOG_LEVEL: str = "INFO"
     LOG_SERIALIZE: bool = True
     LOG_SERVICE_NAME: str = "openawa-backend"

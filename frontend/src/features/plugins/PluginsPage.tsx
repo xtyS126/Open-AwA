@@ -790,7 +790,13 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
           <span>{marketError}</span>
           <button
             className={marketStyles['search-btn']}
-            onClick={() => { searchQuery.trim() ? handleSearch() : void loadPlugins() }}
+            onClick={() => {
+              if (searchQuery.trim()) {
+                handleSearch()
+              } else {
+                void loadPlugins()
+              }
+            }}
           >
             重试
           </button>
@@ -1001,11 +1007,35 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
   )
 }
 
-function PluginsPage() {
+export type PluginPageTab = 'installed' | 'market'
+
+export interface PluginsPageProps {
+  activeTab?: PluginPageTab
+  initialTab?: PluginPageTab
+  hideTabs?: boolean
+  embedded?: boolean
+  onTabChange?: (tab: PluginPageTab) => void
+}
+
+function PluginsPage({
+  activeTab: controlledActiveTab,
+  initialTab = 'installed',
+  hideTabs = false,
+  embedded = false,
+  onTabChange,
+}: PluginsPageProps = {}) {
   const navigate = useNavigate()
   const { t } = useI18nStore()
   /* 当前激活的 Tab：installed=已安装管理，market=插件市场 */
-  const [activeTab, setActiveTab] = useState<'installed' | 'market'>('installed')
+  const [internalActiveTab, setInternalActiveTab] = useState<PluginPageTab>(initialTab)
+  const activeTab = controlledActiveTab ?? internalActiveTab
+
+  const selectTab = useCallback((tab: PluginPageTab) => {
+    if (controlledActiveTab === undefined) {
+      setInternalActiveTab(tab)
+    }
+    onTabChange?.(tab)
+  }, [controlledActiveTab, onTabChange])
   const { plugins, loading, error: listError, retry: retryLoadPlugins, refresh: refreshPlugins } = usePluginList()
   const {
     loading: deleting,
@@ -1219,7 +1249,7 @@ function PluginsPage() {
   }, [])
 
   const handleNavigateConfig = useCallback((pluginId: string) => {
-    navigate(`/plugins/config/${pluginId}`)
+    navigate(`/library/capabilities/plugin/${pluginId}/config`)
   }, [navigate])
 
   const handleUninstallPlugin = useCallback((plugin: Plugin) => {
@@ -1278,10 +1308,10 @@ function PluginsPage() {
 
   return (
     <PageLayout
-      title="插件管理"
+      title={embedded ? undefined : '插件管理'}
       className={styles['plugins-page']}
       actions={
-        activeTab === 'installed' ? (
+        activeTab === 'installed' && !embedded ? (
           <button
             className={`${styles['btn']} ${styles['btn-outline']}`}
             onClick={() => { void refreshPlugins() }}
@@ -1293,11 +1323,11 @@ function PluginsPage() {
         ) : null
       }
     >
-      {/* Tab 切换 —— 已安装 / 市场 */}
-      <div className={styles['tabs']}>
+      {/* 嵌入能力资源时由聚合页承载产品级视图导航 */}
+      {!hideTabs && <div className={styles['tabs']}>
         <button
           className={`${styles['tab']} ${activeTab === 'installed' ? styles['tab-active'] : ''}`}
-          onClick={() => setActiveTab('installed')}
+          onClick={() => selectTab('installed')}
         >
           <Package size={16} />
           已安装
@@ -1305,12 +1335,12 @@ function PluginsPage() {
         </button>
         <button
           className={`${styles['tab']} ${activeTab === 'market' ? styles['tab-active'] : ''}`}
-          onClick={() => setActiveTab('market')}
+          onClick={() => selectTab('market')}
         >
           <Puzzle size={16} />
           市场
         </button>
-      </div>
+      </div>}
 
       {activeTab === 'installed' ? (
         <>
@@ -1392,7 +1422,7 @@ function PluginsPage() {
                 <p>{plugins.length === 0 ? '还没有安装任何插件' : '没有匹配的插件'}</p>
                 <button
                   className={`${styles['btn']} ${styles['btn-primary']}`}
-                  onClick={() => setActiveTab('market')}
+                  onClick={() => selectTab('market')}
                 >
                   <Puzzle size={16} />
                   去市场安装

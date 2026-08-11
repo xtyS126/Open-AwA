@@ -30,6 +30,212 @@ git add .
 
 ---
 
+## [ERR-20260811-002] playwright-current-role-filter-not-narrowed
+
+**Logged**: 2026-08-11T21:24:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+助手域浏览器验收使用链式 `getByRole('link', { current: 'page' })` 统计当前链接时，Locator 未按 `aria-current` 收窄，错误地把三个链接都计为当前项。
+
+### Error
+```text
+Expected: 1
+Received: 3
+Locator: getByRole('navigation', { name: '助手页面导航' }).getByRole('link')
+```
+
+### Context
+- Command: `npx playwright test tests/e2e/compatibility/assistant-domain-acceptance.spec.ts --project=chromium`
+- 组件单测已直接检查 `aria-current="page"`，且同一导航内只有一个元素带该属性。
+- 失败发生在浏览器验收的角色过滤断言，不是路由选择器或产品导航状态变化。
+
+### Suggested Fix
+对需要精确计数的当前导航项使用 `locator('[aria-current="page"]')`，并继续用 role 查询限定导航容器。
+
+### Metadata
+- Reproducible: yes
+- Related Files: frontend/tests/e2e/compatibility/assistant-domain-acceptance.spec.ts
+
+### Resolution
+- **Resolved**: 2026-08-11T21:25:00+08:00
+- **Notes**: 浏览器验收改为在已限定的导航容器内直接统计 `[aria-current="page"]`，随后重跑验证。
+
+---
+
+## [ERR-20260811-003] start-backend-detached-reexec-process
+
+**Logged**: 2026-08-11T21:50:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+使用 .NET `ProcessStartInfo` 启动 `start_backend.py` 取得独立 ping 证据时，脚本经解释器重启形成分离的监听子进程；只对初始 `Process` 调用 `.Kill(true)` 未释放 18001。
+
+### Error
+```text
+PORT 18001 IN_USE PID=87004
+父进程: D:\代码\Open-AwA\.venv\Scripts\python.exe ...\start_backend.py
+监听进程: Python312\python.exe ...\start_backend.py
+```
+
+### Context
+- 启动前 18001 已确认空闲。
+- 两个进程的完整命令行都精确包含本轮 `frontend/tests/e2e/support/start_backend.py`。
+- 没有停止其他进程，也没有接触真实 `var` 数据。
+
+### Suggested Fix
+真实端口验证应同时跟踪启动 PID 和最终监听 PID；停止前逐个核验完整命令行，再用 PowerShell `Stop-Process -Id` 停止显式 PID，并复核端口和两个 PID 均已释放。
+
+### Metadata
+- Reproducible: yes
+- Related Files: frontend/tests/e2e/support/start_backend.py
+
+### Resolution
+- **Resolved**: 2026-08-11T21:51:00+08:00
+- **Notes**: 已核验并仅停止本轮 PID 37272、87004；18001 空闲，两个 PID 均不存在。后续 ping 证据改用能显式跟踪最终监听进程的方式。
+
+---
+
+## [ERR-20260809-002] powershell-regex-quoting
+
+**Logged**: 2026-08-09T12:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+在 PowerShell 双引号命令中嵌入同时包含单双引号的正则，导致解析器在执行前报语法错误。
+
+### Error
+```text
+Missing ')' in method call.
+Unexpected token ']' in expression or statement.
+```
+
+### Context
+- 尝试一次性批量提取前端页面标题、API 引用和标签。
+- 复杂正则被嵌入 PowerShell 双引号字符串，转义边界不清晰。
+- 命令在解析阶段失败，未写入项目文件。
+
+### Suggested Fix
+将扫描拆成较小的只读命令，优先使用 `rg` 的简单模式；确需复杂正则时放入单引号 here-string 或独立脚本，避免多层引号嵌套。
+
+### Metadata
+- Reproducible: yes
+- Related Files: frontend/src/features
+
+### Resolution
+- **Resolved**: 2026-08-09T12:01:00+08:00
+- **Notes**: 已改用分段 `rg` 与文件统计命令继续调研。
+
+---
+
+## [ERR-20260809-003] ripgrep-no-match-verification
+
+**Logged**: 2026-08-09T16:45:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+占位符自审使用 `rg` 时没有匹配项，退出码 1 被并行验证器误判为检查失败。
+
+### Error
+```text
+Exit code: 1
+```
+
+### Context
+- 扫描新设计目录中的 `TBD`、`TODO` 和占位符。
+- 没有匹配项本应表示检查通过，但命令没有区分 `rg` 的“无匹配”和执行错误。
+- 设计文件未受影响。
+
+### Suggested Fix
+在否定式扫描中显式处理 `rg` 退出码：0 表示发现禁止内容并失败，1 表示无匹配并通过，其他退出码才视为工具错误。
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/design/cross-platform-navigation-redesign-2026-08-09
+
+### Resolution
+- **Resolved**: 2026-08-09T16:46:00+08:00
+- **Notes**: 已将占位符扫描改为显式判断退出码并重新执行。
+
+---
+
+## [ERR-20260809-004] powershell-wildcard-variable-boundary
+
+**Logged**: 2026-08-09T17:25:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+PowerShell 通配符字符串中的 `$_` 变量边界不明确，导致设计领域名称存在性检查全部误报。
+
+### Error
+```text
+助手
+工作台
+自动化
+资源库
+动态
+```
+
+### Context
+- 使用 `$doc -notlike "*$_*"` 验证五个领域名称。
+- 字符串插值与通配符组合没有按预期引用当前管道项。
+- 文档实际包含全部五个名称。
+
+### Suggested Fix
+字符串包含检查直接使用 `$doc.Contains($_)`，避免通配符和插值变量边界混用。
+
+### Metadata
+- Reproducible: yes
+- Related Files: docs/design/cross-platform-navigation-redesign-2026-08-09/navigation-architecture.md
+
+### Resolution
+- **Resolved**: 2026-08-09T17:26:00+08:00
+- **Notes**: 已改用 `.Contains()` 重新验证领域和平台章节。
+
+---
+
+## [ERR-20260809-001] brainstorming-visual-companion-wsl-missing
+
+**Logged**: 2026-08-09T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+Windows 主机存在系统 `bash.exe`，但未安装 WSL 发行版，导致视觉头脑风暴预览的 Bash 启动脚本无法运行。
+
+### Error
+```text
+适用于 Linux 的 Windows 子系统没有已安装的分发版。
+```
+
+### Context
+- 尝试运行 `brainstorming/scripts/start-server.sh --project-dir D:\代码\Open-AwA`。
+- 失败发生在启动预览服务之前，没有写入产品代码或运行时数据。
+
+### Suggested Fix
+在原生 Windows 环境中直接通过 Node.js 启动同目录的 `server.cjs`，并设置 `BRAINSTORM_DIR`、`BRAINSTORM_HOST` 与 `BRAINSTORM_URL_HOST` 环境变量。
+
+### Metadata
+- Reproducible: yes
+- Related Files: C:\Users\23941\.codex\skills\brainstorming\scripts\start-server.sh
+
+### Resolution
+- **Resolved**: 2026-08-09T00:00:00+08:00
+- **Notes**: 改用技能自带预览服务的 Windows 原生 Node.js 启动路径。
+
+---
+
 ## [ERR-20260729-001] git-mv-locked-runtime-files
 
 **Logged**: 2026-07-29T00:00:00+08:00
@@ -1821,6 +2027,9 @@ Get-Content : Cannot find path 'frontend\\src\\features\\subagents\\SubagentsPag
 ### Metadata
 - Reproducible: yes
 - Related Files: frontend/src/features/subagents
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-11
+- See Also: backend/db/models/conversation.py
 
 ### Resolution
 - **Resolved**: 2026-07-13T00:00:00+08:00
@@ -2070,6 +2279,9 @@ PowerShell 下将通配符路径直接传给 rg，导致 Windows 将其解析为
 ### Metadata
 - Reproducible: yes
 - Related Files: frontend/src/features/chat/wechat-module
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-11
+- See Also: ERR-20260722-003, ERR-20260726-008
 
 ### Resolution
 - **Resolved**: 2026-07-13T00:00:00+08:00
@@ -2555,6 +2767,8 @@ Get-ChildItem returned exit code 1 because no openawa-playwright temporary direc
 ### Metadata
 - Reproducible: yes
 - Related Files: frontend/playwright.config.ts
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-11
 
 ### Resolution
 - **Resolved**: 2026-07-14T23:16:00+08:00
@@ -2654,7 +2868,7 @@ Missing closing '}' in statement block or type definition.
 
 ### Resolution
 - **Resolved**: 2026-07-15T00:11:00+08:00
-- **Notes**: 后续诊断改用标准库只读 zip 解析。
+- **Notes**: trace 诊断改用标准库只读 zip 解析；普通源码盘点拆成独立 `rg` 命令，避免在一条 PowerShell 中嵌套多层 `foreach/if` 块。
 
 ---
 ## [ERR-20260715-C41] unicode-trace-path-terminal-encoding
@@ -4601,10 +4815,12 @@ Io(Os { code: 5, kind: PermissionDenied, message: "拒绝访问。" })
 ### Metadata
 - Reproducible: yes
 - Related Files: backend/main.py
+- Recurrence-Count: 2
+- Last-Seen: 2026-08-11
 
 ### Resolution
 - **Resolved**: 2026-07-28T00:00:00+08:00
-- **Notes**: 后续验证改用隔离 TestClient，不将其标为端口级证明。
+- **Notes**: 无端口要求时使用隔离 TestClient；需要真实端口证据时，已验证可使用 .NET `ProcessStartInfo`，设置 `CreateNoWindow=true`、`WindowStyle=Hidden`、`UseShellExecute=false`，并在停止前核验 PID 命令行。
 
 ---
 
@@ -4669,4 +4885,39 @@ actual: ValueError: BilibiliToolkitBuiltinPlugin.execute 需要 action 参数指
 ### Resolution
 - **Resolved**: 2026-07-28T22:35:00+08:00
 - **Notes**: 当前契约已由测试同步，Bilibili 适配器、内置插件和生命周期定向回归 78 项通过。
+---
+
+## [ERR-20260811-001] test-runner-health-basic-connection-refused
+
+**Logged**: 2026-08-11T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: tests
+
+### Summary
+隔离 Playwright `run-all` 验收中，`health-basic` 访问系统健康端点时连接被拒绝，导致除预期的模型密钥缺失外出现第二个失败场景。
+
+### Error
+```text
+health-basic: 场景执行异常: /api/system/health 请求失败: [WinError 10061] 由于目标计算机积极拒绝，无法连接。
+run-all: passed=8, failed=2, total=10
+```
+
+### Context
+- Command: `npx playwright test tests/e2e/test-runner-regression.spec.ts --project=chromium`
+- Environment: Playwright 隔离前端端口 15173、后端端口 18000。
+- `chat-nonstream` 的 `llm_api_key_missing` 是允许的结构化失败；`health-basic` 不是允许失败。
+- 测试结束后 15173 与 18000 均已释放。
+
+### Suggested Fix
+追踪 `health-basic` 实际请求 URL 与 Playwright 注入的后端 origin，补充端口传播的 RED 测试后再做最小修复；不得通过延长超时掩盖连接拒绝。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/api/routes/test_runner.py, frontend/tests/e2e/test-runner-regression.spec.ts, frontend/playwright.config.ts
+
+### Resolution
+- **Resolved**: 2026-08-11T16:05:00+08:00
+- **Notes**: Playwright 隔离启动器将有效端口同步为 `BACKEND_PORT` 后，单元契约测试 1 项通过，fresh run-all 为 9/10，唯一失败是结构化 `llm_api_key_missing`，`health-basic` 返回 ok。
+
 ---

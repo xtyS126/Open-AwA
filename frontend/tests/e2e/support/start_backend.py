@@ -23,6 +23,7 @@ def _configure_environment(runtime_dir: Path) -> int:
     workspace_path.mkdir(parents=True, exist_ok=True)
 
     isolated_values = {
+        "BACKEND_PORT": str(backend_port),
         "DATABASE_URL": f"sqlite:///{database_path.as_posix()}",
         "VECTOR_DB_PATH": str(runtime_dir / "qdrant"),
         "INITIALIZED_MARKER_PATH": str(runtime_dir / ".initialized"),

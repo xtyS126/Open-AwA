@@ -29,7 +29,7 @@ function InitializationShell() {
 // 开发模式路由守卫：非开发环境下重定向到仪表盘
 export function DevTestRoute() {
   if (!import.meta.env.DEV) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/activity/overview" replace />
   }
   return <TestPage />
 }
@@ -104,9 +104,9 @@ export function RootGuard() {
       )
     }
   } else {
-    // 已登录：访问 / 或 /login 时重定向到 /chat
+    // 已登录：访问 / 或 /login 时重定向到助手规范入口
     if (location.pathname === '/' || location.pathname === '/login') {
-      content = <Navigate to="/chat" replace />
+      content = <Navigate to="/assistant" replace />
     } else {
       // 渲染 AppShell，子路由通过 Outlet 渲染
       content = <AppShell />

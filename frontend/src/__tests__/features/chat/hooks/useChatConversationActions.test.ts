@@ -107,7 +107,7 @@ describe('useChatConversationActions - StrictMode 守卫', () => {
     })
   })
 
-  it('mount 时调用 loadConversationList', async () => {
+  it('mount 时不负责加载会话列表', async () => {
     const loadConversationList = vi.fn(() => Promise.resolve())
     const params = buildParams({ loadConversationList })
 
@@ -115,28 +115,21 @@ describe('useChatConversationActions - StrictMode 守卫', () => {
       wrapper: routerWrapper,
     })
 
-    // mount effect 应立即调用 loadConversationList(1, false)
-    expect(loadConversationList).toHaveBeenCalledTimes(1)
-    expect(loadConversationList).toHaveBeenCalledWith(1, false)
+    expect(loadConversationList).not.toHaveBeenCalled()
   })
 
-  it('StrictMode 双 mount 时仅触发一次 loadConversationList', async () => {
+  it('StrictMode 双 mount 时也不负责加载会话列表', async () => {
     const loadConversationList = vi.fn(() => Promise.resolve())
     const params = buildParams({ loadConversationList })
 
-    // 使用 StrictMode wrapper，dev 模式下 React 会执行 mount -> unmount -> mount
-    // loadOnceRef 守卫应确保 loadConversationList 仅被调用一次
     renderHook(() => useChatConversationActions(params), {
       wrapper: strictModeWrapper,
     })
 
-    // 即使 StrictMode 双 mount，loadConversationList 应只被调用 1 次
-    // 若无守卫，StrictMode dev 下会调用 2 次
-    expect(loadConversationList).toHaveBeenCalledTimes(1)
-    expect(loadConversationList).toHaveBeenCalledWith(1, false)
+    expect(loadConversationList).not.toHaveBeenCalled()
   })
 
-  it('loadConversationList 在 conversationId 变化时不被重复触发（仅 mount 一次）', async () => {
+  it('conversationId 变化时不触发会话列表加载', async () => {
     const loadConversationList = vi.fn(() => Promise.resolve())
 
     const { rerender } = renderHook(
@@ -148,15 +141,14 @@ describe('useChatConversationActions - StrictMode 守卫', () => {
       }
     )
 
-    // mount 时调用一次
-    expect(loadConversationList).toHaveBeenCalledTimes(1)
+    expect(loadConversationList).not.toHaveBeenCalled()
 
     // rerender 改变 conversationId，不应再次触发 loadConversationList
     rerender({ conversationId: 'session-abc' })
-    expect(loadConversationList).toHaveBeenCalledTimes(1)
+    expect(loadConversationList).not.toHaveBeenCalled()
 
     rerender({ conversationId: 'session-def' })
-    expect(loadConversationList).toHaveBeenCalledTimes(1)
+    expect(loadConversationList).not.toHaveBeenCalled()
   })
 
   it('刷新加载历史时恢复 Markdown、思考与子代理工具事件', async () => {

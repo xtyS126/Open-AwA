@@ -30,17 +30,37 @@ import ProfileCard from '@/features/soul/ProfileCard'
 import ProbeNotification from '@/features/soul/ProbeNotification'
 import styles from './UserCenterPage.module.css'
 
-type TabKey = 'personal' | 'overview' | 'facts' | 'soul'
+export type UserCenterSection = 'personal' | 'overview' | 'facts' | 'soul'
+
+export interface UserCenterPageProps {
+  activeSection?: UserCenterSection
+  initialSection?: UserCenterSection
+  hideHeader?: boolean
+  onSectionChange?: (section: UserCenterSection) => void
+}
 
 /** 五层画像的层级顺序 */
 const LAYER_ORDER = ['surface', 'interest', 'role', 'values', 'core'] as const
 
 const ALL_CATEGORIES = '全部'
 
-function UserCenterPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('personal')
+function UserCenterPage({
+  activeSection,
+  initialSection = 'personal',
+  hideHeader = false,
+  onSectionChange,
+}: UserCenterPageProps = {}) {
+  const [internalSection, setInternalSection] = useState<UserCenterSection>(initialSection)
+  const activeTab = activeSection ?? internalSection
 
-  const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  const selectSection = useCallback((section: UserCenterSection) => {
+    if (activeSection === undefined) {
+      setInternalSection(section)
+    }
+    onSectionChange?.(section)
+  }, [activeSection, onSectionChange])
+
+  const tabs: { key: UserCenterSection; label: string; icon: React.ReactNode }[] = [
     { key: 'personal', label: '个人信息', icon: <User size={16} /> },
     { key: 'overview', label: '画像总览', icon: <BarChart3 size={16} /> },
     { key: 'facts', label: '事实管理', icon: <FileText size={16} /> },
@@ -49,9 +69,9 @@ function UserCenterPage() {
 
   return (
     <div className={styles['user-page']}>
-      <div className={styles['page-header']}>
+      {!hideHeader && <div className={styles['page-header']}>
         <h1>用户中心</h1>
-      </div>
+      </div>}
 
       <div className={styles['user-layout']}>
         {/* 左侧导航 */}
@@ -60,7 +80,7 @@ function UserCenterPage() {
             <button
               key={tab.key}
               className={`${styles['tab-btn']} ${activeTab === tab.key ? styles['tab-active'] : ''}`}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => selectSection(tab.key)}
             >
               {tab.icon}
               <span>{tab.label}</span>

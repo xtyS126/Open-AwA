@@ -55,18 +55,71 @@ describe('应用路由树', () => {
     expect(new Set(paths).size).toBe(paths.length)
   })
 
+  it('五个工作域均有规范路由且旧入口只执行重定向', () => {
+    const byPath = new Map(routeDefinitions.map(({ path, element }) => [path, element]))
+
+    expect(byPath.has('/assistant')).toBe(true)
+    expect(byPath.has('/workbench/projects')).toBe(true)
+    expect(byPath.has('/automations/overview')).toBe(true)
+    expect(byPath.has('/library/capabilities')).toBe(true)
+    expect(byPath.has('/activity/overview')).toBe(true)
+
+    expect(isNavigateElement(byPath.get('/chat'))).toBe(true)
+    expect(isNavigateElement(byPath.get('/workspace'))).toBe(true)
+    expect(isNavigateElement(byPath.get('/skills'))).toBe(true)
+    expect(isNavigateElement(byPath.get('/dashboard'))).toBe(true)
+  })
+
+  it('能力资源旧入口只重定向到带查询状态的规范路由', () => {
+    const byPath = new Map(routeDefinitions.map(({ path, element }) => [path, element]))
+
+    expect((byPath.get('/skills')?.props as { to?: string }).to).toBe(
+      '/library/capabilities?type=skill&view=installed',
+    )
+    expect((byPath.get('/skills/market')?.props as { to?: string }).to).toBe(
+      '/library/capabilities?type=skill&view=discover',
+    )
+    expect((byPath.get('/plugins')?.props as { to?: string }).to).toBe(
+      '/library/capabilities?type=plugin&view=installed',
+    )
+    expect((byPath.get('/plugins/manage')?.props as { to?: string }).to).toBe(
+      '/library/capabilities?type=plugin&view=installed',
+    )
+    expect(byPath.has('/library/capabilities/plugin/$pluginId/config')).toBe(true)
+  })
+
+  it('角色、知识和画像旧入口只重定向到规范聚合页', () => {
+    const byPath = new Map(routeDefinitions.map(({ path, element }) => [path, element]))
+
+    expect((byPath.get('/roles')?.props as { to?: string }).to).toBe('/library/personas?view=installed')
+    expect((byPath.get('/role-market')?.props as { to?: string }).to).toBe('/library/personas?view=discover')
+    expect((byPath.get('/memory')?.props as { to?: string }).to).toBe('/library/knowledge?view=long-term')
+    expect((byPath.get('/experience')?.props as { to?: string }).to).toBe('/library/knowledge?view=experience')
+    expect((byPath.get('/user-profile')?.props as { to?: string }).to).toBe('/account?section=profile')
+  })
+
+  it('设置分区均有稳定路由且连接与伴侣旧入口只重定向', () => {
+    const byPath = new Map(routeDefinitions.map(({ path, element }) => [path, element]))
+
+    for (const section of ['general', 'models', 'ai', 'connections', 'data', 'security', 'appearance', 'usage']) {
+      expect(byPath.has(`/settings/${section}`)).toBe(true)
+    }
+    expect((byPath.get('/im')?.props as { to?: string }).to).toBe('/settings/connections?type=messaging')
+    expect((byPath.get('/pets')?.props as { to?: string }).to).toBe('/settings/appearance?section=companion')
+  })
+
   it('根路径跳转仅由 RootGuard 决策', () => {
     expect(routeDefinitions.some(({ path }) => path === '/')).toBe(false)
   })
 
-  it('每个页面路由由重定向或页面错误边界承载', () => {
-    let navigateCount = 0
+  it('每个页面路由由兼容重定向或页面错误边界承载', () => {
+    let redirectCount = 0
     let suspenseWithLazyCount = 0
     let devTestRouteCount = 0
 
-    for (const { path, element } of routeDefinitions) {
-      if (isNavigateElement(element)) {
-        navigateCount += 1
+    for (const { path, element, kind } of routeDefinitions) {
+      if (kind === 'redirect' || isNavigateElement(element)) {
+        redirectCount += 1
         continue
       }
 
@@ -84,7 +137,7 @@ describe('应用路由树', () => {
       suspenseWithLazyCount += 1
     }
 
-    expect(navigateCount).toBe(1)
+    expect(redirectCount).toBeGreaterThanOrEqual(15)
     expect(suspenseWithLazyCount).toBeGreaterThanOrEqual(20)
     expect(devTestRouteCount).toBe(1)
   })

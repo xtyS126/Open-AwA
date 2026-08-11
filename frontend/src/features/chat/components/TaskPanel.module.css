@@ -232,12 +232,12 @@
 }
 
 /* ============================================================
- * 移动端适配（≤ 768px，对应 --breakpoint-md 令牌）
+ * 移动端适配（< 768px，对应 --breakpoint-md 令牌）
  * 展开状态的 TaskPanel 改为从底部滑入的抽屉，
  * 覆盖 ChatInput（z-index 高于 ChatInput），
  * 用户可折叠面板以恢复输入。
  * ============================================================ */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .panel.expanded {
     position: fixed;
     bottom: 0;

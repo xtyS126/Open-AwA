@@ -35,14 +35,19 @@ function makeCacheKey(
   return { search, sort, includeDeleted, page }
 }
 
+function isSameCacheKey(
+  left: ConversationListCacheKey,
+  right: ConversationListCacheKey,
+): boolean {
+  return left.search === right.search
+    && left.sort === right.sort
+    && left.includeDeleted === right.includeDeleted
+    && left.page === right.page
+}
+
 function isCacheFresh(key: ConversationListCacheKey, now: number): boolean {
   if (!_conversationListCache) return false
-  if (
-    _conversationListCache.key.search !== key.search ||
-    _conversationListCache.key.sort !== key.sort ||
-    _conversationListCache.key.includeDeleted !== key.includeDeleted ||
-    _conversationListCache.key.page !== key.page
-  ) {
+  if (!isSameCacheKey(_conversationListCache.key, key)) {
     return false
   }
   return now - _conversationListCache.ts < CONVERSATION_LIST_CACHE_TTL_MS
@@ -136,7 +141,15 @@ export function useConversationHistory() {
   // 当前在飞的 listSessions 请求的 AbortController；组件卸载或参数变化时主动 abort，
   // 避免请求继续占用浏览器连接池直到 axios 30s 超时（P0 修复：页面切换快导致
   // /conversations 请求 timeout of 30000ms exceeded）
-  const inflightListRef = useRef<AbortController | null>(null)
+  const inflightListRef = useRef<{
+    controller: AbortController
+    key: ConversationListCacheKey
+  } | null>(null)
+  const listEffectGenerationRef = useRef(0)
+  const isCurrentListEffect = useCallback(
+    (generation: number) => listEffectGenerationRef.current === generation,
+    [],
+  )
 
   const loadConversationList = useCallback(async (page: number = 1, append: boolean = false, force: boolean = false) => {
     // stale-while-revalidate：5 秒内相同参数的请求跳过，避免重复拉取
@@ -146,12 +159,23 @@ export function useConversationHistory() {
       return
     }
 
+    const currentRequest = inflightListRef.current
+    if (
+      !append
+      && !force
+      && currentRequest
+      && !currentRequest.controller.signal.aborted
+      && isSameCacheKey(currentRequest.key, cacheKey)
+    ) {
+      return
+    }
+
     // 取消前一个在飞请求，避免并发请求堆积占用浏览器连接池
-    if (inflightListRef.current) {
-      inflightListRef.current.abort()
+    if (currentRequest) {
+      currentRequest.controller.abort()
     }
     const abortController = new AbortController()
-    inflightListRef.current = abortController
+    inflightListRef.current = { controller: abortController, key: cacheKey }
 
     setHistoryLoading(true)
     setHistoryError(null)
@@ -196,24 +220,33 @@ export function useConversationHistory() {
       })
     } finally {
       // 仅当当前请求仍是本 controller 时清理引用，避免被后续请求覆盖后误清
-      if (inflightListRef.current === abortController) {
+      if (inflightListRef.current?.controller === abortController) {
         inflightListRef.current = null
+        setHistoryLoading(false)
+        setHistoryInitialized(true)
       }
-      setHistoryLoading(false)
-      setHistoryInitialized(true)
     }
   }, [historySearch, historySort, includeDeleted, setConversations])
 
   useEffect(() => {
+    const effectGeneration = ++listEffectGenerationRef.current
     void loadConversationList(1, false)
-    // 组件卸载时 abort 在飞请求，避免请求继续占用浏览器连接池直到 axios 30s 超时
+    // StrictMode 会同步执行 cleanup 后立即重放 effect；延迟到下一任务再判断，
+    // 让同参数的第二次 setup 复用在途请求。真实卸载仍会及时取消请求。
     return () => {
-      if (inflightListRef.current) {
-        inflightListRef.current.abort()
-        inflightListRef.current = null
-      }
+      const pendingRequest = inflightListRef.current
+      window.setTimeout(() => {
+        if (
+          isCurrentListEffect(effectGeneration)
+          && pendingRequest
+          && inflightListRef.current?.controller === pendingRequest.controller
+        ) {
+          pendingRequest.controller.abort()
+          inflightListRef.current = null
+        }
+      }, 0)
     }
-  }, [historySearch, historySort, includeDeleted, loadConversationList])
+  }, [historySearch, historySort, includeDeleted, isCurrentListEffect, loadConversationList])
 
   // 跨标签页会话变更监听：当其他标签页广播会话变更导致 conversationsVersion 自增时，
   // 重新加载会话列表。使用 ref 记录上一次版本号，避免初始挂载时触发重复加载。

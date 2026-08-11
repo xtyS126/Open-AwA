@@ -77,7 +77,18 @@ input:focus, textarea:focus {
 
 .app-container {
   display: flex;
-  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--brand-cream), var(--brand-lavender));
+}
+
+.app-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -90,10 +101,12 @@ input:focus, textarea:focus {
 
 .main-content {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  height: 100%; /* 确保主内容区纵向撑满 */
+  background: var(--color-bg-secondary);
 }
 
 .btn {
@@ -237,7 +250,7 @@ input:focus, textarea:focus {
 /* Skip Navigation Link - 可访问性 */
 .skip-link {
   position: absolute;
-  top: -40px;
+  top: 0;
   left: 0;
   background: var(--color-primary);
   color: white;
@@ -246,12 +259,13 @@ input:focus, textarea:focus {
   border-radius: 0 0 var(--radius-sm) 0;
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
-  transition: top var(--transition-fast);
+  transform: translateY(-100%);
+  transition: transform var(--transition-fast);
 }
 
 /* a11y: :focus 时移除 outline:none，改用白色描边确保聚焦可见，避免 skip-link 被判定为不可聚焦 */
 .skip-link:focus {
-  top: 0;
+  transform: translateY(0);
   outline: 2px solid #ffffff;
   outline-offset: -2px;
 }
@@ -333,8 +347,8 @@ select:focus-visible {
 
 /* 响应式断点 */
 /* 注：详细的响应式断点工具类见 responsive.css；
- * 此处保留的 .sidebar 兜底样式仅为兼容目的，
- * 实际移动端抽屉样式由 Sidebar.module.css 提供 */
+ * 此处保留的 .sidebar 兜底样式仅为历史兼容，
+ * 五域轨道和子导航响应式行为由 Sidebar.module.css 负责 */
 
 /* 平板端：小于等于 1024px */
 @media (max-width: 1024px) {
@@ -343,8 +357,8 @@ select:focus-visible {
   }
 }
 
-/* 移动端：小于等于 768px */
-@media (max-width: 768px) {
+/* 移动端：小于 768px */
+@media (max-width: 767px) {
   .sidebar {
     position: fixed;
     top: 0;
@@ -365,12 +379,14 @@ select:focus-visible {
     height: 100dvh;
   }
 
+  .app-workspace {
+    width: 100%;
+  }
+
   .main-content {
     flex: 1;
     min-height: 0;
     margin-left: 0;
-    /* 顶部安全区域：notch / Dynamic Island */
-    padding-top: var(--safe-area-top);
   }
 
   /* 移动端禁用 transform 动画，避免 GPU 抖动 */

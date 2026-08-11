@@ -1,0 +1,166 @@
+.container {
+  display: grid;
+  gap: var(--space-6, 1.5rem);
+  min-width: 0;
+  padding: var(--space-6, 1.5rem);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4, 1rem);
+}
+
+.header h1,
+.form h2,
+.card h2,
+.empty h2 {
+  margin: 0;
+}
+
+.eyebrow {
+  margin: 0 0 var(--space-2, 0.5rem);
+  color: var(--color-primary, #6750a4);
+  font-weight: 700;
+}
+
+.intro,
+.timestamp,
+.formHint,
+.empty p {
+  color: var(--color-text-secondary, #5f6368);
+}
+
+.primaryButton,
+.primaryActions button {
+  min-height: var(--touch-target-min, 44px);
+  border: 0;
+  border-radius: var(--radius-md, 0.75rem);
+  background: var(--color-primary, #6750a4);
+  color: var(--color-on-primary, #fff);
+  padding: 0 var(--space-4, 1rem);
+  cursor: pointer;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 0.75rem);
+  border: 1px solid var(--color-error, #ba1a1a);
+  border-radius: var(--radius-md, 0.75rem);
+  padding: var(--space-3, 0.75rem);
+  color: var(--color-error, #ba1a1a);
+}
+
+.form {
+  display: grid;
+  gap: var(--space-4, 1rem);
+  border: 1px solid var(--color-border, #d8d5df);
+  border-radius: var(--radius-lg, 1rem);
+  padding: var(--space-5, 1.25rem);
+  background: var(--color-surface, #fff);
+}
+
+.form label {
+  display: grid;
+  gap: var(--space-2, 0.5rem);
+  font-weight: 600;
+}
+
+.form input {
+  min-height: var(--touch-target-min, 44px);
+  min-width: 0;
+  border: 1px solid var(--color-border, #d8d5df);
+  border-radius: var(--radius-sm, 0.5rem);
+  padding: 0 var(--space-3, 0.75rem);
+}
+
+.formActions,
+.primaryActions,
+.secondaryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--space-4, 1rem);
+}
+
+.card,
+.empty {
+  min-width: 0;
+  border: 1px solid var(--color-border, #d8d5df);
+  border-radius: var(--radius-lg, 1rem);
+  padding: var(--space-5, 1.25rem);
+  background: var(--color-surface, #fff);
+}
+
+.currentCard {
+  border-color: var(--color-primary, #6750a4);
+}
+
+.cardTitleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+}
+
+.enabled,
+.disabled,
+.current {
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.enabled {
+  background: var(--color-success-container, #d7f8dd);
+}
+
+.disabled {
+  background: var(--color-surface-variant, #ece8f0);
+}
+
+.current {
+  background: var(--color-primary-container, #e9ddff);
+}
+
+.secondaryActions button,
+.formActions button:not(.primaryButton),
+.error button,
+.empty button {
+  min-height: var(--touch-target-min, 44px);
+  border: 1px solid var(--color-border, #d8d5df);
+  border-radius: var(--radius-md, 0.75rem);
+  background: transparent;
+  padding: 0 var(--space-3, 0.75rem);
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: var(--space-4, 1rem);
+  }
+
+  .header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .primaryButton,
+  .primaryActions button,
+  .secondaryActions button {
+    flex: 1 1 auto;
+  }
+}

@@ -3,7 +3,7 @@
 这里的字段定义会直接影响输入校验和输出序列化行为。
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Literal, Optional, List, Any, Dict
 from datetime import datetime, timezone
 
@@ -325,6 +325,44 @@ class ConversationSessionListResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+class ConversationAssistantContextResponse(BaseModel):
+    """会话级助手上下文响应。"""
+
+    session_id: str
+    role_id: Optional[str] = None
+    workspace_id: str = "default"
+    selected_memory_ids: List[int] = Field(default_factory=list)
+    speaker_id: Optional[str] = None
+
+
+class ConversationAssistantContextPatch(BaseModel):
+    """会话级助手上下文增量更新请求。"""
+
+    role_id: Optional[str] = Field(default=None, max_length=64)
+    workspace_id: Optional[str] = Field(default=None, max_length=50)
+    selected_memory_ids: Optional[List[int]] = Field(default=None, max_length=20)
+    speaker_id: Optional[str] = Field(default=None, max_length=128)
+
+    @field_validator("role_id", "workspace_id", "speaker_id", mode="before")
+    @classmethod
+    def normalize_optional_identifier(cls, value: Any) -> Optional[str]:
+        """空白标识按清空处理，避免持久化不可解析的空字符串。"""
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @field_validator("selected_memory_ids")
+    @classmethod
+    def validate_selected_memory_ids(cls, value: Optional[List[int]]) -> Optional[List[int]]:
+        """记忆 ID 必须为正整数，并按输入顺序去重。"""
+        if value is None:
+            return None
+        if any(memory_id <= 0 for memory_id in value):
+            raise ValueError("selected_memory_ids must contain positive integers")
+        return list(dict.fromkeys(value))
 
 
 class WorkflowBase(BaseModel):
@@ -1402,3 +1440,92 @@ class PetActiveResponse(BaseModel):
 class PetImportResponse(BaseModel):
     """导入自定义宠物响应。"""
     pet: PetResponse
+
+
+# -------- 工作台项目与当前上下文 --------
+
+class WorkbenchProjectCreate(BaseModel):
+    """登记一个服务端校验的代码项目根。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(..., min_length=1, max_length=200)
+    root: str = Field(..., min_length=1, max_length=4096)
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("项目名称不能为空")
+        if any(ord(character) < 32 or 127 <= ord(character) <= 159 for character in normalized):
+            raise ValueError("项目名称不能包含控制字符")
+        return normalized
+
+
+class WorkbenchProjectUpdate(BaseModel):
+    """项目可变字段；项目根不可原地修改。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    is_enabled: Optional[bool] = None
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_optional_display_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("项目名称不能为空")
+        if any(ord(character) < 32 or 127 <= ord(character) <= 159 for character in normalized):
+            raise ValueError("项目名称不能包含控制字符")
+        return normalized
+
+
+class WorkbenchProjectResponse(BaseModel):
+    """普通浏览器可见的项目字段白名单。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    display_name: str
+    is_enabled: bool
+    created_at: datetime
+    updated_at: datetime
+    last_opened_at: Optional[datetime] = None
+
+
+class WorkbenchProjectListResponse(BaseModel):
+    """当前用户的工作台项目列表。"""
+
+    items: List[WorkbenchProjectResponse] = Field(default_factory=list)
+
+
+class WorkbenchContextUpdate(BaseModel):
+    """只允许用不透明项目 ID 更新当前工作台上下文。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: Optional[str] = Field(..., max_length=128)
+
+
+class WorkbenchContextResponse(BaseModel):
+    """当前项目摘要，不暴露服务端绝对路径。"""
+
+    project: Optional[WorkbenchProjectResponse] = None
+    updated_at: Optional[datetime] = None
+
+
+class WorkbenchRuntimeResourceResponse(BaseModel):
+    """阻止项目禁用或删除的活动运行时资源。"""
+
+    resource_type: str
+    resource_id: str
+
+
+class WorkbenchRuntimeResourcesResponse(BaseModel):
+    """活动运行时资源列表。"""
+
+    items: List[WorkbenchRuntimeResourceResponse] = Field(default_factory=list)

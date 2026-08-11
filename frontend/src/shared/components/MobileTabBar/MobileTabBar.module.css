@@ -1,90 +1,101 @@
-/* ============================================================
- * 底部 Tab Bar —— 移动端原生 APP 导航
- *
- * 视觉语言（延续「信号中枢 / Signal Nexus」）：
- * - 毛玻璃半透明背景 + 顶部 hairline，悬浮于内容之上
- * - 激活 Tab：信号青主色 + 顶部信号灯点（呼吸辉光），呼应雷达语言
- * - 底部叠加 Home Indicator 安全区 padding
- * - 内容区需预留 tab 高度：AppShell 在移动端用 flex column
- *   布局（tab bar 为 flex 子项而非 fixed），天然避让，无需手动留白
- * ============================================================ */
-
 .tab-bar {
-  flex-shrink: 0;
-  width: 100%;
-  /* 毛玻璃：半透明底色（不支持 backdrop-filter 的旧 WebView 直接回退为半透明纯色）
-   * 注意：WebView 内核不支持 color-mix，深浅色必须各自显式声明 */
-  background: rgba(255, 255, 255, 0.88);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  backdrop-filter: blur(18px) saturate(1.4);
-  border-top: 1px solid var(--color-border);
-  /* 底部安全区：Home Indicator 避让 */
-  padding-bottom: var(--safe-area-bottom);
   z-index: var(--z-sticky);
-}
-
-/* 暗色主题：深墨蓝半透明毛玻璃 */
-:global(.dark) .tab-bar {
-  background: rgba(15, 23, 42, 0.88);
+  width: 100%;
+  flex: none;
+  padding-bottom: var(--safe-area-bottom);
+  border-top: 1px solid var(--brand-border);
+  background: rgba(255, 249, 245, 0.94);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  backdrop-filter: blur(18px) saturate(1.25);
 }
 
 .tab-bar-inner {
-  display: flex;
-  align-items: stretch;
-  height: var(--tab-bar-height);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  width: 100%;
   max-width: 640px;
+  height: var(--tab-bar-height);
   margin: 0 auto;
+  padding: 4px max(4px, var(--safe-area-left)) 3px max(4px, var(--safe-area-right));
 }
 
 .tab-item {
-  flex: 1;
-  min-width: 0;
+  position: relative;
   display: flex;
+  min-width: 48px;
+  min-height: 48px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  background: transparent;
-  color: var(--color-text-tertiary);
+  border-radius: 15px;
+  color: var(--brand-muted);
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
-  transition: color var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
 }
 
-/* 按下反馈：轻微下沉，触感更接近原生 */
 .tab-item:active {
-  transform: scale(0.94);
+  transform: scale(0.96);
+}
+
+.tab-item:focus-visible {
+  outline: 3px solid rgba(118, 84, 255, 0.32);
+  outline-offset: -2px;
 }
 
 .tab-item-active {
-  color: var(--color-primary);
+  color: var(--brand-violet-deep);
+  background: var(--brand-lavender);
+  font-weight: var(--font-semibold);
 }
 
-/* 图标容器：相对定位以承载信号灯点 */
+.tab-item-active::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  width: 22px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--brand-peach);
+}
+
 .tab-icon-wrap {
-  position: relative;
   display: inline-flex;
 }
 
-/* 激活信号灯点：静态信号点。
- * 注意：不得加 CSS 动画 —— Android WebView（Skia/OpenGL）中任何活跃的 CSS
- * 动画都会强制整页 60fps 重绘，APP 空闲时长时间运行会拖垮渲染线程卡死手机。
- * 该结论经 gfxinfo 对照实验证实（仅禁 6x6 呼吸灯动画帧率即从 60fps 降至 2fps）。
- */
-.tab-signal-dot {
-  position: absolute;
-  top: -2px;
-  right: -4px;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary);
-  box-shadow: var(--color-glow);
+.tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 2px;
+  font-size: 0.6875rem;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.tab-label {
-  font-size: 0.6875rem;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
+:global(.dark) .tab-bar {
+  border-top-color: rgba(232, 224, 238, 0.16);
+  background: rgba(32, 27, 40, 0.94);
+}
+
+:global(.dark) .tab-item {
+  color: #afa2b8;
+}
+
+:global(.dark) .tab-item-active {
+  color: #e4d9ff;
+  background: rgba(118, 84, 255, 0.2);
+}
+
+@media (max-width: 359px) {
+  .tab-label {
+    font-size: 0.625rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-item {
+    transition: none;
+  }
 }

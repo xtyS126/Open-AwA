@@ -25,6 +25,24 @@ from sqlalchemy.orm import sessionmaker
 from db.models.base import engine
 from db.models.conversation import Conversation, ConversationRecord, ShortTermMemory
 from db.models.user import ProfileExtractionLog, ProfileFact
+from db.models.workbench import WorkbenchContext, WorkbenchProject
+
+
+def _migrate_workbench_tables(use_engine=None):
+    """幂等创建工作台项目表及其关键索引。"""
+    target_engine = use_engine or engine
+    before_tables = set(inspect(target_engine).get_table_names())
+
+    # 直接复用 ORM Table，避免 runtime 迁移与模型列类型、默认值或外键漂移。
+    WorkbenchProject.__table__.create(target_engine, checkfirst=True)
+    WorkbenchContext.__table__.create(target_engine, checkfirst=True)
+    for index in WorkbenchProject.__table__.indexes:
+        index.create(target_engine, checkfirst=True)
+
+    if "workbench_projects" not in before_tables:
+        logger.info("已创建 workbench_projects 表")
+    if "workbench_contexts" not in before_tables:
+        logger.info("已创建 workbench_contexts 表")
 
 
 def _migrate_profile_facts_table(use_engine=None):

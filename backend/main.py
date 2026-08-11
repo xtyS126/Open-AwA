@@ -53,6 +53,7 @@ from api.routes.im import router as im_router
 from api.routes.acp import router as acp_router
 from api.routes.pets import router as pets_router
 from api.routes.preview_proxy import router as preview_proxy_router
+from api.routes.workbench import router as workbench_router
 from api.routes.notifications import router as notifications_router
 from api.adapters.ask_user_adapter import AskUserPortAdapter
 from api.adapters.workflow_repository_adapter import WorkflowRepositoryAdapter
@@ -1639,6 +1640,7 @@ ensure_ask_user_permissions()
 app.include_router(workspace_router)
 app.include_router(heartbeat_router)
 app.include_router(coding_router)
+app.include_router(workbench_router)
 app.include_router(inbox_router)
 app.include_router(magic_commands_router, prefix=settings.API_V1_STR)
 app.include_router(tts_router)

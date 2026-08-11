@@ -1576,11 +1576,31 @@ class MemoryManager:
                 # Spec Task 9：state 字段同步过滤（archived 状态）
                 query = query.filter(LongTermMemory.state != "archived")
             if not include_deprecated:
+                query = query.filter(LongTermMemory.archive_status != "deprecated")
                 query = query.filter(LongTermMemory.state != "deprecated")
             results = query.all()
             for m in results:
                 db.expunge(m)
             return results
+
+    async def get_memories_by_ids(
+        self,
+        memory_ids: List[int],
+        user_id: Optional[str] = None,
+        workspace_id: str = "default",
+    ) -> List[LongTermMemory]:
+        """按输入顺序读取当前用户和工作区内仍可用的长期记忆。"""
+        normalized_ids = list(dict.fromkeys(memory_ids))
+        memories = await asyncio.to_thread(
+            self._get_memories_by_ids_sync,
+            normalized_ids,
+            user_id,
+            False,
+            False,
+            workspace_id,
+        )
+        by_id = {int(memory.id): memory for memory in memories}
+        return [by_id[memory_id] for memory_id in normalized_ids if memory_id in by_id]
 
     async def search_memories(
         self,

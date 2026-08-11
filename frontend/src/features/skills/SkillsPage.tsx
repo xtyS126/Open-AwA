@@ -115,7 +115,11 @@ type TypeFilter = 'all' | SkillCategory
  * 主组件
  * ────────────────────────────────────────────────────────────── */
 
-function SkillsPage() {
+export interface SkillsPageProps {
+  embedded?: boolean
+}
+
+function SkillsPage({ embedded = false }: SkillsPageProps) {
   const navigate = useNavigate()
 
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -190,7 +194,7 @@ function SkillsPage() {
 
   /** 跳转技能市场 */
   const handleOpenMarket = useCallback(() => {
-    navigate('/skills/market')
+    navigate('/library/capabilities?type=skill&view=discover')
   }, [navigate])
 
   /** 根据筛选条件过滤技能列表 */
@@ -222,8 +226,8 @@ function SkillsPage() {
 
   return (
     <div className={styles['skills-page']}>
-      {/* 页面头部 */}
-      <header className={styles['page-header']}>
+      {/* 嵌入能力资源时由聚合页承载产品级标题与视图导航 */}
+      {!embedded && <header className={styles['page-header']}>
         <div className={styles['page-header-left']}>
           <h1 className={styles['page-title']}>技能管理</h1>
           <p className={styles['page-subtitle']}>管理和配置 AI Agent 可用的技能工具</p>
@@ -246,7 +250,7 @@ function SkillsPage() {
             <span>创建技能</span>
           </button>
         </div>
-      </header>
+      </header>}
 
       {/* 错误提示 */}
       {loadError && <div className={styles['error-banner']}>{loadError}</div>}

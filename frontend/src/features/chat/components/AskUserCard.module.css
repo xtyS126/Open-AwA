@@ -166,7 +166,7 @@
  * AskUserCard 在移动端从底部滑入抽屉，覆盖 ChatInput，
  * 保证用户在虚拟键盘弹起时仍能看到问题并提交回答。
  * ============================================================ */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .panel {
     position: fixed;
     bottom: 0;

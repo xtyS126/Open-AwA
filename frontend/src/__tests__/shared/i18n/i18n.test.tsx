@@ -3,6 +3,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { useI18nStore, LANGUAGES } from '@/i18n'
 import { AppearanceTabContainer } from '@/features/settings/containers/AppearanceTabContainer'
+import zhCN from '@/i18n/locales/zh-CN'
+import enUS from '@/i18n/locales/en-US'
+import jaJP from '@/i18n/locales/ja-JP'
+import ruRU from '@/i18n/locales/ru-RU'
 
 // Mock themeStore，避免依赖实际状态
 vi.mock('@/shared/store/themeStore', () => ({
@@ -49,6 +53,22 @@ describe('i18n 语言切换', () => {
     expect(codes).toContain('en-US')
     expect(codes).toContain('ja-JP')
     expect(codes).toContain('ru-RU')
+  })
+
+  it('四个语言包都完整声明五域导航标签', () => {
+    const requiredKeys = [
+      'nav.domain.assistant',
+      'nav.domain.workbench',
+      'nav.domain.automations',
+      'nav.domain.library',
+      'nav.domain.activity',
+    ]
+
+    for (const locale of [zhCN, enUS, jaJP, ruRU]) {
+      for (const key of requiredKeys) {
+        expect(locale[key]).toBeTruthy()
+      }
+    }
   })
 
   it('默认语言为 zh-CN', () => {

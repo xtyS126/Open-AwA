@@ -26,6 +26,19 @@ export interface ConversationSessionCreatePayload {
   session_id?: string
 }
 
+export interface AssistantConversationContext {
+  session_id: string
+  role_id: string | null
+  workspace_id: string
+  selected_memory_ids: number[]
+  speaker_id: string | null
+}
+
+export type AssistantConversationContextUpdate = Omit<
+  AssistantConversationContext,
+  'session_id'
+>
+
 export interface ConversationSessionListParams {
   search?: string
   sort_by?: ConversationSortKey
@@ -82,6 +95,18 @@ export const conversationAPI = {
     api.get<ConversationSessionListResponse>('/conversations', { params, signal }),
   createSession: (payload: ConversationSessionCreatePayload = {}) =>
     api.post<ConversationSessionSummary>('/conversations', payload),
+  getAssistantContext: (sessionId: string) =>
+    api.get<AssistantConversationContext>(
+      `/conversations/${encodeURIComponent(sessionId)}/assistant-context`,
+    ),
+  updateAssistantContext: (
+    sessionId: string,
+    context: AssistantConversationContextUpdate,
+  ) =>
+    api.patch<AssistantConversationContext>(
+      `/conversations/${encodeURIComponent(sessionId)}/assistant-context`,
+      context,
+    ),
   renameSession: (sessionId: string, title: string) =>
     api.patch<ConversationSessionSummary>(`/conversations/${sessionId}`, { title }),
   deleteSession: (sessionId: string, retentionDays: number = 30) =>

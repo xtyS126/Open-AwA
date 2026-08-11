@@ -511,7 +511,7 @@ describe('PluginsPage builtin plugins section', () => {
 
       // 点击"设置"按钮，应调用 navigate 跳转到配置页（而非打开 modal）
       fireEvent.click(configButton)
-      expect(mockNavigate).toHaveBeenCalledWith('/plugins/config/builtin-1')
+      expect(mockNavigate).toHaveBeenCalledWith('/library/capabilities/plugin/builtin-1/config')
     })
   })
 })

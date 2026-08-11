@@ -349,7 +349,23 @@ const STATE_BADGE_CLASSES: Record<string, string> = {
  * 主页面组件
  * ============================================================ */
 
-function MemoryPage() {
+export type MemoryPageTab = 'long-term' | 'short-term' | 'quality'
+
+export interface MemoryPageProps {
+  activeTab?: MemoryPageTab
+  initialTab?: MemoryPageTab
+  hideTabs?: boolean
+  embedded?: boolean
+  onTabChange?: (tab: MemoryPageTab) => void
+}
+
+function MemoryPage({
+  activeTab: controlledActiveTab,
+  initialTab = 'long-term',
+  hideTabs = false,
+  embedded = false,
+  onTabChange,
+}: MemoryPageProps = {}) {
   /* ----- i18n 与本地用户输入状态 ----- */
   const t = useI18nStore(s => s.t)
   const [searchQuery, setSearchQuery] = useState('')
@@ -362,7 +378,15 @@ function MemoryPage() {
   /* 当前展示的会话 ID（由短期记忆 queryFn 内部决定） */
   const [selectedSessionId, setSelectedSessionId] = useState('')
   /* Spec Task 16：tab 切换器 —— 'long-term' 默认保持现有行为 */
-  const [activeTab, setActiveTab] = useState<'long-term' | 'short-term' | 'quality'>('long-term')
+  const [internalActiveTab, setInternalActiveTab] = useState<MemoryPageTab>(initialTab)
+  const activeTab = controlledActiveTab ?? internalActiveTab
+
+  const selectTab = useCallback((tab: MemoryPageTab) => {
+    if (controlledActiveTab === undefined) {
+      setInternalActiveTab(tab)
+    }
+    onTabChange?.(tab)
+  }, [controlledActiveTab, onTabChange])
 
   const chatSessionId = useSessionStore((state) => state.sessionId)
 
@@ -713,7 +737,7 @@ function MemoryPage() {
   return (
     <div className={styles.memoryPage}>
       {/* ========== 页面标题 ========== */}
-      <div className={styles.pageHeader}>
+      {!embedded && <div className={styles.pageHeader}>
         <div>
           <h1 className={styles.pageTitle}>记忆管理</h1>
           <p className={styles.pageSubtitle}>AI 记忆系统状态与配置</p>
@@ -736,7 +760,7 @@ function MemoryPage() {
             刷新
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* ========== 统计概览卡片（真实 stats） ========== */}
       <div className={styles.statGrid}>
@@ -801,13 +825,13 @@ function MemoryPage() {
         {/* 左侧：记忆条目列表 */}
         <div className={styles.memoryListColumn}>
           {/* Spec Task 16：tab 切换器 —— 长期记忆 / 对话记录 / 质量评估 */}
-          <div className={styles.tabBar} role="tablist">
+          {!hideTabs && <div className={styles.tabBar} role="tablist">
             <button
               type="button"
               role="tab"
               aria-selected={activeTab === 'long-term'}
               className={`${styles.tabButton} ${activeTab === 'long-term' ? styles.tabButtonActive : ''}`}
-              onClick={() => setActiveTab('long-term')}
+              onClick={() => selectTab('long-term')}
             >
               长期记忆
               <span className={`${styles.tabCountBadge} ${activeTab === 'long-term' ? styles.tabCountBadgeActive : ''}`}>
@@ -819,7 +843,7 @@ function MemoryPage() {
               role="tab"
               aria-selected={activeTab === 'short-term'}
               className={`${styles.tabButton} ${activeTab === 'short-term' ? styles.tabButtonActive : ''}`}
-              onClick={() => setActiveTab('short-term')}
+              onClick={() => selectTab('short-term')}
             >
               对话记录
               <span className={`${styles.tabCountBadge} ${activeTab === 'short-term' ? styles.tabCountBadgeActive : ''}`}>
@@ -831,11 +855,11 @@ function MemoryPage() {
               role="tab"
               aria-selected={activeTab === 'quality'}
               className={`${styles.tabButton} ${activeTab === 'quality' ? styles.tabButtonActive : ''}`}
-              onClick={() => setActiveTab('quality')}
+              onClick={() => selectTab('quality')}
             >
               质量评估
             </button>
-          </div>
+          </div>}
 
           {/* Spec memory-experience-redesign：短期记忆 tab 澄清为对话记录 */}
           {activeTab === 'short-term' ? (

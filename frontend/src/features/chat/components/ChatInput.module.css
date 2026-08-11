@@ -268,11 +268,11 @@
 }
 
 /* ============================================================
- * 移动端适配（≤ 768px，对应 --breakpoint-md 令牌）
+ * 移动端适配（< 768px，对应 --breakpoint-md 令牌）
  * ChatInput 固定在视口底部，应用 safe-area-bottom padding，
  * 半透明背景 + backdrop-filter blur 模糊，z-index 高于消息列表
  * ============================================================ */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .chat-input-container {
     position: fixed;
     /* 悬浮于底部 Tab Bar 之上：Tab Bar 总高 = 内容 64px + Home Indicator 安全区 */

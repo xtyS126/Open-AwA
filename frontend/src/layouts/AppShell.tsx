@@ -1,5 +1,7 @@
 import React, { Suspense } from 'react'
 import { Outlet, useLocation } from '@/shared/routing'
+import GlobalTopBar from '@/shared/components/GlobalTopBar/GlobalTopBar'
+import DomainLocalNav from '@/shared/components/DomainLocalNav/DomainLocalNav'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
 
 // P2: Sidebar 懒加载，减少主包体积
@@ -20,16 +22,20 @@ export function AppShell() {
       <Suspense fallback={<div className="sidebar-skeleton" />}>
         <Sidebar />
       </Suspense>
-      {/* 主内容区，skip-link 目标锚点 */}
-      {/* a11y: tabIndex={-1} 使 #main-content 可被 skip-link 编程式聚焦 */}
-      <main id="main-content" className="main-content" tabIndex={-1}>
-        <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>}>
-          {/* 使用 location.pathname 作为 key，触发 CSS 动画实现页面切换淡入 */}
-          <div className="page-transition-wrapper" key={location.pathname}>
-            <Outlet />
-          </div>
-        </Suspense>
-      </main>
+      <div className="app-workspace">
+        <GlobalTopBar />
+        {/* 主内容区，skip-link 目标锚点 */}
+        {/* a11y: tabIndex={-1} 使 #main-content 可被 skip-link 编程式聚焦 */}
+        <main id="main-content" className="main-content" tabIndex={-1}>
+          <DomainLocalNav />
+          <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>}>
+            {/* 使用 location.pathname 作为 key，触发 CSS 动画实现页面切换淡入 */}
+            <div className="page-transition-wrapper" key={location.pathname}>
+              <Outlet />
+            </div>
+          </Suspense>
+        </main>
+      </div>
       {/* 移动端底部 Tab Bar：桌面端 useBreakpoint 守卫不渲染 */}
       <Suspense fallback={null}>
         <MobileTabBar />

@@ -16,11 +16,18 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
 from api.schemas import (
+    ConversationAssistantContextPatch,
+    ConversationAssistantContextResponse,
     ConversationSessionBatchDeleteRequest,
     ConversationSessionCreate,
     ConversationSessionListResponse,
     ConversationSessionRenameRequest,
     ConversationSessionResponse,
+)
+from api.services.assistant_context_service import (
+    AssistantContextResourceError,
+    get_assistant_context,
+    patch_assistant_context,
 )
 from core.conversation_sessions import (
     DEFAULT_CONVERSATION_TITLE,
@@ -226,6 +233,63 @@ async def create_session(
     ).info("conversation session created")
 
     return _serialize_conversation(conversation)
+
+
+@router.get(
+    "/{session_id}/assistant-context",
+    response_model=ConversationAssistantContextResponse,
+)
+async def get_conversation_assistant_context(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """读取当前用户会话的助手上下文偏好。"""
+    conversation = get_conversation_or_404(
+        db,
+        session_id,
+        current_user.id,
+        include_deleted=False,
+    )
+    return {
+        "session_id": conversation.session_id,
+        **get_assistant_context(conversation),
+    }
+
+
+@router.patch(
+    "/{session_id}/assistant-context",
+    response_model=ConversationAssistantContextResponse,
+)
+async def update_conversation_assistant_context(
+    session_id: str,
+    payload: ConversationAssistantContextPatch,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """增量更新当前用户会话的助手上下文偏好。"""
+    conversation = get_conversation_or_404(
+        db,
+        session_id,
+        current_user.id,
+        include_deleted=False,
+    )
+    updates = payload.model_dump(include=payload.model_fields_set)
+    try:
+        result = patch_assistant_context(
+            db,
+            conversation,
+            str(current_user.id),
+            updates,
+        )
+    except AssistantContextResourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(conversation)
+    return {
+        "session_id": conversation.session_id,
+        **result,
+    }
 
 
 @router.get("/records")

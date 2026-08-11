@@ -136,6 +136,12 @@ from db.models.workspace import (
     Workspace,
 )
 
+# ---- 工作台项目域 ----
+from db.models.workbench import (
+    WorkbenchContext,
+    WorkbenchProject,
+)
+
 # ---- 外部依赖模型注册 ----
 # PermissionSaved 与 EventLog 定义在独立模块中，但共享本包的 Base.metadata。
 # 此处 import 触发模型注册，确保 init_db 的 create_all 能创建对应表。
@@ -247,6 +253,9 @@ __all__ = [
     # 工作区与系统配置域
     "Workspace",
     "SearchProviderConfig",
+    # 工作台项目域
+    "WorkbenchProject",
+    "WorkbenchContext",
     # 宠物域
     "Pet",
     "UserActivePet",

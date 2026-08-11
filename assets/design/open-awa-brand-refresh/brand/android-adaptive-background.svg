@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <title>Open-AwA Android 自适应图标背景参考</title>
+  <desc>无附加细节的紫罗兰斜向渐变背景。</desc>
+  <defs>
+    <linearGradient id="adaptive-background" x1="8" y1="100" x2="100" y2="8" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5E3FD6"/>
+      <stop offset="0.55" stop-color="#7654FF"/>
+      <stop offset="1" stop-color="#A678FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="108" height="108" fill="url(#adaptive-background)"/>
+</svg>

@@ -1,0 +1,249 @@
+.manager {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+}
+
+.filters {
+  padding: var(--space-2) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
+}
+
+.searchRow,
+.sortRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.searchInput,
+.sortSelect,
+.renameInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.searchInput:focus,
+.sortSelect:focus,
+.renameInput:focus {
+  border-color: var(--color-primary);
+  background: var(--color-bg);
+}
+
+.checkboxRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.batchActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: 2px;
+}
+
+.batchButtons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-1) var(--space-2);
+}
+
+.empty,
+.error,
+.loading {
+  padding: var(--space-4);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.item {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  margin-bottom: 1px;
+}
+
+.item:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.item.active {
+  background: var(--color-primary-soft-bg);
+}
+
+.item.deleted {
+  opacity: 0.72;
+}
+
+.itemMain {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.itemSelectButton {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+}
+
+.itemHeader,
+.itemMeta,
+.itemActions,
+.renameActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.itemCheckbox {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.itemTitle {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item.active .itemTitle {
+  color: var(--color-primary);
+}
+
+.itemSummary {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  line-height: var(--leading-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metaText,
+.deletedText {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.item.active .itemSummary,
+.item.active .metaText {
+  color: var(--color-text-secondary);
+}
+
+.actionButton,
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  border: none;
+  cursor: pointer;
+}
+
+.actionButton {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.actionButton:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text);
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  font-size: var(--text-xs);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+
+.primaryButton {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.primaryButton:hover {
+  background: var(--color-primary-hover);
+}
+
+.secondaryButton {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.secondaryButton:hover {
+  background: var(--color-bg-secondary);
+}
+
+.dangerButton {
+  background: var(--color-error-bg);
+  color: var(--color-error-strong);
+}
+
+.dangerButton:hover {
+  background: var(--color-error-soft-bg);
+}
+
+.secondaryButton:disabled,
+.dangerButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

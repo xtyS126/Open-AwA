@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" shape-rendering="geometricPrecision">
+  <title>Open-AwA 抽象软晶标记圆形版本</title>
+  <desc>圆形紫罗兰底板上的三层抽象软晶标记。</desc>
+  <defs>
+    <linearGradient id="circle-base" x1="112" y1="912" x2="912" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5E3FD6"/>
+      <stop offset="0.52" stop-color="#7654FF"/>
+      <stop offset="1" stop-color="#A678FF"/>
+    </linearGradient>
+    <linearGradient id="circle-outer" x1="17" y1="14" x2="49" y2="51" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF9F5"/>
+      <stop offset="0.68" stop-color="#FFF9F5"/>
+      <stop offset="1" stop-color="#FFD8C8"/>
+    </linearGradient>
+    <linearGradient id="circle-inner" x1="24" y1="43" x2="46" y2="19" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5E3FD6"/>
+      <stop offset="0.58" stop-color="#7654FF"/>
+      <stop offset="1" stop-color="#A678FF"/>
+    </linearGradient>
+  </defs>
+  <circle cx="512" cy="512" r="480" fill="url(#circle-base)"/>
+  <g transform="translate(-107.6 -87) scale(18.72)">
+    <path d="M16.5 31.5C16.5 20.1 24.1 12.7 34.4 12.7c10.1 0 17.3 7.1 17.3 17.1 0 11.7-8.7 21.5-20.5 21.5-9.5 0-16.7-6.6-16.7-15.1 0-1.8.7-3.4 2-4.7Z" fill="url(#circle-outer)"/>
+    <path d="M23.5 31.3c0-7.4 5.1-12.4 12.1-12.4 6.5 0 10.9 4.7 10.9 11.1 0 8.1-5.8 14.7-13.5 14.7-6.2 0-10.7-4.1-10.7-9.5 0-1.5.4-2.8 1.2-3.9Z" fill="url(#circle-inner)"/>
+    <path d="M39.3 23.9c3.2 1.8 4.7 5 3.9 8.2-.7 3-3.1 5.4-6.3 6.4.9-4.5-.2-8.4-3.4-11.4 1.6-2 3.7-3.2 5.8-3.2Z" fill="#FFD8C8"/>
+  </g>
+</svg>

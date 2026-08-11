@@ -514,6 +514,15 @@ agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 
 > 记忆写入契约：**长期记忆只存 LLM 提炼后的高价值信息（≤200 字事实/偏好/决策）**。`core/feedback.py` 关键词路径与 `consolidation_runner.py` 均经 `extractor.py` 的 LLM 提炼后入库，禁止把对话原文直接写入长期记忆。短期记忆（对话原文）仅用于会话上下文注入与巩固提炼的原料。
 
+### 6.4.1 Conversation Assistant Context API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/conversations/{session_id}/assistant-context` | 读取当前用户会话的角色、工作区、显式长期记忆和 TTS 声音偏好 |
+| PATCH | `/api/conversations/{session_id}/assistant-context` | 增量更新并校验会话上下文；引用资源必须对当前用户和工作区可见 |
+
+上下文持久化在 `Conversation.conversation_metadata.assistant_context`，不新增数据表。服务端统一为非流式 HTTP、SSE 与 WebSocket 装配 `role_id`、`workspace_id` 和 `selected_memory_ids`；客户端聊天载荷不得直接覆盖这些字段。`speaker_id` 只作为会话 TTS 偏好，不进入 Agent/LLM context。显式记忆优先于自动检索结果，并在同一用户和工作区内按 memory ID 去重合并。
+
 ### 6.5 向量模型配置（Spec memory-model-config-chain）
 
 嵌入/重排模型支持本地与云端双模式，模型注册表定义于 `memory/model_registry.py`：
@@ -945,6 +954,7 @@ APK 路径默认锚定 `frontend/android/app/build/outputs/apk/debug/app-debug.a
 - **uiautomator dump 中 WebView 按钮的 aria-label 覆盖 text 字段**：带 aria-label 的按钮其可见文本不会出现在 text 属性中（显示为 aria-label 值）；验证可见文本时用 CDP 读取或先去掉 aria-label。
 - **CDP 截图 PNG/JPEG 在 Read 工具均不支持**：视觉验证用 DOM computed style（getComputedStyle）+ 截图像素颜色统计（PIL）替代。
 - **CDP 路由验证模式**：`frontend/scripts/cdp-helper.cjs`（eval/nav/shot）+ `verify-routes.cjs`（24 路由批量验收）可复用；TanStack Router 监听 popstate，导航用 `history.pushState` + 派发 `PopStateEvent` 即可，无需整页刷新。
+- **TanStack Link 手动最长前缀选中必须关闭框架模糊选中**：域内导航若自行用 `getActiveChild()` 计算唯一当前项，每个 `Link` 必须设置 `activeOptions={{ exact: true }}`，再手动写 `aria-current`；否则 `/assistant` 父入口会在 `/assistant/sessions/...` 同时被框架标记为当前页。浏览器验收需在已限定的 nav 内直接统计 `[aria-current="page"]`。
 
 ---
 
@@ -996,3 +1006,14 @@ All API routes use prefix `settings.API_V1_STR` (`/api`) except MCP, billing, ma
 - **FastAPI 函数返回类型注解即 response_model**：路由函数返回类型注解与返回值不一致（如注解 `Dict[str, Any]` 实际返回 list）会 500 `dict_type`；`behavior.py` 的 `get_behavior_logs` 注解必须为 `List[Dict[str, Any]]`。新增路由必须保证注解与返回结构精确一致。
 - **api-testing skill 运行三要素**：必须在 `backend/skills/external/api-testing` 目录执行 `python -m core.__init__ --auth-token <API_KEY>`（不传 token 全部认证用例 401）；CSRF 双提交模式下每个 csrf-token 响应都会轮换 Cookie，并发用例须在状态变更请求执行前动态重新获取 token（否则 invalid_csrf_token 403）；`/api/models/providers` 对全部 provider 顺序连通性检查约 53 秒，用例 timeout_seconds 需 ≥60。
 - **api-testing 报告文件不得入库**：`reports/` 是运行产物，已加入 `api-testing/.gitignore`；提交时禁止 `git add` 报告文件。
+
+## 19.12 2026-08-11 助手域 L2 与隔离验证新增陷阱
+
+- **会话列表只允许一个首载所有者**：`useConversationHistory` 负责列表首载，聊天动作 Hook 和 Sessions 页面不得再各自 mount 拉取；StrictMode effect 重放必须按完整查询 key 复用未完成请求，真实卸载再延迟取消，避免同参数物理请求启动两次。
+- **手工启动隔离后端必须跟踪最终监听 PID**：Windows 下 `frontend/tests/e2e/support/start_backend.py` 可能经解释器重启形成新的监听进程，只停止初始 `ProcessStartInfo` PID 不保证释放端口。停止前必须核验启动 PID和监听 PID 的完整命令行均指向该脚本，再显式停止并复核端口、PID；优先使用 Playwright `webServer` 自动管理生命周期。
+
+## 19.13 2026-08-12 工作台项目上下文新增陷阱
+
+- **智能体 Workspace 不能冒充代码项目**：`backend/db/models/workspace.py` 的 `Workspace` 保存模型、技能、频道、人设和心跳配置，当前没有代码项目根或用户所有权。禁止把 `Workspace.id` 直接复用为工作台 `project_id`，否则会混淆助手记忆隔离与服务器文件访问边界。
+- **项目根必须由服务端统一解析**：前端 `codingStore.projectDir` 和 `VibeCodingPage.projectCwd` 都是客户端原始路径，不能成为权威上下文。工作台应以独立 `project_id` 指向服务端登记项目，由统一解析器完成允许根、规范路径、符号链接逃逸和用户所有权校验，再把同一 `resolved_root` 提供给 Coding 与 ACP；两条路径不得维持不同白名单语义。
+- **新增工作台表必须验证迁移双轨等价**：当前 `init_db()` 仍执行 `Base.metadata.create_all()` 和幂等 runtime migration，同时维护 Alembic revision。新增 WorkbenchProject/Context 表时必须明确两条启动路径的 schema 等价策略，并用临时数据库验证当前 head 的前一 revision 升级、单步回滚、再次升级、索引、外键、样本数据和“删除注册记录不删除磁盘目录”；禁止只跑 ORM `create_all()` 就宣称迁移可用。

@@ -80,11 +80,11 @@
 }
 
 /* ============================================================
- * 移动端适配（≤ 768px，对应 --breakpoint-md 令牌）
+ * 移动端适配（< 768px，对应 --breakpoint-md 令牌）
  * TodoPanel 改为从底部滑入的抽屉，覆盖 ChatInput（z-index 高于 ChatInput）。
  * TodoPanel 仅在有 todo 项时渲染，todo 完成后自动消失，恢复输入。
  * ============================================================ */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .panel {
     position: fixed;
     bottom: 0;

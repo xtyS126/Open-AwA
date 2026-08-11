@@ -249,7 +249,7 @@ export default function TestPage() {
 
   // 开发模式守卫：非开发环境下重定向到仪表盘（在所有 Hooks 调用之后执行）
   if (!import.meta.env.DEV) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/activity/overview" replace />
   }
 
   return (
@@ -272,7 +272,7 @@ export default function TestPage() {
           </button>
           <button
             className={styles['btn-back']}
-            onClick={() => navigate('/chat')}
+            onClick={() => navigate('/assistant')}
             title="返回AI聊天"
           >
             返回聊天

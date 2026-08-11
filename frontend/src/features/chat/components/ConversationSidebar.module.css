@@ -508,8 +508,8 @@
   color: var(--color-text);
 }
 
-/* 移动端（≤ 768px，对应 --breakpoint-md 令牌）：历史侧栏内显示用户信息卡片 */
-@media (max-width: 768px) {
+/* 移动端（< 768px，对应 --breakpoint-md 令牌）：历史侧栏内显示用户信息卡片 */
+@media (max-width: 767px) {
   .user-card {
     display: block;
   }

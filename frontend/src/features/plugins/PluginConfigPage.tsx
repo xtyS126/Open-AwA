@@ -220,14 +220,14 @@ function PluginConfigPage() {
         <div className={styles['header-actions']}>
           <button
             className="btn btn-secondary"
-            onClick={() => navigate('/plugins/manage')}
+            onClick={() => navigate('/library/capabilities?type=plugin&view=installed')}
             style={{ marginRight: 8 }}
           >
             ← 返回
           </button>
           <select
             value={pluginId || ''}
-            onChange={(event) => navigate(`/plugins/config/${event.target.value}`)}
+            onChange={(event) => navigate(`/library/capabilities/plugin/${event.target.value}/config`)}
             disabled={pluginListLoading || !plugins.length}
           >
             {plugins.map((item) => (
@@ -251,7 +251,7 @@ function PluginConfigPage() {
       {!activePluginId && !pluginListLoading && plugins.length > 0 && (
         <div className={styles['empty-state']}>
           <p>请从插件管理页面选择一个插件进行配置</p>
-          <button className="btn btn-primary" onClick={() => navigate('/plugins/manage')}>
+          <button className="btn btn-primary" onClick={() => navigate('/library/capabilities?type=plugin&view=installed')}>
             返回插件管理
           </button>
         </div>
@@ -260,7 +260,7 @@ function PluginConfigPage() {
       {!activePluginId && !pluginListLoading && plugins.length === 0 && (
         <div className={styles['empty-state']}>
           <p>暂无已安装的插件</p>
-          <button className="btn btn-primary" onClick={() => navigate('/plugins/manage')}>
+          <button className="btn btn-primary" onClick={() => navigate('/library/capabilities?type=plugin&view=installed')}>
             去插件管理看看
           </button>
         </div>

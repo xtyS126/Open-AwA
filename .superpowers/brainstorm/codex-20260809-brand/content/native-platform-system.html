@@ -1,0 +1,61 @@
+<style>
+  :root{--violet:#7654ff;--violet-2:#9f79ff;--lav:#f3edff;--peach:#ffb18f;--cream:#fff9f5;--ink:#342b40;--muted:#7b6f86;--line:#e9e1ef}
+  .board{display:grid;grid-template-columns:1.3fr .72fr 1.35fr;gap:18px;margin-top:22px;align-items:start}
+  .platform{border:1px solid var(--line);border-radius:26px;background:#fff;overflow:hidden;box-shadow:0 16px 38px rgba(67,44,93,.09)}
+  .platform-title{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);font-size:12px;font-weight:800;color:var(--ink)}
+  .native-note{font-size:10px;color:var(--muted);font-weight:650}
+  .mark{width:24px;height:24px;border-radius:7px;background:linear-gradient(145deg,var(--violet),var(--violet-2));display:grid;place-items:center;flex:none}
+  .web-shell{height:375px;background:#fbf9fd;display:grid;grid-template-rows:42px 1fr}
+  .web-top{display:flex;align-items:center;gap:9px;padding:0 12px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.9)}
+  .brand{font-size:11px;font-weight:850;color:var(--ink);white-space:nowrap}.search{height:23px;flex:1;max-width:180px;margin-left:10px;border-radius:8px;background:#f2eef6;border:1px solid #e6dfee}.avatar{width:22px;height:22px;border-radius:50%;background:#ffd8c7;margin-left:auto}
+  .web-body{display:grid;grid-template-columns:94px 1fr 104px;min-height:0}
+  .web-nav{padding:11px 8px;border-right:1px solid var(--line);background:#fff}.nav-item{height:25px;border-radius:7px;margin-bottom:5px;padding:0 7px;display:flex;align-items:center;gap:6px;font-size:8px;color:#6f6479}.nav-item.on{background:var(--lav);color:#6546d3;font-weight:800}.nav-glyph{width:9px;height:9px;border-radius:3px;background:currentColor;opacity:.55}
+  .chat{padding:14px 13px;display:flex;flex-direction:column;min-width:0}.chat-head{font-size:13px;font-weight:850;color:var(--ink);margin-bottom:4px}.chat-sub{font-size:8px;color:var(--muted);margin-bottom:16px}.bubble{max-width:78%;padding:9px 10px;border-radius:12px;font-size:8px;line-height:1.5;margin-bottom:8px;background:#fff;border:1px solid var(--line);color:#5e5268}.bubble.me{align-self:flex-end;background:linear-gradient(145deg,#8060ff,#9d78ff);border:0;color:#fff}.composer{margin-top:auto;height:48px;border-radius:14px;border:1px solid #ded3e9;background:#fff;padding:9px;font-size:8px;color:#9b8fa5;box-shadow:0 9px 20px rgba(83,60,111,.07)}
+  .context{border-left:1px solid var(--line);background:#fff;padding:12px 9px}.ctx-title{font-size:8px;font-weight:850;color:var(--ink);margin-bottom:9px}.ctx-card{border-radius:9px;background:#f8f4fb;padding:8px;margin-bottom:7px}.ctx-line{height:4px;border-radius:5px;background:#d9cbed;margin-bottom:5px}.ctx-line.s{width:58%}
+  .phone-wrap{height:375px;background:linear-gradient(165deg,#f4edff,#fff8f4);display:grid;place-items:center;padding:16px}
+  .phone{width:175px;height:346px;border-radius:30px;background:#fff;border:5px solid #2f2838;overflow:hidden;box-shadow:0 20px 35px rgba(55,42,66,.22);display:grid;grid-template-rows:22px 1fr 48px}
+  .status{font-size:7px;padding:7px 13px 0;color:#4b4055;display:flex;justify-content:space-between}.mobile-main{padding:10px 12px 8px;overflow:hidden;background:linear-gradient(#fff,#fdfbff)}
+  .mobile-head{display:flex;align-items:center;gap:8px}.mobile-title{font-size:14px;font-weight:850;color:var(--ink)}.mobile-sub{font-size:7px;color:var(--muted)}.mobile-card{margin-top:13px;padding:12px;border-radius:18px;background:linear-gradient(145deg,#f3edff,#fff5ef);min-height:86px}.mobile-kicker{font-size:7px;color:#7758d8;font-weight:800}.mobile-copy{font-size:10px;color:#4b4055;line-height:1.4;margin-top:7px}.mobile-chip{display:inline-block;margin-top:9px;padding:5px 8px;border-radius:10px;background:#fff;color:#694bd1;font-size:7px;font-weight:800}.mobile-bubble{margin-top:9px;padding:9px 10px;border-radius:15px 15px 15px 5px;background:#f5f1f8;color:#665a70;font-size:8px;line-height:1.45}.mobile-input{margin-top:9px;height:34px;border-radius:17px;border:1px solid #e2d9e9;display:flex;align-items:center;padding:0 11px;color:#9b8fa5;font-size:7px}.send{width:22px;height:22px;border-radius:50%;background:var(--violet);margin-left:auto}
+  .bottom{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid #eee7f1;background:#fff;padding:6px 5px 4px}.tab{text-align:center;font-size:6px;color:#968a9e}.tab i{display:block;width:15px;height:15px;border-radius:6px;background:#ddd3e6;margin:0 auto 3px}.tab.on{color:#6e4ed9;font-weight:800}.tab.on i{background:#dacdff}
+  .desktop-shell{height:375px;background:#f5f2f7;display:grid;grid-template-rows:31px 1fr}
+  .titlebar{display:flex;align-items:center;padding:0 10px;background:#faf8fb;border-bottom:1px solid #ded7e3;font-size:8px;color:#6f6478}.traffic{display:flex;gap:5px}.traffic i{width:7px;height:7px;border-radius:50%;background:#d2cad8}.desktop-name{margin-left:13px;font-weight:800}.win-controls{margin-left:auto;display:flex;gap:13px;font-size:9px}
+  .desktop-body{display:grid;grid-template-columns:38px 108px 1fr 113px;min-height:0}.activity{background:#332a3e;padding:9px 8px}.act{width:22px;height:22px;border-radius:7px;background:#51445f;margin-bottom:8px}.act.on{background:linear-gradient(145deg,var(--violet),var(--violet-2))}.tree{background:#fff;border-right:1px solid #ded7e3;padding:10px 8px}.tree-title{font-size:8px;font-weight:850;color:#4e4258;margin-bottom:10px}.tree-row{height:19px;border-radius:5px;padding:0 5px;display:flex;align-items:center;font-size:7px;color:#776b80}.tree-row.on{background:#eee7f8;color:#5f43bc;font-weight:800}
+  .workspace{display:grid;grid-template-rows:28px 1fr 78px;min-width:0}.tabs{display:flex;background:#eeeaf0;border-bottom:1px solid #dcd5e0}.desk-tab{padding:8px 12px;font-size:7px;color:#776b80;border-right:1px solid #ddd6e1}.desk-tab.on{background:#fff;color:#4c4055;font-weight:800}.desk-chat{padding:11px;background:#fff}.desk-msg{font-size:7px;line-height:1.5;color:#65596f;padding:8px;border-radius:9px;background:#f6f2f8;margin-bottom:8px}.desk-msg.accent{background:#f1ebff;border-left:3px solid var(--violet)}.terminal{background:#251f2c;color:#c9bfe0;padding:8px 10px;font:6px Consolas,monospace;line-height:1.6}.inspector{background:#fbfafc;border-left:1px solid #ded7e3;padding:10px 8px}.inspect-title{font-size:8px;font-weight:850;color:#4e4258;margin-bottom:9px}.inspect-card{padding:7px;border:1px solid #e7e0eb;border-radius:8px;margin-bottom:7px}.inspect-line{height:4px;border-radius:4px;background:#ded2ed;margin-bottom:5px}.inspect-line.s{width:62%}
+  .principles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}.principle{padding:14px;border:1px solid var(--line);border-radius:17px;background:#fff}.principle h4{margin:0 0 5px;font-size:13px;color:var(--ink)}.principle p{margin:0;font-size:11px;line-height:1.5;color:var(--muted)}
+  .approval{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}.approval .option{border-radius:16px}
+  @media(max-width:1050px){.board{grid-template-columns:1fr}.principles{grid-template-columns:1fr}}
+</style>
+
+<h2>三端原生界面系统</h2>
+<p class="subtitle">共享轻快可爱的品牌色、抽象软晶图标和圆润材质，但不把网页拉伸成 APP，也不把桌面端做成大号网页。</p>
+
+<div class="board">
+  <section class="platform">
+    <div class="platform-title"><span>网页端</span><span class="native-note">响应式工作区</span></div>
+    <div class="web-shell">
+      <div class="web-top"><div class="mark"><svg width="16" height="16" viewBox="0 0 120 120"><path d="M60 17C73 17 83 28 82 41C95 38 106 47 106 60C106 73 95 82 82 79C83 92 73 103 60 103C47 103 37 92 38 79C25 82 14 73 14 60C14 47 25 38 38 41C37 28 47 17 60 17Z" fill="#FFF0E8"/><path d="M60 35C68 35 74 42 73 50C81 48 88 53 88 60C88 67 81 72 73 70C74 78 68 85 60 85C52 85 46 78 47 70C39 72 32 67 32 60C32 53 39 48 47 50C46 42 52 35 60 35Z" fill="#835CFF"/></svg></div><span class="brand">Open-AwA</span><div class="search"></div><div class="avatar"></div></div>
+      <div class="web-body"><nav class="web-nav"><div class="nav-item on"><i class="nav-glyph"></i>对话</div><div class="nav-item"><i class="nav-glyph"></i>任务</div><div class="nav-item"><i class="nav-glyph"></i>技能</div><div class="nav-item"><i class="nav-glyph"></i>记忆</div><div class="nav-item"><i class="nav-glyph"></i>插件</div></nav><main class="chat"><div class="chat-head">新的协作空间</div><div class="chat-sub">对话、工具与任务流集中呈现</div><div class="bubble">我已经整理了今天的三个任务，可以先从优先级最高的一项开始。</div><div class="bubble me">先检查当前项目状态。</div><div class="composer">输入消息，或按 / 调用能力</div></main><aside class="context"><div class="ctx-title">当前上下文</div><div class="ctx-card"><div class="ctx-line"></div><div class="ctx-line s"></div></div><div class="ctx-card"><div class="ctx-line"></div><div class="ctx-line s"></div></div></aside></div>
+    </div>
+  </section>
+
+  <section class="platform">
+    <div class="platform-title"><span>Android APP</span><span class="native-note">Material 3 触控界面</span></div>
+    <div class="phone-wrap"><div class="phone"><div class="status"><span>9:41</span><span>5G&nbsp;&nbsp;86%</span></div><main class="mobile-main"><div class="mobile-head"><div class="mark"><svg width="16" height="16" viewBox="0 0 120 120"><path d="M60 17C73 17 83 28 82 41C95 38 106 47 106 60C106 73 95 82 82 79C83 92 73 103 60 103C47 103 37 92 38 79C25 82 14 73 14 60C14 47 25 38 38 41C37 28 47 17 60 17Z" fill="#FFF0E8"/><path d="M60 35C68 35 74 42 73 50C81 48 88 53 88 60C88 67 81 72 73 70C74 78 68 85 60 85C52 85 46 78 47 70C39 72 32 67 32 60C32 53 39 48 47 50C46 42 52 35 60 35Z" fill="#835CFF"/></svg></div><div><div class="mobile-title">上午好</div><div class="mobile-sub">设备已连接到 Open-AwA</div></div></div><section class="mobile-card"><div class="mobile-kicker">今日建议</div><div class="mobile-copy">先处理最重要的任务，再查看新的协作消息。</div><span class="mobile-chip">开始整理</span></section><div class="mobile-bubble">需要我继续上次的项目检查吗？</div><div class="mobile-input">输入消息<div class="send"></div></div></main><nav class="bottom"><div class="tab on"><i></i>对话</div><div class="tab"><i></i>任务</div><div class="tab"><i></i>工作台</div><div class="tab"><i></i>我的</div></nav></div></div>
+  </section>
+
+  <section class="platform">
+    <div class="platform-title"><span>桌面端</span><span class="native-note">高密度多窗格</span></div>
+    <div class="desktop-shell"><div class="titlebar"><div class="traffic"><i></i><i></i><i></i></div><span class="desktop-name">Open-AwA</span><div class="win-controls"><span>－</span><span>□</span><span>×</span></div></div><div class="desktop-body"><nav class="activity"><div class="act on"></div><div class="act"></div><div class="act"></div><div class="act"></div></nav><aside class="tree"><div class="tree-title">工作区</div><div class="tree-row on">当前对话</div><div class="tree-row">任务运行</div><div class="tree-row">终端会话</div><div class="tree-row">文件预览</div><div class="tree-row">运行记录</div></aside><main class="workspace"><div class="tabs"><div class="desk-tab on">对话</div><div class="desk-tab">任务 #184</div><div class="desk-tab">预览</div></div><div class="desk-chat"><div class="desk-msg accent">项目分析已完成。发现两个可独立处理的问题，当前未修改任何文件。</div><div class="desk-msg">打开右侧检查器可以查看调用记录、上下文和执行状态。</div></div><div class="terminal">PS D:\代码\Open-AwA&gt; git status --short<br/>PS D:\代码\Open-AwA&gt; _</div></main><aside class="inspector"><div class="inspect-title">检查器</div><div class="inspect-card"><div class="inspect-line"></div><div class="inspect-line s"></div></div><div class="inspect-card"><div class="inspect-line"></div><div class="inspect-line s"></div></div></aside></div></div>
+  </section>
+</div>
+
+<div class="principles">
+  <div class="principle"><h4>统一品牌，不统一布局</h4><p>三端共享色彩、图标、字体层级与动效节奏；导航结构、内容密度和输入方式按平台重组。</p></div>
+  <div class="principle"><h4>可爱来自材质与节奏</h4><p>使用柔软渐变、暖色点缀和轻弹动效，不使用卡通脸、吉祥物或装饰性堆叠。</p></div>
+  <div class="principle"><h4>完整交付为设计资产</h4><p>最终单独目录包含 SVG 图标母版、PNG 尺寸导出、三端高保真概念稿、令牌与使用说明。</p></div>
+</div>
+
+<div class="approval options">
+  <div class="option" data-choice="approve-native-system" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>接受这套三端分化</h3><p>继续编写正式设计规范和最终资产。</p></div></div>
+  <div class="option" data-choice="revise-native-system" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>需要调整</h3><p>在终端说明想改变的端、布局或视觉气质。</p></div></div>
+</div>

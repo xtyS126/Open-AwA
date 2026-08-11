@@ -943,7 +943,7 @@ class AIAgent:
         await self._prepare_execution_context(
             user_input,
             context,
-            enable_role_engine=False,
+            enable_role_engine=True,
         )
         return None
 
@@ -1196,13 +1196,29 @@ class AIAgent:
             raise RuntimeError("记忆管理器未注入，无法检索长期记忆")
 
         try:
-            memories = await self.memory_manager.search_memories(
+            selected_memory_ids = context.get("selected_memory_ids") or []
+            selected_memories = []
+            if selected_memory_ids:
+                selected_memories = await self.memory_manager.get_memories_by_ids(
+                    selected_memory_ids,
+                    user_id=context.get("user_id"),
+                    workspace_id=context.get("workspace_id", "default"),
+                )
+            related_memories = await self.memory_manager.search_memories(
                 query=user_input,
                 limit=5,
                 user_id=context.get('user_id'),
                 include_archived=False,
                 use_vector=True,
+                workspace_id=context.get("workspace_id", "default"),
             )
+            memories = []
+            seen_memory_ids = set()
+            for memory in [*selected_memories, *related_memories]:
+                if memory.id in seen_memory_ids:
+                    continue
+                seen_memory_ids.add(memory.id)
+                memories.append(memory)
             return [
                 {
                     'id': memory.id,

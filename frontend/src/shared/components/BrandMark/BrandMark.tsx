@@ -1,56 +1,49 @@
-/**
- * Open-AwA 品牌标识（内联 SVG，与 public/logo.svg 一致）。
- * 双 A 形 + 中央微笑弧线，蓝紫渐变；页面内嵌使用避免额外请求。
- * size 控制渲染尺寸（px），颜色固定品牌渐变（双主题通用）。
- */
+import { useId } from 'react'
 import styles from './BrandMark.module.css'
 
 interface BrandMarkProps {
-  /** 渲染尺寸 px，默认 56 */
   size?: number
+  decorative?: boolean
 }
 
-export default function BrandMark({ size = 56 }: BrandMarkProps) {
+/**
+ * Open-AwA 抽象软晶标记。
+ * 构形只使用圆角底板、外部软晶、内部软晶与留白切口，不表达字母或角色。
+ */
+export function BrandMark({ size = 56, decorative = false }: BrandMarkProps) {
+  const gradientId = `soft-crystal-${useId().replace(/:/g, '')}`
+
   return (
     <svg
       className={styles['brand-mark']}
       style={{ width: size, height: size }}
-      viewBox="0 0 32 32"
+      viewBox="0 0 64 64"
       fill="none"
-      aria-hidden="true"
+      role={decorative ? undefined : 'img'}
+      aria-label={decorative ? undefined : 'Open-AwA 抽象标记'}
+      aria-hidden={decorative ? 'true' : undefined}
     >
       <defs>
-        <linearGradient id="awaGradient" x1="0" y1="0" x2="32" y2="32">
-          <stop offset="0%" stopColor="#0d9488" />
-          <stop offset="100%" stopColor="#6366f1" />
+        <linearGradient id={gradientId} x1="8" y1="56" x2="56" y2="8">
+          <stop stopColor="var(--brand-violet-deep, #5e3fd6)" />
+          <stop offset="1" stopColor="var(--brand-violet-light, #a678ff)" />
         </linearGradient>
       </defs>
-      {/* 左侧 A 形眼睛 */}
+      <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${gradientId})`} />
       <path
-        d="M4 26 L10 6 L16 26"
-        stroke="url(#awaGradient)"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        d="M16.5 31.5C16.5 20.1 24.1 12.7 34.4 12.7c10.1 0 17.3 7.1 17.3 17.1 0 11.7-8.7 21.5-20.5 21.5-9.5 0-16.7-6.6-16.7-15.1 0-1.8.7-3.4 2-4.7Z"
+        fill="var(--brand-cream, #fff9f5)"
       />
-      <circle cx="10" cy="18" r="2.2" fill="url(#awaGradient)" />
-      {/* 右侧 A 形眼睛 */}
       <path
-        d="M16 26 L22 6 L28 26"
-        stroke="url(#awaGradient)"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        d="M23.5 31.3c0-7.4 5.1-12.4 12.1-12.4 6.5 0 10.9 4.7 10.9 11.1 0 8.1-5.8 14.7-13.5 14.7-6.2 0-10.7-4.1-10.7-9.5 0-1.5.4-2.8 1.2-3.9Z"
+        fill="var(--brand-violet, #7654ff)"
       />
-      <circle cx="22" cy="18" r="2.2" fill="url(#awaGradient)" />
-      {/* 中央微笑弧线 / 连接桥梁 */}
       <path
-        d="M10 23 Q16 29 22 23"
-        stroke="url(#awaGradient)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        fill="none"
+        d="M39.3 23.9c3.2 1.8 4.7 5 3.9 8.2-.7 3-3.1 5.4-6.3 6.4.9-4.5-.2-8.4-3.4-11.4 1.6-2 3.7-3.2 5.8-3.2Z"
+        fill="var(--brand-peach-light, #ffd8c8)"
       />
     </svg>
   )
 }
+
+export default BrandMark

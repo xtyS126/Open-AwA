@@ -2,6 +2,13 @@
   /* 继承自 PageLayout，无额外样式覆盖 */
 }
 
+.settings-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
 /* ===== 水平标签栏（对齐 Canvas 设计参考）===== */
 /* 主标签栏容器：底部 1px 分割线，水平排列 */
 .tab-bar {

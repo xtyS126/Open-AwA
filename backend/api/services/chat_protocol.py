@@ -216,6 +216,7 @@ async def handle_websocket_session(
     client_version: str,
     connection_request_id: str,
     agent: "AIAgent",
+    agent_context: Dict[str, Any] | None = None,
 ):
     """
     处理 WebSocket 会话的收发循环。
@@ -231,14 +232,15 @@ async def handle_websocket_session(
                 message_request_id = str(
                     message_data.get("request_id") or connection_request_id
                 ).strip() or connection_request_id
-                context = {
+                context = dict(agent_context or {})
+                context.update({
                     "session_id": session_id,
                     "user_id": user_id,
                     "username": username,
                     "request_id": message_request_id,
                     "client_version": client_version,
                     "idempotency_key": message_data.get("idempotency_key"),
-                }
+                })
 
                 # 多端同步：将用户消息广播给同会话其他设备
                 await ws_manager.broadcast_to_session(
@@ -297,7 +299,8 @@ async def handle_websocket_session(
                     message_data.get("request_id") or connection_request_id
                 ).strip() or connection_request_id
 
-                context = {
+                context = dict(agent_context or {})
+                context.update({
                     "session_id": session_id,
                     "user_id": user_id,
                     "username": username,
@@ -305,7 +308,7 @@ async def handle_websocket_session(
                     "client_version": client_version,
                     "idempotency_key": message_data.get("idempotency_key")
                     or (step.get("idempotency_key") if isinstance(step, dict) else None),
-                }
+                })
                 result = await agent.handle_confirmation(confirmed, step, context)
 
                 await send_chunked_websocket_message(

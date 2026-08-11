@@ -427,6 +427,9 @@ cd D:\代码\Open-AwA\android\Open-AwA-Android
 - **RBAC 通配符**: `check_permission` 支持 `skill:*` 匹配 `skill:read`，`*` 仅在同段数下生效
 - **登录限流**: 通过 `RateLimitStore` 抽象层管理，`DatabaseRateLimitStore` 使用 `time.time()`（跨 worker 一致），`MemoryRateLimitStore` 使用 `time.monotonic()`（单进程不受时钟跳变影响）
 - **Tool calls 结果截断**: 过长的工具调用结果会被截断后再传给 LLM，修改截断阈值时注意上下文窗口限制
+- **会话助手上下文服务端权威**: `assistant_context` 只存于 `Conversation.conversation_metadata`；通过 `GET/PATCH /api/conversations/{session_id}/assistant-context` 读取或更新。角色、工作区、显式记忆必须按认证用户校验，非流式/SSE/WebSocket 共用服务端装配；前端聊天载荷不得直接提交这些 ID。`speaker_id` 只作为 TTS 偏好，不进入 LLM 上下文。
+- **会话列表首载单一所有者**: 只有 `useConversationHistory` 可以在 mount 时拉取列表；列表动作 Hook 不得读取消息 Store 或发起首载。StrictMode 重放需复用同查询 key 的在途请求。
+- **WorkbenchProject 与 Workspace 语义隔离**: `Workspace` 是智能体配置容器，不是代码项目，禁止把 `Workspace.id` 直接改名或复用为工作台 `project_id`。工作台必须由服务端权威项目实体和统一根目录解析器提供 `project_id -> resolved_root`；Coding、ACP、终端和文件预览消费同一解析结果，前端不得把任意绝对 `project_dir`/`projectCwd` 当作权威上下文。
 
 ### 7.4 ACP 与跨平台
 
@@ -444,6 +447,7 @@ cd D:\代码\Open-AwA\android\Open-AwA-Android
 - **Plugin hot update state is ephemeral**: Snapshots and active/standby slots are in-memory only, lost on restart
 - **Plugin rollback supports async lifecycle**: 恢复实例时必须等待异步 `initialize()` 完成并校验结果，禁止直接调用后立即注册实例
 - **Windows ACL restrictions**: Some directories have restrictive permissions; use elevated PowerShell to replace existing files when tools fail with EPERM
+- **隔离后端清理需核验监听 PID**: Windows 手工运行 `frontend/tests/e2e/support/start_backend.py` 可能产生与初始启动 PID 不同的最终监听进程；清理时必须按完整命令行核验并停止显式 PID，最后确认端口与进程均释放。优先使用 Playwright `webServer`。
 
 ---
 

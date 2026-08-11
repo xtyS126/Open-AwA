@@ -28,6 +28,10 @@ from api.security.ws_auth import (
     validate_ws_origin,
 )
 from api.services.chat_protocol import build_sse_response, handle_websocket_session
+from api.services.assistant_context_service import (
+    AssistantContextResourceError,
+    build_session_agent_context,
+)
 from api.services.ws_manager import ws_manager
 from api.adapters.workflow_repository_adapter import WorkflowRepositoryAdapter
 from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_logging
@@ -290,6 +294,15 @@ async def chat(
         "continuation": message.continuation.dict() if message.continuation else None,
         "agent_type": getattr(message, "agent_type", None) or "general-purpose",
     }
+    try:
+        context = build_session_agent_context(
+            db,
+            message.session_id,
+            str(current_user.id),
+            context,
+        )
+    except AssistantContextResourceError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     logger.bind(
         event="chat_request",
@@ -750,6 +763,16 @@ async def websocket_endpoint(
         user_id = user.id
         # 解析用户名（_ws_resolve_user_from_token 返回 User ORM 或 SimpleNamespace）
         username = getattr(user, "username", None) or str(user_id)
+        try:
+            agent_context = build_session_agent_context(
+                db,
+                session_id,
+                str(user_id),
+                {},
+            )
+        except AssistantContextResourceError:
+            await websocket.close(code=4003, reason="Assistant context is not available")
+            return
 
         await ws_manager.connect(session_id, websocket, user_id=user_id, subprotocol=subprotocol)
         ws_connected = True
@@ -779,6 +802,7 @@ async def websocket_endpoint(
             client_version=client_version,
             connection_request_id=connection_request_id,
             agent=agent,
+            agent_context=agent_context,
         )
     finally:
         if ws_connected:

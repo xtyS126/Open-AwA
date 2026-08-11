@@ -4,7 +4,7 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router'
-import { Navigate } from '@/shared/routing'
+import { Navigate, useParams } from '@/shared/routing'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
 import { DevTestRoute, RootGuard } from './RouteGuards'
@@ -13,30 +13,26 @@ const LoginPage = React.lazy(() => import('@/features/auth/LoginPage'))
 const ServerSelectPage = React.lazy(() => import('@/features/server/ServerSelectPage'))
 const SetupPage = React.lazy(() => import('@/features/setup/SetupPage'))
 const ChatPage = React.lazy(() => import('@/features/chat/ChatPage'))
+const AssistantSessionsPage = React.lazy(() => import('@/features/assistant/AssistantSessionsPage'))
+const AssistantContextPage = React.lazy(() => import('@/features/assistant/AssistantContextPage'))
 const DashboardPage = React.lazy(() => import('@/features/dashboard/DashboardPage'))
 const SettingsPage = React.lazy(() => import('@/features/settings/SettingsPage'))
-const SkillsPage = React.lazy(() => import('@/features/skills/SkillsPage'))
+const CapabilityLibraryPage = React.lazy(() => import('@/features/library/CapabilityLibraryPage'))
 const ScheduledTasksPage = React.lazy(() => import('@/features/scheduledTasks/ScheduledTasksPage'))
-const PluginsPage = React.lazy(() => import('@/features/plugins/PluginsPage'))
 const PluginConfigPage = React.lazy(() => import('@/features/plugins/PluginConfigPage'))
-const MemoryPage = React.lazy(() => import('@/features/memory/MemoryPage'))
+const KnowledgeLibraryPage = React.lazy(() => import('@/features/library/KnowledgeLibraryPage'))
 const BillingPage = React.lazy(() => import('@/features/billing/BillingPage'))
-const ExperiencePage = React.lazy(() => import('@/features/experiences/ExperiencePage'))
-const UserCenterPage = React.lazy(() => import('@/features/user/UserCenterPage'))
+const AccountPage = React.lazy(() => import('@/features/account/AccountPage'))
 const WorkspacePage = React.lazy(() => import('@/features/workspace/WorkspacePage'))
 const CodingPage = React.lazy(() => import('@/features/coding/CodingPage'))
 const InboxPage = React.lazy(() => import('@/features/inbox/InboxPage'))
-const SkillMarketPage = React.lazy(() => import('@/features/skills/SkillMarketPage'))
-const RolesPage = React.lazy(() => import('@/features/roles/RolesPage'))
-const RoleMarketPage = React.lazy(() => import('@/features/marketplace/RoleMarketPage'))
+const PersonaLibraryPage = React.lazy(() => import('@/features/library/PersonaLibraryPage'))
 const TtsPage = React.lazy(() => import('@/features/tts/TtsPage'))
-const ImChannelsPage = React.lazy(() => import('@/features/im/ImChannelsPage'))
 const WorkflowPage = React.lazy(() => import('@/features/workflow/WorkflowPage'))
 const SubAgentPage = React.lazy(() => import('@/features/subagents/SubAgentPage'))
 const VibeCodingPage = React.lazy(() => import('@/features/vibe-coding/VibeCodingPage'))
 const DiscussionsPage = React.lazy(() => import('@/features/discussions/DiscussionsPage'))
-const UserProfilePage = React.lazy(() => import('@/features/user-profile/UserProfilePage'))
-const PetsPage = React.lazy(() => import('@/features/pets/PetsPage'))
+const AutomationsOverviewPage = React.lazy(() => import('@/features/automations/AutomationsOverviewPage'))
 
 function PageSkeleton() {
   return (
@@ -64,6 +60,22 @@ function withPageBoundary(name: string, element: React.ReactNode) {
 export interface AppRouteDefinition {
   path: string
   element: React.ReactElement
+  kind?: 'page' | 'redirect'
+}
+
+function LegacyConversationRedirect() {
+  const { conversationId } = useParams<{ conversationId?: string }>()
+  return <Navigate to={`/assistant/sessions/${conversationId ?? ''}`} replace />
+}
+
+function LegacyDiscussionRedirect() {
+  const { id } = useParams<{ id?: string }>()
+  return <Navigate to={`/automations/runs/${id ?? ''}/collaboration`} replace />
+}
+
+function LegacyPluginConfigRedirect() {
+  const { pluginId } = useParams<{ pluginId?: string }>()
+  return <Navigate to={`/library/capabilities/plugin/${pluginId ?? ''}/config`} replace />
 }
 
 /**
@@ -73,40 +85,70 @@ export const routeDefinitions: AppRouteDefinition[] = [
   { path: '/login', element: withPageBoundary('Login', <LoginPage />) },
   { path: '/server-select', element: withPageBoundary('ServerSelect', <ServerSelectPage />) },
   { path: '/setup', element: withPageBoundary('Setup', <SetupPage />) },
-  { path: '/chat', element: withPageBoundary('Chat', <ChatPage />) },
-  { path: '/chat/$conversationId', element: withPageBoundary('Chat', <ChatPage />) },
-  { path: '/dashboard', element: withPageBoundary('Dashboard', <DashboardPage />) },
-  { path: '/settings', element: withPageBoundary('Settings', <SettingsPage />) },
-  { path: '/skills', element: withPageBoundary('Skills', <SkillsPage />) },
-  { path: '/skills/market', element: withPageBoundary('SkillMarket', <SkillMarketPage />) },
-  { path: '/scheduled-tasks', element: withPageBoundary('ScheduledTasks', <ScheduledTasksPage />) },
-  { path: '/plugins', element: <Navigate to="/plugins/manage" replace /> },
-  { path: '/plugins/manage', element: withPageBoundary('Plugins', <PluginsPage />) },
-  { path: '/plugins/config/$pluginId', element: withPageBoundary('PluginConfig', <PluginConfigPage />) },
-  { path: '/memory', element: withPageBoundary('Memory', <MemoryPage />) },
-  { path: '/experience', element: withPageBoundary('Experience', <ExperiencePage hideHeader />) },
-  { path: '/billing', element: withPageBoundary('Billing', <BillingPage />) },
-  { path: '/user', element: withPageBoundary('UserCenter', <UserCenterPage />) },
-  { path: '/user-profile', element: withPageBoundary('UserProfile', <UserProfilePage />) },
+  { path: '/assistant', element: withPageBoundary('Assistant', <ChatPage />) },
+  { path: '/assistant/sessions', element: withPageBoundary('AssistantSessions', <AssistantSessionsPage />) },
+  { path: '/assistant/sessions/$conversationId', element: withPageBoundary('Assistant', <ChatPage />) },
+  { path: '/assistant/context', element: withPageBoundary('AssistantContext', <AssistantContextPage />) },
+  { path: '/workbench/projects', element: withPageBoundary('WorkbenchProjects', <WorkspacePage />) },
+  { path: '/workbench/editor', element: withPageBoundary('WorkbenchEditor', <CodingPage />) },
+  { path: '/workbench/agents', element: withPageBoundary('WorkbenchAgents', <VibeCodingPage />) },
+  { path: '/automations/overview', element: withPageBoundary('AutomationsOverview', <AutomationsOverviewPage />) },
+  { path: '/automations/flows', element: withPageBoundary('AutomationsFlows', <WorkflowPage />) },
+  { path: '/automations/schedules', element: withPageBoundary('AutomationsSchedules', <ScheduledTasksPage />) },
+  { path: '/automations/executors', element: withPageBoundary('AutomationsExecutors', <SubAgentPage />) },
+  { path: '/automations/runs', element: withPageBoundary('AutomationsRuns', <DiscussionsPage />) },
+  { path: '/automations/runs/$id/collaboration', element: withPageBoundary('AutomationsCollaboration', <DiscussionsPage />) },
+  { path: '/library/capabilities', element: withPageBoundary('LibraryCapabilities', <CapabilityLibraryPage />) },
+  { path: '/library/capabilities/plugin/$pluginId/config', element: withPageBoundary('PluginConfig', <PluginConfigPage />) },
+  { path: '/library/personas', element: withPageBoundary('LibraryPersonas', <PersonaLibraryPage />) },
+  { path: '/library/knowledge', element: withPageBoundary('LibraryKnowledge', <KnowledgeLibraryPage />) },
+  { path: '/library/voices', element: withPageBoundary('LibraryVoices', <TtsPage />) },
+  { path: '/activity/overview', element: withPageBoundary('ActivityOverview', <DashboardPage />) },
+  { path: '/activity/inbox', element: withPageBoundary('ActivityInbox', <InboxPage />) },
+  { path: '/activity/usage', element: withPageBoundary('ActivityUsage', <BillingPage />) },
+  { path: '/account', element: withPageBoundary('Account', <AccountPage />) },
+  { path: '/settings/general', element: withPageBoundary('SettingsGeneral', <SettingsPage />) },
+  { path: '/settings/models', element: withPageBoundary('SettingsModels', <SettingsPage />) },
+  { path: '/settings/ai', element: withPageBoundary('SettingsAi', <SettingsPage />) },
+  { path: '/settings/connections', element: withPageBoundary('SettingsConnections', <SettingsPage />) },
+  { path: '/settings/data', element: withPageBoundary('SettingsData', <SettingsPage />) },
+  { path: '/settings/security', element: withPageBoundary('SettingsSecurity', <SettingsPage />) },
+  { path: '/settings/appearance', element: withPageBoundary('SettingsAppearance', <SettingsPage />) },
+  { path: '/settings/usage', element: withPageBoundary('SettingsUsage', <SettingsPage />) },
+  { path: '/chat', element: <Navigate to="/assistant" replace />, kind: 'redirect' },
+  { path: '/chat/$conversationId', element: <LegacyConversationRedirect />, kind: 'redirect' },
+  { path: '/dashboard', element: <Navigate to="/activity/overview" replace />, kind: 'redirect' },
+  { path: '/settings', element: <Navigate to="/settings/general" replace />, kind: 'redirect' },
+  { path: '/skills', element: <Navigate to="/library/capabilities?type=skill&view=installed" replace />, kind: 'redirect' },
+  { path: '/skills/market', element: <Navigate to="/library/capabilities?type=skill&view=discover" replace />, kind: 'redirect' },
+  { path: '/scheduled-tasks', element: <Navigate to="/automations/schedules" replace />, kind: 'redirect' },
+  { path: '/plugins', element: <Navigate to="/library/capabilities?type=plugin&view=installed" replace />, kind: 'redirect' },
+  { path: '/plugins/manage', element: <Navigate to="/library/capabilities?type=plugin&view=installed" replace />, kind: 'redirect' },
+  { path: '/plugins/config/$pluginId', element: <LegacyPluginConfigRedirect />, kind: 'redirect' },
+  { path: '/memory', element: <Navigate to="/library/knowledge?view=long-term" replace />, kind: 'redirect' },
+  { path: '/experience', element: <Navigate to="/library/knowledge?view=experience" replace />, kind: 'redirect' },
+  { path: '/billing', element: <Navigate to="/activity/usage" replace />, kind: 'redirect' },
+  { path: '/user', element: <Navigate to="/account" replace />, kind: 'redirect' },
+  { path: '/user-profile', element: <Navigate to="/account?section=profile" replace />, kind: 'redirect' },
   { path: '/dev/test', element: <ErrorBoundary name="Test"><DevTestRoute /></ErrorBoundary> },
-  { path: '/workspace', element: withPageBoundary('Workspace', <WorkspacePage />) },
-  { path: '/coding', element: withPageBoundary('Coding', <CodingPage />) },
-  { path: '/inbox', element: withPageBoundary('Inbox', <InboxPage />) },
-  { path: '/roles', element: withPageBoundary('Roles', <RolesPage />) },
-  { path: '/role-market', element: withPageBoundary('RoleMarket', <RoleMarketPage />) },
-  { path: '/tts', element: withPageBoundary('Tts', <TtsPage />) },
-  { path: '/im', element: withPageBoundary('ImChannels', <ImChannelsPage />) },
-  { path: '/workflows', element: withPageBoundary('Workflow', <WorkflowPage />) },
-  { path: '/subagents', element: withPageBoundary('SubAgents', <SubAgentPage />) },
-  { path: '/vibe-coding', element: withPageBoundary('VibeCoding', <VibeCodingPage />) },
-  { path: '/discussions', element: withPageBoundary('Discussions', <DiscussionsPage />) },
-  { path: '/discussions/$id', element: withPageBoundary('Discussions', <DiscussionsPage />) },
-  { path: '/pets', element: withPageBoundary('Pets', <PetsPage />) },
+  { path: '/workspace', element: <Navigate to="/workbench/projects" replace />, kind: 'redirect' },
+  { path: '/coding', element: <Navigate to="/workbench/editor" replace />, kind: 'redirect' },
+  { path: '/inbox', element: <Navigate to="/activity/inbox" replace />, kind: 'redirect' },
+  { path: '/roles', element: <Navigate to="/library/personas?view=installed" replace />, kind: 'redirect' },
+  { path: '/role-market', element: <Navigate to="/library/personas?view=discover" replace />, kind: 'redirect' },
+  { path: '/tts', element: <Navigate to="/library/voices" replace />, kind: 'redirect' },
+  { path: '/im', element: <Navigate to="/settings/connections?type=messaging" replace />, kind: 'redirect' },
+  { path: '/workflows', element: <Navigate to="/automations/flows" replace />, kind: 'redirect' },
+  { path: '/subagents', element: <Navigate to="/automations/executors" replace />, kind: 'redirect' },
+  { path: '/vibe-coding', element: <Navigate to="/workbench/agents" replace />, kind: 'redirect' },
+  { path: '/discussions', element: <Navigate to="/automations/runs" replace />, kind: 'redirect' },
+  { path: '/discussions/$id', element: <LegacyDiscussionRedirect />, kind: 'redirect' },
+  { path: '/pets', element: <Navigate to="/settings/appearance?section=companion" replace />, kind: 'redirect' },
 ]
 
 const rootRoute = createRootRoute({
   component: RootGuard,
-  notFoundComponent: () => <Navigate to="/chat" replace />,
+  notFoundComponent: () => <Navigate to="/assistant" replace />,
 })
 
 // 根索引仅建立有效匹配，认证与默认落点统一由 RootGuard 决策。

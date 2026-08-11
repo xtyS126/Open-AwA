@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsPage from '@/features/settings/SettingsPage'
 import { useModelStore } from '@/features/chat/store/modelStore'
@@ -76,13 +76,13 @@ vi.mock('@/features/settings/modelsApi', () => ({
 
 describe('SettingsPage', () => {
   const renderSettingsApiTab = () => renderWithRouter(<SettingsPage />, {
-    initialEntry: '/settings?tab=api',
-    routePath: '/settings',
+    initialEntry: '/settings/models',
+    routePath: '/settings/models',
   })
 
   const renderSettingsGeneralTab = () => renderWithRouter(<SettingsPage />, {
-    initialEntry: '/settings',
-    routePath: '/settings',
+    initialEntry: '/settings/general',
+    routePath: '/settings/general',
   })
 
   beforeEach(() => {
@@ -513,6 +513,21 @@ describe('SettingsPage', () => {
       expect(modelApiMocks.updateConfiguration).toHaveBeenCalledWith(11, expect.objectContaining({
         selected_models: []
       }))
+    })
+  })
+
+  it('离开设置页时不再用通用设置规范路径覆盖目标路由', async () => {
+    const { router } = renderWithRouter(<SettingsPage />, {
+      initialEntry: '/settings/general',
+    })
+
+    await screen.findByRole('heading', { name: '设置' })
+    await act(async () => {
+      await router.navigate({ to: '/account' })
+    })
+
+    await waitFor(() => {
+      expect(router.state.location.href).toBe('/account')
     })
   })
 })

@@ -7,7 +7,11 @@ import { getMarketRoles, getCategories, installRole, rateRole } from '@/shared/a
 import type { MarketRole, MarketCategory } from '@/shared/api/roleMarketApi'
 import styles from './RoleMarketPage.module.css'
 
-export default function RoleMarketPage() {
+export interface RoleMarketPageProps {
+  embedded?: boolean
+}
+
+export default function RoleMarketPage({ embedded = false }: RoleMarketPageProps) {
   const [roles, setRoles] = useState<MarketRole[]>([])
   const [categories, setCategories] = useState<MarketCategory[]>([])
   const [loading, setLoading] = useState(true)
@@ -79,7 +83,7 @@ export default function RoleMarketPage() {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h1>角色市场</h1>
+        {!embedded && <h1>角色市场</h1>}
         <div className={styles.searchBox}>
           <Search size={16} className={styles.searchIcon} />
           <input

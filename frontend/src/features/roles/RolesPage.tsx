@@ -119,7 +119,11 @@ function RoleEditorModal({
 }
 
 /** 角色管理页面主组件 */
-function RolesPage() {
+export interface RolesPageProps {
+  embedded?: boolean
+}
+
+function RolesPage({ embedded = false }: RolesPageProps) {
   const queryClient = useQueryClient()
   const [editingRole, setEditingRole] = useState<AgentRole | null>(null)
   const [showEditor, setShowEditor] = useState(false)
@@ -214,7 +218,7 @@ function RolesPage() {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h1>角色管理</h1>
+        {!embedded && <h1>角色管理</h1>}
         <button className={styles.createBtn} onClick={handleCreate}>
           <Plus size={18} />
           创建角色

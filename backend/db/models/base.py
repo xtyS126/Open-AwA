@@ -225,6 +225,7 @@ def init_db(bind_engine=None):
     use_engine = bind_engine or engine
     # 计费模型已统一使用 db.models.Base，与主业务模型共享同一 Metadata
     Base.metadata.create_all(bind=use_engine)
+    _migrations._migrate_workbench_tables(use_engine=use_engine)
     _migrations._migrate_conversation_record_metadata_column(use_engine=use_engine)
     _migrations._migrate_conversation_record_sidechain_columns(use_engine=use_engine)
     _migrations._migrate_plugin_columns(use_engine=use_engine)

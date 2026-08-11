@@ -1,67 +1,33 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { Virtuoso } from 'react-virtuoso'
-import { ChevronDown, LogOut, PanelLeft, Plus, Search, PencilLine, Trash2, RotateCcw, UserRound } from 'lucide-react'
-import type { ConversationSessionSummary } from '@/features/chat/types'
-import { useI18nStore, t as i18nT } from '@/i18n'
+import { memo, useState } from 'react'
+import { ChevronDown, LogOut, PanelLeft, Plus, UserRound } from 'lucide-react'
+import { useI18nStore } from '@/i18n'
 import { useNavigate } from '@/shared/routing'
 import { useAuthStore } from '@/shared/store/authStore'
 import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
+import ConversationManager, { type ConversationManagerProps } from './ConversationManager'
 import styles from './ConversationSidebar.module.css'
 
-interface ConversationSidebarProps {
+interface ConversationSidebarProps extends ConversationManagerProps {
   open: boolean
-  loading: boolean
-  error: string | null
-  conversations: ConversationSessionSummary[]
-  activeSessionId: string
-  search: string
-  sortBy: 'last_message_at' | 'title'
-  includeDeleted: boolean
-  hasMore: boolean
   onToggle: () => void
-  onSearchChange: (value: string) => void
-  onSortChange: (value: 'last_message_at' | 'title') => void
-  onIncludeDeletedChange: (value: boolean) => void
   onCreateConversation: () => void
-  onSelectConversation: (sessionId: string) => void
-  onRenameConversation: (sessionId: string, title: string) => Promise<void> | void
-  onDeleteConversation: (sessionId: string) => Promise<void> | void
-  onBatchDeleteConversations: (sessionIds: string[]) => Promise<void> | void
-  onRestoreConversation: (sessionId: string) => Promise<void> | void
-  onLoadMore: () => void
 }
 
-function formatTimestamp(value?: string | null): string {
-  if (!value) {
-    return i18nT('chat.history.noMessages')
-  }
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return i18nT('chat.history.unknownTime')
-  }
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-/**
- * 历史侧栏移动端用户信息卡片：头像 + 用户名，点击展开用户中心/退出登录菜单。
- * 聊天页左上角头像入口已删除，用户信息统一在历史侧栏顶部展示（仅移动端 ≤768px 显示）。
- */
+/** 移动端侧栏中的账户入口。 */
 function MobileUserCard() {
   const navigate = useNavigate()
-  const user = useAuthStore((s) => s.user)
-  const logout = useAuthStore((s) => s.logout)
+  const user = useAuthStore((state) => state.user)
+  const logout = useAuthStore((state) => state.logout)
   const { t } = useI18nStore()
   const [open, setOpen] = useState(false)
-  if (!user) return null
+
+  if (!user) {
+    return null
+  }
+
   const initial = (user.username || 'U')[0].toUpperCase()
 
-  /* 退出登录：接口失败也清除本地会话并回登录页（与桌面端用户区行为一致） */
   const handleLogout = async () => {
     try {
       await authAPI.logout()
@@ -82,7 +48,7 @@ function MobileUserCard() {
       <button
         type="button"
         className={styles['user-card-btn']}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen((current) => !current)}
         aria-label={t('user.center')}
         aria-expanded={open}
         data-testid="history-user-card"
@@ -91,7 +57,6 @@ function MobileUserCard() {
         <span className={styles['user-card-name']}>{user.username}</span>
         <ChevronDown size={14} className={styles['user-card-chevron']} />
       </button>
-      {/* 用户菜单浮层：fixed 定位相对历史侧栏（transform 建立包含块），遮罩 inset 覆盖整个侧栏区域 */}
       {open && (
         <>
           <div
@@ -111,7 +76,7 @@ function MobileUserCard() {
               className={styles['user-card-menu-item']}
               onClick={() => {
                 setOpen(false)
-                navigate('/user')
+                navigate('/account')
               }}
             >
               <UserRound size={16} />
@@ -133,287 +98,30 @@ function MobileUserCard() {
   )
 }
 
-function ConversationSidebar(props: ConversationSidebarProps) {
-  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
-  const t = useI18nStore(s => s.t)
-  const {
-    open,
-    loading,
-    error,
-    conversations,
-    activeSessionId,
-    search,
-    sortBy,
-    includeDeleted,
-    hasMore,
-    onToggle,
-    onSearchChange,
-    onSortChange,
-    onIncludeDeletedChange,
-    onCreateConversation,
-    onSelectConversation,
-    onRenameConversation,
-    onDeleteConversation,
-    onBatchDeleteConversations,
-    onRestoreConversation,
-    onLoadMore,
-  } = props
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
-  const [editingTitle, setEditingTitle] = useState('')
-  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([])
-
-  useEffect(() => {
-    if (!open) {
-      setEditingSessionId(null)
-      setEditingTitle('')
-      setSelectedSessionIds([])
-    }
-  }, [open])
-
-  useEffect(() => {
-    setSelectedSessionIds((current) => current.filter((sessionId) => conversations.some((item) => item.session_id === sessionId && !item.deleted_at)))
-  }, [conversations])
-
-  const hasConversations = conversations.length > 0
-  const renderedItems = useMemo(() => conversations, [conversations])
-  const selectableSessionIds = useMemo(
-    () => renderedItems.filter((item) => !item.deleted_at).map((item) => item.session_id),
-    [renderedItems]
-  )
-  const allSelected = selectableSessionIds.length > 0 && selectableSessionIds.every((sessionId) => selectedSessionIds.includes(sessionId))
-
-  const startRename = useCallback((item: ConversationSessionSummary) => {
-    setEditingSessionId(item.session_id)
-    setEditingTitle(item.title)
-  }, [])
-
-  const toggleSelected = useCallback((sessionId: string) => {
-    setSelectedSessionIds((current) => current.includes(sessionId)
-      ? current.filter((item) => item !== sessionId)
-      : [...current, sessionId])
-  }, [])
-
-  const submitRename = useCallback(async () => {
-    if (!editingSessionId || !editingTitle.trim()) {
-      return
-    }
-    await onRenameConversation(editingSessionId, editingTitle.trim())
-    setEditingSessionId(null)
-    setEditingTitle('')
-  }, [editingSessionId, editingTitle, onRenameConversation])
-
-  // Virtuoso 虚拟滚动渲染回调 — 仅渲染可视区域内的会话项
-  const renderConversationItem = useCallback((_index: number, item: ConversationSessionSummary) => {
-    const isActive = item.session_id === activeSessionId
-    const isDeleted = Boolean(item.deleted_at)
-
-    return (
-      <div
-        className={`${styles['item']} ${isActive ? styles['active'] : ''} ${isDeleted ? styles['deleted'] : ''}`.trim()}
-      >
-        {editingSessionId === item.session_id ? (
-          <>
-            <input
-              className={styles['renameInput']}
-              aria-label={t('chat.history.rename')}
-              value={editingTitle}
-              onChange={(event) => setEditingTitle(event.target.value)}
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={async (event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  await submitRename()
-                }
-              }}
-            />
-            <div className={styles['renameActions']}>
-              <button className={styles['primaryButton']} type="button" onClick={(event) => {
-                event.stopPropagation()
-                void submitRename()
-              }}>
-                {t('app.save')}
-              </button>
-              <button className={styles['secondaryButton']} type="button" onClick={(event) => {
-                event.stopPropagation()
-                setEditingSessionId(null)
-                setEditingTitle('')
-              }}>
-                {t('app.cancel')}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className={styles['itemMain']}>
-              {!isDeleted && (
-                <input
-                  className={styles['itemCheckbox']}
-                  type="checkbox"
-                  checked={selectedSessionIds.includes(item.session_id)}
-                  onChange={() => toggleSelected(item.session_id)}
-                  aria-label={t('chat.history.selectSession', { title: item.title || t('chat.newChat') })}
-                />
-              )}
-              <button
-                className={styles['itemSelectButton']}
-                type="button"
-                onClick={() => onSelectConversation(item.session_id)}
-                aria-current={isActive ? 'page' : undefined}
-                aria-label={item.title || t('chat.newChat')}
-              >
-                <span className={styles['itemHeader']}>
-                  <span className={styles['itemTitle']}>{item.title || t('chat.newChat')}</span>
-                  <span className={styles['metaText']}>{formatTimestamp(item.last_message_at || item.updated_at)}</span>
-                </span>
-                <span className={styles['itemSummary']}>
-                  {item.last_message_preview || item.summary || t('chat.history.noSummary')}
-                </span>
-                <span className={styles['itemMeta']}>
-                  <span className={styles['metaText']}>{t('chat.history.messageCount', { count: String(item.message_count) })}</span>
-                  {isDeleted && <span className={styles['deletedText']}>{t('chat.history.deleted')}</span>}
-                </span>
-              </button>
-            </div>
-            <div className={styles['itemActions']}>
-              {!isDeleted && (
-                <button
-                  className={styles['actionButton']}
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    startRename(item)
-                  }}
-                  title={t('chat.history.renameAction')}
-                  aria-label={t('chat.history.renameAction')}
-                >
-                  <PencilLine size={15} />
-                </button>
-              )}
-              {isDeleted ? (
-                <button
-                  className={styles['actionButton']}
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onRestoreConversation(item.session_id)
-                  }}
-                  title={t('chat.history.restore')}
-                  aria-label={t('chat.history.restore')}
-                >
-                  <RotateCcw size={15} />
-                </button>
-              ) : (
-                <button
-                  className={styles['actionButton']}
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onDeleteConversation(item.session_id)
-                  }}
-                  title={t('chat.history.deleteAction')}
-                  aria-label={t('chat.history.deleteAction')}
-                >
-                  <Trash2 size={15} />
-                </button>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    )
-  // startRename/toggleSelected/t 为稳定引用（useCallback/Zustand），无需额外重建
-  }, [activeSessionId, editingSessionId, editingTitle, selectedSessionIds, submitRename, startRename, toggleSelected, t, onSelectConversation, onRestoreConversation, onDeleteConversation])
+/** 侧栏只提供布局、移动端账户入口与页头，列表交互由 ConversationManager 承担。 */
+function ConversationSidebar({
+  open,
+  onToggle,
+  onCreateConversation,
+  ...managerProps
+}: ConversationSidebarProps) {
+  const t = useI18nStore((state) => state.t)
 
   return (
-    <aside className={`${styles['sidebar']} ${open ? '' : styles['closed']}`.trim()} aria-label="聊天历史侧边栏">
-      {/* 移动端用户信息卡片：位于"历史对话"标题上方（仅 ≤768px 显示） */}
+    <aside className={`${styles.sidebar} ${open ? '' : styles.closed}`.trim()} aria-label="聊天历史侧边栏">
       <MobileUserCard />
-      <div className={styles['header']}>
-        <span className={styles['title']}>{t('chat.history.title')}</span>
-        <div className={styles['headerActions']}>
-          <button className={styles['iconButton']} type="button" onClick={onCreateConversation} title={t('chat.history.newChat')} aria-label={t('chat.history.newChat')}>
+      <div className={styles.header}>
+        <span className={styles.title}>{t('chat.history.title')}</span>
+        <div className={styles.headerActions}>
+          <button className={styles.iconButton} type="button" onClick={onCreateConversation} aria-label={t('chat.history.newChat')}>
             <Plus size={16} />
           </button>
-          <button className={styles['iconButton']} type="button" onClick={onToggle} title={open ? t('chat.collapseHistory') : t('chat.expandHistory')} aria-label={open ? t('chat.collapseHistory') : t('chat.expandHistory')}>
+          <button className={styles.iconButton} type="button" onClick={onToggle} aria-label={open ? t('chat.collapseHistory') : t('chat.expandHistory')}>
             <PanelLeft size={16} />
           </button>
         </div>
       </div>
-
-      <div className={styles['filters']}>
-        <div className={styles['searchRow']}>
-          <Search size={15} aria-hidden="true" />
-          <input
-            className={styles['searchInput']}
-            placeholder={t('chat.history.searchPlaceholder')}
-            aria-label={t('chat.history.searchPlaceholder')}
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-          />
-        </div>
-        <div className={styles['sortRow']}>
-          <select
-            className={styles['sortSelect']}
-            value={sortBy}
-            onChange={(event) => onSortChange(event.target.value as 'last_message_at' | 'title')}
-            aria-label={t('chat.history.sortByTime')}
-          >
-            <option value="last_message_at">{t('chat.history.sortByTime')}</option>
-            <option value="title">{t('chat.history.sortByName')}</option>
-          </select>
-        </div>
-        <label className={styles['checkboxRow']}>
-          <input type="checkbox" checked={includeDeleted} onChange={(event) => onIncludeDeletedChange(event.target.checked)} />
-          <span>{t('chat.history.showDeleted')}</span>
-        </label>
-        <div className={styles['batchActions']}>
-          <label className={styles['checkboxRow']}>
-            <input
-              type="checkbox"
-              checked={allSelected}
-              disabled={selectableSessionIds.length === 0}
-              onChange={() => setSelectedSessionIds(allSelected ? [] : selectableSessionIds)}
-            />
-            <span>{t('chat.history.selectAll')}</span>
-          </label>
-          <div className={styles['batchButtons']}>
-            <button
-              className={styles['secondaryButton']}
-              type="button"
-              onClick={() => setSelectedSessionIds([])}
-              disabled={selectedSessionIds.length === 0}
-            >
-              {t('chat.history.clearSelection')}
-            </button>
-            <button
-              className={styles['dangerButton']}
-              type="button"
-              onClick={async () => {
-                await onBatchDeleteConversations(selectedSessionIds)
-                setSelectedSessionIds([])
-              }}
-              disabled={selectedSessionIds.length === 0}
-            >
-              {t('chat.history.batchDelete')} {selectedSessionIds.length > 0 ? `(${selectedSessionIds.length})` : ''}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className={styles['content']}>
-        {loading && !hasConversations && <div className={styles['loading']}>{t('chat.history.loading')}</div>}
-        {error && <div className={styles['error']}>{error}</div>}
-        {!loading && !error && !hasConversations && <div className={styles['empty']}>{t('chat.history.empty')}</div>}
-
-        {hasConversations && (
-          <Virtuoso
-            data={renderedItems}
-            itemContent={renderConversationItem}
-            endReached={hasMore ? onLoadMore : undefined}
-            style={{ height: '100%' }}
-          />
-        )}
-      </div>
+      <ConversationManager {...managerProps} />
     </aside>
   )
 }

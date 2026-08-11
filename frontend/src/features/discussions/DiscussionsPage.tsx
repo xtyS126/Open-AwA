@@ -67,7 +67,7 @@ const DiscussionsPage: React.FC = () => {
       clearError()
       void selectTask(taskId)
       // 更新 URL 但不触发导航（保留查询参数）
-      navigate(`/discussions/${taskId}`, { replace: true })
+      navigate(`/automations/runs/${taskId}/collaboration`, { replace: true })
     },
     [selectTask, navigate, clearError]
   )

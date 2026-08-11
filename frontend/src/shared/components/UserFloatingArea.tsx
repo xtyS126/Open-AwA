@@ -34,7 +34,7 @@ export function UserFloatingArea({ collapsed = false }: UserFloatingAreaProps) {
   }
 
   const handleNavigateToUser = () => {
-    navigate('/user')
+    navigate('/account')
   }
 
   if (!user) return null

@@ -534,18 +534,18 @@
   margin: 0;
 }
 
-/* 移动端（≤ 768px，对应 --breakpoint-md）：
+/* 移动端（< 768px，对应 --breakpoint-md）：
  * 顶部栏收敛为单行（标题 + 思考开关 + 新对话），次要控件（输出模式 /
  * 思考深度 / 模型名 / 流式状态）折叠隐藏，最大化对话可视区 */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .chat-header {
     flex-wrap: nowrap;
     padding: 8px 12px;
     margin: 0;
     min-height: 44px;
     gap: var(--space-2);
-    /* 顶部安全区域 padding，适配 notch / Dynamic Island */
-    padding-top: calc(8px + var(--safe-area-top));
+    /* 顶部安全区由全局栏统一承载，页面内标题只保留自身间距。 */
+    padding-top: 8px;
   }
 
   .chat-header-title {
@@ -595,8 +595,8 @@
 
   .chat-main {
     width: 100%;
-    /* 留出 fixed 定位的 ChatInput 高度（移动端紧凑约 66px）+ 底部安全区域 */
-    padding-bottom: calc(88px + var(--safe-area-bottom));
+    /* 留出 fixed 定位的 ChatInput；底部安全区由全局底栏统一承载。 */
+    padding-bottom: 88px;
   }
 
   /* 消息区移动端收紧横向 padding，让对话内容更宽 */
@@ -758,5 +758,3 @@
 :global(.dark) .jumpToLatestBtn:hover {
   background: rgba(30, 41, 59, 1);
 }
-
-

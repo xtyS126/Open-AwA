@@ -44,7 +44,7 @@ export async function loginAsAdminPage(page: Page, loginUrl = '/login') {
   await expect(apiKeyInput).toBeVisible({ timeout: 30_000 })
   await apiKeyInput.fill(E2E_API_KEY)
   await page.getByRole('button', { name: '连接' }).click()
-  await expect(page).toHaveURL(/\/chat(?:\/|$)/, { timeout: 30_000 })
+  await expect(page).toHaveURL(/\/assistant(?:\/|$)/, { timeout: 30_000 })
   await expect(page.getByTestId('chat-input-container')).toBeVisible({ timeout: 30_000 })
 }
 

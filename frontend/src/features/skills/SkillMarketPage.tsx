@@ -10,7 +10,11 @@ import styles from './SkillMarketPage.module.css';
 const SOURCE_LABELS: Record<string, string> = { clawhub: 'ClawHub', 'skills.sh': 'Skills.sh', github: 'GitHub', modelscope: 'ModelScope' };
 const SOURCE_COLORS: Record<string, string> = { clawhub: '#8b5cf6', 'skills.sh': '#f59e0b', github: '#333', modelscope: '#06b6d4' };
 
-const SkillMarketPage: React.FC = () => {
+export interface SkillMarketPageProps {
+  embedded?: boolean;
+}
+
+const SkillMarketPage: React.FC<SkillMarketPageProps> = ({ embedded = false }) => {
   // 使用选择器精确订阅，避免整个 store 变化触发重渲染
   const t = useI18nStore(s => s.t);
   const [skills, setSkills] = useState<MarketSkill[]>([]);
@@ -68,10 +72,10 @@ const SkillMarketPage: React.FC = () => {
 
   return (
     <div className={styles.container}>
-      <div className={styles.header}>
+      {!embedded && <div className={styles.header}>
         <h1>{t('skillMarket.title')}</h1>
         <p className={styles.subtitle}>{t('skillMarket.subtitle')}</p>
-      </div>
+      </div>}
 
       {error && <div className={styles.error}>{error}<button onClick={() => setError('')}>x</button></div>}
 
