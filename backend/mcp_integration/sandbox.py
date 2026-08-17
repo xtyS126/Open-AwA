@@ -1,6 +1,9 @@
 """
 MCP 子进程沙箱模块，为 MCP Server 的子进程提供资源隔离和安全约束。
 
+SandboxLimits 和 SandboxError 类型已合并到 security/sandbox.py，
+本模块从 security.sandbox 重导出以保持向后兼容。
+
 设计参考:
   - nsjail (Google): https://github.com/google/nsjail — Linux 进程级 jail
   - isolate (IOI): https://github.com/ioi/isolate — 竞赛沙箱的资源限制模式
@@ -19,10 +22,11 @@ import asyncio
 import os
 import platform
 import signal
-from dataclasses import dataclass, field
 from typing import Optional
 
 from loguru import logger
+
+from security.sandbox import SandboxError, SandboxLimits
 
 # resource 模块仅在 Unix 系统可用
 try:
@@ -30,46 +34,10 @@ try:
 except ImportError:
     _resource_module = None
 
-# ---------------------------------------------------------------------------
-# 默认资源限制（基于 isolate 的默认值调整）
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class SandboxLimits:
-    """
-    MCP 子进程沙箱资源限制配置。
-
-    各字段设为 None 表示不限制该项。
-    """
-
-    # CPU 时间上限（秒），None 表示不限制
-    cpu_time_seconds: Optional[float] = 60
-    # 虚拟内存上限（字节），None 表示不限制，默认 512MB
-    memory_bytes: Optional[int] = 512 * 1024 * 1024
-    # 最大输出文件大小（字节），None 表示不限制，默认 10MB
-    max_output_size: Optional[int] = 10 * 1024 * 1024
-    # 最大子进程数，None 表示不限制，默认 0（禁止创建子进程）
-    max_processes: Optional[int] = 0
-    # 执行超时（秒），None 表示不限制，默认 120
-    timeout_seconds: float = 120
-    # stdout 单行最大字节数，默认 1MB
-    max_stdout_line_bytes: int = 1 * 1024 * 1024
-    # 是否允许网络访问（通过独立的网络命名空间，仅 Linux 支持）
-    allow_network: bool = True
-    # 工作目录（若为 None 则使用系统临时目录）
-    working_dir: Optional[str] = None
-
 
 # ---------------------------------------------------------------------------
-# 沙箱错误类型
+# 沙箱错误子类型
 # ---------------------------------------------------------------------------
-
-
-class SandboxError(Exception):
-    """沙箱执行异常基类"""
-
-    pass
 
 
 class SandboxTimeoutError(SandboxError):
@@ -103,34 +71,29 @@ def _apply_linux_resource_limits(limits: SandboxLimits) -> None:
         os.setpgrp()
     except OSError as exc:
         # 某些平台（如 Windows）不支持 setpgrp，忽略即可，记录 debug 便于排查
-        logger.debug(f"[mcp_sandbox] setpgrp 失败，跳过进程组创建: {exc}")
+        logger.debug(f"[mcp_integration_sandbox] setpgrp 失败，跳过进程组创建: {exc}")
 
     if _resource_module is None:
         return  # Windows 不支持 resource 模块
 
     # CPU 时间限制（软限制 = 硬限制）
-    if limits.cpu_time_seconds is not None:
-        cpu_seconds = int(limits.cpu_time_seconds)
+    cpu_seconds = int(limits.max_cpu_time_seconds)
+    if cpu_seconds > 0:
         _resource_module.setrlimit(
             _resource_module.RLIMIT_CPU, (cpu_seconds, cpu_seconds)
         )
 
     # 虚拟内存限制
-    if limits.memory_bytes is not None:
+    memory_bytes = limits.max_memory_mb * 1024 * 1024
+    if memory_bytes > 0:
         _resource_module.setrlimit(
-            _resource_module.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes)
+            _resource_module.RLIMIT_AS, (memory_bytes, memory_bytes)
         )
 
     # 输出文件大小限制
-    if limits.max_output_size is not None:
+    if limits.max_output_size_bytes > 0:
         _resource_module.setrlimit(
-            _resource_module.RLIMIT_FSIZE, (limits.max_output_size, limits.max_output_size)
-        )
-
-    # 子进程数限制
-    if limits.max_processes is not None:
-        _resource_module.setrlimit(
-            _resource_module.RLIMIT_NPROC, (limits.max_processes, limits.max_processes)
+            _resource_module.RLIMIT_FSIZE, (limits.max_output_size_bytes, limits.max_output_size_bytes)
         )
 
     # 限制打开文件数（防止 fd 耗尽攻击）
@@ -163,7 +126,7 @@ def _create_windows_job_object(limits: SandboxLimits):
         # 创建 Job Object
         job_handle = kernel32.CreateJobObjectW(None, None)
         if not job_handle:
-            logger.bind(module="mcp.sandbox", event="windows_job_creation_failed").debug(
+            logger.bind(module="mcp_integration.sandbox", event="windows_job_creation_failed").debug(
                 "无法创建 Windows Job Object，跳过资源限制"
             )
             return (None, CREATE_NEW_PROCESS_GROUP)
@@ -187,18 +150,16 @@ def _create_windows_job_object(limits: SandboxLimits):
 
         flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
 
-        if limits.cpu_time_seconds is not None:
-            cpu_100ns = int(limits.cpu_time_seconds * 10_000_000)
+        cpu_seconds = limits.max_cpu_time_seconds
+        if cpu_seconds > 0:
+            cpu_100ns = int(cpu_seconds * 10_000_000)
             info.BasicLimitInformation[2] = cpu_100ns  # PerProcessUserTimeLimit
             flags |= JOB_OBJECT_LIMIT_PROCESS_TIME
 
-        if limits.memory_bytes is not None:
-            info.ProcessMemoryLimit = limits.memory_bytes
+        memory_bytes = limits.max_memory_mb * 1024 * 1024
+        if memory_bytes > 0:
+            info.ProcessMemoryLimit = memory_bytes
             flags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY
-
-        if limits.max_processes is not None:
-            info.BasicLimitInformation[4] = limits.max_processes  # ActiveProcessLimit
-            flags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS
 
         info.BasicLimitInformation[0] = flags
 
@@ -218,11 +179,11 @@ def _create_windows_job_object(limits: SandboxLimits):
             ctypes.sizeof(info),
         )
         if not result:
-            logger.bind(module="mcp.sandbox", event="windows_job_config_failed").debug(
+            logger.bind(module="mcp_integration.sandbox", event="windows_job_config_failed").debug(
                 "无法配置 Windows Job Object 限制"
             )
     except Exception as e:
-        logger.bind(module="mcp.sandbox", event="windows_sandbox_error").debug(
+        logger.bind(module="mcp_integration.sandbox", event="windows_sandbox_error").debug(
             f"Windows 沙箱配置失败（非关键）: {e}"
         )
         return (None, CREATE_NEW_PROCESS_GROUP)
@@ -254,7 +215,7 @@ def _assign_process_to_job_object(job_handle, pid: int) -> bool:
 
         child_handle = kernel32.OpenProcess(desired_access, False, pid)
         if not child_handle:
-            logger.bind(module="mcp.sandbox", event="windows_open_process_failed").debug(
+            logger.bind(module="mcp_integration.sandbox", event="windows_open_process_failed").debug(
                 f"无法打开子进程句柄 (PID={pid})"
             )
             return False
@@ -266,17 +227,17 @@ def _assign_process_to_job_object(job_handle, pid: int) -> bool:
         kernel32.CloseHandle(child_handle)
 
         if result:
-            logger.bind(module="mcp.sandbox", event="windows_sandbox_applied").debug(
+            logger.bind(module="mcp_integration.sandbox", event="windows_sandbox_applied").debug(
                 f"Windows Job Object 沙箱已绑定子进程 (PID={pid})"
             )
         else:
-            logger.bind(module="mcp.sandbox", event="windows_job_assign_failed").debug(
+            logger.bind(module="mcp_integration.sandbox", event="windows_job_assign_failed").debug(
                 f"无法将子进程 (PID={pid}) 绑定到 Job Object"
             )
 
         return bool(result)
     except Exception as e:
-        logger.bind(module="mcp.sandbox", event="windows_job_assign_error").debug(
+        logger.bind(module="mcp_integration.sandbox", event="windows_job_assign_error").debug(
             f"绑定子进程到 Job Object 失败: {e}"
         )
         return False
@@ -319,7 +280,7 @@ class SizeLimitedStreamReader:
         line = await self._stream.readline()
         self._bytes_read += len(line)
         if self._bytes_read > self._max_bytes:
-            logger.bind(module="mcp.sandbox", event="output_limit_exceeded").warning(
+            logger.bind(module="mcp_integration.sandbox", event="output_limit_exceeded").warning(
                 f"子进程输出超过限制 {self._max_bytes} 字节，后续输出将被丢弃"
             )
             raise SandboxResourceExceededError(
@@ -364,14 +325,13 @@ async def create_sandboxed_subprocess(
 
     cmd = [command] + list(args)
     logger.bind(
-        module="mcp.sandbox",
+        module="mcp_integration.sandbox",
         event="sandboxed_subprocess_launch",
         command=command,
         limits={
-            "cpu_time": limits.cpu_time_seconds,
-            "memory_mb": limits.memory_bytes // (1024 * 1024) if limits.memory_bytes else None,
-            "timeout": limits.timeout_seconds,
-            "max_output": limits.max_output_size,
+            "cpu_time": limits.max_cpu_time_seconds,
+            "memory_mb": limits.max_memory_mb,
+            "max_output": limits.max_output_size_bytes,
         },
     ).debug(f"沙箱子进程启动: {' '.join(cmd)}")
 
@@ -432,7 +392,7 @@ def _validate_command_path(command: str) -> None:
 
     # 对于非绝对路径且非 PATH 查找的命令，记录信息性日志
     if not os.path.isabs(command_stripped) and "/" not in command_stripped:
-        logger.bind(module="mcp.sandbox", event="command_path_relative").debug(
+        logger.bind(module="mcp_integration.sandbox", event="command_path_relative").debug(
             f"MCP 命令将通过 PATH 查找: {command_stripped}"
         )
 
@@ -474,14 +434,14 @@ async def kill_process_tree(process: asyncio.subprocess.Process, timeout: float 
                 except ProcessLookupError:
                     pass  # 进程已退出
     except Exception as e:
-        logger.bind(module="mcp.sandbox", event="kill_process_tree_error").warning(
+        logger.bind(module="mcp_integration.sandbox", event="kill_process_tree_error").warning(
             f"终止进程树失败 (PID={pid}): {e}"
         )
         # 最后手段：直接 kill 主进程
         try:
             process.kill()
         except Exception:
-            logger.bind(module="mcp.sandbox", event="final_kill_error", pid=pid).warning(
+            logger.bind(module="mcp_integration.sandbox", event="final_kill_error", pid=pid).warning(
                 "最终强制终止进程失败"
             )
 

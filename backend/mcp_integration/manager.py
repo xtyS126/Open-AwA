@@ -16,6 +16,7 @@ import re
 import sys
 import threading
 import uuid
+from contextlib import asynccontextmanager
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -24,141 +25,91 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 # ===========================================================================
-# 官方 mcp Python SDK 加载（绕过本地 backend/mcp/ 包名屏蔽）
+# 官方 mcp Python SDK 导入（本地模块已重命名为 mcp_integration，不再与官方 SDK 冲突）
 # ===========================================================================
-# 本地 backend/mcp/ 包与官方 mcp SDK 同名，直接 `from mcp import ClientSession` 会触发
-# 循环导入：__init__.py 导入 manager，manager 又 `from mcp import ...`，此时本地 mcp 包
-# 仅部分初始化（manager 尚未加载完成），无法拿到 ClientSession 等符号。
-# 此外 SDK 内部子模块（如 client/session.py）使用绝对导入 `from mcp.client.X import Y`，
-# 若本地 mcp 包占据 "mcp" 名字，绝对导入会解析到本地包并失败。
-#
-# 解决方案：
-# 1. 在 sys.path 中定位 SDK 安装目录（site-packages/mcp，排除本地 backend/）
-# 2. 用 importlib.util.spec_from_file_location 创建 SDK 顶层模块 spec，
-#    设置 submodule_search_locations 指向 SDK 目录
-# 3. 临时把 SDK 模块对象放入 sys.modules["mcp"]（覆盖本地部分初始化的 mcp 包），
-#    使 SDK 内部绝对导入 `from mcp.client.X import Y` 经由 SDK 的 __path__ 解析
-# 4. 执行 SDK __init__.py，加载完成后捕获所有 mcp / mcp.* 子模块
-# 5. 将 SDK 模块迁移到 "_mcp_sdk" 命名空间，恢复本地 mcp 包
-# 6. 将 SDK 子模块注册到 mcp.X 命名空间（不覆盖本地 manager/config_store/sandbox），
-#    兼容 tests 中 `from mcp.types import ...` 等历史调用
+# 使用 importlib 加载官方 SDK 并注册为 _official_mcp，以绕过本地兼容层
+# backend/mcp/（若存在）。本地模块已从 mcp 重命名为 mcp_integration，
+# 所有内部 import 路径已更新，不再需要复杂的命名空间交换逻辑。
 
-_SDK_ALIAS = "_mcp_sdk"
+_OFFICIAL_MCP_NAME = "_official_mcp"
 _LOCAL_BACKEND_DIR = Path(__file__).resolve().parent.parent
 
-
-def _find_sdk_dir() -> Path:
-    """在 sys.path 中定位官方 mcp SDK 安装目录（site-packages/mcp）。
-
-    排除本地 backend/ 目录，避免加载到本地同名包。
-    """
-    for path_entry in sys.path:
-        if not path_entry:
+if _OFFICIAL_MCP_NAME not in sys.modules:
+    _sdk_dir = None
+    for _path_entry in sys.path:
+        if not _path_entry:
             continue
         try:
-            resolved = Path(path_entry).resolve()
+            _resolved = Path(_path_entry).resolve()
         except (OSError, RuntimeError):
             continue
-        if resolved == _LOCAL_BACKEND_DIR:
-            continue
-        sdk_init = resolved / "mcp" / "__init__.py"
-        if sdk_init.exists():
-            return resolved / "mcp"
-    raise ImportError(
-        "无法从 site-packages 定位官方 mcp SDK。"
-        "请确认已执行 `pip install mcp`。"
+        _sdk_init = _resolved / "mcp" / "__init__.py"
+        if _sdk_init.exists() and _resolved / "mcp" != _LOCAL_BACKEND_DIR / "mcp":
+            _sdk_dir = _resolved / "mcp"
+            break
+    if _sdk_dir is None:
+        raise ImportError(
+            "无法从 site-packages 定位官方 mcp SDK。"
+            "请确认已执行 `pip install mcp`。"
+        )
+    _spec = importlib.util.spec_from_file_location(
+        _OFFICIAL_MCP_NAME,
+        _sdk_dir / "__init__.py",
+        submodule_search_locations=[str(_sdk_dir)],
     )
-
-
-def _load_mcp_sdk():
-    """加载官方 mcp SDK 并注册到 sys.modules[_SDK_ALIAS]，返回 SDK 顶层模块。"""
-    if _SDK_ALIAS in sys.modules:
-        return sys.modules[_SDK_ALIAS]
-
-    sdk_dir = _find_sdk_dir()
-
-    # 创建 SDK 顶层模块 spec，设置 submodule_search_locations 指向 SDK 目录
-    spec = importlib.util.spec_from_file_location(
-        "mcp",
-        sdk_dir / "__init__.py",
-        submodule_search_locations=[str(sdk_dir)],
-    )
-    if spec is None or spec.loader is None:
-        raise ImportError(f"无法为 mcp SDK 创建模块 spec: {sdk_dir}")
-    sdk_top_module = importlib.util.module_from_spec(spec)
-
-    # 保存本地 mcp 包及所有 mcp.* 子模块（可能部分初始化），并从 sys.modules 移除
-    local_mcp_modules = {}
-    for key in list(sys.modules.keys()):
-        if key == "mcp" or key.startswith("mcp."):
-            local_mcp_modules[key] = sys.modules.pop(key)
-
-    # 临时把 SDK 模块放入 sys.modules["mcp"]，使 SDK 内部绝对导入经由 SDK __path__ 解析
-    sys.modules["mcp"] = sdk_top_module
-
+    if _spec is None or _spec.loader is None:
+        raise ImportError(f"无法为 mcp SDK 创建模块 spec: {_sdk_dir}")
+    _official_mcp = importlib.util.module_from_spec(_spec)
+    sys.modules[_OFFICIAL_MCP_NAME] = _official_mcp
+    # 临时将官方 SDK 注册为 sys.modules["mcp"]，确保 SDK 内部 import mcp.types
+    # 等绝对导入经由官方 SDK 的 __path__ 解析，而非本地兼容层 backend/mcp/
+    _saved_mcp = sys.modules.pop("mcp", None)
+    sys.modules["mcp"] = _official_mcp
     try:
-        # 执行 SDK __init__.py，触发子模块加载（client/session.py 等的绝对导入
-        # `from mcp.client.X import Y` 会经由 mcp.__path__=[sdk_dir] 解析到 SDK 子模块）
-        spec.loader.exec_module(sdk_top_module)
+        _spec.loader.exec_module(_official_mcp)
     finally:
-        # 捕获所有已加载的 SDK 模块（mcp 及 mcp.*），从 sys.modules 移除
-        sdk_modules = {}
-        for key in list(sys.modules.keys()):
-            if key == "mcp" or key.startswith("mcp."):
-                sdk_modules[key] = sys.modules.pop(key)
+        # 恢复兼容层（若原先存在），移除临时注册的官方 SDK
+        sys.modules.pop("mcp", None)
+        if _saved_mcp is not None:
+            sys.modules["mcp"] = _saved_mcp
 
-    if "mcp" not in sdk_modules:
-        raise ImportError("加载官方 mcp SDK 失败：未生成顶层 mcp 模块")
+# 从官方 SDK 顶层导入
+ClientSession = _official_mcp.ClientSession
+McpError = _official_mcp.McpError
+StdioServerParameters = _official_mcp.StdioServerParameters
 
-    # 将 SDK 模块注册到 _mcp_sdk 命名空间
-    for key, mod in sdk_modules.items():
-        new_key = _SDK_ALIAS if key == "mcp" else _SDK_ALIAS + key[3:]
-        sys.modules[new_key] = mod
-
-    # 恢复本地 mcp 包及子模块
-    for key, mod in local_mcp_modules.items():
-        sys.modules[key] = mod
-
-    # 将 SDK 子模块注册到 mcp.X 命名空间，兼容 tests 中
-    # `from mcp.types import ...` 等历史调用（本地 types.py / client.py 等已删除，
-    # 但调用方仍用 mcp.types 名字）。不覆盖本地已恢复的 manager / config_store / sandbox。
-    for key, mod in sdk_modules.items():
-        if key == "mcp":
-            continue  # 保留本地 mcp 顶层包
-        if key not in sys.modules:
-            sys.modules[key] = mod
-
-    return sdk_modules["mcp"]
-
-
-_mcp_sdk = _load_mcp_sdk()
-
-# 从 SDK 顶层导入（ClientSession / McpError / StdioServerParameters 由 SDK __init__ 导出）
-ClientSession = _mcp_sdk.ClientSession
-McpError = _mcp_sdk.McpError
-StdioServerParameters = _mcp_sdk.StdioServerParameters
-
-# 从 SDK 子模块导入（sse_client / get_default_environment / stdio_client / types）
-# 此时 _mcp_sdk.client.sse / _mcp_sdk.client.stdio / _mcp_sdk.types 已在 sys.modules 中
-from _mcp_sdk.client.sse import sse_client as _mcp_sse_client
-from _mcp_sdk.client.stdio import (
+# 从官方 SDK 子模块导入
+from _official_mcp.client.sse import sse_client as _mcp_sse_client
+from _official_mcp.client.stdio import (
     get_default_environment,
     stdio_client as _mcp_stdio_client,
 )
-from _mcp_sdk.types import (
+from _official_mcp.types import (
     BlobResourceContents,
     CallToolResult,
+    JSONRPCMessage,
     ListResourcesResult,
     ListToolsResult,
     ReadResourceResult,
+    Resource,
     TextContent,
     TextResourceContents,
+    Tool,
 )
+from _official_mcp.shared.message import SessionMessage
 
 # 项目内部导入
 from core.utils.memoize import memoize_with_lru, memoize_with_ttl
-from mcp.config_store import MCPConfigStore
-from mcp.sandbox import SandboxError, _validate_command_path
+from mcp_integration.config_store import MCPConfigStore
+from mcp_integration.sandbox import (
+    SandboxError,
+    SandboxLimits,
+    SandboxTimeoutError,
+    _validate_command_path,
+    create_sandboxed_subprocess,
+    kill_process_tree,
+    wait_with_timeout,
+)
 
 
 # ===========================================================================
@@ -247,6 +198,9 @@ class MCPServerConfig(BaseModel):
     env: Optional[Dict[str, str]] = Field(default_factory=dict, description="环境变量")
     transport_type: TransportType = Field(default=TransportType.STDIO, description="传输类型")
     url: Optional[str] = Field(None, description="SSE 模式下的远程服务器地址")
+    # 安全：SSE 模式自定义请求头（如认证头），auth_token 以 Bearer 方式附加
+    headers: Dict[str, str] = Field(default_factory=dict, description="SSE 模式自定义请求头")
+    auth_token: Optional[str] = Field(None, description="SSE 模式认证令牌（Bearer Token）")
     # 安全：归属用户 ID，用于多用户隔离，防止 IDOR 跨用户访问他人 MCP Server
     # 旧配置文件可能缺少此字段，向后兼容默认为 None（路由层会拒绝 None 与具体 ID 的混用）
     owner_user_id: Optional[str] = Field(None, description="归属用户 ID，用于多用户隔离")
@@ -446,6 +400,134 @@ def _cache_resources(cache_key: str, resources: List[MCPResource]) -> List[MCPRe
 
 
 # ===========================================================================
+# 沙箱 stdio 传输（用 sandbox 包装子进程启动，替代裸 stdio_client）
+# ===========================================================================
+
+
+@asynccontextmanager
+async def _sandboxed_stdio_client(
+    server: Any,
+    limits: Optional[SandboxLimits] = None,
+):
+    """
+    在沙箱中启动 MCP Server 子进程并建立 stdio 传输连接。
+
+    与官方 stdio_client 的差异（安全增强）：
+    - 子进程通过 create_sandboxed_subprocess 启动（命令路径校验 + 资源限制 + 进程组隔离）
+    - stderr 边读边丢弃，防止管道缓冲阻塞子进程
+    - 退出时通过 wait_with_timeout 优雅终止，超时后 kill_process_tree 强制清理进程树
+
+    yield (read_stream, write_stream)，接口与官方 SDK 的 stdio_client 一致，
+    便于 ClientSession 直接消费。
+
+    :param server: StdioServerParameters 启动参数（SDK 动态加载，类型标注为 Any）
+    :param limits: 沙箱资源限制，None 时使用默认限制
+    """
+    import anyio
+
+    read_stream_writer: Any
+    read_stream: Any
+    write_stream: Any
+    write_stream_reader: Any
+    read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
+    write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
+
+    try:
+        process = await create_sandboxed_subprocess(
+            command=server.command,
+            args=list(server.args or []),
+            env=server.env if server.env is not None else get_default_environment(),
+            limits=limits,
+        )
+    except SandboxError as exc:
+        # 启动失败：清理已创建的流，避免资源泄漏
+        await read_stream.aclose()
+        await write_stream.aclose()
+        await read_stream_writer.aclose()
+        await write_stream_reader.aclose()
+        raise MCPClientError(f"沙箱启动 MCP Server 失败: {exc}") from exc
+
+    # 沙箱保证 stdin/stdout/stderr 均为 PIPE 管道，此处断言消除 Optional 类型
+    assert process.stdout is not None
+    assert process.stdin is not None
+    assert process.stderr is not None
+
+    async def stdout_reader() -> None:
+        """从沙箱子进程 stdout 读取 JSON-RPC 消息并转发到读流。"""
+        stdout = process.stdout
+        assert stdout is not None  # 沙箱保证 stdout 为 PIPE
+        try:
+            async with read_stream_writer:
+                while True:
+                    line = await stdout.readline()
+                    if not line:
+                        break
+                    try:
+                        message = JSONRPCMessage.model_validate_json(line)
+                    except Exception as exc:
+                        # 非法消息转发给上层（与官方 SDK 行为一致）
+                        await read_stream_writer.send(exc)
+                        continue
+                    await read_stream_writer.send(SessionMessage(message))
+        except (anyio.ClosedResourceError, ValueError):
+            pass  # 读流已关闭，读取循环正常结束
+
+    async def stdin_writer() -> None:
+        """将写流中的 JSON-RPC 消息写入沙箱子进程 stdin。"""
+        stdin = process.stdin
+        assert stdin is not None  # 沙箱保证 stdin 为 PIPE
+        try:
+            async with write_stream_reader:
+                async for session_message in write_stream_reader:
+                    data = session_message.message.model_dump_json(
+                        by_alias=True, exclude_none=True
+                    )
+                    stdin.write((data + "\n").encode("utf-8"))
+                    await stdin.drain()
+        except (anyio.ClosedResourceError, ValueError):
+            pass  # 写流已关闭，写入循环正常结束
+
+    async def stderr_drainer() -> None:
+        """读取并丢弃子进程 stderr，防止管道缓冲阻塞子进程。"""
+        stderr = process.stderr
+        assert stderr is not None  # 沙箱保证 stderr 为 PIPE
+        try:
+            while True:
+                chunk = await stderr.read(4096)
+                if not chunk:
+                    break
+        except (anyio.ClosedResourceError, ValueError):
+            pass  # stderr 流已关闭，读取循环正常结束
+
+    reader_task = asyncio.create_task(stdout_reader())
+    writer_task = asyncio.create_task(stdin_writer())
+    stderr_task = asyncio.create_task(stderr_drainer())
+    try:
+        yield read_stream, write_stream
+    finally:
+        # MCP spec: stdio 关闭顺序——先关闭 stdin → 等待进程退出 → 超时强制终止
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except Exception:
+                pass  # stdin 可能已关闭，忽略
+        try:
+            await wait_with_timeout(process.wait(), timeout=5.0, process=process)
+        except SandboxTimeoutError:
+            await kill_process_tree(process)
+        except SandboxError:
+            pass  # 进程已终止或异常，交给 kill_process_tree 兜底
+        # 取消 reader/writer/stderr 任务并等待结束，避免悬挂任务泄漏
+        for task in (reader_task, writer_task, stderr_task):
+            task.cancel()
+        await asyncio.gather(reader_task, writer_task, stderr_task, return_exceptions=True)
+        await read_stream.aclose()
+        await write_stream.aclose()
+        await read_stream_writer.aclose()
+        await write_stream_reader.aclose()
+
+
+# ===========================================================================
 # MCPClient（包装官方 mcp.ClientSession）
 # ===========================================================================
 
@@ -535,7 +617,7 @@ class MCPClient:
             raise MCPClientError(f"连接 MCP Server 失败: {e}") from e
 
     async def _connect_stdio(self) -> None:
-        """通过官方 stdio_client 建立 stdio 传输连接。"""
+        """通过沙箱包装的 stdio 传输建立连接。"""
         if not self._config.command:
             raise MCPClientError("Stdio 模式需要指定启动命令")
 
@@ -543,7 +625,7 @@ class MCPClient:
         _validate_command_path(self._config.command)
 
         # 构建环境变量：以官方 SDK 的白名单为基础，叠加用户显式指定的环境变量
-        # get_default_environment() 返回 PATH/HOME/USER 等 12 个安全变量的白名单
+        # get_default_environment() 返回 PATH/HOME/USER 等安全变量的白名单
         filtered_env: Dict[str, str] = dict(get_default_environment())
         if self._config.env:
             filtered_env.update(self._config.env)
@@ -555,14 +637,21 @@ class MCPClient:
             env=filtered_env,
         )
 
+        # 安全：沙箱资源限制——限制 CPU/内存/输出大小/子进程数，超时强制终止
+        sandbox_limits = SandboxLimits(
+            max_cpu_time_seconds=60.0,
+            max_memory_mb=1024,  # 1GB
+            max_output_size_bytes=10 * 1024 * 1024,  # 10MB
+        )
+
         logger.bind(
             module="mcp.client",
             event="stdio_connect",
             command=self._config.command,
-        ).info(f"通过官方 SDK stdio_client 启动 MCP Server: {self._config.command}")
+        ).info(f"通过沙箱 stdio 传输启动 MCP Server: {self._config.command}")
 
         # 手动进入异步上下文管理器（connect/disconnect 模式而非 async with）
-        self._transport_ctx = _mcp_stdio_client(params)
+        self._transport_ctx = _sandboxed_stdio_client(params, limits=sandbox_limits)
         read_stream, write_stream = await self._transport_ctx.__aenter__()
         self._session_ctx = ClientSession(read_stream, write_stream)
         self._session = await self._session_ctx.__aenter__()
@@ -575,6 +664,12 @@ class MCPClient:
         # 安全：origin 白名单校验（项目特定安全层，官方 SDK 不提供）
         SSETransport._check_origin(self._config.url)
 
+        # 安全：构建认证请求头——合并用户自定义 headers，并附加 auth_token（Bearer 认证）
+        sse_headers: Dict[str, str] = dict(self._config.headers or {})
+        if self._config.auth_token:
+            # 用户显式提供的 Authorization 头优先，未提供时使用 auth_token 生成
+            sse_headers.setdefault("Authorization", f"Bearer {self._config.auth_token}")
+
         logger.bind(
             module="mcp.client",
             event="sse_connect",
@@ -582,7 +677,7 @@ class MCPClient:
         ).info(f"通过官方 SDK sse_client 连接 MCP Server: {self._config.url}")
 
         # 手动进入异步上下文管理器
-        self._transport_ctx = _mcp_sse_client(self._config.url)
+        self._transport_ctx = _mcp_sse_client(self._config.url, headers=sse_headers)
         read_stream, write_stream = await self._transport_ctx.__aenter__()
         self._session_ctx = ClientSession(read_stream, write_stream)
         self._session = await self._session_ctx.__aenter__()
@@ -910,7 +1005,7 @@ class MCPManager:
             self._config_store = MCPConfigStore()
             self._initialized = True
 
-        logger.bind(module="mcp.manager", event="initialized").info("MCP 管理器已初始化")
+        logger.bind(module="mcp_integration.manager", event="initialized").info("MCP 管理器已初始化")
         # 启动时尝试从持久化配置恢复
         self._restore_from_persistent_config()
 
@@ -943,7 +1038,7 @@ class MCPManager:
             self._clients[server_id] = client
         # 持久化到配置文件
         self._config_store.set_server(server_id, config.model_dump())
-        logger.bind(module="mcp.manager", event="server_added").info(
+        logger.bind(module="mcp_integration.manager", event="server_added").info(
             f"添加 MCP Server: {config.name} (ID: {server_id}, owner_user_id={owner_user_id})"
         )
         return server_id
@@ -987,7 +1082,7 @@ class MCPManager:
             client.cleanup_sync()
         # 从持久化存储中删除
         self._config_store.remove_server(server_id)
-        logger.bind(module="mcp.manager", event="server_removed").info(
+        logger.bind(module="mcp_integration.manager", event="server_removed").info(
             f"已移除 MCP Server: {server_id}"
         )
 
@@ -1243,7 +1338,7 @@ class MCPManager:
                     continue
             restored += 1
         if restored > 0:
-            logger.bind(module="mcp.manager", event="restored").info(
+            logger.bind(module="mcp_integration.manager", event="restored").info(
                 f"从持久化配置恢复了 {restored} 个 MCP Server"
             )
 
@@ -1266,7 +1361,7 @@ class MCPManager:
                 self._configs.pop(removed_id, None)
                 if old_client is not None:
                     old_client.cleanup_sync()
-                logger.bind(module="mcp.manager", event="hot_reload_remove").info(
+                logger.bind(module="mcp_integration.manager", event="hot_reload_remove").info(
                     f"热更新：移除 Server {removed_id}"
                 )
 
@@ -1277,7 +1372,7 @@ class MCPManager:
                     if server_id not in self._configs:
                         self._configs[server_id] = config
                         self._clients[server_id] = MCPClient(config)
-                        logger.bind(module="mcp.manager", event="hot_reload_add").info(
+                        logger.bind(module="mcp_integration.manager", event="hot_reload_add").info(
                             f"热更新：添加 Server {config.name} ({server_id})"
                         )
                     else:
@@ -1286,7 +1381,7 @@ class MCPManager:
                         if config != old_config:
                             self._configs[server_id] = config
                             self._clients[server_id] = MCPClient(config)
-                            logger.bind(module="mcp.manager", event="hot_reload_update").info(
+                            logger.bind(module="mcp_integration.manager", event="hot_reload_update").info(
                                 f"热更新：重建 Server {config.name} ({server_id}) 客户端"
                             )
                 except (ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -1319,7 +1414,7 @@ class MCPManager:
         for client in old_clients.values():
             client.cleanup_sync()
         self._restore_from_persistent_config()
-        logger.bind(module="mcp.manager", event="rollback").info(
+        logger.bind(module="mcp_integration.manager", event="rollback").info(
             f"已回滚到快照: {snapshot_name}"
         )
         return new_configs

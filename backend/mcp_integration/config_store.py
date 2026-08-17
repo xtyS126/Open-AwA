@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 # MCP 配置中需要加密存储的敏感字段名
-_SENSITIVE_FIELDS = {"api_key", "apiKey", "token", "secret", "password", "access_token", "private_key"}
+_SENSITIVE_FIELDS = {"api_key", "apiKey", "token", "secret", "password", "access_token", "private_key", "auth_token"}
 
 
 def _encrypt_config_sensitive_fields(configs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -95,7 +95,7 @@ class MCPConfigStore:
                 self._last_mtime = os.path.getmtime(self._config_path)
                 return dict(data)
             except (json.JSONDecodeError, OSError) as exc:
-                logger.bind(module="mcp.config_store").error(f"读取 MCP 配置失败: {exc}")
+                logger.bind(module="mcp_integration.config_store").error(f"读取 MCP 配置失败: {exc}")
                 return dict(self._cached_configs)
 
     def save_all(self, configs: Dict[str, Dict[str, Any]]) -> None:
@@ -113,7 +113,7 @@ class MCPConfigStore:
                 self._cached_configs = dict(configs)
                 self._last_mtime = os.path.getmtime(self._config_path)
             except OSError as exc:
-                logger.bind(module="mcp.config_store").error(f"保存 MCP 配置失败: {exc}")
+                logger.bind(module="mcp_integration.config_store").error(f"保存 MCP 配置失败: {exc}")
                 raise
 
     def get_server(self, server_id: str) -> Optional[Dict[str, Any]]:
@@ -156,7 +156,7 @@ class MCPConfigStore:
         如果配置文件被外部修改则重新加载，返回新配置；未变化则返回 None。
         """
         if self.has_changed():
-            logger.bind(module="mcp.config_store").info("检测到 MCP 配置文件变更，重新加载")
+            logger.bind(module="mcp_integration.config_store").info("检测到 MCP 配置文件变更，重新加载")
             return self.load_all()
         return None
 
@@ -174,7 +174,7 @@ class MCPConfigStore:
             self._cleanup_old_snapshots()
             return snapshot_name
         except OSError as exc:
-            logger.bind(module="mcp.config_store").warning(f"创建 MCP 配置快照失败: {exc}")
+            logger.bind(module="mcp_integration.config_store").warning(f"创建 MCP 配置快照失败: {exc}")
             return None
 
     def _cleanup_old_snapshots(self) -> None:
@@ -188,7 +188,7 @@ class MCPConfigStore:
                 os.remove(os.path.join(self._snapshot_dir, old_snapshot))
         except OSError as exc:
             # 旧快照清理失败不应影响配置保存主流程，记录 debug 便于排查
-            logger.debug(f"[mcp_config_store] 旧配置快照清理失败: {exc}")
+            logger.debug(f"[mcp_integration_config_store] 旧配置快照清理失败: {exc}")
 
     def list_snapshots(self) -> List[Dict[str, Any]]:
         """列出所有可用的配置快照。"""
@@ -243,5 +243,5 @@ class MCPConfigStore:
             shutil.copy2(self._config_path, snapshot_path)
             return snapshot_name
         except OSError as exc:
-            logger.bind(module="mcp.config_store").warning(f"手动创建快照失败: {exc}")
+            logger.bind(module="mcp_integration.config_store").warning(f"手动创建快照失败: {exc}")
             return None
