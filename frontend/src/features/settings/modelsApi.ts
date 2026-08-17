@@ -289,9 +289,6 @@ export const modelsAPI = {
   getModelsByProvider: (provider: string, payload?: { api_endpoint?: string; api_key?: string }) =>
     api.post(`/billing/models-by-provider/${provider}`, payload ?? {}),
 
-  getModels: (params?: { provider?: string }) =>
-    api.get('/billing/models', { params }),
-
   // Ollama 本地模型发现
   discoverOllamaModels: () =>
     api.get<OllamaDiscoverResponse>('/models/ollama'),
@@ -328,3 +325,7 @@ export const modelsAPI = {
       base_url: baseUrl || undefined,
     }),
 }
+
+// getModels 已收敛至 billingApi.ts 的顶层 getModels 函数，避免与 billingAPI.getModels 重复定义
+// 此处通过 re-export 保持向后兼容：既有 `import { getModels } from '@/features/settings/modelsApi'` 仍可用
+export { getModels } from '@/features/billing/billingApi'

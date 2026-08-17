@@ -3,6 +3,7 @@
  * 支持发表、编辑、删除评论，以及查看评分汇总。
  */
 import { useState, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Modal, Button, Textarea, EmptyState, Badge } from '@/shared/components/ui'
 import { useAuthStore } from '@/shared/store/authStore'
 import { getApiErrorDetail } from '@/shared/api/client'
@@ -47,6 +48,7 @@ function renderStars(score: number): string {
 
 function PluginDetailModal({ open, onClose, plugin }: PluginDetailModalProps) {
   const user = useAuthStore((state) => state.user)
+  const queryClient = useQueryClient()
 
   /* ---- 评分汇总 ---- */
   const [ratingSummary, setRatingSummary] = useState<PluginRatingSummary | null>(null)
@@ -65,18 +67,36 @@ function PluginDetailModal({ open, onClose, plugin }: PluginDetailModalProps) {
   const [editingReviewId, setEditingReviewId] = useState<number | null>(null)
   const [formError, setFormError] = useState('')
 
-  /** 加载评分汇总 */
-  const loadRating = useCallback(async (pluginId: string) => {
-    setRatingLoading(true)
-    try {
-      const response = await getPluginRating(pluginId)
-      setRatingSummary(response.data)
-    } catch (error) {
-      console.error('加载评分汇总失败:', error)
-    } finally {
-      setRatingLoading(false)
+  // 使用 React Query 管理评分汇总缓存：queryKey 与 PluginsPage 共享，
+  // 打开 Modal 时直接复用列表已加载的评分数据，避免重复请求
+  // enabled: !!open && !!plugin 确保 Modal 关闭时不发起查询
+  const ratingQuery = useQuery({
+    queryKey: ['marketplace', 'plugins', plugin?.id ?? '', 'rating'],
+    queryFn: () => getPluginRating(plugin!.id),
+    enabled: !!(open && plugin),
+  })
+
+  // 同步查询数据到本地 state（保留原有 UI 渲染逻辑）
+  useEffect(() => {
+    if (ratingQuery.data) {
+      setRatingSummary(ratingQuery.data.data)
     }
-  }, [])
+  }, [ratingQuery.data])
+
+  useEffect(() => {
+    setRatingLoading(ratingQuery.isLoading)
+  }, [ratingQuery.isLoading])
+
+  useEffect(() => {
+    if (ratingQuery.error) {
+      console.error('加载评分汇总失败:', ratingQuery.error)
+    }
+  }, [ratingQuery.error])
+
+  // 手动刷新评分汇总的回调（评论提交/删除/快速评分后调用）
+  const loadRating = useCallback(async (pluginId: string) => {
+    await queryClient.invalidateQueries({ queryKey: ['marketplace', 'plugins', pluginId, 'rating'] })
+  }, [queryClient])
 
   /** 加载评论列表 */
   const loadReviews = useCallback(async (pluginId: string, page: number) => {
@@ -93,16 +113,15 @@ function PluginDetailModal({ open, onClose, plugin }: PluginDetailModalProps) {
     }
   }, [])
 
-  /** 打开时加载评分与评论 */
+  /** 打开时加载评论（评分由 useQuery 自动拉取） */
   useEffect(() => {
     if (!open || !plugin) return
     setFormContent('')
     setFormRating(0)
     setEditingReviewId(null)
     setFormError('')
-    loadRating(plugin.id)
     loadReviews(plugin.id, 1)
-  }, [open, plugin, loadRating, loadReviews])
+  }, [open, plugin, loadReviews])
 
   /** 提交评论（新建或更新） */
   const handleSubmit = async () => {

@@ -418,6 +418,8 @@ const ruRU: Record<string, string> = {
   "skillMarket.installed": "Установлено",
   "skillMarket.empty": "Ничего не найдено",
   "skillMarket.loadFailed": "Не удалось загрузить магазин навыков, повторите позже",
+  "skillMarket.sourceUnavailable": "Источники магазина навыков недоступны, повторите позже",
+  "skillMarket.networkError": "Сбой сетевого подключения, проверьте сеть и повторите",
   "skillMarket.installFailed": "Ошибка: {name}",
   "dashboard.title": "Панель",
   "dashboard.subtitle": "Обзор AI Agent",

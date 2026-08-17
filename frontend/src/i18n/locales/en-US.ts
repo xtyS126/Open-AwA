@@ -448,6 +448,8 @@ const enUS: Record<string, string> = {
   "skillMarket.installed": "Installed (Uninstall)",
   "skillMarket.empty": "No matching skills found",
   "skillMarket.loadFailed": "Failed to load skill market, please try again later",
+  "skillMarket.sourceUnavailable": "Skill market sources are unavailable, please try again later",
+  "skillMarket.networkError": "Network connection failed, please check your network and retry",
   "skillMarket.installFailed": "Failed to install {name}",
 
   // ===== Dashboard =====

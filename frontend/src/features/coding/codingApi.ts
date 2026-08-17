@@ -3,6 +3,7 @@
  * 类型与 backend/api/routes/coding.py 及 core/coding/* 服务的实际响应结构对齐。
  */
 import api from '@/shared/api/api';
+import type { WorkbenchProjectId } from '@/features/workbench/workbenchTypes';
 
 /** 文件树节点类型。 */
 export type CodingFileType = 'file' | 'directory';
@@ -225,77 +226,77 @@ export interface CodingToggleCCModeResponse {
 export const codingApi = {
   // ---- 文件树 ----
   /** 获取目录树结构（嵌套格式）。 */
-  getTree: async (path = '', projectDir?: string): Promise<CodingTreeResponse> => {
-    const { data } = await api.get<CodingTreeResponse>('/coding/tree', { params: { path, project_dir: projectDir } });
+  getTree: async (projectId: WorkbenchProjectId, path = ''): Promise<CodingTreeResponse> => {
+    const { data } = await api.get<CodingTreeResponse>('/coding/tree', { params: { path, project_id: projectId } });
     return data;
   },
   /** 列出目录内容（扁平结构，含相对路径）。 */
-  listDir: async (path = '', projectDir?: string): Promise<CodingListDirResponse> => {
-    const { data } = await api.get<CodingListDirResponse>('/coding/list', { params: { path, project_dir: projectDir } });
+  listDir: async (projectId: WorkbenchProjectId, path = ''): Promise<CodingListDirResponse> => {
+    const { data } = await api.get<CodingListDirResponse>('/coding/list', { params: { path, project_id: projectId } });
     return data;
   },
   /** 读取文件内容。 */
-  readFile: async (path: string, projectDir?: string): Promise<CodingReadFileResponse> => {
-    const { data } = await api.post<CodingReadFileResponse>('/coding/read', { path, project_dir: projectDir });
+  readFile: async (projectId: WorkbenchProjectId, path: string): Promise<CodingReadFileResponse> => {
+    const { data } = await api.post<CodingReadFileResponse>('/coding/read', { path, project_id: projectId });
     return data;
   },
   /** 写入文件内容。 */
-  writeFile: async (path: string, content: string, projectDir?: string): Promise<CodingWriteFileResponse> => {
-    const { data } = await api.post<CodingWriteFileResponse>('/coding/write', { path, content, project_dir: projectDir });
+  writeFile: async (projectId: WorkbenchProjectId, path: string, content: string): Promise<CodingWriteFileResponse> => {
+    const { data } = await api.post<CodingWriteFileResponse>('/coding/write', { path, content, project_id: projectId });
     return data;
   },
   /** 按文件名模式搜索文件。 */
-  searchFiles: async (pattern: string, directory = '', projectDir?: string): Promise<CodingSearchFilesResponse> => {
-    const { data } = await api.post<CodingSearchFilesResponse>('/coding/search-files', { pattern, directory, project_dir: projectDir });
+  searchFiles: async (projectId: WorkbenchProjectId, pattern: string, directory = ''): Promise<CodingSearchFilesResponse> => {
+    const { data } = await api.post<CodingSearchFilesResponse>('/coding/search-files', { pattern, directory, project_id: projectId });
     return data;
   },
 
   // ---- Git ----
   /** 获取 Git 工作区状态。 */
-  gitStatus: async (projectDir?: string): Promise<CodingGitStatusResponse> => {
-    const { data } = await api.get<CodingGitStatusResponse>('/coding/git/status', { params: { project_dir: projectDir } });
+  gitStatus: async (projectId: WorkbenchProjectId): Promise<CodingGitStatusResponse> => {
+    const { data } = await api.get<CodingGitStatusResponse>('/coding/git/status', { params: { project_id: projectId } });
     return data;
   },
   /** 获取 Git 差异（统一 diff 文本）。 */
-  gitDiff: async (filePath?: string, staged = false, projectDir?: string): Promise<CodingGitDiffResponse> => {
-    const { data } = await api.get<CodingGitDiffResponse>('/coding/git/diff', { params: { file_path: filePath, staged, project_dir: projectDir } });
+  gitDiff: async (projectId: WorkbenchProjectId, filePath?: string, staged = false): Promise<CodingGitDiffResponse> => {
+    const { data } = await api.get<CodingGitDiffResponse>('/coding/git/diff', { params: { file_path: filePath, staged, project_id: projectId } });
     return data;
   },
   /** 获取 Git 提交历史。 */
-  gitLog: async (maxCount = 20, projectDir?: string): Promise<CodingGitLogResponse> => {
-    const { data } = await api.get<CodingGitLogResponse>('/coding/git/log', { params: { max_count: maxCount, project_dir: projectDir } });
+  gitLog: async (projectId: WorkbenchProjectId, maxCount = 20): Promise<CodingGitLogResponse> => {
+    const { data } = await api.get<CodingGitLogResponse>('/coding/git/log', { params: { max_count: maxCount, project_id: projectId } });
     return data;
   },
   /** 提交变更。 */
-  gitCommit: async (message: string, files?: string[], projectDir?: string): Promise<CodingGitCommitResponse> => {
-    const { data } = await api.post<CodingGitCommitResponse>('/coding/git/commit', { message, files, project_dir: projectDir });
+  gitCommit: async (projectId: WorkbenchProjectId, message: string, files?: string[]): Promise<CodingGitCommitResponse> => {
+    const { data } = await api.post<CodingGitCommitResponse>('/coding/git/commit', { message, files, project_id: projectId });
     return data;
   },
   /** 获取分支列表。 */
-  gitBranches: async (projectDir?: string): Promise<CodingGitBranchesResponse> => {
-    const { data } = await api.get<CodingGitBranchesResponse>('/coding/git/branches', { params: { project_dir: projectDir } });
+  gitBranches: async (projectId: WorkbenchProjectId): Promise<CodingGitBranchesResponse> => {
+    const { data } = await api.get<CodingGitBranchesResponse>('/coding/git/branches', { params: { project_id: projectId } });
     return data;
   },
 
   // ---- AST 搜索 ----
   /** 按符号名搜索定义。 */
-  searchDefinitions: async (name: string, projectDir?: string): Promise<CodingAstDefinitionSearchResponse> => {
-    const { data } = await api.get<CodingAstDefinitionSearchResponse>('/coding/ast/definitions', { params: { name, project_dir: projectDir } });
+  searchDefinitions: async (projectId: WorkbenchProjectId, name: string): Promise<CodingAstDefinitionSearchResponse> => {
+    const { data } = await api.get<CodingAstDefinitionSearchResponse>('/coding/ast/definitions', { params: { name, project_id: projectId } });
     return data;
   },
   /** 按符号名搜索引用。 */
-  searchReferences: async (name: string, projectDir?: string): Promise<CodingAstDefinitionSearchResponse> => {
-    const { data } = await api.get<CodingAstDefinitionSearchResponse>('/coding/ast/references', { params: { name, project_dir: projectDir } });
+  searchReferences: async (projectId: WorkbenchProjectId, name: string): Promise<CodingAstDefinitionSearchResponse> => {
+    const { data } = await api.get<CodingAstDefinitionSearchResponse>('/coding/ast/references', { params: { name, project_id: projectId } });
     return data;
   },
   /** 按 AST 模式搜索。 */
-  searchPattern: async (pattern: string, projectDir?: string): Promise<CodingAstPatternSearchResponse> => {
-    const { data } = await api.post<CodingAstPatternSearchResponse>('/coding/ast/search', { pattern, project_dir: projectDir });
+  searchPattern: async (projectId: WorkbenchProjectId, pattern: string): Promise<CodingAstPatternSearchResponse> => {
+    const { data } = await api.post<CodingAstPatternSearchResponse>('/coding/ast/search', { pattern, project_id: projectId });
     return data;
   },
   /** 获取文件结构概览。 */
-  getStructure: async (filePath: string, projectDir?: string): Promise<CodingAstStructureResponse> => {
-    const { data } = await api.get<CodingAstStructureResponse>('/coding/ast/structure', { params: { file_path: filePath, project_dir: projectDir } });
+  getStructure: async (projectId: WorkbenchProjectId, filePath: string): Promise<CodingAstStructureResponse> => {
+    const { data } = await api.get<CodingAstStructureResponse>('/coding/ast/structure', { params: { file_path: filePath, project_id: projectId } });
     return data;
   },
 
@@ -308,23 +309,23 @@ export const codingApi = {
 
   // ---- LSP ----
   /** 获取 LSP 诊断信息。 */
-  getLSPDiagnostics: async (filePath: string, projectDir?: string): Promise<CodingLspDiagnosticsResponse> => {
-    const { data } = await api.get<CodingLspDiagnosticsResponse>('/coding/lsp/diagnostics', { params: { file_path: filePath, project_dir: projectDir } });
+  getLSPDiagnostics: async (projectId: WorkbenchProjectId, filePath: string): Promise<CodingLspDiagnosticsResponse> => {
+    const { data } = await api.get<CodingLspDiagnosticsResponse>('/coding/lsp/diagnostics', { params: { file_path: filePath, project_id: projectId } });
     return data;
   },
   /** 获取 LSP 补全建议。 */
-  getLSPCompletions: async (filePath: string, line: number, column: number, projectDir?: string): Promise<CodingLspCompletionsResponse> => {
-    const { data } = await api.post<CodingLspCompletionsResponse>('/coding/lsp/completions', { file_path: filePath, line, column, project_dir: projectDir });
+  getLSPCompletions: async (projectId: WorkbenchProjectId, filePath: string, line: number, column: number): Promise<CodingLspCompletionsResponse> => {
+    const { data } = await api.post<CodingLspCompletionsResponse>('/coding/lsp/completions', { file_path: filePath, line, column, project_id: projectId });
     return data;
   },
   /** 获取 LSP hover 信息。 */
-  getLSPHover: async (filePath: string, line: number, column: number, projectDir?: string): Promise<CodingLspHoverResponse> => {
-    const { data } = await api.post<CodingLspHoverResponse>('/coding/lsp/hover', { file_path: filePath, line, column, project_dir: projectDir });
+  getLSPHover: async (projectId: WorkbenchProjectId, filePath: string, line: number, column: number): Promise<CodingLspHoverResponse> => {
+    const { data } = await api.post<CodingLspHoverResponse>('/coding/lsp/hover', { file_path: filePath, line, column, project_id: projectId });
     return data;
   },
   /** 获取文件符号列表。 */
-  getLSPSymbols: async (filePath: string, projectDir?: string): Promise<CodingLspSymbolsResponse> => {
-    const { data } = await api.get<CodingLspSymbolsResponse>('/coding/lsp/symbols', { params: { file_path: filePath, project_dir: projectDir } });
+  getLSPSymbols: async (projectId: WorkbenchProjectId, filePath: string): Promise<CodingLspSymbolsResponse> => {
+    const { data } = await api.get<CodingLspSymbolsResponse>('/coding/lsp/symbols', { params: { file_path: filePath, project_id: projectId } });
     return data;
   },
 

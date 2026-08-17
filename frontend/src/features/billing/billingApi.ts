@@ -189,8 +189,8 @@ export const billingAPI = {
     period?: 'daily' | 'weekly' | 'monthly' | 'yearly'
   }) => api.get('/billing/cost', { params }),
 
-  getModels: (params?: { provider?: string }) =>
-    api.get('/billing/models', { params }),
+  // 委托给顶层 getModels 函数，保持单一数据源（modelsApi.ts 通过 re-export 复用）
+  getModels: (params?: { provider?: string }) => getModels(params),
 
   updateModelPricing: (modelId: number, data: PriceUpdate) =>
     api.put(`/billing/models/${modelId}`, data),
@@ -258,4 +258,12 @@ export const billingAPI = {
 export async function syncModelCatalog(): Promise<CatalogSyncResult> {
   const response = await api.post<CatalogSyncResult>('/billing/sync-catalog')
   return response.data
+}
+
+// 顶层 getModels 函数：单一数据源，供 billingAPI.getModels 委托与 modelsApi.ts re-export 复用
+// 调用方式：const response = await getModels({ provider: 'openai' })
+// 返回：AxiosResponse<{ models: ModelPricing[]; ... }>
+// 设计目的：消除 billingApi.ts 与 modelsApi.ts 中 getModels 的重复定义，避免行为分叉
+export function getModels(params?: { provider?: string }) {
+  return api.get('/billing/models', { params })
 }

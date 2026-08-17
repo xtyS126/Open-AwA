@@ -1,11 +1,18 @@
 /**
  * 数据保留设置容器
  * 管理所有状态与 API 调用，将数据与回调通过 props 传递给展示组件
+ *
+ * 改造说明（fix-performance-remaining-issues 模块 C）：
+ *   - 原实现使用 useEffect + axios，每次 mount 都触发 /api/billing/retention 请求
+ *   - 现改用 useQuery + queryClient.invalidateQueries，多 Tab 切换时复用缓存
+ *   - queryKey: ['billing', 'retention']，保存成功后失效以触发刷新
+ *   - Tab 组件的 mount effect 调用 onLoadRetentionConfig，此处置为稳定空函数，
+ *     避免与 useQuery 的自动加载重复请求（useQuery 已接管 mount 时数据加载）
  */
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { billingAPI, RetentionConfig } from '@/features/billing/billingApi'
 import { useNotification } from '@/shared/hooks/useNotification'
-import { appLogger } from '@/shared/utils/logger'
 import { getErrorMessage } from '@/shared/utils/errorMessages'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
 
@@ -22,32 +29,38 @@ function TabLoadingFallback() {
   )
 }
 
+/** 保留配置查询的 queryKey，供 invalidateQueries 复用 */
+export const RETENTION_QUERY_KEY = ['billing', 'retention'] as const
+
 export function DataRetentionTabContainer() {
-  // 保留配置数据
-  const [retentionConfig, setRetentionConfig] = useState<RetentionConfig | null>(null)
-  // 保留天数
+  // 保留天数（用户可编辑）
   const [retentionDays, setRetentionDays] = useState(365)
   // 是否在保存后清理旧数据
   const [cleanupOld, setCleanupOld] = useState(false)
-  // 加载状态
-  const [loadingRetention, setLoadingRetention] = useState(false)
   // 保存状态
   const [saving, setSaving] = useState(false)
 
   const { showNotification } = useNotification(3000)
+  const queryClient = useQueryClient()
 
-  // 加载保留配置
-  const loadRetentionConfig = useCallback(async () => {
-    setLoadingRetention(true)
-    try {
-      const response = await billingAPI.getRetention()
-      setRetentionConfig(response.data)
-      setRetentionDays(response.data.retention_days)
-    } catch {
-      appLogger.error({ event: 'retention_config_load_failed', message: 'Failed to load retention config', module: 'settings' })
-    } finally {
-      setLoadingRetention(false)
+  // 加载保留配置（React Query 缓存生效后，Tab 切换不会重复请求）
+  const { data: retentionConfig, isLoading: loadingRetention } = useQuery<RetentionConfig>({
+    queryKey: RETENTION_QUERY_KEY,
+    queryFn: () => billingAPI.getRetention().then(r => r.data),
+  })
+
+  // 配置加载完成后同步 retentionDays（首次加载与保存后刷新均会触发）
+  // 与原实现一致：加载数据后用服务端值回填输入框
+  useEffect(() => {
+    if (retentionConfig) {
+      setRetentionDays(retentionConfig.retention_days)
     }
+  }, [retentionConfig])
+
+  // Tab 组件 mount effect 会调用此回调；useQuery 已接管数据加载，此处置为稳定空函数
+  // 避免每次 Tab mount 触发 invalidateQueries 导致与 useQuery 自动加载重复请求
+  const handleLoadRetentionConfig = useCallback(() => {
+    // useQuery 自动管理数据加载，无需手动触发
   }, [])
 
   // 保存保留配置
@@ -59,29 +72,25 @@ export function DataRetentionTabContainer() {
         cleanup: cleanupOld
       })
       showNotification({ type: 'success', text: `保存成功${cleanupOld && response.data.deleted_records > 0 ? `，已删除${response.data.deleted_records}条过期记录` : ''}` })
-      await loadRetentionConfig()
+      // 失效缓存，触发 useQuery 重新拉取最新配置
+      await queryClient.invalidateQueries({ queryKey: RETENTION_QUERY_KEY })
       setCleanupOld(false)
     } catch (error) {
       showNotification({ type: 'error', text: getErrorMessage(error, '保存失败') })
     } finally {
       setSaving(false)
     }
-  }, [retentionDays, cleanupOld, showNotification, loadRetentionConfig])
-
-  // 挂载时加载数据
-  useEffect(() => {
-    loadRetentionConfig()
-  }, [loadRetentionConfig])
+  }, [retentionDays, cleanupOld, showNotification, queryClient])
 
   return (
     <Suspense fallback={<TabLoadingFallback />}>
       <DataRetentionTab
         loadingRetention={loadingRetention}
-        retentionConfig={retentionConfig}
+        retentionConfig={retentionConfig ?? null}
         retentionDays={retentionDays}
         cleanupOld={cleanupOld}
         saving={saving}
-        onLoadRetentionConfig={loadRetentionConfig}
+        onLoadRetentionConfig={handleLoadRetentionConfig}
         onSaveRetention={handleSaveRetention}
         onRetentionDaysChange={setRetentionDays}
         onCleanupOldChange={setCleanupOld}

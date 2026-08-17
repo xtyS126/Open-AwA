@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@/shared/routing'
 import {
   AlertTriangle,
@@ -500,6 +501,7 @@ interface MarketplaceTabProps {
 
 function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElement {
   const { addToast, ToastContainer } = useToast()
+  const queryClient = useQueryClient()
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -510,8 +512,7 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
   const [total, setTotal] = useState(0)
   const [installingId, setInstallingId] = useState<string | null>(null)
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set())
-  /* 评分汇总缓存：pluginId -> 评分摘要 */
-  const [ratingsMap, setRatingsMap] = useState<Record<string, PluginRatingSummary>>({})
+  /* 评分汇总缓存：pluginId -> 评分摘要（由 useQueries 派生，无需 state） */
   /* 当前打开详情的插件 */
   const [detailPlugin, setDetailPlugin] = useState<MarketplacePlugin | null>(null)
 
@@ -548,43 +549,72 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
 
   const pageSize = 12
 
-  /** 批量加载当前页插件的评分摘要 */
-  const loadRatings = useCallback(async (pluginIds: string[]) => {
-    if (pluginIds.length === 0) return
-    // 并行获取每个插件的评分摘要，单个失败不影响其他
-    const results = await Promise.allSettled(
-      pluginIds.map((id) => getPluginRating(id))
-    )
-    const next: Record<string, PluginRatingSummary> = {}
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        next[pluginIds[index]] = result.value.data
+  // 使用 React Query 管理插件列表缓存：staleTime=60s 内切换 Tab 不重复请求
+  // queryKey 包含 activeCategory / page / searchQuery，分类/分页/搜索切换时自动重新拉取
+  const trimmedSearch = searchQuery.trim()
+  const pluginsQuery = useQuery({
+    queryKey: ['marketplace', 'plugins', activeCategory, page, trimmedSearch || null],
+    queryFn: () => {
+      if (trimmedSearch) {
+        return searchPlugins(trimmedSearch, page, pageSize)
       }
-    })
-    setRatingsMap(next)
-  }, [])
-
-  /** 加载插件列表 */
-  const loadPlugins = useCallback(async () => {
-    setLoading(true)
-    setMarketError(null)
-    try {
-      const response = await getPlugins({
+      return getPlugins({
         category: activeCategory === 'all' ? undefined : activeCategory,
         page,
         page_size: pageSize,
       })
-      setPlugins(response.data.plugins)
-      setTotal(response.data.total)
-      // 加载评分摘要
-      loadRatings(response.data.plugins.map((p) => p.id))
-    } catch (error) {
-      console.error('加载插件列表失败:', error)
-      setMarketError('插件市场加载失败，请稍后重试')
-    } finally {
-      setLoading(false)
+    },
+  })
+
+  // 同步 useQuery 数据到本地 state（保留原有 UI 渲染逻辑）
+  useEffect(() => {
+    if (pluginsQuery.data) {
+      setPlugins(pluginsQuery.data.data.plugins)
+      setTotal(pluginsQuery.data.data.total)
     }
-  }, [activeCategory, page, loadRatings])
+  }, [pluginsQuery.data])
+
+  useEffect(() => {
+    setLoading(pluginsQuery.isLoading)
+  }, [pluginsQuery.isLoading])
+
+  useEffect(() => {
+    if (pluginsQuery.error) {
+      console.error('加载插件列表失败:', pluginsQuery.error)
+      setMarketError('插件市场加载失败，请稍后重试')
+    } else {
+      setMarketError(null)
+    }
+  }, [pluginsQuery.error])
+
+  // 当前页插件 ID 列表，用于批量查询评分
+  const pluginIds = useMemo(() => plugins.map((p) => p.id), [plugins])
+
+  // 批量加载评分摘要：useQueries 自动并行 + 缓存，单个失败不影响其他
+  // queryKey: ['marketplace', 'plugins', id, 'rating']，与 PluginDetailModal 共享缓存
+  const ratingQueries = useQueries({
+    queries: pluginIds.map((id) => ({
+      queryKey: ['marketplace', 'plugins', id, 'rating'],
+      queryFn: () => getPluginRating(id),
+    })),
+  })
+
+  // 从 useQueries 结果派生 ratingsMap（避免 useEffect + setState 导致的无限重渲染）
+  const ratingsMap = useMemo<Record<string, PluginRatingSummary>>(() => {
+    const next: Record<string, PluginRatingSummary> = {}
+    pluginIds.forEach((id, index) => {
+      const result = ratingQueries[index]
+      if (result?.data) {
+        next[id] = result.data.data
+      }
+    })
+    return next
+  }, [ratingQueries, pluginIds])
+
+  /** 加载插件列表（手动刷新入口，失效缓存触发重新拉取） */
+  const loadPlugins = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['marketplace', 'plugins'] })
+  }, [queryClient])
 
   /** 搜索插件 */
   const handleSearch = async () => {
@@ -709,27 +739,7 @@ function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElemen
     }
   }, [refreshInstalled, refreshDiscovered, onInstalled, addToast])
 
-  useEffect(() => {
-    // 搜索状态时重新搜索（支持分页），非搜索状态加载列表
-    if (searchQuery.trim()) {
-      setLoading(true)
-      setMarketError(null)
-      searchPlugins(searchQuery.trim(), page, pageSize)
-        .then(response => {
-          setPlugins(response.data.plugins)
-          setTotal(response.data.total)
-          loadRatings(response.data.plugins.map((p) => p.id))
-        })
-        .catch(error => {
-          console.error('搜索插件失败:', error)
-          // 显示错误条而非保留旧列表误以为"无搜索结果"
-          setMarketError('搜索插件失败，请稍后重试')
-        })
-        .finally(() => setLoading(false))
-    } else {
-      loadPlugins()
-    }
-  }, [loadPlugins, searchQuery, page, loadRatings])
+  // 搜索/分页/分类切换由 useQuery 的 queryKey 自动驱动，无需手动 useEffect 触发
 
   /** 生成插件图标首字母 */
   const getIconLetter = (name: string) => {

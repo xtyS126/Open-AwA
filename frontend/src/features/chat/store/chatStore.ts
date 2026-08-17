@@ -27,3 +27,5 @@ export { useModelStore, type ModelOption } from '@/features/chat/store/modelStor
 export { useToolCallStore } from '@/features/chat/store/toolCallStore'
 export { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 export type { PreferenceMutationOptions } from '@/features/chat/store/chatStoreEffects'
+// 侧效应引入编排层：加载即安装跨 Store 订阅（持久化 + 联动统一咽喉点）
+import '@/features/chat/store/chatSyncOrchestrator'

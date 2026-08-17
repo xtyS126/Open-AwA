@@ -1,31 +1,24 @@
 /**
  * ACP 会话列表组件。
- * 展示活动会话，支持选中切换与关闭。
+ * 只展示服务端返回的安全会话字段，不接收或推导项目根路径。
  */
 import { X } from 'lucide-react'
 import { useI18nStore } from '@/i18n'
 import type { AcpSession } from '@/shared/api/acpApi'
 
 export interface SessionListProps {
-  /** 会话列表 */
   sessions: AcpSession[]
-  /** 当前选中的会话 ID */
   selectedId: string | null
-  /** 选中会话回调 */
   onSelect: (id: string) => void
-  /** 关闭会话回调 */
   onClose: (id: string) => void
 }
 
-/** 从绝对路径中提取末尾两级，用于列表项简短展示 */
-function shortPath(cwd: string): string {
-  if (!cwd) return ''
-  const parts = cwd.replace(/\\/g, '/').split('/').filter(Boolean)
-  if (parts.length <= 2) return cwd
-  return '.../' + parts.slice(-2).join('/')
+function formatCreatedAt(value: string): string {
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return value
+  return new Date(timestamp).toLocaleString()
 }
 
-/** 会话列表 —— 每项显示 agent 标识与简短工作目录，并提供关闭按钮 */
 export default function SessionList({ sessions, selectedId, onSelect, onClose }: SessionListProps) {
   const { t } = useI18nStore()
 
@@ -71,7 +64,7 @@ export default function SessionList({ sessions, selectedId, onSelect, onClose }:
                 {session.agent}
               </span>
               <span
-                title={session.cwd}
+                title={session.session_id}
                 style={{
                   fontSize: 'var(--text-xs)',
                   color: 'var(--color-text-tertiary)',
@@ -80,13 +73,19 @@ export default function SessionList({ sessions, selectedId, onSelect, onClose }:
                   whiteSpace: 'nowrap',
                 }}
               >
-                {shortPath(session.cwd)}
+                {session.session_id}
               </span>
+              <time
+                dateTime={session.created_at}
+                style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)' }}
+              >
+                {formatCreatedAt(session.created_at)}
+              </time>
             </div>
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation()
+              onClick={(event) => {
+                event.stopPropagation()
                 onClose(session.session_id)
               }}
               title={t('app.close')}

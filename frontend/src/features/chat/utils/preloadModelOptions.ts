@@ -59,8 +59,27 @@ function buildRemoteModelOptions(
   }))
 }
 
+// 模块级去重锁：复用在途 Promise，避免多调用方并行触发同一段拉取逻辑
+let preloadingPromise: Promise<void> | null = null
+
 /**
- * 启动期预加载模型选项。
+ * 启动期预加载模型选项（去重锁包装）。
+ *
+ * 多个调用方并发调用时复用同一个在途 Promise，避免重复发起拉取。
+ * Promise 完成后（无论 resolve 或 reject）锁被释放，下次调用重新发起拉取。
+ */
+export async function preloadModelOptions(): Promise<void> {
+  if (preloadingPromise) {
+    return preloadingPromise
+  }
+  preloadingPromise = doPreload().finally(() => {
+    preloadingPromise = null
+  })
+  return preloadingPromise
+}
+
+/**
+ * 预加载实际执行逻辑（从原 preloadModelOptions 主体提取）。
  *
  * 流程：
  * 1. 并行拉取 configurations（用于回退默认模型）与 providers 列表
@@ -73,7 +92,7 @@ function buildRemoteModelOptions(
  *
  * 任意步骤失败均不抛出（不阻塞登录），但失败显式暴露到 modelStore.modelError 并记录日志。
  */
-export async function preloadModelOptions(): Promise<void> {
+async function doPreload(): Promise<void> {
   const modelStore = useModelStore.getState()
   modelStore.setModelLoading(true)
   modelStore.setModelError(null)

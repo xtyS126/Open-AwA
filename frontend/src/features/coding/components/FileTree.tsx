@@ -38,9 +38,11 @@ const FileTreeItem: React.FC<{
       return;
     }
     if (!expanded && children.length === 0) {
+      const request = useCodingStore.getState().captureRequestContext();
+      if (!request) return;
       try {
-        const data = await codingApi.listDir(node.path);
-        if (data.items) {
+        const data = await codingApi.listDir(request.projectId, node.path);
+        if (data.items && useCodingStore.getState().isRequestContextCurrent(request)) {
           setChildren(data.items.map((item) => ({
             name: item.name,
             type: item.type,
@@ -87,16 +89,22 @@ const FileTreeItem: React.FC<{
 
 const FileTree: React.FC = () => {
   // 使用选择器精确订阅，避免整个 store 变化触发重渲染
-  const projectDir = useCodingStore(s => s.projectDir);
+  const projectId = useCodingStore(s => s.projectId);
   const [rootTree, setRootTree] = useState<FileTreeNode | null>(null);
   const [loading, setLoading] = useState(true);
 
   // 声明 loadTree 后再被 useEffect 引用，避免变量在声明前被访问
   const loadTree = async () => {
+    const request = useCodingStore.getState().captureRequestContext();
+    if (!request) {
+      setRootTree(null);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const data = await codingApi.getTree('', projectDir || undefined);
-      if (data && data.tree) {
+      const data = await codingApi.getTree(request.projectId);
+      if (data && data.tree && useCodingStore.getState().isRequestContextCurrent(request)) {
         setRootTree({
           name: data.root || 'Project',
           type: 'directory',
@@ -108,19 +116,20 @@ const FileTree: React.FC = () => {
     } catch (e) {
       appLogger.error({ event: 'file_tree_load_failed', module: 'coding', message: String(e), extra: { stack: e instanceof Error ? e.stack : undefined } });
     } finally {
-      setLoading(false);
+      if (useCodingStore.getState().isRequestContextCurrent(request)) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadTree();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectDir]);
+  }, [projectId]);
 
   const handleSelectFile = async (path: string) => {
+    const request = useCodingStore.getState().captureRequestContext();
+    if (!request) return;
     try {
-      const data = await codingApi.readFile(path, projectDir || undefined);
-      if (data.content !== undefined) {
+      const data = await codingApi.readFile(request.projectId, path);
+      if (data.content !== undefined && useCodingStore.getState().isRequestContextCurrent(request)) {
         const store = useCodingStore.getState();
         store.openFile({
           path,

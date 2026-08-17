@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookOpen, FolderKanban, Save, UserRound, Volume2 } from 'lucide-react'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { ttsApi } from '@/features/tts/ttsApi'
@@ -14,6 +15,13 @@ import styles from './AssistantContextPage.module.css'
 
 const MAX_SELECTED_MEMORIES = 20
 
+const assistantContextQueryKey = (sessionId: string) => (
+  ['conversations', sessionId, 'assistant-context'] as const
+)
+
+const rolesQueryKey = ['roles', 'list'] as const
+const enabledWorkspacesQueryKey = ['workspaces', 'list', { enabledOnly: true }] as const
+
 function formatLoadError(section: string, error: unknown): string {
   const detail = error instanceof Error && error.message.trim() ? `：${error.message}` : ''
   return `${section}加载失败${detail}`
@@ -27,119 +35,102 @@ function formatSaveError(error: unknown): string {
 export default function AssistantContextPage() {
   const sessionId = useSessionStore((state) => state.sessionId)
   const hasActiveSession = Boolean(sessionId && sessionId !== 'default')
+  const queryClient = useQueryClient()
 
   const [roleId, setRoleId] = useState<string | null>(null)
   const [workspaceId, setWorkspaceId] = useState('default')
   const [selectedMemoryIds, setSelectedMemoryIds] = useState<number[]>([])
   const [speakerId, setSpeakerId] = useState<string | null>(null)
 
-  const [roles, setRoles] = useState<AgentRole[]>([])
-  const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([])
-  const [memories, setMemories] = useState<LongTermMemoryItem[]>([])
-  const [speakers, setSpeakers] = useState<SpeakerInfo[]>([])
-
-  const [contextLoading, setContextLoading] = useState(false)
-  const [rolesLoading, setRolesLoading] = useState(false)
-  const [workspacesLoading, setWorkspacesLoading] = useState(false)
-  const [memoriesLoading, setMemoriesLoading] = useState(false)
-  const [speakersLoading, setSpeakersLoading] = useState(false)
-
-  const [contextError, setContextError] = useState<string | null>(null)
-  const [rolesError, setRolesError] = useState<string | null>(null)
-  const [workspacesError, setWorkspacesError] = useState<string | null>(null)
-  const [memoriesError, setMemoriesError] = useState<string | null>(null)
-  const [speakersError, setSpeakersError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  const contextQuery = useQuery({
+    queryKey: assistantContextQueryKey(sessionId),
+    queryFn: async () => {
+      const { data } = await conversationAPI.getAssistantContext(sessionId)
+      return data
+    },
+    enabled: hasActiveSession,
+  })
+
+  const rolesQuery = useQuery({
+    queryKey: rolesQueryKey,
+    queryFn: rolesApi.getRoles,
+    enabled: hasActiveSession,
+  })
+
+  const workspacesQuery = useQuery({
+    queryKey: enabledWorkspacesQueryKey,
+    queryFn: async () => {
+      const { workspaces } = await workspaceApi.list(true)
+      return workspaces
+    },
+    enabled: hasActiveSession,
+  })
+
+  // 知识列表通过 React Query 共享缓存（与 DashboardPage 共用同一 queryKey）
+  // 仅在存在活动会话时启用查询，避免无会话场景下发起不必要的请求
+  const memoriesQuery = useQuery({
+    queryKey: ['memory', 'long-term', 'list'],
+    queryFn: async () => {
+      const { data } = await memoryAPI.getLongTerm()
+      return data
+    },
+    enabled: hasActiveSession,
+  })
+
+  // 音色列表通过 React Query 共享缓存（与 TtsPage / ttsStore 共用同一 queryKey）
+  const speakersQuery = useQuery({
+    queryKey: ['tts', 'speakers'],
+    queryFn: () => ttsApi.listSpeakers(),
+    enabled: hasActiveSession,
+  })
+
+  const memories: LongTermMemoryItem[] = memoriesQuery.data ?? []
+  const memoriesLoading = memoriesQuery.isLoading
+  const memoriesError = memoriesQuery.error ? formatLoadError('知识', memoriesQuery.error) : null
+
+  const speakers: SpeakerInfo[] = speakersQuery.data?.speakers ?? []
+  const speakersLoading = speakersQuery.isLoading
+  const speakersError = speakersQuery.error ? formatLoadError('声音', speakersQuery.error) : null
+
+  const roles: AgentRole[] = rolesQuery.data ?? []
+  const rolesLoading = rolesQuery.isLoading
+  const rolesError = rolesQuery.error ? formatLoadError('角色', rolesQuery.error) : null
+
+  const workspaces: WorkspaceItem[] = workspacesQuery.data ?? []
+  const workspacesLoading = workspacesQuery.isLoading
+  const workspacesError = workspacesQuery.error ? formatLoadError('项目', workspacesQuery.error) : null
+
+  const contextLoading = contextQuery.isLoading
+  const contextError = contextQuery.error
+    ? formatLoadError('会话上下文', contextQuery.error)
+    : null
 
   useEffect(() => {
     if (!hasActiveSession) {
       return
     }
 
-    let cancelled = false
-
     setRoleId(null)
     setWorkspaceId('default')
     setSelectedMemoryIds([])
     setSpeakerId(null)
-    setContextError(null)
-    setRolesError(null)
-    setWorkspacesError(null)
-    setMemoriesError(null)
-    setSpeakersError(null)
     setSaveError(null)
     setSaveMessage(null)
-
-    setContextLoading(true)
-    void conversationAPI.getAssistantContext(sessionId)
-      .then(({ data }) => {
-        if (cancelled) return
-        setRoleId(data.role_id)
-        setWorkspaceId(data.workspace_id || 'default')
-        setSelectedMemoryIds(data.selected_memory_ids.slice(0, MAX_SELECTED_MEMORIES))
-        setSpeakerId(data.speaker_id)
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setContextError(formatLoadError('会话上下文', error))
-      })
-      .finally(() => {
-        if (!cancelled) setContextLoading(false)
-      })
-
-    setRolesLoading(true)
-    void rolesApi.getRoles()
-      .then((items) => {
-        if (!cancelled) setRoles(items)
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setRolesError(formatLoadError('角色', error))
-      })
-      .finally(() => {
-        if (!cancelled) setRolesLoading(false)
-      })
-
-    setWorkspacesLoading(true)
-    void workspaceApi.list(true)
-      .then(({ workspaces: items }) => {
-        if (!cancelled) setWorkspaces(items)
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setWorkspacesError(formatLoadError('项目', error))
-      })
-      .finally(() => {
-        if (!cancelled) setWorkspacesLoading(false)
-      })
-
-    setMemoriesLoading(true)
-    void memoryAPI.getLongTerm()
-      .then(({ data }) => {
-        if (!cancelled) setMemories(data)
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setMemoriesError(formatLoadError('知识', error))
-      })
-      .finally(() => {
-        if (!cancelled) setMemoriesLoading(false)
-      })
-
-    setSpeakersLoading(true)
-    void ttsApi.listSpeakers()
-      .then(({ speakers: items }) => {
-        if (!cancelled) setSpeakers(items)
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setSpeakersError(formatLoadError('声音', error))
-      })
-      .finally(() => {
-        if (!cancelled) setSpeakersLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
   }, [hasActiveSession, sessionId])
+
+  useEffect(() => {
+    const context = contextQuery.data
+    if (!context) return
+
+    setRoleId(context.role_id)
+    setWorkspaceId(context.workspace_id || 'default')
+    setSelectedMemoryIds(context.selected_memory_ids.slice(0, MAX_SELECTED_MEMORIES))
+    setSpeakerId(context.speaker_id)
+  }, [contextQuery.data])
 
   const toggleMemory = (memoryId: number, checked: boolean) => {
     setSaveError(null)
@@ -167,6 +158,7 @@ export default function AssistantContextPage() {
         selected_memory_ids: selectedMemoryIds,
         speaker_id: speakerId,
       })
+      queryClient.setQueryData(assistantContextQueryKey(sessionId), data)
       setRoleId(data.role_id)
       setWorkspaceId(data.workspace_id)
       setSelectedMemoryIds(data.selected_memory_ids.slice(0, MAX_SELECTED_MEMORIES))

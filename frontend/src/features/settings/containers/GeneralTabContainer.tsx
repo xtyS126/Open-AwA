@@ -1,9 +1,21 @@
 /**
  * 通用设置 Tab 容器组件
  * 管理通用设置相关的所有状态和数据获取逻辑
+ *
+ * 改造说明（fix-performance-remaining-issues 模块 C）：
+ *   - 原实现使用 useEffect + axios，每次 mount 都触发 /api/billing/models、/api/prompts/active、
+ *     /api/billing/configurations/{id}/capabilities 请求
+ *   - 现改用 useQuery + queryClient.invalidateQueries，多 Tab 切换时复用缓存
+ *   - queryKey 约定：
+ *     - ['billing', 'models']：与 BillingTabContainer 共享
+ *     - ['prompts', 'active']：与 PromptsTabContainer 共享
+ *     - ['billing', 'configurations', configId, 'capabilities']：按 configId 缓存
+ *   - 保留 loadServerPreferences 5 秒节流入口（fix-preferences-deadloop spec 成果）
+ *   - 保留 useSharedSettingsData 的 loadModelsData（configurations/providers 加载，已正确实现）
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { lazy, Suspense } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { promptsAPI, userAPI } from '@/shared/api/api'
 import { billingAPI, ModelPricing } from '@/features/billing/billingApi'
 import { modelsAPI, ModelCapabilitiesResponse, ModelProvider } from '@/features/settings/modelsApi'
@@ -15,12 +27,17 @@ import {
   isPersistedSettings,
 } from '@/features/settings/SettingsPage.utils'
 import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
+import { loadServerPreferences } from '@/shared/utils/preferenceSync'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
 import { getErrorMessage } from '@/shared/utils/errorMessages'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
+import { BILLING_MODELS_QUERY_KEY } from './BillingTabContainer'
 
 const GeneralSettings = lazy(() => import('@/features/settings/components/GeneralSettings').then(m => ({ default: m.GeneralSettings })))
+
+/** 活跃提示词查询的 queryKey，供 PromptsTabContainer 共享缓存 */
+export const PROMPTS_ACTIVE_QUERY_KEY = ['prompts', 'active'] as const
 
 interface Settings {
   theme: string
@@ -46,6 +63,7 @@ interface RemoteModelCacheEntry {
 
 export function GeneralTabContainer() {
   const { message, showNotification } = useNotification(3000)
+  const queryClient = useQueryClient()
 
   // 通用设置状态
   const [settings, setSettings] = useState<Settings>({
@@ -60,7 +78,7 @@ export function GeneralTabContainer() {
   })
   const [, setSaving] = useState(false)
 
-  // 共享数据
+  // 共享数据（configurations / providers，由 useSharedSettingsStore 管理 5min stale-while-revalidate）
   const {
     configurations,
     loadModelsData,
@@ -91,9 +109,58 @@ export function GeneralTabContainer() {
   const [globalModelLoadSummary, setGlobalModelLoadSummary] = useState<string | null>(null)
   const remoteModelCacheRef = useRef<Map<string, RemoteModelCacheEntry>>(new Map())
 
-  // 计费数据
-  const [models, setModels] = useState<ModelPricing[]>([])
-  const [, setLoadingModels] = useState(false)
+  // 计费数据（模型价格列表）—— 与 BillingTabContainer 共享 ['billing', 'models'] 缓存
+  // 不使用 initialData：否则 staleTime 内 React Query 会将初始值视为新鲜数据而不发起请求
+  const { data: models } = useQuery<ModelPricing[]>({
+    queryKey: BILLING_MODELS_QUERY_KEY,
+    queryFn: () => billingAPI.getModels().then(r => r.data.models || []),
+  })
+
+  // 活跃提示词 —— 与 PromptsTabContainer 共享 ['prompts', 'active'] 缓存
+  const { data: activePrompt } = useQuery({
+    queryKey: PROMPTS_ACTIVE_QUERY_KEY,
+    queryFn: () => promptsAPI.getActive().then(r => r.data),
+  })
+
+  // 提示词加载完成后同步到 settings.promptContent（首次加载与保存后刷新均会触发）
+  useEffect(() => {
+    if (activePrompt?.content) {
+      setSettings(prev => ({ ...prev, promptContent: activePrompt.content }))
+    }
+  }, [activePrompt])
+
+  // 当前选中的 configId（从 optionKey 解析，供 capabilities 查询使用）
+  const selectedConfigId = selectedConfigModelOptionKey
+    ? Number(selectedConfigModelOptionKey.split(':')[0])
+    : null
+
+  // 模型能力查询：按 configId 缓存，configId 为空时禁用查询
+  const { data: capabilitiesData } = useQuery({
+    queryKey: ['billing', 'configurations', selectedConfigId, 'capabilities'],
+    queryFn: () => modelsAPI.getCapabilities(selectedConfigId as number).then(r => r.data),
+    enabled: !!selectedConfigId,
+  })
+
+  // 能力数据加载完成后同步 modelCapabilities 与编辑参数
+  // 与原实现一致：优先用 config 中保存的值，回退到 capabilities.defaults
+  useEffect(() => {
+    if (!selectedConfigId) {
+      setModelCapabilities(null)
+      return
+    }
+    const config = configurations.find(c => c.id === selectedConfigId)
+    if (capabilitiesData) {
+      setModelCapabilities(capabilitiesData)
+      setEditingTemperature(config?.temperature ?? capabilitiesData.defaults.temperature)
+      setEditingTopK(config?.top_k ?? capabilitiesData.defaults.top_k)
+      setEditingMaxTokensLimit(config?.max_tokens_limit ?? '')
+    } else if (!capabilitiesData && config) {
+      // 查询加载中或失败时，保留 config 中的值作为回退
+      setEditingTemperature(config.temperature ?? 0.7)
+      setEditingTopK(config.top_k ?? 0.9)
+      setEditingMaxTokensLimit(config.max_tokens_limit ?? '')
+    }
+  }, [capabilitiesData, configurations, selectedConfigId])
 
   /** 加载本地保存的设置 */
   const loadSettings = useCallback(() => {
@@ -121,11 +188,12 @@ export function GeneralTabContainer() {
    *  - 本地优先快速显示，避免阻塞 UI
    *  - 后端覆盖以最新为准，解决多端同步与数据库重置后 localStorage 残留旧值问题
    *  - 失败静默（保留本地值），不中断 UI
+   *  - 复用 loadServerPreferences 的 5 秒节流，避免与 App 启动期重复拉取 /api/user/preferences
    */
   const syncSettingsFromServer = useCallback(async () => {
     try {
-      const response = await userAPI.getPreferences()
-      const prefs = response.data?.preferences
+      // 复用 loadServerPreferences 的 5 秒节流，避免与 App 启动期重复拉取 /api/user/preferences
+      const prefs = await loadServerPreferences()
       if (!prefs || typeof prefs !== 'object') {
         return
       }
@@ -155,31 +223,6 @@ export function GeneralTabContainer() {
         message: '从后端同步偏好失败，保留本地值',
         extra: { error: error instanceof Error ? error.message : String(error) },
       })
-    }
-  }, [])
-
-  /** 加载提示词 */
-  const loadPrompts = useCallback(async () => {
-    try {
-      const response = await promptsAPI.getActive()
-      if (response.data && response.data.content) {
-        setSettings(prev => ({ ...prev, promptContent: response.data.content }))
-      }
-    } catch {
-      appLogger.error({ event: 'prompts_load_failed', message: 'Failed to load prompts', module: 'settings' })
-    }
-  }, [])
-
-  /** 加载计费数据 */
-  const loadBillingData = useCallback(async () => {
-    setLoadingModels(true)
-    try {
-      const modelsRes = await billingAPI.getModels()
-      setModels(modelsRes.data.models || [])
-    } catch {
-      appLogger.error({ event: 'billing_data_load_failed', message: 'Failed to load billing data', module: 'settings' })
-    } finally {
-      setLoadingModels(false)
     }
   }, [])
 
@@ -326,8 +369,10 @@ export function GeneralTabContainer() {
     }
   }, [configurations, globalSelectedModel, setGlobalSelectedModel, setModelOptions, setModelLoading, setModelError, buildProviderCacheSignature, buildRemoteModelOptions])
 
-  /** 选择模型配置 */
-  const handleSelectModelConfig = useCallback(async (optionKey: string) => {
+  /** 选择模型配置
+   *  改造后：仅设置 optionKey 与 globalSelectedModel，capabilities 由 useQuery 自动拉取
+   */
+  const handleSelectModelConfig = useCallback((optionKey: string) => {
     setSelectedConfigModelOptionKey(optionKey)
     const [configIdText, modelName] = optionKey.split(':')
     const configId = Number(configIdText)
@@ -336,19 +381,6 @@ export function GeneralTabContainer() {
     if (config && modelName) {
       setGlobalSelectedModel(`${config.provider}:${modelName}`)
       appLogger.info({ event: 'global_model_change', module: 'settings', action: 'change_default_model_from_param_panel', status: 'success', message: 'default model changed via param panel', extra: { model: `${config.provider}:${modelName}` } })
-    }
-
-    try {
-      const capRes = await modelsAPI.getCapabilities(configId)
-      setModelCapabilities(capRes.data)
-      setEditingTemperature(config?.temperature ?? capRes.data.defaults.temperature)
-      setEditingTopK(config?.top_k ?? capRes.data.defaults.top_k)
-      setEditingMaxTokensLimit(config?.max_tokens_limit ?? '')
-    } catch {
-      setModelCapabilities(null)
-      setEditingTemperature(config?.temperature ?? 0.7)
-      setEditingTopK(config?.top_k ?? 0.9)
-      setEditingMaxTokensLimit(config?.max_tokens_limit ?? '')
     }
   }, [configurations, setGlobalSelectedModel])
 
@@ -370,13 +402,17 @@ export function GeneralTabContainer() {
         max_tokens_limit: editingMaxTokensLimit === '' ? null : editingMaxTokensLimit,
       })
       showNotification({ type: 'success', text: '模型参数保存成功' })
+      // 失效 configurations 缓存（useSharedSettingsStore 内部状态）与 capabilities 缓存
       await loadModelsData()
+      await queryClient.invalidateQueries({
+        queryKey: ['billing', 'configurations', selectedConfigModelOption.configId, 'capabilities'],
+      })
     } catch (error) {
       showNotification({ type: 'error', text: getErrorMessage(error, '模型参数保存失败') })
     } finally {
       setSavingModelParams(false)
     }
-  }, [configurations, selectedConfigModelOptionKey, editingTemperature, editingTopK, editingMaxTokensLimit, showNotification, loadModelsData])
+  }, [configurations, selectedConfigModelOptionKey, editingTemperature, editingTopK, editingMaxTokensLimit, showNotification, loadModelsData, queryClient])
 
   /** 重置模型参数 */
   const handleResetModelParams = useCallback(async () => {
@@ -396,13 +432,17 @@ export function GeneralTabContainer() {
       setEditingTopK(config?.top_k ?? 0.9)
       setEditingMaxTokensLimit(config?.max_tokens_limit ?? '')
       showNotification({ type: 'success', text: '已重置为默认参数' })
+      // 失效 configurations 缓存与 capabilities 缓存
       await loadModelsData()
+      await queryClient.invalidateQueries({
+        queryKey: ['billing', 'configurations', selectedConfigModelOption.configId, 'capabilities'],
+      })
     } catch (error) {
       showNotification({ type: 'error', text: getErrorMessage(error, '重置失败') })
     } finally {
       setSavingModelParams(false)
     }
-  }, [configurations, selectedConfigModelOptionKey, showNotification, loadModelsData])
+  }, [configurations, selectedConfigModelOptionKey, showNotification, loadModelsData, queryClient])
 
   /** 保存设置 */
   const saveSettings = useCallback(async () => {
@@ -436,6 +476,8 @@ export function GeneralTabContainer() {
             variables: '{}',
           })
         }
+        // 失效提示词缓存，触发 useQuery 重新拉取最新活跃提示词
+        await queryClient.invalidateQueries({ queryKey: PROMPTS_ACTIVE_QUERY_KEY })
       }
 
       showNotification({ type: 'success', text: '设置保存成功' })
@@ -444,22 +486,21 @@ export function GeneralTabContainer() {
     } finally {
       setSaving(false)
     }
-  }, [settings, showNotification])
+  }, [settings, showNotification, queryClient])
 
   /** 设置变更 */
   const handleChange = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }))
   }, [])
 
-  // 首次挂载时加载数据
+  // 首次挂载时加载本地设置、共享配置数据、同步后端偏好
+  // loadBillingData 与 loadPrompts 已由 useQuery 接管，无需在此调用
   useEffect(() => {
     loadSettings()
-    loadPrompts()
     loadModelsData()
-    loadBillingData()
     // 异步从后端同步偏好（不 await，本地优先快速显示，后端覆盖在后）
     void syncSettingsFromServer()
-  }, [loadSettings, loadPrompts, loadModelsData, loadBillingData, syncSettingsFromServer])
+  }, [loadSettings, loadModelsData, syncSettingsFromServer])
 
   // 自动选择默认模型配置
   useEffect(() => {
@@ -498,7 +539,7 @@ export function GeneralTabContainer() {
           editingTopK={editingTopK}
           editingMaxTokensLimit={editingMaxTokensLimit}
           modelCapabilities={modelCapabilities}
-          models={models}
+          models={models || []}
           savingModelParams={savingModelParams}
           onSettingChange={handleChange}
           onOutputModeChange={setOutputMode}

@@ -30,8 +30,8 @@ export interface AcpSession {
   session_id: string
   /** 关联的 Agent 名称 */
   agent: string
-  /** 工作目录 */
-  cwd: string
+  /** 工作台项目 ID */
+  project_id: string
   /** 创建时间（ISO 字符串） */
   created_at: string
 }
@@ -39,13 +39,13 @@ export interface AcpSession {
 /** 创建会话响应 */
 export interface AcpCreateSessionResponse {
   session_id: string
-  cwd: string
+  project_id: string
   config_options: unknown[]
 }
 
 /** OpenCode 在项目中的状态 */
 export interface OpenCodeStatus {
-  cwd: string
+  project_id: string
   package_json_exists: boolean
   project_installed: boolean
   available: boolean
@@ -69,6 +69,12 @@ export interface AcpListAgentsResponse {
 export interface AcpListSessionsResponse {
   sessions: AcpSession[]
   count: number
+}
+
+/** ACP 流式 prompt 请求体 */
+export interface AcpPromptRequest {
+  prompt: string
+  project_id: string
 }
 
 /** 权限选项 */
@@ -114,52 +120,84 @@ export async function listAgents(): Promise<AcpListAgentsResponse> {
 }
 
 /** 创建新的 ACP 会话 */
-export async function createSession(agent: string, cwd?: string): Promise<AcpCreateSessionResponse> {
-  const { data } = await api.post<AcpCreateSessionResponse>(`${BASE}/sessions`, { agent, cwd })
+export async function createSession(
+  projectId: string,
+  agent: string,
+  signal?: AbortSignal,
+): Promise<AcpCreateSessionResponse> {
+  const { data } = await api.post<AcpCreateSessionResponse>(
+    `${BASE}/sessions`,
+    { agent, project_id: projectId },
+    { signal },
+  )
   return data
 }
 
-/** 查询指定工作目录的 OpenCode 状态 */
-export async function getOpenCodeStatus(cwd?: string): Promise<OpenCodeStatus> {
-  const { data } = await api.get<OpenCodeStatus>(`${BASE}/opencode/status`, { params: { cwd } })
+/** 查询指定工作台项目的 OpenCode 状态 */
+export async function getOpenCodeStatus(projectId: string): Promise<OpenCodeStatus> {
+  const { data } = await api.get<OpenCodeStatus>(`${BASE}/opencode/status`, {
+    params: { project_id: projectId },
+  })
   return data
 }
 
-/** 经用户确认后，在指定 Node.js 项目中安装 OpenCode */
-export async function installOpenCode(cwd?: string): Promise<OpenCodeInstallResult> {
+/** 经用户确认后，在指定工作台项目中安装 OpenCode */
+export async function installOpenCode(projectId: string): Promise<OpenCodeInstallResult> {
   const { data } = await api.post<OpenCodeInstallResult>(`${BASE}/opencode/install`, {
-    cwd,
+    project_id: projectId,
     confirm_install: true,
   })
   return data
 }
 
-/** 列出当前用户的 ACP 会话 */
-export async function listSessions(): Promise<AcpListSessionsResponse> {
-  const { data } = await api.get<AcpListSessionsResponse>(`${BASE}/sessions`)
+/**
+ * 列出当前用户的 ACP 会话。
+ *
+ * 传入 projectId 并可选传入 agent，用于按工作台项目与 Agent 过滤，
+ * 主要用于 createSession 触发 409 冲突时回退查询已有会话以复用。
+ */
+export async function listSessions(
+  projectId: string,
+  agent?: string,
+): Promise<AcpListSessionsResponse> {
+  const { data } = await api.get<AcpListSessionsResponse>(`${BASE}/sessions`, {
+    params: { project_id: projectId, agent },
+  })
   return data
+}
+
+/** 创建 ACP 流式 prompt 的请求体，SSE 读取与中止仍由调用方管理 */
+export function createPromptRequest(projectId: string, prompt: string): AcpPromptRequest {
+  return { prompt, project_id: projectId }
 }
 
 /** 响应挂起的权限请求 */
 export async function respondPermission(
+  projectId: string,
   sessionId: string,
   optionId: string
 ): Promise<{ status: string }> {
   const { data } = await api.post<{ status: string }>(
     `${BASE}/sessions/${sessionId}/permission`,
-    { option_id: optionId }
+    { option_id: optionId, project_id: projectId }
   )
   return data
 }
 
 /** 取消正在执行的回合 */
-export async function cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
-  const { data } = await api.post<{ cancelled: boolean }>(`${BASE}/sessions/${sessionId}/cancel`)
+export async function cancelTurn(projectId: string, sessionId: string): Promise<{ cancelled: boolean }> {
+  const { data } = await api.post<{ cancelled: boolean }>(
+    `${BASE}/sessions/${sessionId}/cancel`,
+    null,
+    { params: { project_id: projectId } },
+  )
   return data
 }
 
 /** 关闭会话 */
-export async function closeSession(sessionId: string): Promise<{ closed: boolean }> {
-  const { data } = await api.delete<{ closed: boolean }>(`${BASE}/sessions/${sessionId}`)
+export async function closeSession(projectId: string, sessionId: string): Promise<{ closed: boolean }> {
+  const { data } = await api.delete<{ closed: boolean }>(`${BASE}/sessions/${sessionId}`, {
+    params: { project_id: projectId },
+  })
   return data
 }

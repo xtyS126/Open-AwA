@@ -3,6 +3,7 @@
  * 管理模型配置相关的所有状态和 API 调用，将数据与回调传递给 ModelsTab 展示组件
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { modelsAPI } from '@/features/settings/modelsApi'
 import type { ModelConfiguration, ProviderModel } from '@/features/settings/modelsApi'
 import { useSharedSettingsData } from '@/features/settings/hooks/useSharedSettingsData'
@@ -58,6 +59,7 @@ interface EditConfigFormState {
 
 export function ModelsTabContainer() {
   const { showNotification } = useNotification(3000)
+  const queryClient = useQueryClient()
 
   // 添加表单相关状态
   const [showAddForm, setShowAddForm] = useState(false)
@@ -126,7 +128,12 @@ export function ModelsTabContainer() {
     setNewConfig(prev => ({ ...prev, provider, model: '' }))
     if (provider) {
       try {
-        const response = await modelsAPI.getModelsByProvider(provider)
+        // 通过 queryClient.fetchQuery 复用 ['billing', 'models-by-provider', provider] 缓存，
+        // 与 ProviderFormContainer / useSharedSettingsStore 共享，避免重复请求
+        const response = await queryClient.fetchQuery({
+          queryKey: ['billing', 'models-by-provider', provider],
+          queryFn: () => modelsAPI.getModelsByProvider(provider),
+        })
         setProviderModels(response.data.models || [])
       } catch {
         appLogger.error({ event: 'provider_models_load_failed', message: 'Failed to load provider models', module: 'settings' })
@@ -134,7 +141,7 @@ export function ModelsTabContainer() {
     } else {
       setProviderModels([])
     }
-  }, [])
+  }, [queryClient])
 
   /** 添加新的模型配置 */
   const handleAddConfiguration = useCallback(async () => {

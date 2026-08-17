@@ -64,7 +64,25 @@ export default defineConfig(({ mode }) => {
       dedupe: dedupedReactPackages,
     },
     optimizeDeps: {
-      include: [...dedupedReactPackages, 'zustand'],
+      // 模块 E: 将首屏加载的大依赖加入预构建，避免首次访问页面时按需预构建导致的延迟
+      // HAR 抓包显示这些依赖开发模式首屏加载总体积超 9MB，预构建后可显著降低首屏耗时
+      // 模块 G: 移除 lucide-react（3.46MB 巨型 chunk，按需预构建更优）
+      // 模块 G: 追加 recharts / markdown / katex / highlight.js 等 markdown 渲染与图表依赖
+      include: [
+        ...dedupedReactPackages,
+        'zustand',
+        '@xterm/xterm',
+        '@tanstack/react-router',
+        'reactflow',
+        'recharts',
+        'react-markdown',
+        'remark-gfm',
+        'remark-math',
+        'rehype-katex',
+        'rehype-highlight',
+        'katex',
+        'highlight.js',
+      ],
     },
     // 使用前端专用且已被 .gitignore 覆盖的缓存目录。
     // 禁止与后端或构建任务共享 var/cache，避免 Windows 下 results.json 文件锁冲突。

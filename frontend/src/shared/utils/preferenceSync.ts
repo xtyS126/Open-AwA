@@ -3,7 +3,7 @@
  * 桥接服务端 profile_data["preferences"] 和浏览器 localStorage。
  * localStorage 是快速本地缓存（防止主题闪现和离线回退），服务端是跨浏览器同步的真实来源。
  */
-import { userAPI } from '@/shared/api/api'
+import { userAPI } from '@/shared/api/authApi'
 import { safeSetItem } from '@/shared/utils/safeStorage'
 import { asRecord } from '@/shared/types/api'
 
@@ -36,11 +36,46 @@ function updateAppSettingsField(field: string, value: unknown): void {
   }
 }
 
+// 模块级节流状态：5 秒内复用上次成功结果，避免 App 启动期 + 设置页挂载期重复调用
+let lastLoadPromise: Promise<Record<string, unknown> | null> | null = null
+let lastLoadTimestamp = 0
+const PREFERENCE_LOAD_THROTTLE_MS = 5000
+
 /**
  * 从服务端加载偏好并写入 localStorage。
  * 在 App.tsx 中认证成功后调用。
+ *
+ * 5 秒节流：成功后在 5 秒窗口内的重复调用复用同一 Promise，避免多组件挂载重复拉取。
+ * 失败不缓存：返回 null（服务端不可用）时不更新 timestamp，下次调用立即重试。
+ *
+ * @returns 偏好对象；服务端不可用时返回 null
  */
-export async function loadServerPreferences(): Promise<void> {
+export async function loadServerPreferences(): Promise<Record<string, unknown> | null> {
+  const now = Date.now()
+  if (lastLoadPromise && now - lastLoadTimestamp < PREFERENCE_LOAD_THROTTLE_MS) {
+    return lastLoadPromise
+  }
+  // 同步占位 timestamp，避免并发调用在 Promise 完成前绕过节流
+  lastLoadTimestamp = now
+  lastLoadPromise = doLoadServerPreferences().then((prefs) => {
+    if (prefs === null) {
+      // 失败重置节流，允许立即重试
+      lastLoadTimestamp = 0
+      lastLoadPromise = null
+    } else {
+      // 成功则更新 timestamp 为完成时刻，让 5 秒窗口从完成时起算
+      lastLoadTimestamp = Date.now()
+    }
+    return prefs
+  })
+  return lastLoadPromise
+}
+
+/**
+ * 实际执行拉取与写入的内部函数。
+ * 服务端不可用时返回 null（不抛错），由调用方决定降级策略。
+ */
+async function doLoadServerPreferences(): Promise<Record<string, unknown> | null> {
   try {
     const response = await userAPI.getPreferences()
     const prefs: Record<string, unknown> = response.data?.preferences || {}
@@ -50,9 +85,19 @@ export async function loadServerPreferences(): Promise<void> {
         writer(value)
       }
     }
+    return prefs
   } catch {
     // 服务端不可用时保留本地值
+    return null
   }
+}
+
+/**
+ * 测试辅助：重置节流状态。仅供单元测试在 beforeEach 调用。
+ */
+export function __resetPreferenceThrottle(): void {
+  lastLoadPromise = null
+  lastLoadTimestamp = 0
 }
 
 /**

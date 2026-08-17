@@ -99,6 +99,20 @@ export interface SseTicketResult {
   expires_in: number
 }
 
+// -------- SSE ticket 内存缓存 --------
+//
+// VibeCodingPage 与 usePermissionRequest 各自申请 ticket 会触发重复 POST，
+// 模块级缓存让多个调用方在 TTL 窗口内复用同一张 ticket，将请求数从 N 降到 1。
+// TTL 略小于服务端 60 秒有效期，避免边界过期导致 SSE 连接被拒。
+
+let _cachedTicket: { value: string; expiresAt: number } | null = null
+const TICKET_CACHE_TTL_MS = 55 * 1000
+
+/** 清空 SSE ticket 缓存。401 失败或显式失效时调用，下次 requestSseTicket 会重新申请。 */
+export function clearSseTicketCache(): void {
+  _cachedTicket = null
+}
+
 // -------- 接口方法 --------
 
 export const securityAPI = {
@@ -156,11 +170,26 @@ export const securityAPI = {
    * 用于替代 URL query 传递 API Key：前端通过标准 Authorization Header
    * 调用此端点换取短时 ticket，再以 ?ticket=<ticket> 连接 SSE 端点，
    * 避免 API Key 泄露到 access log / Referer / 浏览器历史。
+   *
+   * 命中内存缓存时直接返回 ticket 字符串，避免多个调用方重复 POST。
+   * 调用方遇到 401 应调用 clearSseTicketCache() 后重试。
    */
-  requestSseTicket(signal?: AbortSignal) {
-    return api.post<SseTicketResult>('/security/permissions/sse-ticket', undefined, {
-      signal,
-    })
+  async requestSseTicket(signal?: AbortSignal): Promise<string> {
+    // 命中缓存：TTL 内直接复用，减少重复网络请求
+    if (_cachedTicket && Date.now() < _cachedTicket.expiresAt) {
+      return _cachedTicket.value
+    }
+    const response = await api.post<SseTicketResult>(
+      '/security/permissions/sse-ticket',
+      undefined,
+      { signal },
+    )
+    const ticket = response.data.ticket
+    _cachedTicket = {
+      value: ticket,
+      expiresAt: Date.now() + TICKET_CACHE_TTL_MS,
+    }
+    return ticket
   },
 
   /** 获取已保存的权限列表 */

@@ -87,7 +87,7 @@ const zhCN: Record<string, string> = {
   "nav.assistant.context": "上下文",
   "nav.workbench.projects": "项目",
   "nav.workbench.editor": "编辑",
-  "nav.workbench.agents": "Agents",
+  "nav.workbench.agents": "智能体",
   "nav.automations.overview": "概览",
   "nav.automations.flows": "流程",
   "nav.automations.schedules": "计划",
@@ -448,6 +448,8 @@ const zhCN: Record<string, string> = {
   "skillMarket.installed": "已安装 (卸载)",
   "skillMarket.empty": "未找到匹配的技能",
   "skillMarket.loadFailed": "技能市场加载失败，请稍后重试",
+  "skillMarket.sourceUnavailable": "技能市场源不可用，请稍后重试",
+  "skillMarket.networkError": "网络连接失败，请检查网络后重试",
   "skillMarket.installFailed": "安装 {name} 失败",
 
   // ===== 仪表盘 =====

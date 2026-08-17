@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { shallow } from 'zustand/shallow'
 import { useI18nStore } from '@/i18n'
-import { authAPI } from '@/shared/api/api'
+import { authAPI } from '@/shared/api/authApi'
 import { BrandMark } from '@/shared/components/BrandMark/BrandMark'
 import { navigationManifest } from '@/shared/navigation/navigationManifest'
 import { useNavigate } from '@/shared/routing'

@@ -14,13 +14,27 @@ export interface MarketSkill {
   installed: boolean;
 }
 
+/** 单个市场源的错误信息（后端拉取失败时返回）。 */
+export interface MarketSourceError {
+  source: string;
+  error: string;
+}
+
 export interface MarketListResponse {
   skills: MarketSkill[];
   total: number;
+  /** 后端业务层错误信息（如配置缺失、未预期异常降级返回）。 */
+  error?: string;
+  /** 各市场源拉取失败的明细，单源失败时非空但 skills 可能有部分数据。 */
+  source_errors?: MarketSourceError[];
 }
 
 /**
  * 获取技能市场中的可用技能列表。
+ *
+ * 错误降级约定（与后端 get_market_skills 对齐）：
+ * - 后端源错误时返回 HTTP 200 + 空 skills + source_errors，不进入 catch 分支
+ * - 仅当 axios 层抛出（网络错误、4xx/5xx）时进入 catch，由调用方决定展示文案
  */
 export async function listMarketSkills(search?: string, source?: string): Promise<MarketListResponse> {
   const params = new URLSearchParams();

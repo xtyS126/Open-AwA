@@ -14,8 +14,8 @@
  */
 import { create } from 'zustand'
 import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
-import { persistSelectedModel, type PreferenceMutationOptions } from '@/features/chat/store/chatStoreEffects'
-import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
+import { markSync } from '@/features/chat/store/chatSyncRegistry'
+import type { PreferenceMutationOptions } from '@/features/chat/store/chatStoreEffects'
 
 /** 模型配置项，用于全局模型选择 */
 export interface ModelOption {
@@ -42,7 +42,7 @@ interface ModelState {
 }
 
 /** 判断指定模型标识是否为推理模型（包含 reasoner/r1/o1/o3） */
-function isReasonerModel(model: string): boolean {
+export function isReasonerModel(model: string): boolean {
   const lower = model.toLowerCase()
   return (
     lower.includes('reasoner') ||
@@ -59,14 +59,13 @@ export const useModelStore = create<ModelState>((set, get) => ({
   modelError: null,
 
   setSelectedModel: (model, options) => {
+    // 值相同短路：避免相同 model 触发重复 localStorage 写入与 PUT /api/user/preferences
+    const current = get().selectedModel
+    if (current === model) return
+
+    // 记录同步意图，由 chatSyncOrchestrator subscribe 集中处理持久化与跨 Store 联动
+    markSync('selectedModel', options?.syncToServer !== false)
     set({ selectedModel: model })
-    persistSelectedModel(model, options?.syncToServer !== false)
-    // 如果选择了推理模型，自动开启思考模式（仅当用户未显式关闭时）
-    const isReasoner = isReasonerModel(model)
-    if (isReasoner && safeGetItem('chat_thinking_enabled', '') !== 'false') {
-      // 跨域调用 preferenceStore 设置思考模式，不同步到服务端（由 thinkingEnabled 自身同步）
-      usePreferenceStore.getState().setThinkingEnabled(true, { syncToServer: false })
-    }
   },
 
   /**
@@ -82,9 +81,9 @@ export const useModelStore = create<ModelState>((set, get) => ({
     if (currentModel && options.length > 0) {
       const isStillValid = options.some((opt) => opt.id === currentModel)
       if (!isStillValid) {
-        // 当前模型已失效：清空 state 和 localStorage，触发上层重新选择默认模型
+        // 当前模型已失效：清空 state，持久化与同步由 subscribe 集中处理
+        markSync('selectedModel', true)
         set({ modelOptions: options, selectedModel: '' })
-        safeSetItem('chat_selected_model', '')
         return
       }
     }

@@ -2,7 +2,7 @@ import { useNavigate } from '@/shared/routing'
 import { LogOut } from 'lucide-react'
 import { shallow } from 'zustand/shallow'
 import { useAuthStore } from '@/shared/store/authStore'
-import { authAPI } from '@/shared/api/api'
+import { authAPI } from '@/shared/api/authApi'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './UserFloatingArea.module.css'
 

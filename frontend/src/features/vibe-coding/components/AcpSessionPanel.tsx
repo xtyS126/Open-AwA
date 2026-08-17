@@ -6,22 +6,35 @@
  * 按事件类型渲染到输出区（文本/工具调用/状态/用量/结果/错误）。
  * 收到 permission 事件时弹出 PermissionDialog 等待用户决策。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronRight, Send, Square, X } from 'lucide-react'
 import { useI18nStore } from '@/i18n'
 import { appLogger } from '@/shared/utils/logger'
 import { API_BASE_URL, getCachedApiKey } from '@/shared/api/client'
-import { cancelTurn, respondPermission, type SuspendedPermission } from '@/shared/api/acpApi'
+import {
+  cancelTurn,
+  createPromptRequest,
+  respondPermission,
+  type SuspendedPermission,
+} from '@/shared/api/acpApi'
 import PermissionDialog from './PermissionDialog'
 import styles from './AcpSessionPanel.module.css'
 
 export interface AcpSessionPanelProps {
+  /** 服务端权威工作台项目 ID */
+  projectId: string
+  /** 工作台项目切换代际，用于隔离旧异步结果 */
+  generation: number
   /** 当前选中的会话 ID，null 表示未选中 */
   sessionId: string | null
-  /** 会话工作目录（用于顶栏展示） */
-  cwd: string
   /** 可选的取消/返回回调（空状态下展示返回按钮） */
   onCancel?: () => void
+}
+
+interface AcpRequestContext {
+  projectId: string
+  generation: number
+  sessionId: string
 }
 
 /** ACP 流事件类型 */
@@ -133,7 +146,12 @@ function ToolCallCard({ data }: { data: ToolEventData }) {
 }
 
 /** ACP 会话面板 —— 输入 prompt、订阅 SSE 流、渲染事件、处理权限审批 */
-export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSessionPanelProps) {
+export default function AcpSessionPanel({
+  projectId,
+  generation,
+  sessionId,
+  onCancel,
+}: AcpSessionPanelProps) {
   const { t } = useI18nStore()
   // 累积的事件列表
   const [events, setEvents] = useState<AcpEvent[]>([])
@@ -150,6 +168,18 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
   const outputRef = useRef<HTMLDivElement>(null)
   // 事件 ID 自增计数器
   const eventCounterRef = useRef<number>(0)
+  // 最新工作台请求上下文，阻止旧项目或旧代际的异步结果回写。
+  const requestContextRef = useRef({ projectId, generation, sessionId })
+  useLayoutEffect(() => {
+    requestContextRef.current = { projectId, generation, sessionId }
+  }, [generation, projectId, sessionId])
+
+  const isRequestContextCurrent = useCallback((context: AcpRequestContext) => {
+    const current = requestContextRef.current
+    return current.projectId === context.projectId
+      && current.generation === context.generation
+      && current.sessionId === context.sessionId
+  }, [])
 
   /** 追加一个事件并触发滚动 */
   const appendEvent = useCallback((type: AcpEventType, data: unknown) => {
@@ -176,13 +206,16 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
     scrollToBottom()
   }, [events, scrollToBottom])
 
-  // sessionId 变化时清空事件与挂起状态
+  // 项目、代际或会话变化时中止旧流并清空旧状态。
   useEffect(() => {
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
     setEvents([])
     setPendingPermission(null)
     setInputText('')
+    setIsStreaming(false)
     eventCounterRef.current = 0
-  }, [sessionId])
+  }, [generation, projectId, sessionId])
 
   // 组件卸载时中止进行中的请求
   useEffect(() => {
@@ -200,6 +233,7 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
     if (!sessionId) return
     const prompt = inputText.trim()
     if (!prompt || isStreaming) return
+    const requestContext: AcpRequestContext = { projectId, generation, sessionId }
 
     // 追加用户输入为本地文本事件（区分用户与 agent 输出）
     appendEvent('text', { text: prompt })
@@ -229,8 +263,10 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
         credentials: 'same-origin',
         headers,
         signal: controller.signal,
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify(createPromptRequest(projectId, prompt)),
       })
+
+      if (!isRequestContextCurrent(requestContext)) return
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}))
@@ -269,6 +305,7 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
           const frames = buffer.split('\n\n')
           buffer = frames.pop() || ''
           for (const frame of frames) {
+            if (!isRequestContextCurrent(requestContext)) return
             parseAndDispatchFrame(frame, appendEvent, setPendingPermission)
           }
         }
@@ -276,6 +313,7 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
 
       // 处理缓冲区中剩余的事件
       if (buffer.trim()) {
+        if (!isRequestContextCurrent(requestContext)) return
         parseAndDispatchFrame(buffer, appendEvent, setPendingPermission)
         }
       } finally {
@@ -284,6 +322,7 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
       }
     } catch (e) {
       // 用户主动取消时不当作错误
+      if (!isRequestContextCurrent(requestContext)) return
       if (e instanceof DOMException && e.name === 'AbortError') {
         appLogger.info({
           event: 'acp_prompt_aborted',
@@ -306,20 +345,31 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
       })
       appendEvent('error', { message })
     } finally {
-      setIsStreaming(false)
-      abortControllerRef.current = null
+      if (isRequestContextCurrent(requestContext)) {
+        setIsStreaming(false)
+        if (abortControllerRef.current === controller) abortControllerRef.current = null
+      }
     }
-  }, [sessionId, inputText, isStreaming, appendEvent])
+  }, [
+    appendEvent,
+    generation,
+    inputText,
+    isRequestContextCurrent,
+    isStreaming,
+    projectId,
+    sessionId,
+  ])
 
   /** 取消当前轮 —— 中止 fetch 流 + 调用后端 cancelTurn */
   const handleCancel = useCallback(async () => {
     if (!sessionId) return
+    const requestContext: AcpRequestContext = { projectId, generation, sessionId }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
     try {
-      await cancelTurn(sessionId)
+      await cancelTurn(projectId, sessionId)
     } catch (e) {
       appLogger.warning({
         event: 'acp_cancel_failed',
@@ -330,19 +380,23 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
         extra: { session_id: sessionId, error: e instanceof Error ? e.message : String(e) },
       })
     } finally {
-      setIsStreaming(false)
-      setPendingPermission(null)
+      if (isRequestContextCurrent(requestContext)) {
+        setIsStreaming(false)
+        setPendingPermission(null)
+      }
     }
-  }, [sessionId])
+  }, [generation, isRequestContextCurrent, projectId, sessionId])
 
   /** 用户在 PermissionDialog 中选择某选项 —— 调用 respondPermission 提交 */
   const handlePermissionSelect = useCallback(
     async (optionId: string) => {
       if (!sessionId) return
+      const requestContext: AcpRequestContext = { projectId, generation, sessionId }
       try {
-        await respondPermission(sessionId, optionId)
-        setPendingPermission(null)
+        await respondPermission(projectId, sessionId, optionId)
+        if (isRequestContextCurrent(requestContext)) setPendingPermission(null)
       } catch (e) {
+        if (!isRequestContextCurrent(requestContext)) return
         const message = e instanceof Error ? e.message : String(e)
         appLogger.error({
           event: 'acp_permission_respond_failed',
@@ -356,7 +410,7 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
         setPendingPermission(null)
       }
     },
-    [sessionId, appendEvent]
+    [appendEvent, generation, isRequestContextCurrent, projectId, sessionId]
   )
 
   /** 用户在 PermissionDialog 中点击取消 —— 拒绝权限并中止当前轮 */
@@ -407,12 +461,6 @@ export default function AcpSessionPanel({ sessionId, cwd, onCancel }: AcpSession
 
   return (
     <div className={styles.root}>
-      {/* 工作目录顶栏 */}
-      <div className={styles.cwdBar} title={cwd}>
-        <span className={styles.cwdLabel}>{t('vibeCoding.cwd')}</span>
-        <span className={styles.cwdValue}>{cwd || '-'}</span>
-      </div>
-
       {/* 输出区 —— 累积渲染事件 */}
       <div ref={outputRef} className={styles.output}>
         {events.map((evt) => (

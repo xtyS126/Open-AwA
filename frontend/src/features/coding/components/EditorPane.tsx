@@ -14,7 +14,7 @@ const EditorPane: React.FC = () => {
   // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
     openFiles, activeFilePath, closeFile, setActiveFile,
-    updateFileContent, markFileClean, projectDir,
+    updateFileContent, markFileClean, projectId,
     editorFontSize, editorTabSize, editorWordWrap, editorMinimap,
   } = useCodingStore(s => ({
     openFiles: s.openFiles,
@@ -23,7 +23,7 @@ const EditorPane: React.FC = () => {
     setActiveFile: s.setActiveFile,
     updateFileContent: s.updateFileContent,
     markFileClean: s.markFileClean,
-    projectDir: s.projectDir,
+    projectId: s.projectId,
     editorFontSize: s.editorFontSize,
     editorTabSize: s.editorTabSize,
     editorWordWrap: s.editorWordWrap,
@@ -40,14 +40,17 @@ const EditorPane: React.FC = () => {
 
   const handleSave = useCallback(async () => {
     const file = activeFileRef.current
-    if (!file || !file.isDirty) return
+    const request = useCodingStore.getState().captureRequestContext()
+    if (!projectId || !file || !file.isDirty || !request) return
     try {
-      await codingApi.writeFile(file.path, file.content, projectDir || undefined)
-      markFileClean(file.path)
+      await codingApi.writeFile(request.projectId, file.path, file.content)
+      if (useCodingStore.getState().isRequestContextCurrent(request)) {
+        markFileClean(file.path)
+      }
     } catch (e) {
       console.error('保存失败:', e)
     }
-  }, [projectDir, markFileClean])
+  }, [projectId, markFileClean])
 
   const handleEditorMount: OnMount = useCallback((editor) => {
     // Ctrl+S 保存 — 通过 ref 读取最新 activeFile，避免闭包过期

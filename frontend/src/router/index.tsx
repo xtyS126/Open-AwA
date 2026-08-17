@@ -23,7 +23,7 @@ const PluginConfigPage = React.lazy(() => import('@/features/plugins/PluginConfi
 const KnowledgeLibraryPage = React.lazy(() => import('@/features/library/KnowledgeLibraryPage'))
 const BillingPage = React.lazy(() => import('@/features/billing/BillingPage'))
 const AccountPage = React.lazy(() => import('@/features/account/AccountPage'))
-const WorkspacePage = React.lazy(() => import('@/features/workspace/WorkspacePage'))
+const WorkbenchProjectsPage = React.lazy(() => import('@/features/workbench/WorkbenchProjectsPage'))
 const CodingPage = React.lazy(() => import('@/features/coding/CodingPage'))
 const InboxPage = React.lazy(() => import('@/features/inbox/InboxPage'))
 const PersonaLibraryPage = React.lazy(() => import('@/features/library/PersonaLibraryPage'))
@@ -33,6 +33,7 @@ const SubAgentPage = React.lazy(() => import('@/features/subagents/SubAgentPage'
 const VibeCodingPage = React.lazy(() => import('@/features/vibe-coding/VibeCodingPage'))
 const DiscussionsPage = React.lazy(() => import('@/features/discussions/DiscussionsPage'))
 const AutomationsOverviewPage = React.lazy(() => import('@/features/automations/AutomationsOverviewPage'))
+const WorkbenchShell = React.lazy(() => import('@/features/workbench/WorkbenchShell'))
 
 function PageSkeleton() {
   return (
@@ -89,7 +90,7 @@ export const routeDefinitions: AppRouteDefinition[] = [
   { path: '/assistant/sessions', element: withPageBoundary('AssistantSessions', <AssistantSessionsPage />) },
   { path: '/assistant/sessions/$conversationId', element: withPageBoundary('Assistant', <ChatPage />) },
   { path: '/assistant/context', element: withPageBoundary('AssistantContext', <AssistantContextPage />) },
-  { path: '/workbench/projects', element: withPageBoundary('WorkbenchProjects', <WorkspacePage />) },
+  { path: '/workbench/projects', element: withPageBoundary('WorkbenchProjects', <WorkbenchProjectsPage />) },
   { path: '/workbench/editor', element: withPageBoundary('WorkbenchEditor', <CodingPage />) },
   { path: '/workbench/agents', element: withPageBoundary('WorkbenchAgents', <VibeCodingPage />) },
   { path: '/automations/overview', element: withPageBoundary('AutomationsOverview', <AutomationsOverviewPage />) },
@@ -158,9 +159,30 @@ const rootIndexRoute = createRoute({
   component: () => null,
 })
 
+const workbenchRoutePaths = new Set([
+  '/workbench/projects',
+  '/workbench/editor',
+  '/workbench/agents',
+])
+
+export const workbenchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/workbench',
+  component: WorkbenchShell,
+})
+
+export const workbenchChildRoutes = routeDefinitions
+  .filter(({ path }) => workbenchRoutePaths.has(path))
+  .map(({ path, element }) => createRoute({
+    getParentRoute: () => workbenchRoute,
+    path: path.slice('/workbench/'.length),
+    component: () => element,
+  }))
+
 const childRoutes = [
   rootIndexRoute,
-  ...routeDefinitions.map(({ path, element }) => createRoute({
+  workbenchRoute.addChildren(workbenchChildRoutes),
+  ...routeDefinitions.filter(({ path }) => !workbenchRoutePaths.has(path)).map(({ path, element }) => createRoute({
     getParentRoute: () => rootRoute,
     path,
     component: () => element,

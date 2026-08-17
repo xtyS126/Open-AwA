@@ -8,7 +8,7 @@ import { createSession, executeCommand, closeSession, type CommandResult } from 
 import styles from './TerminalPanel.module.css'
 
 interface TerminalPanelProps {
-  cwd?: string
+  projectId: string
   onClose?: () => void
 }
 
@@ -18,7 +18,7 @@ interface OutputLine {
 }
 
 /** 终端面板组件，提供命令输入和输出展示 */
-export default function TerminalPanel({ cwd, onClose }: TerminalPanelProps) {
+export default function TerminalPanel({ projectId, onClose }: TerminalPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [outputs, setOutputs] = useState<OutputLine[]>([])
@@ -31,12 +31,14 @@ export default function TerminalPanel({ cwd, onClose }: TerminalPanelProps) {
   // 初始化终端会话
   useEffect(() => {
     let mounted = true
+    let createdSessionId: string | null = null
     const init = async () => {
       try {
-        const result = await createSession(cwd)
+        const result = await createSession(projectId)
         if (mounted && result.ok && result.session_id) {
+          createdSessionId = result.session_id
           setSessionId(result.session_id)
-          setOutputs([{ type: 'stdout', text: `终端会话已创建 (cwd: ${result.cwd || '默认目录'})` }])
+          setOutputs([{ type: 'stdout', text: '终端会话已创建' }])
         }
       } catch (e) {
         if (mounted) {
@@ -47,12 +49,11 @@ export default function TerminalPanel({ cwd, onClose }: TerminalPanelProps) {
     init()
     return () => {
       mounted = false
-      if (sessionId) {
-        closeSession(sessionId).catch(() => {})
+      if (createdSessionId) {
+        closeSession(createdSessionId).catch(() => {})
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [projectId])
 
   // 自动滚动到底部
   useEffect(() => {

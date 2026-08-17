@@ -168,6 +168,76 @@ function getConfiguredMaxToolCallRounds(): number {
   return Math.max(1, Math.min(50000, Math.trunc(rawValue)))
 }
 
+/**
+ * 统一的 SSE 事件处理函数。
+ * 处理 status/chunk/tool/dispatch 等共享事件类型，
+ * 消除 handleSendMessage 和 resubscribeToTask 中的重复事件处理逻辑。
+ *
+ * @returns assistantMessageCreated 的新值（chunk 事件可能首次创建助手消息）
+ */
+function _processSSEEvent(
+  event: any,
+  assistantMessageId: string,
+  assistantMessageCreated: boolean,
+  ensureAssistantMessage: () => boolean,
+  shouldEnsureMessage: boolean,
+  ctx: {
+    setStreamStageMessage: (message: string | null) => void
+    addActiveToolCall: (toolId: string) => void
+    removeActiveToolCall: (toolId: string) => void
+    updateAssistantSegments: (messageId: string, updater: (current: AssistantMessageSegment[] | undefined) => AssistantMessageSegment[]) => void
+    appendAssistantMessageText: (assistantMessageId: string, content: string, reasoningContent?: string) => void
+    flushBuffer: (assistantMessageId?: string) => void
+    buffer: { content: string; reasoning: string; lastUpdateTime: number }
+    dispatchStructuredEvent: (event: any) => void
+  }
+): boolean {
+  // status 事件：更新流式阶段消息
+  if (event?.type === 'status') {
+    const nextStageMessage =
+      typeof event.message === 'string' ? event.message.trim() : ''
+    ctx.setStreamStageMessage(nextStageMessage || null)
+    return assistantMessageCreated
+  }
+
+  // chunk 事件：处理流式文本增量
+  if (event?.type === 'chunk') {
+    return handleStreamChunkEvent({
+      assistantMessageId,
+      event,
+      assistantMessageCreated,
+      ensureAssistantMessage,
+      updateAssistantSegments: ctx.updateAssistantSegments,
+      appendAssistantMessageText: ctx.appendAssistantMessageText,
+      flushBuffer: ctx.flushBuffer,
+      buffer: ctx.buffer,
+      isDocumentHidden: document.hidden,
+    })
+  }
+
+  // 非 status/chunk 事件：需要确保助手消息已创建
+  if (shouldEnsureMessage) {
+    ensureAssistantMessage()
+  }
+
+  // 追踪进行中的工具调用
+  if (event?.type === 'tool') {
+    const toolData = event.tool
+    const toolId = String(toolData?.id || '')
+    const toolStatus = String(toolData?.status || '')
+    if (toolStatus === 'running') {
+      ctx.addActiveToolCall(toolId)
+    } else if (toolStatus === 'completed' || toolStatus === 'error') {
+      ctx.removeActiveToolCall(toolId)
+    }
+  }
+
+  // 结构化事件分发（子代理、todo、usage 等）
+  ctx.dispatchStructuredEvent(event)
+
+  return assistantMessageCreated
+}
+
 export interface SendMessageOptions {
   assistantMessageId?: string
   hiddenUserMessage?: boolean
@@ -553,6 +623,38 @@ export function useChatStream({
           ...(streamTaskId ? { task_id: streamTaskId } : {}),
         }
 
+        // 构建 SSE 事件处理上下文（由 _processSSEEvent 消费）
+        const sseContext = {
+          setStreamStageMessage: streamExecution.setStreamStageMessage,
+          addActiveToolCall,
+          removeActiveToolCall,
+          updateAssistantSegments,
+          appendAssistantMessageText,
+          flushBuffer,
+          buffer: bufferRef.current,
+          dispatchStructuredEvent: (event: any) => {
+            dispatchStructuredStreamEvent(event, {
+              assistantMessageId,
+              messageMeta,
+              addToast,
+              updateAssistantMeta,
+              updateAssistantSegments,
+              clearSubagentAggregationTimer: subagentSync.clearSubagentAggregationTimer,
+              scheduleSubagentTimeout: subagentSync.scheduleSubagentTimeout,
+              syncSubagentRuntime: subagentSync.syncSubagentRuntime,
+              clearSubagentTimeout: subagentSync.clearSubagentTimeout,
+              clearSubagentSyncTimer: subagentSync.clearSubagentSyncTimer,
+              scheduleSubagentAggregation: subagentSync.scheduleSubagentAggregation,
+              setTodoItems,
+              setTodoSummary,
+              setAskUserRequest,
+              dispatchUsageUpdated: ({ callId, provider, model }) => {
+                dispatchBillingUsageUpdated({ callId, provider, model })
+              },
+            })
+          },
+        }
+
         if (outputMode === 'stream') {
           bufferRef.current = { content: '', reasoning: '', lastUpdateTime: Date.now() }
 
@@ -580,59 +682,14 @@ export function useChatStream({
 
                   streamExecution.markStreamStreaming()
 
-                  if (event?.type === 'status') {
-                    const nextStageMessage =
-                      typeof event.message === 'string' ? event.message.trim() : ''
-                    streamExecution.setStreamStageMessage(nextStageMessage || null)
-                    return
-                  }
-
-                  if (event?.type === 'chunk') {
-                    assistantMessageCreated = handleStreamChunkEvent({
-                      assistantMessageId,
-                      event,
-                      assistantMessageCreated,
-                      ensureAssistantMessage,
-                      updateAssistantSegments,
-                      appendAssistantMessageText,
-                      flushBuffer,
-                      buffer: bufferRef.current,
-                      isDocumentHidden: document.hidden,
-                    })
-                    return
-                  }
-
-                  ensureAssistantMessage()
-                  // 追踪进行中的工具调用，用于停止按钮的智能判断
-                  if (event?.type === 'tool') {
-                    const toolData = event.tool
-                    const toolId = String(toolData?.id || '')
-                    const toolStatus = String(toolData?.status || '')
-                    if (toolStatus === 'running') {
-                      addActiveToolCall(toolId)
-                    } else if (toolStatus === 'completed' || toolStatus === 'error') {
-                      removeActiveToolCall(toolId)
-                    }
-                  }
-                  dispatchStructuredStreamEvent(event, {
+                  assistantMessageCreated = _processSSEEvent(
+                    event,
                     assistantMessageId,
-                    messageMeta,
-                    addToast,
-                    updateAssistantMeta,
-                    updateAssistantSegments,
-                    clearSubagentAggregationTimer: subagentSync.clearSubagentAggregationTimer,
-                    scheduleSubagentTimeout: subagentSync.scheduleSubagentTimeout,
-                    syncSubagentRuntime: subagentSync.syncSubagentRuntime,
-                    clearSubagentTimeout: subagentSync.clearSubagentTimeout,
-                    clearSubagentSyncTimer: subagentSync.clearSubagentSyncTimer,
-                    scheduleSubagentAggregation: subagentSync.scheduleSubagentAggregation,
-                    setTodoItems,
-                    setTodoSummary,
-                    setAskUserRequest,
-                    dispatchUsageUpdated: ({ callId, provider, model }) => {
-                      dispatchBillingUsageUpdated({ callId, provider, model })
-                    },
-                  })
+                    assistantMessageCreated,
+                    ensureAssistantMessage,
+                    true,
+                    sseContext
+                  )
                 },
                 (error) => {
                   runtimeError = error instanceof Error ? error : new Error(String(error))
@@ -916,6 +973,38 @@ export function useChatStream({
       setStreamingAssistantId(assistantMessageId)
       streamExecution.beginStreamExecution('stream')
 
+      // 构建 SSE 事件处理上下文（与 handleSendMessage 共享同一份 _processSSEEvent）
+      const sseContext = {
+        setStreamStageMessage: streamExecution.setStreamStageMessage,
+        addActiveToolCall,
+        removeActiveToolCall,
+        updateAssistantSegments,
+        appendAssistantMessageText,
+        flushBuffer,
+        buffer: bufferRef.current,
+        dispatchStructuredEvent: (event: any) => {
+          dispatchStructuredStreamEvent(event, {
+            assistantMessageId,
+            messageMeta,
+            addToast,
+            updateAssistantMeta,
+            updateAssistantSegments,
+            clearSubagentAggregationTimer: subagentSync.clearSubagentAggregationTimer,
+            scheduleSubagentTimeout: subagentSync.scheduleSubagentTimeout,
+            syncSubagentRuntime: subagentSync.syncSubagentRuntime,
+            clearSubagentTimeout: subagentSync.clearSubagentTimeout,
+            clearSubagentSyncTimer: subagentSync.clearSubagentSyncTimer,
+            scheduleSubagentAggregation: subagentSync.scheduleSubagentAggregation,
+            setTodoItems,
+            setTodoSummary,
+            setAskUserRequest,
+            dispatchUsageUpdated: ({ callId, provider, model }) => {
+              dispatchBillingUsageUpdated({ callId, provider, model })
+            },
+          })
+        },
+      }
+
       try {
         await chatAPI.resubscribeStream(
           taskId,
@@ -929,61 +1018,15 @@ export function useChatStream({
 
             streamExecution.markStreamStreaming()
 
-            if (event?.type === 'status') {
-              const nextStageMessage =
-                typeof event.message === 'string' ? event.message.trim() : ''
-              streamExecution.setStreamStageMessage(nextStageMessage || null)
-              return
-            }
-
-            if (event?.type === 'chunk') {
-              assistantMessageCreated = handleStreamChunkEvent({
-                assistantMessageId,
-                event,
-                assistantMessageCreated,
-                // 重连场景：消息已存在，ensureAssistantMessage 为空操作
-                ensureAssistantMessage: () => false,
-                updateAssistantSegments,
-                appendAssistantMessageText,
-                flushBuffer,
-                buffer: bufferRef.current,
-                isDocumentHidden: document.hidden,
-              })
-              return
-            }
-
-            // 工具调用追踪
-            if (event?.type === 'tool') {
-              const toolData = event.tool
-              const toolId = String(toolData?.id || '')
-              const toolStatus = String(toolData?.status || '')
-              if (toolStatus === 'running') {
-                addActiveToolCall(toolId)
-              } else if (toolStatus === 'completed' || toolStatus === 'error') {
-                removeActiveToolCall(toolId)
-              }
-            }
-
-            // 结构化事件分发（子代理、todo、usage 等）
-            dispatchStructuredStreamEvent(event, {
+            assistantMessageCreated = _processSSEEvent(
+              event,
               assistantMessageId,
-              messageMeta,
-              addToast,
-              updateAssistantMeta,
-              updateAssistantSegments,
-              clearSubagentAggregationTimer: subagentSync.clearSubagentAggregationTimer,
-              scheduleSubagentTimeout: subagentSync.scheduleSubagentTimeout,
-              syncSubagentRuntime: subagentSync.syncSubagentRuntime,
-              clearSubagentTimeout: subagentSync.clearSubagentTimeout,
-              clearSubagentSyncTimer: subagentSync.clearSubagentSyncTimer,
-              scheduleSubagentAggregation: subagentSync.scheduleSubagentAggregation,
-              setTodoItems,
-              setTodoSummary,
-              setAskUserRequest,
-              dispatchUsageUpdated: ({ callId, provider, model }) => {
-                dispatchBillingUsageUpdated({ callId, provider, model })
-              },
-            })
+              assistantMessageCreated,
+              // 重连场景：消息已存在，ensureAssistantMessage 为空操作
+              () => false,
+              false,
+              sseContext
+            )
           },
           (error) => {
             const normalizedError = error instanceof Error ? error : new Error(String(error))

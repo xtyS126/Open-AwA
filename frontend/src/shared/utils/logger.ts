@@ -210,23 +210,22 @@ function _shouldDedupReport(level: LogLevel, record: LogRecord): boolean {
 
 async function _flushErrorReports(): Promise<void> {
   if (_reportQueue.length === 0 || _reportingDisabledByAuth) return
+  // 单次 POST 批量上传整批报告，避免逐条请求撑高 QPS
   const batch = _reportQueue.splice(0, REPORT_MAX_BATCH)
-  for (const report of batch) {
-    try {
-      const response = await fetch('/api/logs/client-errors', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(report),
-      })
-      if (response.status === 401 || response.status === 403) {
-        _reportingDisabledByAuth = true
-        _reportQueue = []
-        break
-      }
-    } catch {
-      // 上报失败静默忽略
+  try {
+    const response = await fetch('/api/logs/client-errors', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reports: batch }),
+    })
+    if (response.status === 401 || response.status === 403) {
+      _reportingDisabledByAuth = true
+      _reportQueue = []
     }
+  } catch {
+    // 网络失败：把本批报告重新入队到队首，保留原日志以便下次 flush 重试
+    _reportQueue = [...batch, ..._reportQueue]
   }
 }
 

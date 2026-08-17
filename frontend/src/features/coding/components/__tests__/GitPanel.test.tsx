@@ -2,6 +2,10 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import GitPanel from '../GitPanel'
 import { useCodingStore } from '../../store/codingStore'
+import { asWorkbenchProjectId } from '@/features/workbench/workbenchTypes'
+
+const PROJECT_ONE = asWorkbenchProjectId('project-one')
+const PROJECT_TWO = asWorkbenchProjectId('project-two')
 
 const { gitStatusMock, gitLogMock, gitCommitMock } = vi.hoisted(() => ({
   gitStatusMock: vi.fn(),
@@ -30,7 +34,8 @@ describe('GitPanel 状态加载', () => {
     useCodingStore.setState({
       gitBranch: '',
       gitChanges: [],
-      projectDir: 'D:/repo-one',
+      projectId: PROJECT_ONE,
+      projectGeneration: 1,
     })
     gitStatusMock.mockResolvedValue({
       branch: 'main',
@@ -49,15 +54,15 @@ describe('GitPanel 状态加载', () => {
       expect(screen.getByText('git:main')).toBeInTheDocument()
     })
     expect(gitStatusMock).toHaveBeenCalledTimes(1)
-    expect(gitStatusMock).toHaveBeenLastCalledWith('D:/repo-one')
+    expect(gitStatusMock).toHaveBeenLastCalledWith(PROJECT_ONE)
 
     act(() => {
-      useCodingStore.getState().setProjectDir('D:/repo-two')
+      useCodingStore.getState().syncCommittedProject(PROJECT_TWO, 2)
     })
 
     await waitFor(() => {
       expect(gitStatusMock).toHaveBeenCalledTimes(2)
     })
-    expect(gitStatusMock).toHaveBeenLastCalledWith('D:/repo-two')
+    expect(gitStatusMock).toHaveBeenLastCalledWith(PROJECT_TWO)
   })
 })

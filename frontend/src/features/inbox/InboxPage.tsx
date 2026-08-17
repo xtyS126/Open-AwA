@@ -1,7 +1,8 @@
 /**
  * 收件箱页面 — 集中管理审批通知、任务结果和系统消息。
  */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { shallow } from 'zustand/shallow';
 import { useInboxStore, type InboxMessage } from './store/inboxStore';
 import { useI18nStore } from '@/i18n';
@@ -37,27 +38,26 @@ const InboxPage: React.FC = () => {
   }), shallow);
   const t = useI18nStore(s => s.t);
   const { addToast, ToastContainer } = useToast();
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<string>('all');
-  const [error, setError] = useState('');
 
-  const loadMessages = useCallback(async () => {
-    try {
-      const data = await inboxApi.list();
-      setMessages(data.messages || []);
-    } catch {
-      setError(t('inbox.loadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [setMessages, t]);
+  // 消息列表通过 React Query 管理：refetchInterval 替代手动 setInterval 轮询
+  // WS 推送（inboxStream）作为实时更新主路径，60s refetchInterval 兜底拉取遗漏消息
+  const messagesQuery = useQuery({
+    queryKey: ['inbox', 'messages'],
+    queryFn: () => inboxApi.list(),
+    refetchInterval: 60000,
+  });
 
+  // 查询数据变更时同步到 store（UI 通过 store 渲染，保留现有消息列表逻辑）
   useEffect(() => {
-    void loadMessages();
-    // 轮询作为 WS 推送的兜底（WS 实时推送已为主路径，60s 轮询拉取遗漏消息）
-    const interval = setInterval(() => void loadMessages(), 60000);
-    return () => clearInterval(interval);
-  }, [loadMessages]);
+    if (messagesQuery.data) {
+      setMessages(messagesQuery.data.messages || []);
+    }
+  }, [messagesQuery.data, setMessages]);
+
+  const loading = messagesQuery.isLoading;
+  const error = messagesQuery.error ? t('inbox.loadFailed') : '';
 
   // 连接 inbox 实时流：mount 时连接，unmount 时断开
   // task_result 等通知通过 WS 实时插入列表顶部，无需等待轮询
@@ -86,6 +86,8 @@ const InboxPage: React.FC = () => {
     try {
       await inboxApi.markAsRead(msg.id);
       markAsRead(msg.id);
+      // 失效缓存以便后台刷新同步服务端最新状态
+      void queryClient.invalidateQueries({ queryKey: ['inbox', 'messages'] });
     } catch (error) {
       appLogger.error({ event: 'inbox_mark_read_failed', module: 'inbox', message: '标记已读失败', extra: { messageId: msg.id, error: error instanceof Error ? error.message : String(error) } });
     }
@@ -95,6 +97,7 @@ const InboxPage: React.FC = () => {
     try {
       await inboxApi.markAllRead(filter !== 'all' ? filter : undefined);
       markAllRead();
+      void queryClient.invalidateQueries({ queryKey: ['inbox', 'messages'] });
     } catch (error) {
       appLogger.error({ event: 'inbox_mark_all_read_failed', module: 'inbox', message: '全部标记已读失败', extra: { error: error instanceof Error ? error.message : String(error) } });
     }
@@ -104,6 +107,7 @@ const InboxPage: React.FC = () => {
     try {
       await inboxApi.delete(msg.id);
       removeMessage(msg.id);
+      void queryClient.invalidateQueries({ queryKey: ['inbox', 'messages'] });
     } catch (error) {
       appLogger.error({ event: 'inbox_delete_failed', module: 'inbox', message: '删除消息失败', extra: { messageId: msg.id, error: error instanceof Error ? error.message : String(error) } });
     }

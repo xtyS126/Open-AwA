@@ -5,8 +5,19 @@
  *
  * 将原本 ApiTabContainer 中与供应商表单直接相关的状态和操作
  * 提取为独立的自定义 Hook，实现关注点分离。
+ *
+ * 改造说明（fix-performance-remaining-issues-v2 模块 C4）：
+ *   - loadApiProvidersData 原使用 useCallback + useEffect，每次 mount 都触发 /api/billing/providers
+ *   - fetchProviderModels 原使用 useCallback，每次切换供应商都触发 /api/billing/models-by-provider/{id}
+ *   - 现通过 queryClient.fetchQuery 复用 React Query 缓存，多 Tab 切换时共享数据
+ *   - queryKey 约定：
+ *     - ['billing', 'providers']：与 useSharedSettingsStore / ModelsTabContainer 共享
+ *     - ['billing', 'models-by-provider', provider]：按供应商缓存（无凭据场景）
+ *   - 带凭据的 getModelsByProvider 调用（用户测试草稿 API Key）不缓存，凭据为临时输入
+ *   - 保留表单提交/校验/导入/删除逻辑
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { modelsAPI } from '@/features/settings/modelsApi'
 import type {
   ModelProvider,
@@ -171,6 +182,7 @@ export function useProviderForm({
   invalidateTabCache,
 }: UseProviderFormParams): UseProviderFormReturn {
   const { message, showNotification } = useNotification(3000)
+  const queryClient = useQueryClient()
 
   // 供应商表单状态
   const [providerForm, setProviderForm] = useState<ApiProviderFormState>({
@@ -275,7 +287,14 @@ export function useProviderForm({
 
     try {
       setProviderModelsError(null)
-      const response = await modelsAPI.getModelsByProvider(providerId, credentials)
+      // 无凭据时复用 React Query 缓存（与 ModelsTabContainer / useSharedSettingsStore 共享）
+      // 有凭据时（用户测试草稿 API Key）直接调用 API，不缓存临时凭据结果
+      const response = credentials
+        ? await modelsAPI.getModelsByProvider(providerId, credentials)
+        : await queryClient.fetchQuery({
+            queryKey: ['billing', 'models-by-provider', providerId],
+            queryFn: () => modelsAPI.getModelsByProvider(providerId),
+          })
       const data = response.data as ProviderModelsResponse
       const selectedModels = Array.isArray(data.selected_models)
         ? data.selected_models
@@ -316,7 +335,7 @@ export function useProviderForm({
     } finally {
       setLoadingProviderModels(false)
     }
-  }, [invalidateRemoteModelCache])
+  }, [invalidateRemoteModelCache, queryClient])
 
   /** 加载供应商详情（优化：并行获取脱敏 Key 和模型列表） */
   const loadProviderDetail = useCallback(async (providerId: string) => {
@@ -408,7 +427,12 @@ export function useProviderForm({
     setLoadingApiProviders(true)
     setProviderModelsError(null)
     try {
-      const providersRes = await modelsAPI.getProviders()
+      // 通过 queryClient.fetchQuery 复用 ['billing', 'providers'] 缓存，
+      // 与 useSharedSettingsStore / ModelsTabContainer 共享，避免多 Tab 重复请求
+      const providersRes = await queryClient.fetchQuery({
+        queryKey: ['billing', 'providers'],
+        queryFn: () => modelsAPI.getProviders(),
+      })
       // 后端 get_provider_catalog(configured_only=True) 已过滤仅返回有 ProviderCredential 的供应商，
       // 前端无需再次过滤，避免将用户已添加但尚未完整配置的供应商误排除
       const providerList: ModelProvider[] = providersRes.data.providers || []
@@ -458,7 +482,7 @@ export function useProviderForm({
     } finally {
       setLoadingApiProviders(false)
     }
-  }, [selectedProviderId, setProviders, showNotification, loadProviderDetail])
+  }, [selectedProviderId, setProviders, showNotification, loadProviderDetail, queryClient])
 
   /** 导入模型 */
   const handleImportModels = useCallback(async () => {

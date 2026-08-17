@@ -3,7 +3,7 @@
  *
  * 设计目标：
  *   - 统一服务端状态管理（缓存、失效、重试、后台刷新）
- *   - 默认 staleTime 30s：避免短时间内重复请求
+ *   - 默认 staleTime 60s：避免短时间内重复请求（多 Tab Container 共享缓存）
  *   - 默认 gcTime 5min：缓存未被观察的查询保留 5 分钟，便于切换页面快速恢复
  *   - 默认 retry 1：网络抖动时单次重试，避免对失败请求过度重试
  *
@@ -17,7 +17,8 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       // 数据被视为"新鲜"的时长，期间不会发起后台刷新
-      staleTime: 30 * 1000,
+      // 60 秒：覆盖用户在 5 个设置 Tab 间快速切换的场景，避免每次 mount 重复请求
+      staleTime: 60 * 1000,
       // 未被观察的缓存保留时长（5 分钟），过期后由 GC 回收
       gcTime: 5 * 60 * 1000,
       // 失败重试次数（单次，避免对错误请求过度重试）

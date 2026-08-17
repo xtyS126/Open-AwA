@@ -56,11 +56,17 @@ export const useWorkbenchRuntimeStore = createWithEqualityFn<WorkbenchRuntimeSto
   activateProject: (projectId, generation) => set((state) => {
     const existing = state.projects[projectId]
     if (existing && generation < existing.generation) return state
+    if (existing?.generation === generation) return state
     return {
       projects: {
         ...state.projects,
         [projectId]: existing
-          ? { ...existing, generation }
+          ? {
+              ...existing,
+              generation,
+              terminalBinding: { kind: 'none' },
+              previewIntent: { kind: 'none' },
+            }
           : createRuntime(generation),
       },
     }

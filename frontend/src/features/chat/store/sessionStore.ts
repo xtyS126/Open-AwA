@@ -8,13 +8,10 @@
 // zustand v4.5+ 要求此类 Store 改用 createWithEqualityFn 创建以消除弃用警告
 import { createWithEqualityFn } from 'zustand/traditional'
 import { safeGetItem } from '@/shared/utils/safeStorage'
-import { persistPinnedConversations } from '@/features/chat/store/chatStoreEffects'
-import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
+import { getThinkingEnabled } from '@/features/chat/store/chatSyncRegistry'
 import {
   getActiveSessionId,
-  setActiveSessionId,
   getConversationSummaries,
-  setConversationSummaries,
   loadMessages,
   saveMessages,
   removeMessages,
@@ -176,8 +173,8 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
       const lastMessage = state.messages[state.messages.length - 1]
 
       if (lastMessage.role === 'assistant') {
-        // 跨域读取 preferenceStore 的 thinkingEnabled 状态
-        const thinkingEnabled = usePreferenceStore.getState().thinkingEnabled
+        // 通过 chatSyncRegistry 快照读取 thinkingEnabled，避免直接跨 Store getState()
+        const thinkingEnabled = getThinkingEnabled()
         // 创建新对象而非修改原对象，保持 Zustand 不可变性
         const updatedMessage = {
           ...lastMessage,

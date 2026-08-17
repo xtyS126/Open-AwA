@@ -1,4 +1,4 @@
-/* FilePreviewPane 样式 —— 垂直布局：顶部输入栏（固定） + 预览区（可滚动） */
+/* FilePreviewPane 样式：受工作台意图驱动，不在面板内接受路径或端口。 */
 
 .root {
   display: flex;
@@ -9,45 +9,20 @@
   gap: var(--space-2);
 }
 
-/* ===== 顶部输入栏 ===== */
-
-.input-bar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  flex-shrink: 0;
-}
-
-.input-row {
+.toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
 }
 
-.path-input,
-.port-input {
+.path {
   flex: 1;
   min-width: 0;
-  height: 30px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-secondary);
-  color: var(--color-text);
-  font-size: var(--text-xs);
   font-family: var(--font-mono);
-  outline: none;
-  transition: border-color var(--transition-fast);
-}
-
-.path-input:focus,
-.port-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-ring);
-}
-
-.port-input {
-  flex: 1;
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ===== 操作按钮 ===== */
@@ -79,11 +54,6 @@
 .action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.refresh-btn {
-  align-self: flex-end;
-  padding: 0 var(--space-3);
 }
 
 /* ===== 预览区 ===== */

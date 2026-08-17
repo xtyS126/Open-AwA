@@ -1,31 +1,24 @@
 /**
- * Vibe Coding 主页面 —— 通过 ACP 调用本地 vibe coding 应用。
+ * Vibe Coding 主页面。
  *
- * 三栏布局：
- *   左栏（secondarySidebar）：AgentSelector + SessionList + NotificationList
- *   中栏（main children）：ACP 会话面板 / 终端面板（占位实现）
- *   右栏：文件预览面板（占位实现）
- *
- * 状态管理：数据层（agents/sessions/notifications）由本组件直接管理，
- * 布局层（中栏面板切换、移动端 Tab、文件预览状态）由 useVibeCodingLayout hook 管理。
- * 通知列表通过 EventSource 订阅 /api/notifications/stream 长连接。
+ * ACP 会话始终绑定服务端权威的工作台项目 ID。终端与文件预览由工作台
+ * RuntimeDock 统一承载，本页面只管理 Agent、ACP 会话和通知。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { shallow } from 'zustand/shallow'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
-import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { useI18nStore } from '@/i18n'
-import { useBreakpoint } from '@/shared/hooks/useBreakpoint'
 import { appLogger } from '@/shared/utils/logger'
-import { securityAPI } from '@/shared/api/securityApi'
+import { securityAPI, clearSseTicketCache } from '@/shared/api/securityApi'
 import { API_BASE_URL, getCachedApiKey } from '@/shared/api/client'
 import {
-  listAgents,
-  listSessions,
-  createSession,
   closeSession,
+  createSession,
   getOpenCodeStatus,
   installOpenCode,
+  listAgents,
+  listSessions,
   type AcpAgent,
   type AcpSession,
   type OpenCodeStatus,
@@ -34,191 +27,169 @@ import {
   listNotifications,
   type NotificationItem,
 } from '@/shared/api/notificationsApi'
-import { useVibeCodingLayout, resolveTerminalCwd } from './hooks/useVibeCodingLayout'
+import { useWorkbenchProjectStore } from '@/features/workbench/store/workbenchProjectStore'
+import { useWorkbenchRuntimeStore } from '@/features/workbench/store/workbenchRuntimeStore'
 import AgentSelector from './components/AgentSelector'
 import SessionList from './components/SessionList'
 import NotificationList from './components/NotificationList'
 import AcpSessionPanel from './components/AcpSessionPanel'
-import TerminalPane from './components/TerminalPane'
-import FilePreviewPane from './components/FilePreviewPane'
 import styles from './VibeCodingPage.module.css'
 
-/** 通知列表保留的最大条数 */
 const MAX_NOTIFICATIONS = 50
 const MAX_NOTIFICATION_RECONNECT_ATTEMPTS = 5
 const NOTIFICATION_RECONNECT_BASE_DELAY_MS = 1000
 
 function VibeCodingPage() {
   const { t } = useI18nStore()
-  const { isMobile } = useBreakpoint()
-  // 布局层状态：中栏面板切换、移动端 Tab、右栏文件预览状态
   const {
-    activePane,
-    setActivePane,
-    activePanel,
-    setActivePanel,
-    selectedFilePath,
-    previewPort,
-  } = useVibeCodingLayout()
-  // 数据层状态：agents / sessions / notifications 与会话操作
+    currentProjectId,
+    switchGeneration,
+    currentProjectDisplayName,
+  } = useWorkbenchProjectStore((state) => {
+    const currentProject = state.currentProjectId
+      ? state.projects.find((project) => project.id === state.currentProjectId)
+      : null
+    return {
+      currentProjectId: state.currentProjectId,
+      switchGeneration: state.switchGeneration,
+      currentProjectDisplayName: currentProject?.isEnabled
+        ? currentProject.displayName
+        : null,
+    }
+  }, shallow)
+  const runtime = useWorkbenchRuntimeStore((state) => (
+    currentProjectId ? state.projects[currentProjectId] : undefined
+  ))
+  const setRuntimeSelectedAgent = useWorkbenchRuntimeStore((state) => state.setSelectedAgent)
+  const setRuntimeSelectedSession = useWorkbenchRuntimeStore((state) => state.setSelectedSession)
+  const runtimeIsCurrent = runtime?.generation === switchGeneration
+  const selectedAgent = runtimeIsCurrent ? runtime.selectedAgentId ?? '' : ''
+  const selectedSessionId = runtimeIsCurrent ? runtime.selectedSessionId : null
+
   const [agents, setAgents] = useState<AcpAgent[]>([])
   const [sessions, setSessions] = useState<AcpSession[]>([])
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
-  const [selectedAgent, setSelectedAgent] = useState<string>('')
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-  const [creating, setCreating] = useState<boolean>(false)
-  const [installingOpenCode, setInstallingOpenCode] = useState<boolean>(false)
-  const [projectCwd, setProjectCwd] = useState<string>('')
+  const [creating, setCreating] = useState(false)
+  const [installingOpenCode, setInstallingOpenCode] = useState(false)
   const [openCodeStatus, setOpenCodeStatus] = useState<OpenCodeStatus | null>(null)
-  const [error, setError] = useState<string>('')
+  const [error, setError] = useState('')
   const notificationReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const createSessionAbortRef = useRef<AbortController | null>(null)
+  const isProjectContextCurrent = useCallback((projectId: string, generation: number) => {
+    const current = useWorkbenchProjectStore.getState()
+    return current.currentProjectId === projectId
+      && current.switchGeneration === generation
+  }, [])
 
-  /** mount 时拉取 agents / sessions / notifications，并建立通知 SSE 订阅 */
+  /** 工作台项目切换后重新加载该项目的 ACP 数据，并隔离旧代际结果。 */
+  useEffect(() => {
+    createSessionAbortRef.current?.abort()
+    createSessionAbortRef.current = null
+    setAgents([])
+    setSessions([])
+    setOpenCodeStatus(null)
+    setCreating(false)
+    setInstallingOpenCode(false)
+    setError('')
+
+    if (!currentProjectId || !currentProjectDisplayName) return
+
+    const projectId = currentProjectId
+    const generation = switchGeneration
+    let cancelled = false
+
+    void Promise.all([
+      listAgents(),
+      listSessions(projectId),
+    ]).then(([agentsResponse, sessionsResponse]) => {
+      if (cancelled || !isProjectContextCurrent(projectId, generation)) return
+      setAgents(agentsResponse.agents)
+      setSessions(sessionsResponse.sessions)
+      const savedRuntime = useWorkbenchRuntimeStore.getState().projects[projectId]
+      const savedAgent = savedRuntime?.generation === generation
+        ? savedRuntime.selectedAgentId
+        : null
+      const savedAgentAvailable = savedAgent
+        ? agentsResponse.agents.some((agent) => (
+            agent.id === savedAgent && (agent.available || agent.id === 'opencode')
+          ))
+        : false
+      const firstAvailable = agentsResponse.agents.find((agent) => agent.available)
+      setRuntimeSelectedAgent(
+        projectId,
+        generation,
+        savedAgentAvailable ? savedAgent : firstAvailable?.id ?? null,
+      )
+      const savedSessionId = savedRuntime?.generation === generation
+        ? savedRuntime.selectedSessionId
+        : null
+      setRuntimeSelectedSession(
+        projectId,
+        generation,
+        sessionsResponse.sessions.some((session) => session.session_id === savedSessionId)
+          ? savedSessionId
+          : null,
+      )
+    }).catch((cause: unknown) => {
+      if (cancelled || !isProjectContextCurrent(projectId, generation)) return
+      const message = cause instanceof Error ? cause.message : String(cause)
+      appLogger.error({
+        event: 'vibe_coding_project_load_failed',
+        module: 'vibe-coding',
+        action: 'load',
+        status: 'failure',
+        message: '加载工作台项目 ACP 数据失败',
+        extra: { project_id: projectId, error: message },
+      })
+      setError(message)
+    })
+
+    return () => {
+      cancelled = true
+      createSessionAbortRef.current?.abort()
+      createSessionAbortRef.current = null
+    }
+  }, [
+    currentProjectDisplayName,
+    currentProjectId,
+    isProjectContextCurrent,
+    setRuntimeSelectedAgent,
+    setRuntimeSelectedSession,
+    switchGeneration,
+  ])
+
+  const handleSelectAgent = useCallback((agentId: string) => {
+    if (!currentProjectId) return
+    setRuntimeSelectedAgent(currentProjectId, switchGeneration, agentId || null)
+  }, [currentProjectId, setRuntimeSelectedAgent, switchGeneration])
+
+  const handleSelectSession = useCallback((sessionId: string) => {
+    if (!currentProjectId) return
+    setRuntimeSelectedSession(currentProjectId, switchGeneration, sessionId)
+  }, [currentProjectId, setRuntimeSelectedSession, switchGeneration])
+
+  /** 通知不是项目权威资源，页面挂载期间保持一条独立 SSE 连接。 */
   useEffect(() => {
     let eventSource: EventSource | null = null
     let cancelled = false
     let reconnectAttempts = 0
 
-    const loadInitial = async () => {
-      try {
-        const [agentsRes, sessionsRes, notifRes] = await Promise.all([
-          listAgents(),
-          listSessions(),
-          listNotifications(MAX_NOTIFICATIONS),
-        ])
-        setAgents(agentsRes.agents)
-        setSessions(sessionsRes.sessions)
-        setNotifications(notifRes.notifications)
-        // 默认选中第一个可用 agent
-        const firstAvailable = agentsRes.agents.find((a) => a.available)
-        if (firstAvailable) {
-          setSelectedAgent(firstAvailable.id)
-        }
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        appLogger.error({
-          event: 'vibe_coding_init_failed',
-          module: 'vibe-coding',
-          action: 'init',
-          status: 'failure',
-          message: 'Vibe Coding 初始化失败',
-          extra: { error: message },
-        })
-        setError(message)
-      }
-    }
+    void listNotifications(MAX_NOTIFICATIONS)
+      .then((response) => {
+        if (!cancelled) setNotifications(response.notifications)
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
+      })
 
-    void loadInitial()
-
-    const clearNotificationReconnectTimer = () => {
+    const clearReconnectTimer = () => {
       if (notificationReconnectTimerRef.current !== null) {
         clearTimeout(notificationReconnectTimerRef.current)
         notificationReconnectTimerRef.current = null
       }
     }
 
-    const connectNotificationStream = async () => {
-      if (cancelled) return
-      clearNotificationReconnectTimer()
-
-      // 优先检测 Cookie 是否含 access_token（与 usePermissionRequest 一致）
-      const hasCookie = typeof document !== 'undefined'
-        && document.cookie.split(';').some((c) => c.trim().startsWith('access_token='))
-      const apiKey = getCachedApiKey()
-
-      // APP（WebView origin=https://localhost）内 EventSource 相对路径会请求 WebView 自身
-      // 返回 text/html 404，必须用 API_BASE_URL 拼绝对地址；
-      // API_BASE_URL 可能已含 /api（lanDiscovery 返回"接入用 API 基址"），不能重复拼接
-      const baseUrl = API_BASE_URL.startsWith('http') ? API_BASE_URL : ''
-      const apiPrefix = API_BASE_URL.includes('/api') ? '' : '/api'
-      const notificationsStreamBase = `${baseUrl}${apiPrefix}/notifications/stream`
-      let streamUrl = notificationsStreamBase
-
-      if (!hasCookie && apiKey) {
-        // 无 Cookie 时通过一次性 ticket 建立 SSE，避免 API Key 泄露到 URL/日志
-        try {
-          const ticketResp = await securityAPI.requestSseTicket()
-          if (cancelled) return
-          const ticket = ticketResp.data.ticket
-          streamUrl = `${notificationsStreamBase}?ticket=${encodeURIComponent(ticket)}`
-        } catch (e) {
-          if (cancelled) return
-          // SEC-16 防泄露设计：ticket 失败即放弃通知推送连接（绝不降级把明文 api_key 放进 URL），
-          // 用户可见提示
-          appLogger.error({
-            event: 'vibe_coding_notification_ticket_failed',
-            module: 'vibe-coding',
-            action: 'sse',
-            status: 'failure',
-            message: '获取通知 SSE ticket 失败，放弃连接（不降级使用 api_key query 参数）',
-            extra: { error: e instanceof Error ? e.message : String(e) },
-          })
-          setError('通知实时推送连接建立失败（获取安全票据失败），请刷新页面后重试')
-          return
-        }
-      } else if (!hasCookie && !apiKey) {
-        // 无 Cookie 也无 API Key，无法建立 SSE，直接放弃
-        appLogger.warning({
-          event: 'vibe_coding_notification_no_credential',
-          module: 'vibe-coding',
-          action: 'sse',
-          status: 'warning',
-          message: '未检测到 Cookie 或 API Key，无法建立通知 SSE 连接',
-        })
-        return
-      }
-
-      if (cancelled) return
-
-      try {
-        // 有 Cookie 时 withCredentials=true 带 Cookie；ticket/api_key 已嵌入 URL
-        const source = new EventSource(streamUrl, { withCredentials: hasCookie })
-        eventSource = source
-
-        source.onmessage = (event) => {
-          try {
-            const item = JSON.parse(event.data) as NotificationItem
-            if (!item || typeof item.id !== 'string') return
-            setNotifications((prev) => {
-              // 去重并限制条数，最新通知置顶
-              const filtered = prev.filter((n) => n.id !== item.id)
-              return [item, ...filtered].slice(0, MAX_NOTIFICATIONS)
-            })
-          } catch (e) {
-            appLogger.warning({
-              event: 'vibe_coding_notification_parse_failed',
-              module: 'vibe-coding',
-              action: 'sse',
-              status: 'warning',
-              message: '通知 SSE 解析失败',
-              extra: { error: e instanceof Error ? e.message : String(e) },
-            })
-          }
-        }
-        source.onopen = () => {
-          reconnectAttempts = 0
-        }
-        source.onerror = () => {
-          source.close()
-          if (eventSource === source) {
-            eventSource = null
-          }
-          appLogger.warning({
-            event: 'vibe_coding_notification_stream_error',
-            module: 'vibe-coding',
-            action: 'sse',
-            status: 'warning',
-            message: '通知 SSE 连接错误',
-          })
-          scheduleNotificationReconnect()
-        }
-      } catch (e) {
-        scheduleNotificationReconnect(e)
-        return
-      }
-    }
-
-    const scheduleNotificationReconnect = (cause?: unknown) => {
+    const scheduleReconnect = (cause?: unknown) => {
       if (cancelled || notificationReconnectTimerRef.current !== null) return
       if (reconnectAttempts >= MAX_NOTIFICATION_RECONNECT_ATTEMPTS) {
         setError((previous) => previous || '通知实时连接已断开，请刷新页面后重试')
@@ -234,7 +205,7 @@ function VibeCodingPage() {
       }
       const delay = Math.min(
         NOTIFICATION_RECONNECT_BASE_DELAY_MS * Math.pow(2, reconnectAttempts),
-        30000
+        30000,
       )
       reconnectAttempts += 1
       notificationReconnectTimerRef.current = setTimeout(() => {
@@ -243,228 +214,264 @@ function VibeCodingPage() {
       }, delay)
     }
 
+    const connectNotificationStream = async () => {
+      if (cancelled) return
+      clearReconnectTimer()
+      const hasCookie = typeof document !== 'undefined'
+        && document.cookie.split(';').some((item) => item.trim().startsWith('access_token='))
+      const apiKey = getCachedApiKey()
+      const baseUrl = API_BASE_URL.startsWith('http') ? API_BASE_URL : ''
+      const apiPrefix = API_BASE_URL.includes('/api') ? '' : '/api'
+      const streamBase = `${baseUrl}${apiPrefix}/notifications/stream`
+      let streamUrl = streamBase
+
+      if (!hasCookie && apiKey) {
+        try {
+          const ticket = await securityAPI.requestSseTicket()
+          if (cancelled) return
+          streamUrl = `${streamBase}?ticket=${encodeURIComponent(ticket)}`
+        } catch (cause) {
+          if (cancelled) return
+          const status = (cause as { response?: { status?: number } }).response?.status
+          if (status === 401) clearSseTicketCache()
+          setError('通知实时推送连接建立失败（获取安全票据失败），请刷新页面后重试')
+          return
+        }
+      } else if (!hasCookie && !apiKey) {
+        return
+      }
+
+      if (cancelled) return
+      try {
+        const source = new EventSource(streamUrl, { withCredentials: hasCookie })
+        eventSource = source
+        source.onopen = () => {
+          reconnectAttempts = 0
+        }
+        source.onmessage = (event) => {
+          try {
+            const item = JSON.parse(event.data) as NotificationItem
+            if (!item || typeof item.id !== 'string') return
+            setNotifications((previous) => {
+              const remaining = previous.filter((notification) => notification.id !== item.id)
+              return [item, ...remaining].slice(0, MAX_NOTIFICATIONS)
+            })
+          } catch (cause) {
+            appLogger.warning({
+              event: 'vibe_coding_notification_parse_failed',
+              module: 'vibe-coding',
+              action: 'sse',
+              status: 'warning',
+              message: '通知 SSE 解析失败',
+              extra: { error: cause instanceof Error ? cause.message : String(cause) },
+            })
+          }
+        }
+        source.onerror = () => {
+          source.close()
+          if (eventSource === source) eventSource = null
+          scheduleReconnect()
+        }
+      } catch (cause) {
+        scheduleReconnect(cause)
+      }
+    }
+
     void connectNotificationStream()
 
     return () => {
       cancelled = true
-      clearNotificationReconnectTimer()
-      if (eventSource) {
-        eventSource.close()
-        eventSource = null
-      }
+      clearReconnectTimer()
+      eventSource?.close()
+      eventSource = null
     }
   }, [])
 
   useEffect(() => {
-    if (selectedAgent !== 'opencode') {
+    if (!currentProjectId || selectedAgent !== 'opencode') {
       setOpenCodeStatus(null)
       return
     }
-    void getOpenCodeStatus(projectCwd || undefined)
-      .then(setOpenCodeStatus)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-  }, [projectCwd, selectedAgent])
+    const projectId = currentProjectId
+    const generation = switchGeneration
+    void getOpenCodeStatus(projectId)
+      .then((status) => {
+        if (isProjectContextCurrent(projectId, generation)) setOpenCodeStatus(status)
+      })
+      .catch((cause: unknown) => {
+        if (isProjectContextCurrent(projectId, generation)) {
+          setError(cause instanceof Error ? cause.message : String(cause))
+        }
+      })
+  }, [currentProjectId, isProjectContextCurrent, selectedAgent, switchGeneration])
 
-  /** 创建新会话 —— 调用 createSession 后追加到列表并选中 */
   const handleCreateSession = useCallback(async () => {
-    if (!selectedAgent) {
+    if (!currentProjectId || !selectedAgent) {
       setError(t('vibeCoding.selectAgent'))
       return
     }
+    const projectId = currentProjectId
+    const generation = switchGeneration
+    createSessionAbortRef.current?.abort()
+    const controller = new AbortController()
+    createSessionAbortRef.current = controller
     setCreating(true)
     setError('')
     try {
-      const result = await createSession(selectedAgent, projectCwd || undefined)
-      const newSession: AcpSession = {
+      const result = await createSession(projectId, selectedAgent, controller.signal)
+      if (!isProjectContextCurrent(projectId, generation)) return
+      const session: AcpSession = {
         session_id: result.session_id,
         agent: selectedAgent,
-        cwd: result.cwd,
+        project_id: result.project_id,
         created_at: new Date().toISOString(),
       }
-      setSessions((prev) => [...prev, newSession])
-      setSelectedSessionId(result.session_id)
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
+      setSessions((previous) => previous.some((item) => item.session_id === session.session_id)
+        ? previous
+        : [...previous, session])
+      setRuntimeSelectedSession(projectId, generation, session.session_id)
+    } catch (cause) {
+      if (controller.signal.aborted || !isProjectContextCurrent(projectId, generation)) return
+      const requestError = cause as { code?: string; response?: { status?: number } }
+      if (requestError.code === 'ERR_CANCELED') return
+      if (requestError.response?.status === 409) {
+        try {
+          const response = await listSessions(projectId, selectedAgent)
+          if (!isProjectContextCurrent(projectId, generation)) return
+          const existing = response.sessions[0]
+          if (existing) {
+            setSessions(response.sessions)
+            setRuntimeSelectedSession(projectId, generation, existing.session_id)
+            return
+          }
+        } catch (listCause) {
+          if (!isProjectContextCurrent(projectId, generation)) return
+          setError(listCause instanceof Error ? listCause.message : String(listCause))
+          return
+        }
+      }
+      const message = cause instanceof Error ? cause.message : String(cause)
       appLogger.error({
         event: 'vibe_coding_create_session_failed',
         module: 'vibe-coding',
         action: 'create',
         status: 'failure',
         message: '创建 ACP 会话失败',
-        extra: { agent: selectedAgent, error: message },
+        extra: { project_id: projectId, agent: selectedAgent, error: message },
       })
       setError(message)
     } finally {
-      setCreating(false)
+      if (createSessionAbortRef.current === controller) createSessionAbortRef.current = null
+      if (isProjectContextCurrent(projectId, generation)) setCreating(false)
     }
-  }, [projectCwd, selectedAgent, t])
+  }, [
+    currentProjectId,
+    isProjectContextCurrent,
+    selectedAgent,
+    setRuntimeSelectedSession,
+    switchGeneration,
+    t,
+  ])
 
   const handleInstallOpenCode = useCallback(async () => {
-    if (!window.confirm('将在当前工作目录安装 opencode-ai@latest，是否继续？')) return
+    if (!currentProjectId) return
+    const projectId = currentProjectId
+    const generation = switchGeneration
+    if (!window.confirm(`将在工作台项目“${currentProjectDisplayName ?? projectId}”中安装 opencode-ai@latest，是否继续？`)) return
     setInstallingOpenCode(true)
     setError('')
     try {
-      const result = await installOpenCode(projectCwd || undefined)
+      const result = await installOpenCode(projectId)
+      if (!isProjectContextCurrent(projectId, generation)) return
       setOpenCodeStatus(result)
       if (!result.installed) setError(result.output || 'OpenCode 安装后不可用')
-      if (result.audit_passed === false) setError('OpenCode 已安装，但 npm audit 检测到高危依赖问题')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (result.audit_passed === false) {
+        setError('OpenCode 已安装，但 npm audit 检测到高危依赖问题')
+      }
+    } catch (cause) {
+      if (isProjectContextCurrent(projectId, generation)) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
     } finally {
-      setInstallingOpenCode(false)
+      if (isProjectContextCurrent(projectId, generation)) setInstallingOpenCode(false)
     }
-  }, [projectCwd])
+  }, [
+    currentProjectDisplayName,
+    currentProjectId,
+    isProjectContextCurrent,
+    switchGeneration,
+  ])
 
-  /** 关闭会话 —— 调用 closeSession 后从列表中移除 */
   const handleCloseSession = useCallback(async (sessionId: string) => {
+    if (!currentProjectId) return
+    const projectId = currentProjectId
+    const generation = switchGeneration
     try {
-      await closeSession(sessionId)
-      setSessions((prev) => prev.filter((s) => s.session_id !== sessionId))
-      setSelectedSessionId((prev) => (prev === sessionId ? null : prev))
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
+      await closeSession(projectId, sessionId)
+      if (!isProjectContextCurrent(projectId, generation)) return
+      setSessions((previous) => previous.filter((session) => session.session_id !== sessionId))
+      if (selectedSessionId === sessionId) {
+        setRuntimeSelectedSession(projectId, generation, null)
+      }
+    } catch (cause) {
+      if (!isProjectContextCurrent(projectId, generation)) return
+      const message = cause instanceof Error ? cause.message : String(cause)
       appLogger.error({
         event: 'vibe_coding_close_session_failed',
         module: 'vibe-coding',
         action: 'close',
         status: 'failure',
         message: '关闭 ACP 会话失败',
-        extra: { session_id: sessionId, error: message },
+        extra: { project_id: projectId, session_id: sessionId, error: message },
       })
       setError(message)
     }
-  }, [])
+  }, [
+    currentProjectId,
+    isProjectContextCurrent,
+    selectedSessionId,
+    setRuntimeSelectedSession,
+    switchGeneration,
+  ])
 
-  /** 选中会话回调 */
-  const handleSelectSession = useCallback((sessionId: string) => {
-    setSelectedSessionId(sessionId)
-  }, [])
-
-  const projectControls = (
-    <>
-      <input
-        value={projectCwd}
-        onChange={(event) => setProjectCwd(event.target.value)}
-        placeholder="ACP 工作目录（需在白名单内）"
-        aria-label="ACP 工作目录"
-        style={{ width: '100%', padding: '6px 8px', borderRadius: 'var(--radius-sm)' }}
-      />
-      {selectedAgent === 'opencode' && (
-        <button
-          type="button"
-          className={styles['create-btn']}
-          onClick={() => { void handleInstallOpenCode() }}
-          disabled={installingOpenCode || openCodeStatus?.project_installed === true}
-        >
-          {installingOpenCode ? '正在安装 OpenCode' : openCodeStatus?.project_installed ? '项目已安装 OpenCode' : '安装 OpenCode'}
-        </button>
-      )}
-    </>
-  )
-
-  // ===== 移动端布局：单栏 + 顶部 Tab 切换（会话 / 终端 / 预览） =====
-  if (isMobile) {
+  if (!currentProjectId || !currentProjectDisplayName) {
     return (
-      <div className={styles['vibe-coding-mobile']}>
-        <div className={styles['mobile-tab-bar']} role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activePanel === 'session'}
-            onClick={() => setActivePanel('session')}
-            className={`${styles['mobile-tab']} ${activePanel === 'session' ? styles['active'] : ''}`}
-          >
-            {t('vibeCoding.sessions')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activePanel === 'terminal'}
-            onClick={() => setActivePanel('terminal')}
-            className={`${styles['mobile-tab']} ${activePanel === 'terminal' ? styles['active'] : ''}`}
-          >
-            {t('vibeCoding.terminalPanel')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activePanel === 'preview'}
-            onClick={() => setActivePanel('preview')}
-            className={`${styles['mobile-tab']} ${activePanel === 'preview' ? styles['active'] : ''}`}
-          >
-            {t('vibeCoding.filePreview')}
-          </button>
+      <PageLayout title={t('vibeCoding.title')} className={styles['vibe-page']}>
+        <div className={styles['project-gate']} role="status">
+          <strong>请先选择一个可用的工作台项目</strong>
+          <span>可在上方工作台项目栏选择项目，或前往项目管理完成登记。</span>
         </div>
-
-        {error && <div className={styles['error-text']}>{error}</div>}
-
-        <div className={styles['mobile-panel']}>
-          {activePanel === 'session' && (
-            <div className={styles['mobile-session-pane']}>
-              <div className={styles['sidebar-section']}>
-                <AgentSelector
-                  agents={agents}
-                  value={selectedAgent}
-                  onChange={setSelectedAgent}
-                />
-                {projectControls}
-                <button
-                  type="button"
-                  className={styles['create-btn']}
-                  onClick={() => { void handleCreateSession() }}
-                  disabled={creating || !selectedAgent}
-                >
-                  <Plus size={14} />
-                  {creating ? t('app.loading') : t('vibeCoding.createSession')}
-                </button>
-              </div>
-
-              <div className={styles['sidebar-section']}>
-                <span className={styles['sidebar-section-title']}>
-                  {t('vibeCoding.sessions')}
-                </span>
-                <SessionList
-                  sessions={sessions}
-                  selectedId={selectedSessionId}
-                  onSelect={handleSelectSession}
-                  onClose={(id) => { void handleCloseSession(id) }}
-                />
-              </div>
-
-              <div className={styles['sidebar-section']}>
-                <span className={styles['sidebar-section-title']}>
-                  {t('vibeCoding.notifications')}
-                </span>
-                <NotificationList notifications={notifications} />
-              </div>
-            </div>
-          )}
-          {activePanel === 'terminal' && (
-            <ErrorBoundary name="TerminalPane" variant="compact">
-              <TerminalPane cwd={resolveTerminalCwd(sessions, selectedSessionId)} />
-            </ErrorBoundary>
-          )}
-          {activePanel === 'preview' && (
-            <FilePreviewPane filePath={selectedFilePath} previewPort={previewPort} />
-          )}
-        </div>
-      </div>
+      </PageLayout>
     )
   }
 
-  // ===== 桌面端布局：原三栏（左栏 + 中栏 + 右栏） =====
+  const projectControls = selectedAgent === 'opencode' ? (
+    <button
+      type="button"
+      className={styles['create-btn']}
+      onClick={() => { void handleInstallOpenCode() }}
+      disabled={installingOpenCode || openCodeStatus?.project_installed === true}
+    >
+      {installingOpenCode
+        ? '正在安装 OpenCode'
+        : openCodeStatus?.project_installed
+          ? '项目已安装 OpenCode'
+          : '安装 OpenCode'}
+    </button>
+  ) : null
+
   return (
     <PageLayout
       title={t('vibeCoding.title')}
       className={styles['vibe-page']}
       secondarySidebar={
-        <aside className={styles['sidebar']}>
+        <aside className={styles.sidebar}>
+          <div className={styles['project-identity']}>
+            <span>当前项目</span>
+            <strong>{currentProjectDisplayName}</strong>
+          </div>
           <div className={styles['sidebar-section']}>
-            <AgentSelector
-              agents={agents}
-              value={selectedAgent}
-              onChange={setSelectedAgent}
-            />
+            <AgentSelector agents={agents} value={selectedAgent} onChange={handleSelectAgent} />
             {projectControls}
             <button
               type="button"
@@ -476,72 +483,30 @@ function VibeCodingPage() {
               {creating ? t('app.loading') : t('vibeCoding.createSession')}
             </button>
           </div>
-
           <div className={styles['sidebar-section']}>
-            <span className={styles['sidebar-section-title']}>
-              {t('vibeCoding.sessions')}
-            </span>
+            <span className={styles['sidebar-section-title']}>{t('vibeCoding.sessions')}</span>
             <SessionList
               sessions={sessions}
               selectedId={selectedSessionId}
               onSelect={handleSelectSession}
-              onClose={(id) => { void handleCloseSession(id) }}
+              onClose={(sessionId) => { void handleCloseSession(sessionId) }}
             />
           </div>
-
           <div className={styles['sidebar-section']}>
-            <span className={styles['sidebar-section-title']}>
-              {t('vibeCoding.notifications')}
-            </span>
+            <span className={styles['sidebar-section-title']}>{t('vibeCoding.notifications')}</span>
             <NotificationList notifications={notifications} />
           </div>
         </aside>
       }
     >
-      <div className={styles['content']}>
-        {/* 中栏：ACP 会话面板 / 终端面板切换 */}
-        <div className={styles['center-pane']}>
-          <div className={styles['segmented']} role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activePane === 'acp'}
-              className={`${styles['segmented-btn']} ${activePane === 'acp' ? styles['active'] : ''}`}
-              onClick={() => setActivePane('acp')}
-            >
-              {t('vibeCoding.acpPanel')}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activePane === 'terminal'}
-              className={`${styles['segmented-btn']} ${activePane === 'terminal' ? styles['active'] : ''}`}
-              onClick={() => setActivePane('terminal')}
-            >
-              {t('vibeCoding.terminalPanel')}
-            </button>
-          </div>
-
-          {error && <div className={styles['error-text']}>{error}</div>}
-
-          {/* 中栏面板内容：ACP 模式渲染 AcpSessionPanel / Terminal 模式渲染 TerminalPane */}
-          {activePane === 'terminal' ? (
-            <ErrorBoundary name="TerminalPane" variant="compact">
-              <TerminalPane cwd={resolveTerminalCwd(sessions, selectedSessionId)} />
-            </ErrorBoundary>
-          ) : (
-            <AcpSessionPanel
-              sessionId={selectedSessionId}
-              cwd={resolveTerminalCwd(sessions, selectedSessionId)}
-            />
-          )}
-        </div>
-
-        {/* 右栏：文件预览面板 */}
-        <aside className={styles['right-pane']}>
-          <FilePreviewPane filePath={selectedFilePath} previewPort={previewPort} />
-        </aside>
-      </div>
+      <main className={styles.content}>
+        {error && <div className={styles['error-text']} role="alert">{error}</div>}
+        <AcpSessionPanel
+          projectId={currentProjectId}
+          generation={switchGeneration}
+          sessionId={selectedSessionId}
+        />
+      </main>
     </PageLayout>
   )
 }

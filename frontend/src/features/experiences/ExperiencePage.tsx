@@ -1,4 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+/**
+ * 经验文件页面 — 列表/编辑/保存经验 Markdown 文件。
+ *
+ * 改造说明（fix-performance-remaining-issues-v2 模块 C2）：
+ *   - 原实现使用 useCallback + useEffect，每次 mount 都触发 /api/experience-files 请求
+ *   - 现改用 useQuery + queryClient.invalidateQueries，多页面切换时复用缓存
+ *   - queryKey 约定：
+ *     - ['experience', 'files']：文件列表
+ *     - ['experience', 'files', selectedFileName]：单文件详情，selectedFileName 为空时禁用
+ *   - 保存成功后失效详情缓存以触发刷新
+ */
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExperienceFileDetail, ExperienceFileSummary, fileExperiencesApi } from '@/features/experiences/fileExperiencesApi'
 import { getErrorMessage } from '@/shared/utils/errorMessages'
 import styles from './ExperiencePage.module.css'
@@ -8,80 +20,78 @@ interface ExperiencePageProps {
 }
 
 function ExperiencePage({ hideHeader = false }: ExperiencePageProps) {
-  const [files, setFiles] = useState<ExperienceFileSummary[]>([])
+  const queryClient = useQueryClient()
   const [selectedFileName, setSelectedFileName] = useState<string>('')
-  const [selectedFile, setSelectedFile] = useState<ExperienceFileDetail | null>(null)
   const [editorContent, setEditorContent] = useState('')
 
-  const [loadingList, setLoadingList] = useState(false)
-  const [loadingDetail, setLoadingDetail] = useState(false)
   const [saving, setSaving] = useState(false)
-
-  const [listError, setListError] = useState<string | null>(null)
-  const [detailError, setDetailError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+
+  // 文件列表查询：useQuery 自动管理缓存与重试，staleTime=60s 内切换页面不重复请求
+  const {
+    data: filesResponse,
+    isLoading: loadingList,
+    error: listErrorObj,
+  } = useQuery({
+    queryKey: ['experience', 'files'],
+    queryFn: () => fileExperiencesApi.listFiles(),
+  })
+  const files: ExperienceFileSummary[] = useMemo(() => filesResponse?.data || [], [filesResponse])
+  const listError = listErrorObj ? getErrorMessage(listErrorObj, '加载经验文件列表失败，请稍后重试') : null
+
+  // 文件详情查询：依赖 selectedFileName，为空时禁用
+  const {
+    data: detailResponse,
+    isLoading: loadingDetail,
+    error: detailErrorObj,
+  } = useQuery({
+    queryKey: ['experience', 'files', selectedFileName],
+    queryFn: () => fileExperiencesApi.getFileDetail(selectedFileName),
+    enabled: !!selectedFileName,
+  })
+  const selectedFile: ExperienceFileDetail | null = detailResponse?.data ?? null
+  const detailError = detailErrorObj ? getErrorMessage(detailErrorObj, '加载文件内容失败，请稍后重试') : null
+
+  // 首次加载列表时自动选中第一个文件
+  useEffect(() => {
+    if (files.length === 0) {
+      if (selectedFileName !== '') {
+        setSelectedFileName('')
+      }
+      return
+    }
+    const currentExists = files.some((item) => item.file_name === selectedFileName)
+    if (!currentExists) {
+      setSelectedFileName(files[0].file_name)
+    }
+  }, [files, selectedFileName])
+
+  // 详情加载完成后同步编辑器内容与保存状态
+  useEffect(() => {
+    if (selectedFile) {
+      setEditorContent(selectedFile.content)
+      setSaveError(null)
+      setSaveSuccess(null)
+    } else if (!selectedFileName) {
+      setEditorContent('')
+    }
+  }, [selectedFile, selectedFileName])
 
   const hasUnsavedChanges = useMemo(() => {
     if (!selectedFile) return false
     return editorContent !== selectedFile.content
   }, [editorContent, selectedFile])
 
-  const loadFileDetail = useCallback(async (fileName: string) => {
-    setLoadingDetail(true)
-    setDetailError(null)
-    setSaveError(null)
-    setSaveSuccess(null)
-
-    try {
-      const response = await fileExperiencesApi.getFileDetail(fileName)
-      setSelectedFile(response.data)
-      setEditorContent(response.data.content)
-      setSelectedFileName(fileName)
-    } catch (error) {
-      setDetailError(getErrorMessage(error, '加载文件内容失败，请稍后重试'))
-      setSelectedFile(null)
-      setEditorContent('')
-    } finally {
-      setLoadingDetail(false)
-    }
-  }, [])
-
-  const loadFiles = useCallback(async () => {
-    setLoadingList(true)
-    setListError(null)
-
-    try {
-      const response = await fileExperiencesApi.listFiles()
-      const fileList = response.data
-      setFiles(fileList)
-
-      if (fileList.length === 0) {
-        setSelectedFileName('')
-        setSelectedFile(null)
-        setEditorContent('')
-        return
-      }
-
-      const currentExists = fileList.some((item: ExperienceFileSummary) => item.file_name === selectedFileName)
-      const targetFileName = currentExists ? selectedFileName : fileList[0].file_name
-      await loadFileDetail(targetFileName)
-    } catch (error) {
-      setListError(getErrorMessage(error, '加载经验文件列表失败，请稍后重试'))
-    } finally {
-      setLoadingList(false)
-    }
-  }, [loadFileDetail, selectedFileName])
-
-  useEffect(() => {
-    loadFiles()
-  }, [loadFiles])
-
-  const handleSelectFile = async (fileName: string) => {
+  const handleSelectFile = (fileName: string) => {
     if (fileName === selectedFileName) {
       return
     }
-    await loadFileDetail(fileName)
+    setSelectedFileName(fileName)
+  }
+
+  const handleRefreshList = () => {
+    queryClient.invalidateQueries({ queryKey: ['experience', 'files'] })
   }
 
   const handleSave = async () => {
@@ -94,31 +104,13 @@ function ExperiencePage({ hideHeader = false }: ExperiencePageProps) {
     setSaveSuccess(null)
 
     try {
-      const response = await fileExperiencesApi.saveFile(selectedFileName, editorContent)
+      await fileExperiencesApi.saveFile(selectedFileName, editorContent)
       setSaveSuccess('保存成功')
-
-      if (selectedFile) {
-        setSelectedFile({
-          ...selectedFile,
-          content: editorContent,
-          updated_at: response.data.updated_at,
-          size: response.data.size,
-        })
-      }
-
-      setFiles((prev) =>
-        prev.map((item) =>
-          item.file_name === selectedFileName
-            ? {
-                ...item,
-                updated_at: response.data.updated_at,
-                size: response.data.size,
-                summary: extractSummary(editorContent),
-                title: extractTitle(editorContent, item.title),
-              }
-            : item,
-        ),
-      )
+      // 失效详情与列表缓存以触发刷新，获取最新 content / updated_at / size / summary / title
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['experience', 'files', selectedFileName] }),
+        queryClient.invalidateQueries({ queryKey: ['experience', 'files'] }),
+      ])
     } catch (error) {
       setSaveError(getErrorMessage(error, '保存失败，请稍后重试'))
     } finally {
@@ -131,7 +123,7 @@ function ExperiencePage({ hideHeader = false }: ExperiencePageProps) {
       {!hideHeader && (
         <div className={styles['page-header']}>
           <h1>经验文件</h1>
-          <button className={styles['btn-secondary']} onClick={loadFiles} disabled={loadingList || loadingDetail || saving}>
+          <button className={styles['btn-secondary']} onClick={handleRefreshList} disabled={loadingList || loadingDetail || saving}>
             刷新列表
           </button>
         </div>
@@ -139,7 +131,7 @@ function ExperiencePage({ hideHeader = false }: ExperiencePageProps) {
 
       {hideHeader && (
         <div className={styles['experience-toolbar']}>
-          <button className={styles['btn-secondary']} onClick={loadFiles} disabled={loadingList || loadingDetail || saving}>
+          <button className={styles['btn-secondary']} onClick={handleRefreshList} disabled={loadingList || loadingDetail || saving}>
             刷新列表
           </button>
         </div>
@@ -229,33 +221,6 @@ function formatFileSize(size: number): string {
     return `${(size / 1024).toFixed(1)} KB`
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function extractSummary(content: string): string {
-  const lines = content.split('\n')
-  for (const line of lines) {
-    const text = line.trim()
-    if (!text || text.startsWith('#')) {
-      continue
-    }
-    return text.slice(0, 160)
-  }
-  return ''
-}
-
-function extractTitle(content: string, fallback: string): string {
-  const lines = content.split('\n')
-  for (const line of lines) {
-    const text = line.trim()
-    if (!text.startsWith('#')) {
-      continue
-    }
-    const title = text.replace(/^#+/, '').trim()
-    if (title) {
-      return title
-    }
-  }
-  return fallback
 }
 
 export default ExperiencePage

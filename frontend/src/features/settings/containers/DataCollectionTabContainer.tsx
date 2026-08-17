@@ -3,6 +3,7 @@
  * 管理所有状态和 API 调用，将数据与回调通过 props 传递给展示组件
  */
 import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '@/shared/api/api'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
@@ -27,10 +28,6 @@ export function DataCollectionTabContainer() {
   const [collectionStats, setCollectionStats] = useState<ConversationCollectionStatusResponse['stats'] | null>(null)
   const [updatingCollection, setUpdatingCollection] = useState(false)
 
-  // 记录预览状态
-  const [recordsPreview, setRecordsPreview] = useState<ConversationRecordItem[]>([])
-  const [loadingRecordsPreview, setLoadingRecordsPreview] = useState(false)
-
   // 导出相关状态
   const [exportStartTime, setExportStartTime] = useState('')
   const [exportEndTime, setExportEndTime] = useState('')
@@ -40,7 +37,8 @@ export function DataCollectionTabContainer() {
   const [cleanupDays, setCleanupDays] = useState(30)
   const [cleaningRecords, setCleaningRecords] = useState(false)
 
-  const { message, showNotification } = useNotification(3000)
+  const { message, showNotification } = useNotification()
+  const queryClient = useQueryClient()
 
   // 加载采集状态
   const loadCollectionStatus = useCallback(async () => {
@@ -54,25 +52,22 @@ export function DataCollectionTabContainer() {
     }
   }, [showNotification])
 
-  // 加载记录预览
-  const loadRecordsPreview = useCallback(async () => {
-    setLoadingRecordsPreview(true)
-    try {
+  // 记录预览通过 React Query 共享缓存，避免 Tab 切换时重复请求
+  const recordsQuery = useQuery({
+    queryKey: ['conversations', 'records'],
+    queryFn: async () => {
       const response = await conversationAPI.getRecordsPreview(20)
-      setRecordsPreview(response.data.records || [])
-    } catch {
-      appLogger.error({ event: 'records_preview_load_failed', message: '加载记录预览失败', module: 'settings' })
-      showNotification({ type: 'error', text: '加载最近记录失败' })
-    } finally {
-      setLoadingRecordsPreview(false)
-    }
-  }, [showNotification])
+      return response.data.records || []
+    },
+  })
 
-  // 挂载时并行加载采集状态与记录预览
+  const recordsPreview: ConversationRecordItem[] = recordsQuery.data ?? []
+  const loadingRecordsPreview = recordsQuery.isLoading
+
+  // 挂载时加载采集状态（记录预览由 useQuery 自动处理）
   useEffect(() => {
     loadCollectionStatus()
-    loadRecordsPreview()
-  }, [loadCollectionStatus, loadRecordsPreview])
+  }, [loadCollectionStatus])
 
   // 切换采集开关
   const handleToggleCollection = useCallback(async (enabled: boolean) => {
@@ -133,14 +128,16 @@ export function DataCollectionTabContainer() {
       const response = await conversationAPI.cleanupRecords(cleanupDays)
       const deleted = response.data?.deleted_count ?? 0
       showNotification({ type: 'success', text: `清理完成：已删除 ${deleted} 条记录` })
-      await loadRecordsPreview()
-      await loadCollectionStatus()
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['conversations', 'records'] }),
+        loadCollectionStatus(),
+      ])
     } catch {
       showNotification({ type: 'error', text: '清理失败' })
     } finally {
       setCleaningRecords(false)
     }
-  }, [cleanupDays, loadRecordsPreview, loadCollectionStatus, showNotification])
+  }, [cleanupDays, queryClient, loadCollectionStatus, showNotification])
 
   return (
     <Suspense fallback={<TabLoadingFallback />}>
@@ -161,7 +158,7 @@ export function DataCollectionTabContainer() {
         cleanupDays={cleanupDays}
         cleaningRecords={cleaningRecords}
         onToggleCollection={handleToggleCollection}
-        onLoadRecordsPreview={loadRecordsPreview}
+        onLoadRecordsPreview={() => void recordsQuery.refetch()}
         onExportRecords={handleExportRecords}
         onCleanupRecords={handleCleanupRecords}
         onExportStartTimeChange={setExportStartTime}

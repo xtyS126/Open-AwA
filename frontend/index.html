@@ -32,6 +32,79 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (() => {
+        const hostname = window.location.hostname
+        const localHostnames = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+        if (!localHostnames.has(hostname)) {
+          return
+        }
+
+        const retiredCacheName = 'anime-blog-v4'
+        const reloadMarkerName = 'openawa:legacy-service-worker-retired'
+        const isRetiredWorker = (worker) => {
+          if (!worker || !worker.scriptURL) {
+            return false
+          }
+
+          try {
+            const scriptUrl = new URL(worker.scriptURL, window.location.href)
+            return scriptUrl.origin === window.location.origin && scriptUrl.pathname === '/sw.js'
+          } catch (error) {
+            console.warn('无法解析待退役的 Service Worker 地址', error)
+            return false
+          }
+        }
+
+        const isRetiredWorkerRegistration = (registration) => {
+          const worker = registration.active || registration.waiting || registration.installing
+          return isRetiredWorker(worker)
+        }
+
+        const retireLegacyServiceWorker = async () => {
+          const controlledByRetiredWorker = 'serviceWorker' in navigator
+            && isRetiredWorker(navigator.serviceWorker.controller)
+          const unregisterTask = 'serviceWorker' in navigator
+            ? navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(
+                registrations
+                  .filter(isRetiredWorkerRegistration)
+                  .map((registration) => registration.unregister()),
+              ))
+            : Promise.resolve([])
+          const cacheCleanupTask = 'caches' in window
+            ? caches.delete(retiredCacheName)
+            : Promise.resolve(false)
+          const [unregisterResults] = await Promise.all([unregisterTask, cacheCleanupTask])
+
+          if (!controlledByRetiredWorker) {
+            try {
+              sessionStorage.removeItem(reloadMarkerName)
+            } catch (error) {
+              console.warn('无法清理 Service Worker 退役刷新标记', error)
+            }
+            return
+          }
+
+          if (!unregisterResults.some(Boolean)) {
+            return
+          }
+
+          try {
+            if (sessionStorage.getItem(reloadMarkerName) !== '1') {
+              sessionStorage.setItem(reloadMarkerName, '1')
+              window.location.reload()
+            }
+          } catch (error) {
+            // 无法持久化一次性标记时不自动刷新，避免异常环境中的刷新循环。
+            console.warn('无法保存 Service Worker 退役刷新标记', error)
+          }
+        }
+
+        retireLegacyServiceWorker().catch((error) => {
+          console.warn('清理历史 Service Worker 失败', error)
+        })
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

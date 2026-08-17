@@ -25,15 +25,16 @@ LABEL org.opencontainers.image.title="Open-AwA Frontend" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.base.name="nginx:1.27-alpine"
 
-# 安装 curl 用于健康检查（busybox wget 也可，但保持与后端一致）
-RUN apk add --no-cache curl \
+# 安装 curl（健康检查）与 openssl（init-ssl.sh 生成自签证书）
+RUN apk add --no-cache curl openssl \
     && rm -rf /var/cache/apk/*
 
 # 复制前端构建产物（从 builder 阶段，无需宿主机预构建）
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# 复制 nginx 配置（支持主配置 + SSL 配置占位）
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# 复制 nginx 配置（基础版 HTTP/2 + 自签 SSL，开发/测试环境用）
+# 生产环境由 docker-compose.prod.yml 挂载 ssl.conf 覆盖
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
 
 # 创建非 root 用户运行的 nginx pid 目录与日志目录
 # nginx 默认以 root 启动 master 进程，worker 以 nginx 用户运行
@@ -42,10 +43,11 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN mkdir -p /var/run/nginx /var/log/nginx \
     && chown -R nginx:nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html /etc/nginx/conf.d
 
-# 容器内健康检查（前端静态资源 + 反代后端 ping）
+# 容器内健康检查（80 端口 /healthz 端点，nginx 配置中已对该端点例外不重定向）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:80/ || exit 1
+    CMD curl -fsS http://localhost:80/healthz || exit 1
 
-EXPOSE 80
+# 暴露 80（重定向到 443）与 443（HTTP/2 + SSL 主服务）
+EXPOSE 80 443
 
 CMD ["nginx", "-g", "daemon off;"]

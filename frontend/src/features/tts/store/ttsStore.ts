@@ -3,6 +3,8 @@
  * 管理音色选择、合成参数、流式状态、复刻进度。
  */
 import { createWithEqualityFn } from 'zustand/traditional'
+import { queryClient } from '@/shared/api/queryClient'
+import { ttsApi } from '../ttsApi'
 import type { SpeakerInfo } from '../ttsApi'
 
 interface TtsStore {
@@ -102,8 +104,12 @@ export const useTtsStore = createWithEqualityFn<TtsStore>((set, get) => ({
   loadSpeakers: async () => {
     set({ speakersLoading: true })
     try {
-      const { ttsApi } = await import('../ttsApi')
-      const data = await ttsApi.listSpeakers()
+      // 通过 React Query 共享缓存（与 AssistantContextPage / TtsPage 共用同一 queryKey）
+      // 避免多组件同时挂载时重复请求 /tts/speakers 端点
+      const data = await queryClient.fetchQuery({
+        queryKey: ['tts', 'speakers'],
+        queryFn: () => ttsApi.listSpeakers(),
+      })
       const speakers = data.speakers || []
       set({ speakers, speakersLoading: false })
       // 自动选择第一个可用音色

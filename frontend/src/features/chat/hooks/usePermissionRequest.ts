@@ -5,7 +5,7 @@
  * 用户回复后自动从列表中移除已处理的请求。
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { securityAPI } from '@/shared/api/securityApi'
+import { securityAPI, clearSseTicketCache } from '@/shared/api/securityApi'
 import { getCachedApiKey, API_BASE_URL } from '@/shared/api/client'
 import type { PermissionRequest } from '@/shared/api/securityApi'
 import { useAuthStore } from '@/shared/store/authStore'
@@ -144,16 +144,21 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
       } else if (apiKey) {
         // 无 Cookie 时通过一次性 ticket 建立 SSE 连接（SEC-16 修复）
         // ticket 一次性使用、60 秒过期，避免 API Key 泄露到 access log / Referer / 浏览器历史
+        // requestSseTicket 内部带内存缓存，VibeCodingPage 等其他调用方已申请时直接复用
         ticketAbortController = new AbortController()
         try {
-          const ticketResp = await securityAPI.requestSseTicket(ticketAbortController.signal)
+          const ticket = await securityAPI.requestSseTicket(ticketAbortController.signal)
           if (cancelled) return
-          const ticket = ticketResp.data.ticket
           eventSource = new EventSource(`${baseUrl}?ticket=${encodeURIComponent(ticket)}`)
         } catch (err) {
           // AbortError 是 cleanup 触发的预期行为，不记录警告
           if (cancelled || (err instanceof DOMException && err.name === 'AbortError')) {
             return
+          }
+          // 401 表示 ticket 缓存可能已失效（如服务端重启），清空缓存以便下次重试
+          const errStatus = (err as { response?: { status?: number } }).response?.status
+          if (errStatus === 401) {
+            clearSseTicketCache()
           }
           // SEC-16 防泄露设计：ticket 获取失败即放弃连接（绝不降级把明文 api_key 放进 URL），
           // 用户可见提示重试

@@ -4,13 +4,21 @@
  * 使用 Zustand 创建模块级单例 store，确保所有调用 useSharedSettingsData() 的组件
  * 共享同一份 configurations / providers 状态，避免每个 Tab Container 重复拉取。
  *
+ * 改造说明（fix-performance-remaining-issues-v2 模块 C3）：
+ *   - 原实现使用 lastLoadedAt + STALE_THRESHOLD_MS 自实现 SWR 5 分钟缓存
+ *   - 现改用 React Query 的 queryClient.fetchQuery，由 staleTime=60s 接管缓存策略
+ *   - 删除 loadingPromise 防重入锁（React Query 内置请求去重）
+ *   - 删除 lastLoadedAt 与 STALE_THRESHOLD_MS（React Query staleTime 接管）
+ *   - 保留 Zustand store 结构与 set/get 调用，外部 API 形状不变
+ *
  * 设计要点：
  * - configurations / providers / loadingConfigs 为全局状态，所有组件共享
- * - loadedTabsRef 改为 Set<string> 状态字段，记录已加载的 Tab
- * - loadModelsData 内置防重入锁（loadingRef），并发调用时复用同一 Promise
+ * - loadedTabs 为 Set<string> 状态字段，记录已加载的 Tab
+ * - loadModelsData 通过 queryClient.fetchQuery 复用 React Query 缓存
  */
 import { create } from 'zustand'
 import { modelsAPI, ModelConfiguration, ModelProvider } from '@/features/settings/modelsApi'
+import { queryClient } from '@/shared/api/queryClient'
 import { appLogger } from '@/shared/utils/logger'
 
 interface SharedSettingsState {
@@ -18,14 +26,10 @@ interface SharedSettingsState {
   providers: ModelProvider[]
   loadingConfigs: boolean
   loadedTabs: Set<string>
-  /** 防重入锁：正在进行中的加载 Promise */
-  loadingPromise: Promise<void> | null
-  /** 数据加载时间戳，用于 stale-while-revalidate 策略 */
-  lastLoadedAt: number
   setConfigurations: (configs: ModelConfiguration[]) => void
   setProviders: (providers: ModelProvider[]) => void
   setLoadingConfigs: (loading: boolean) => void
-  /** 加载模型配置和供应商列表（并行请求，防重入） */
+  /** 加载模型配置和供应商列表（通过 React Query 缓存复用） */
   loadModelsData: (force?: boolean) => Promise<void>
   /** 标记 Tab 缓存已失效 */
   invalidateTabCache: (tabs: string[]) => void
@@ -37,60 +41,52 @@ interface SharedSettingsState {
   reset: () => void
 }
 
-/** 数据过期阈值：5 分钟内不重复拉取 */
-const STALE_THRESHOLD_MS = 5 * 60 * 1000
-
 export const useSharedSettingsStore = create<SharedSettingsState>((set, get) => ({
   configurations: [],
   providers: [],
   loadingConfigs: false,
   loadedTabs: new Set<string>(),
-  loadingPromise: null,
-  lastLoadedAt: 0,
 
   setConfigurations: (configs) => set({ configurations: configs }),
   setProviders: (providers) => set({ providers }),
   setLoadingConfigs: (loading) => set({ loadingConfigs: loading }),
 
   loadModelsData: async (force = false) => {
-    const state = get()
-    // 防重入：如果正在加载，复用现有 Promise
-    if (state.loadingPromise) {
-      return state.loadingPromise
-    }
-    // stale-while-revalidate：5 分钟内不强制刷新
-    const now = Date.now()
-    if (!force && state.lastLoadedAt && now - state.lastLoadedAt < STALE_THRESHOLD_MS) {
-      return
+    // force=true 时失效缓存，强制下次 fetchQuery 重新拉取
+    if (force) {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['billing', 'configurations'] }),
+        queryClient.invalidateQueries({ queryKey: ['billing', 'providers'] }),
+      ])
     }
 
-    const promise = (async () => {
-      set({ loadingConfigs: true })
-      try {
-        const [configsRes, providersRes] = await Promise.all([
-          modelsAPI.getConfigurations(),
-          modelsAPI.getProviders(),
-        ])
-        const configs: ModelConfiguration[] = configsRes.data.configurations || []
-        const providers: ModelProvider[] = providersRes.data.providers || []
-        set({
-          configurations: configs,
-          providers,
-          lastLoadedAt: Date.now(),
-        })
-      } catch {
-        appLogger.error({
-          event: 'models_data_load_failed',
-          message: 'Failed to load models data',
-          module: 'settings',
-        })
-      } finally {
-        set({ loadingConfigs: false, loadingPromise: null })
-      }
-    })()
-
-    set({ loadingPromise: promise })
-    return promise
+    set({ loadingConfigs: true })
+    try {
+      // 通过 queryClient.fetchQuery 复用 React Query 缓存：
+      // - staleTime=60s 内复用缓存，避免多 Tab 切换重复请求
+      // - 并发调用自动去重（React Query 内置请求去重，替代原 loadingPromise 锁）
+      const [configsRes, providersRes] = await Promise.all([
+        queryClient.fetchQuery({
+          queryKey: ['billing', 'configurations'],
+          queryFn: () => modelsAPI.getConfigurations(),
+        }),
+        queryClient.fetchQuery({
+          queryKey: ['billing', 'providers'],
+          queryFn: () => modelsAPI.getProviders(),
+        }),
+      ])
+      const configs: ModelConfiguration[] = configsRes.data.configurations || []
+      const providers: ModelProvider[] = providersRes.data.providers || []
+      set({ configurations: configs, providers })
+    } catch {
+      appLogger.error({
+        event: 'models_data_load_failed',
+        message: 'Failed to load models data',
+        module: 'settings',
+      })
+    } finally {
+      set({ loadingConfigs: false })
+    }
   },
 
   invalidateTabCache: (tabs) => {
@@ -116,7 +112,5 @@ export const useSharedSettingsStore = create<SharedSettingsState>((set, get) => 
       providers: [],
       loadingConfigs: false,
       loadedTabs: new Set<string>(),
-      loadingPromise: null,
-      lastLoadedAt: 0,
     }),
 }))

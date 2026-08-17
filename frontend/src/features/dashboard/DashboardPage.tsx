@@ -1,10 +1,11 @@
 /**
  * 仪表盘页面 —— 对齐 Canvas 设计参考 (open-awa-canvas/pages/dashboard.html)。
  * 结构：页面标题 / 4 列统计卡片 / 2 列折线图 / 4 列系统资源 / 最近活动表格 / 业务数据分区。
- * 数据获取逻辑保持不变，仅重构布局与可视化呈现。
+ * 数据获取使用 React Query，自动复用缓存并避免首秒请求风暴。
  * 业务数据分区合并自原 DataDashboard（对话数/工具调用/平均响应时间/用户反馈/角色使用分布）。
  */
-import { useState, useEffect, useMemo, memo, type ReactNode } from 'react'
+import { useMemo, memo, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { BarChart3, MessageSquare, Wrench, Activity, ThumbsUp } from 'lucide-react'
 import { behaviorAPI, skillsAPI, pluginsAPI, memoryAPI } from '@/shared/api/api'
 import { billingAPI } from '@/features/billing/billingApi'
@@ -289,59 +290,67 @@ const ACTIVITY_RECORDS: ActivityRecord[] = [
 ]
 
 function DashboardPage() {
-  const [stats, setStats] = useState<BehaviorStats | null>(null)
-  const [billingStats, setBillingStats] = useState<BillingStats | null>(null)
-  const [systemOverview, setSystemOverview] = useState<SystemOverview>({
-    skillsTotal: 0,
-    skillsEnabled: 0,
-    pluginsTotal: 0,
-    pluginsEnabled: 0,
-    longTermMemories: 0,
+  /* 6 个数据源均通过 React Query 获取，自动复用缓存并避免首秒请求风暴。
+     queryFn 内提取 AxiosResponse.data，使 useQuery 的 data 直接为业务数据。 */
+  const { data: behaviorStats, isLoading: loadingBehaviors, error: errorBehaviors } = useQuery<BehaviorStats>({
+    queryKey: ['behaviors', 'stats'],
+    queryFn: async () => {
+      const response = await behaviorAPI.getStats()
+      return response.data
+    },
   })
-  const [loading, setLoading] = useState(true)
-  /* 业务数据状态 —— 合并自 DataDashboard，独立于系统概览，加载失败时为 null */
-  const [dataStats, setDataStats] = useState<DataStats | null>(null)
-  /* 加载失败错误态 —— 任一数据源失败即展示错误提示，不显示假空数据 */
-  const [error, setError] = useState<string | null>(null)
+  const { data: billingCost, isLoading: loadingBilling, error: errorBilling } = useQuery<BillingStats>({
+    queryKey: ['billing', 'cost', 'monthly'],
+    queryFn: async () => {
+      const response = await billingAPI.getCostStatistics({ period: 'monthly' })
+      return response.data
+    },
+  })
+  const { data: skills, isLoading: loadingSkills, error: errorSkills } = useQuery({
+    queryKey: ['skills', 'list'],
+    queryFn: async () => {
+      const response = await skillsAPI.getAll()
+      return response.data
+    },
+  })
+  const { data: plugins, isLoading: loadingPlugins, error: errorPlugins } = useQuery({
+    queryKey: ['plugins', 'list'],
+    queryFn: async () => {
+      const response = await pluginsAPI.getAll()
+      return response.data
+    },
+  })
+  const { data: longTermMemories, isLoading: loadingMemory, error: errorMemory } = useQuery({
+    queryKey: ['memory', 'long-term', 'list'],
+    queryFn: async () => {
+      const response = await memoryAPI.getLongTerm()
+      return response.data
+    },
+  })
+  const { data: dataStats, isLoading: loadingDataStats, error: errorDataStats } = useQuery<DataStats>({
+    queryKey: ['data', 'stats'],
+    queryFn: () => getDataStats(),
+  })
 
-  const loadStats = async () => {
-    setError(null)
-    try {
-      /* 并发加载所有数据源 —— 任一失败整体走 catch 渲染错误态，不吞错 */
-      const [behaviorRes, billingRes, skillsRes, pluginsRes, memoryRes, dataRes] = await Promise.all([
-        behaviorAPI.getStats(7),
-        billingAPI.getCostStatistics({ period: 'monthly' }),
-        skillsAPI.getAll(),
-        pluginsAPI.getAll(),
-        memoryAPI.getLongTerm(),
-        getDataStats(),
-      ])
-      setStats(behaviorRes.data)
-      setBillingStats(billingRes.data)
-      setDataStats(dataRes)
+  /* 任一查询失败即展示错误提示，不显示假空数据 */
+  const hasError = Boolean(errorBehaviors || errorBilling || errorSkills || errorPlugins || errorMemory || errorDataStats)
 
-      /* 从真实接口汇总系统概览（API 返回裸数组） */
-      const skillsList = Array.isArray(skillsRes.data) ? skillsRes.data : []
-      const pluginsList = Array.isArray(pluginsRes.data) ? pluginsRes.data : []
-      const memoriesList = Array.isArray(memoryRes.data) ? memoryRes.data : []
+  /* 任一查询加载中即展示骨架屏 */
+  const loading = loadingBehaviors || loadingBilling || loadingSkills || loadingPlugins || loadingMemory || loadingDataStats
 
-      setSystemOverview({
-        skillsTotal: skillsList.length,
-        skillsEnabled: skillsList.filter((s: { enabled?: boolean }) => s.enabled).length,
-        pluginsTotal: pluginsList.length,
-        pluginsEnabled: pluginsList.filter((p: { enabled?: boolean }) => p.enabled).length,
-        longTermMemories: memoriesList.length,
-      })
-    } catch {
-      setError('仪表盘数据加载失败，请稍后重试')
-    } finally {
-      setLoading(false)
+  /* 系统概览：从真实接口汇总（API 返回裸数组） */
+  const systemOverview = useMemo<SystemOverview>(() => {
+    const skillsList = Array.isArray(skills) ? skills : []
+    const pluginsList = Array.isArray(plugins) ? plugins : []
+    const memoriesList = Array.isArray(longTermMemories) ? longTermMemories : []
+    return {
+      skillsTotal: skillsList.length,
+      skillsEnabled: skillsList.filter((s: { enabled?: boolean }) => s.enabled).length,
+      pluginsTotal: pluginsList.length,
+      pluginsEnabled: pluginsList.filter((p: { enabled?: boolean }) => p.enabled).length,
+      longTermMemories: memoriesList.length,
     }
-  }
-
-  useEffect(() => {
-    loadStats()
-  }, [])
+  }, [skills, plugins, longTermMemories])
 
   /* 货币格式化 —— 保持原有实现 */
   const formatCurrency = (amount: number, currency: string = 'USD') => {
@@ -351,17 +360,17 @@ function DashboardPage() {
 
   /* 交互趋势数据映射 —— 缺失时返回空数组触发占位 */
   const interactionChartData = useMemo<ChartPoint[]>(() => {
-    const raw = stats?.chart_data || []
+    const raw = behaviorStats?.chart_data || []
     if (raw.length === 0) return []
     return raw.map(d => ({ label: d.day, value: d.interactions }))
-  }, [stats])
+  }, [behaviorStats])
 
   /* 成本趋势数据映射 */
   const costChartData = useMemo<ChartPoint[]>(() => {
-    const raw = billingStats?.trend || []
+    const raw = billingCost?.trend || []
     if (raw.length === 0) return []
     return raw.map(d => ({ label: d.date, value: d.cost }))
-  }, [billingStats])
+  }, [billingCost])
 
   /* Y 轴刻度生成 —— 取数据最大值向上取整生成 4 档刻度 */
   const buildYAxis = (maxValue: number, prefix = ''): string[] => {
@@ -434,9 +443,9 @@ function DashboardPage() {
     )
   }
 
-  const totalCost = billingStats?.total_cost || 0
-  const currency = billingStats?.currency || 'USD'
-  const totalInteractions = stats?.total_interactions || 0
+  const totalCost = billingCost?.total_cost || 0
+  const currency = billingCost?.currency || 'USD'
+  const totalInteractions = behaviorStats?.total_interactions || 0
 
   return (
     <div
@@ -452,7 +461,7 @@ function DashboardPage() {
       </div>
 
       {/* 数据加载失败错误提示 —— 不显示假空数据 */}
-      {error && <div className={styles.errorBanner}>{error}</div>}
+      {hasError && <div className={styles.errorBanner}>仪表盘数据加载失败，请稍后重试</div>}
 
       {/* ========== 统计卡片行 ========== */}
       <div className={styles.statGrid}>

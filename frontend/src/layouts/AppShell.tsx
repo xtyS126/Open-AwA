@@ -3,6 +3,7 @@ import { Outlet, useLocation } from '@/shared/routing'
 import GlobalTopBar from '@/shared/components/GlobalTopBar/GlobalTopBar'
 import DomainLocalNav from '@/shared/components/DomainLocalNav/DomainLocalNav'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
+import { getActiveDomain } from '@/shared/navigation/navigationSelectors'
 
 // P2: Sidebar 懒加载，减少主包体积
 const Sidebar = React.lazy(() => import('@/shared/components/Sidebar/Sidebar'))
@@ -13,7 +14,11 @@ const IssueFeedbackPanel = React.lazy(() => import('@/shared/components/IssueFee
 
 // App 布局壳：侧边栏 + 主内容区（移动端纵列：主内容 + 底部 Tab Bar）
 // 子路由通过 Outlet 渲染，主题同步逻辑由 App.tsx 顶层统一处理
-// 使用 location.pathname 作为 key 触发 CSS 动画实现页面切换淡入
+// 使用领域级 key 保留同域共享父壳；跨领域时仍触发页面切换淡入。
+export function getPageTransitionKey(pathname: string): string {
+  return getActiveDomain(pathname)?.id ?? pathname
+}
+
 export function AppShell() {
   const location = useLocation()
 
@@ -29,8 +34,8 @@ export function AppShell() {
         <main id="main-content" className="main-content" tabIndex={-1}>
           <DomainLocalNav />
           <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>}>
-            {/* 使用 location.pathname 作为 key，触发 CSS 动画实现页面切换淡入 */}
-            <div className="page-transition-wrapper" key={location.pathname}>
+            {/* 工作台 L2 共用领域 key，避免重挂 WorkbenchShell 与其运行时资源。 */}
+            <div className="page-transition-wrapper" key={getPageTransitionKey(location.pathname)}>
               <Outlet />
             </div>
           </Suspense>

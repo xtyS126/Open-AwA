@@ -12,8 +12,16 @@ const BASE = '/terminal'
 /** 终端会话信息 */
 export interface TerminalSession {
   session_id: string
-  cwd: string
+  project_id: string
   active: boolean
+}
+
+/** 创建普通终端会话的响应 */
+export interface TerminalCreateResponse {
+  ok: boolean
+  session_id?: string
+  project_id?: string
+  error?: string
 }
 
 /** 命令执行结果 */
@@ -26,8 +34,10 @@ export interface CommandResult {
 }
 
 /** 创建终端会话 */
-export async function createSession(cwd?: string): Promise<{ ok: boolean; session_id?: string; cwd?: string; error?: string }> {
-  const { data } = await api.post(BASE + '/sessions', null, { params: { cwd } })
+export async function createSession(projectId: string): Promise<TerminalCreateResponse> {
+  const { data } = await api.post(BASE + '/sessions', null, {
+    params: { project_id: projectId },
+  })
   return data
 }
 
@@ -53,7 +63,7 @@ export async function listSessions(): Promise<{ ok: boolean; sessions: TerminalS
 /** PTY 终端会话信息 */
 export interface PTYSessionInfo {
   session_id: string
-  cwd: string
+  project_id: string
   active: boolean
   shell?: string
   cols?: number
@@ -62,8 +72,8 @@ export interface PTYSessionInfo {
 
 /** PTY 会话创建请求参数 */
 export interface PTYCreateRequest {
-  /** 子进程工作目录（不传使用后端默认） */
-  cwd?: string
+  /** 工作台项目 ID */
+  projectId: string
   /** 初始列数，默认 80 */
   cols?: number
   /** 初始行数，默认 24 */
@@ -76,7 +86,7 @@ export interface PTYCreateRequest {
 export interface PTYCreateResponse {
   ok: boolean
   session_id?: string
-  cwd?: string
+  project_id?: string
   cols?: number
   rows?: number
   shell?: string
@@ -96,9 +106,9 @@ export interface PTYSnapshot {
  * 与普通 TerminalSession 不同，PTY 会话长期持有交互式 shell 进程，
  * 支持断线重连与屏幕恢复。
  */
-export async function createPtySession(params: PTYCreateRequest = {}): Promise<PTYCreateResponse> {
+export async function createPtySession(params: PTYCreateRequest): Promise<PTYCreateResponse> {
   const { data } = await api.post(BASE + '/sessions/pty', {
-    cwd: params.cwd,
+    project_id: params.projectId,
     cols: params.cols ?? 80,
     rows: params.rows ?? 24,
     command: params.command,

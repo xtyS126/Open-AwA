@@ -14,11 +14,11 @@ interface GitPanelProps {
 
 const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
   // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
-  const { gitBranch, gitChanges, setGitStatus, projectDir } = useCodingStore(s => ({
+  const { gitBranch, gitChanges, setGitStatus, projectId } = useCodingStore(s => ({
     gitBranch: s.gitBranch,
     gitChanges: s.gitChanges,
     setGitStatus: s.setGitStatus,
-    projectDir: s.projectDir,
+    projectId: s.projectId,
   }), shallow);
   const [loading, setLoading] = useState(true);
   const [commitMsg, setCommitMsg] = useState('');
@@ -26,14 +26,22 @@ const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
   const [activeTab, setActiveTab] = useState<'changes' | 'log'>('changes');
 
   const loadStatus = useCallback(async () => {
+    const request = useCodingStore.getState().captureRequestContext();
+    if (!projectId || !request) {
+      setLoading(false);
+      setLog([]);
+      return;
+    }
     try {
       setLoading(true);
-      const status = await codingApi.gitStatus(projectDir || undefined);
+      const status = await codingApi.gitStatus(request.projectId);
+      if (!useCodingStore.getState().isRequestContextCurrent(request)) return;
       // 区分联合类型：仅在 is_repo 为 true 时提取 branch/changes
       if (status.is_repo) {
         setGitStatus(status.branch || '', status.changes || []);
       }
-      const logData = await codingApi.gitLog(20, projectDir || undefined);
+      const logData = await codingApi.gitLog(request.projectId, 20);
+      if (!useCodingStore.getState().isRequestContextCurrent(request)) return;
       if (logData.commits) setLog(logData.commits);
     } catch (e) {
       // 状态加载失败时记录警告，避免静默吞异常导致用户无反馈
@@ -46,7 +54,7 @@ const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
     } finally {
       setLoading(false);
     }
-  }, [projectDir, setGitStatus]);
+  }, [projectId, setGitStatus]);
 
   useEffect(() => {
     loadStatus();
@@ -54,8 +62,11 @@ const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
 
   const handleCommit = async () => {
     if (!commitMsg.trim()) return;
+    const request = useCodingStore.getState().captureRequestContext();
+    if (!request) return;
     try {
-      await codingApi.gitCommit(commitMsg, undefined, projectDir || undefined);
+      await codingApi.gitCommit(request.projectId, commitMsg);
+      if (!useCodingStore.getState().isRequestContextCurrent(request)) return;
       setCommitMsg('');
       await loadStatus();
     } catch (e) {

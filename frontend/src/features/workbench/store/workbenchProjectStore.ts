@@ -13,6 +13,14 @@ import type {
   WorkbenchProjectSummary,
 } from '../workbenchTypes'
 import { useWorkbenchRuntimeStore } from './workbenchRuntimeStore'
+import {
+  abortWorkbenchPreparedProjectSwitches,
+  collectWorkbenchProjectSwitchBlockers,
+  commitWorkbenchPreparedProjectSwitches,
+  prepareWorkbenchProjectSwitchParticipants,
+  syncWorkbenchCommittedProject,
+  type WorkbenchProjectSwitchDecision,
+} from '../workbenchProjectSwitchCoordinator'
 
 export const WORKBENCH_CONTEXT_CHANNEL = 'openawa-workbench-context'
 
@@ -32,9 +40,12 @@ interface WorkbenchProjectStore {
   requestEpoch: number
   codingSnapshots: Record<string, CodingProjectSnapshot>
   hydrate: (scopeKey: string, options?: HydrateOptions) => Promise<void>
-  selectProject: (projectId: WorkbenchProjectId) => Promise<void>
+  selectProject: (
+    projectId: WorkbenchProjectId,
+    decision?: WorkbenchProjectSwitchDecision,
+  ) => Promise<void>
   clearProject: () => Promise<void>
-  confirmSwitch: () => Promise<void>
+  confirmSwitch: (decision: WorkbenchProjectSwitchDecision) => Promise<void>
   cancelSwitch: () => void
   resetForServerChange: () => void
 }
@@ -69,6 +80,15 @@ function broadcastContextChanged(scopeKey: string, etag: string | null): void {
   }
   channel.postMessage(message)
   channel.close()
+}
+
+function activateRuntimeProject(
+  projectId: WorkbenchProjectId | null,
+  generation: number,
+): void {
+  if (projectId) {
+    useWorkbenchRuntimeStore.getState().activateProject(projectId, generation)
+  }
 }
 
 const initialState = () => ({
@@ -122,14 +142,17 @@ export const useWorkbenchProjectStore = createWithEqualityFn<WorkbenchProjectSto
         ? mergeProject(list.items, context.project)
         : list.items
       const nextProjectId = context.project?.id ?? null
+      const nextGeneration = latest.switchGeneration + (latest.currentProjectId === nextProjectId ? 0 : 1)
       set({
         projects,
         currentProjectId: nextProjectId,
         contextEtag: context.etag,
-        switchGeneration: latest.switchGeneration + (latest.currentProjectId === nextProjectId ? 0 : 1),
+        switchGeneration: nextGeneration,
         phase: projectPhase(projects, context.project),
         error: null,
       })
+      syncWorkbenchCommittedProject(nextProjectId, nextGeneration)
+      activateRuntimeProject(nextProjectId, nextGeneration)
     }).catch((error: unknown) => {
       const latest = get()
       if (latest.activeScopeKey === scopeKey && latest.requestEpoch === nextEpoch) {
@@ -145,34 +168,103 @@ export const useWorkbenchProjectStore = createWithEqualityFn<WorkbenchProjectSto
     return request
   },
 
-  selectProject: async (projectId) => {
+  selectProject: async (projectId, decision) => {
     const before = get()
     if (before.currentProjectId === projectId && before.phase === 'ready') return
+    const blockers = collectWorkbenchProjectSwitchBlockers(before.currentProjectId, projectId)
+    const unresolvedBlockers = blockers.filter((blocker) => (
+      blocker.kind !== 'dirty-files' || decision === undefined
+    ))
+    if (unresolvedBlockers.length > 0) {
+      set({
+        pendingSwitch: {
+          fromProjectId: before.currentProjectId,
+          toProjectId: projectId,
+          blockers: unresolvedBlockers,
+        },
+        error: null,
+      })
+      return
+    }
     const scopeKey = before.activeScopeKey
     const epoch = before.requestEpoch
     const previousPhase = before.phase
     set({ phase: 'switching', error: null })
+    let prepared = [] as Awaited<ReturnType<typeof prepareWorkbenchProjectSwitchParticipants>>
+    let committedContext: Awaited<ReturnType<typeof workbenchApi.patchContext>> | null = null
     try {
+      prepared = await prepareWorkbenchProjectSwitchParticipants(
+        before.currentProjectId,
+        projectId,
+        decision,
+      )
       const context = await workbenchApi.patchContext(projectId, before.contextEtag)
+      committedContext = context
       const latest = get()
-      if (latest.activeScopeKey !== scopeKey || latest.requestEpoch !== epoch) return
+      if (latest.activeScopeKey !== scopeKey || latest.requestEpoch !== epoch) {
+        await abortWorkbenchPreparedProjectSwitches(prepared)
+        return
+      }
       const projects = context.project
         ? mergeProject(latest.projects, context.project)
         : latest.projects
+      const nextGeneration = latest.switchGeneration + 1
       set({
         projects,
         currentProjectId: context.project?.id ?? null,
         contextEtag: context.etag,
-        switchGeneration: latest.switchGeneration + 1,
+        switchGeneration: nextGeneration,
         phase: projectPhase(projects, context.project),
         pendingSwitch: null,
         error: null,
       })
+      activateRuntimeProject(context.project?.id ?? null, nextGeneration)
+      await commitWorkbenchPreparedProjectSwitches(prepared, nextGeneration)
       if (scopeKey) broadcastContextChanged(scopeKey, context.etag)
     } catch (error) {
+      let compensation: Awaited<ReturnType<typeof workbenchApi.patchContext>> | null = null
+      if (committedContext) {
+        try {
+          compensation = await workbenchApi.patchContext(
+            before.currentProjectId,
+            committedContext.etag,
+          )
+        } catch (compensationError) {
+          await abortWorkbenchPreparedProjectSwitches(prepared)
+          const latest = get()
+          if (latest.activeScopeKey === scopeKey && latest.requestEpoch === epoch) {
+            set({ phase: 'error', error: getWorkbenchErrorMessage(compensationError) })
+            if (scopeKey) {
+              await get().hydrate(scopeKey, { force: true }).catch(() => undefined)
+            }
+          }
+          throw error
+        }
+      }
+      await abortWorkbenchPreparedProjectSwitches(prepared)
       const latest = get()
       if (latest.activeScopeKey === scopeKey && latest.requestEpoch === epoch) {
-        set({ phase: previousPhase, error: getWorkbenchErrorMessage(error) })
+        const compensatedProjects = compensation?.project
+          ? mergeProject(latest.projects, compensation.project)
+          : latest.projects
+        set({
+          projects: compensatedProjects,
+          currentProjectId: compensation
+            ? compensation.project?.id ?? null
+            : before.currentProjectId,
+          contextEtag: compensation?.etag ?? before.contextEtag,
+          switchGeneration: compensation
+            ? latest.switchGeneration + 1
+            : latest.switchGeneration,
+          phase: compensation
+            ? projectPhase(compensatedProjects, compensation.project)
+            : previousPhase,
+          error: getWorkbenchErrorMessage(error),
+        })
+        activateRuntimeProject(
+          compensation ? compensation.project?.id ?? null : before.currentProjectId,
+          compensation ? latest.switchGeneration + 1 : latest.switchGeneration,
+        )
         if (scopeKey && isWorkbenchContextConflict(error)) {
           void get().hydrate(scopeKey, { force: true }).catch(() => undefined)
         }
@@ -191,14 +283,16 @@ export const useWorkbenchProjectStore = createWithEqualityFn<WorkbenchProjectSto
       const context = await workbenchApi.patchContext(null, before.contextEtag)
       const latest = get()
       if (latest.activeScopeKey !== scopeKey || latest.requestEpoch !== epoch) return
+      const nextGeneration = latest.switchGeneration + 1
       set({
         currentProjectId: null,
         contextEtag: context.etag,
-        switchGeneration: latest.switchGeneration + 1,
+        switchGeneration: nextGeneration,
         phase: latest.projects.length > 0 ? 'no-selection' : 'no-projects',
         pendingSwitch: null,
         error: null,
       })
+      syncWorkbenchCommittedProject(null, nextGeneration)
       if (scopeKey) broadcastContextChanged(scopeKey, context.etag)
     } catch (error) {
       const latest = get()
@@ -209,10 +303,10 @@ export const useWorkbenchProjectStore = createWithEqualityFn<WorkbenchProjectSto
     }
   },
 
-  confirmSwitch: async () => {
+  confirmSwitch: async (decision) => {
     const pending = get().pendingSwitch
     if (!pending) return
-    await get().selectProject(pending.toProjectId)
+    await get().selectProject(pending.toProjectId, decision)
   },
 
   cancelSwitch: () => set({ pendingSwitch: null }),
