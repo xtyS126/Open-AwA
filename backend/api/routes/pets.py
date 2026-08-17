@@ -98,6 +98,7 @@ def seed_builtin_pets(db: Session) -> int:
             existing.frame_height = catalog.DEFAULT_FRAME_HEIGHT
             existing.columns = catalog.DEFAULT_FRAME_COLUMNS
             existing.rows = catalog.DEFAULT_FRAME_ROWS
+            # 内置宠物帧数 = 列数 * 行数（全网格使用），与 manifest.parse_manifest 默认行为一致
             existing.frame_count = catalog.DEFAULT_FRAME_COLUMNS * catalog.DEFAULT_FRAME_ROWS
             existing.sprite_version = 1
             existing.animations = manifest.default_animations()

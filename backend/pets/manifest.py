@@ -26,6 +26,10 @@ from .catalog import (
 MAX_PET_FRAMES: int = 256
 MAX_ANIMATION_FPS: float = 60.0
 DEFAULT_ANIMATION_FPS: float = 8.0
+# 帧网格尺寸硬上限（防止整数溢出与内存炸弹）
+MAX_FRAME_DIMENSION: int = 4096
+MAX_GRID_COLUMNS: int = 64
+MAX_GRID_ROWS: int = 64
 
 
 @dataclass
@@ -169,6 +173,67 @@ def build_builtin_definition(pet: BuiltinPet, spritesheet_path: str) -> PetDefin
     )
 
 
+def _parse_safe_positive_int(value: Any, field_name: str, max_value: int, *, allow_zero: bool = False) -> int:
+    """安全解析正整数（或非负整数），防止非数值、NaN、Infinity、负数、溢出等注入。
+
+    校验规则（按顺序）：
+    1. 拒绝非 int/float 类型（str、list、dict、None 等）
+    2. 拒绝 NaN 和 Infinity（float('nan')/float('inf') 可绕过 int() 转换）
+    3. 拒绝超出 Python 安全整数范围的值（防止超大数字导致性能问题）
+    4. 拒绝 < 0 的值（allow_zero=True 时允许 0）
+    5. 拒绝超过 max_value 的值
+
+    Args:
+        value: 待解析的原始值（来自用户输入的 JSON）
+        field_name: 字段名（用于错误消息）
+        max_value: 允许的最大值
+        allow_zero: 是否允许值为 0（帧索引等 0-based 场景）
+
+    Returns:
+        int: 校验后的整数
+
+    Raises:
+        ValueError: 值不合法
+    """
+    # 规则 1：拒绝非数值类型（str 可能通过 int() 但行为不可预期；list/dict/None 直接拒绝）
+    if not isinstance(value, (int, float)):
+        raise ValueError(
+            f"pet {field_name} must be a number, got {type(value).__name__}: {value!r}"
+        )
+    # 规则 2：拒绝 NaN 和 Infinity（math.isnan/isinf 比 == 比较更可靠）
+    import math
+    if math.isnan(value) or math.isinf(value):
+        raise ValueError(
+            f"pet {field_name} must be a finite number, got {value}"
+        )
+    # 规则 3：拒绝超出 Python 安全整数范围的值
+    # Python int 理论上无上限，但超大值会导致后续乘法/内存分配异常
+    if isinstance(value, float):
+        if value > 2**53 or value < -(2**53):
+            raise ValueError(
+                f"pet {field_name} exceeds safe integer range, got {value}"
+            )
+    elif isinstance(value, int):
+        if value > 2**63 - 1:
+            raise ValueError(
+                f"pet {field_name} exceeds safe integer range, got {value}"
+            )
+    # 转为 int（float 的 .0 部分会被截断，已通过上面检查确保是整数值）
+    int_value = int(value)
+    # 规则 4：拒绝负数（allow_zero 时允许 0）
+    if int_value < 0 or (int_value == 0 and not allow_zero):
+        label = "non-negative" if allow_zero else "positive"
+        raise ValueError(
+            f"pet {field_name} must be a {label} integer, got {int_value}"
+        )
+    # 规则 5：拒绝超过上限
+    if int_value > max_value:
+        raise ValueError(
+            f"pet {field_name} {int_value} exceeds maximum {max_value}"
+        )
+    return int_value
+
+
 def parse_manifest(
     manifest: Dict[str, Any],
     pet_id_override: str,
@@ -188,18 +253,37 @@ def parse_manifest(
 
     frame_spec_in = manifest.get("frame") or {}
     spec = default_frame_spec(sprite_version)
-    spec["width"] = int(frame_spec_in.get("width", spec["width"]))
-    spec["height"] = int(frame_spec_in.get("height", spec["height"]))
-    spec["columns"] = int(frame_spec_in.get("columns", spec["columns"]))
-    spec["rows"] = int(frame_spec_in.get("rows", spec["rows"]))
-    if min(spec["width"], spec["height"], spec["columns"], spec["rows"]) <= 0:
-        raise ValueError("pet frame dimensions and grid counts must be non-zero")
+    # 使用安全整数解析替代裸 int()，防止非数值/NaN/Infinity/负数/溢出注入
+    spec["width"] = _parse_safe_positive_int(
+        frame_spec_in.get("width", spec["width"]), "frame.width", MAX_FRAME_DIMENSION
+    )
+    spec["height"] = _parse_safe_positive_int(
+        frame_spec_in.get("height", spec["height"]), "frame.height", MAX_FRAME_DIMENSION
+    )
+    spec["columns"] = _parse_safe_positive_int(
+        frame_spec_in.get("columns", spec["columns"]), "frame.columns", MAX_GRID_COLUMNS
+    )
+    spec["rows"] = _parse_safe_positive_int(
+        frame_spec_in.get("rows", spec["rows"]), "frame.rows", MAX_GRID_ROWS
+    )
 
-    frame_count = spec["columns"] * spec["rows"]
-    if frame_count > MAX_PET_FRAMES:
+    # 帧总数上限 = 列数 * 行数（网格容量），实际帧数不能超过此值
+    grid_capacity = spec["columns"] * spec["rows"]
+    if grid_capacity > MAX_PET_FRAMES:
         raise ValueError(
-            f"pet frame count {frame_count} exceeds maximum {MAX_PET_FRAMES}"
+            f"pet grid capacity {grid_capacity} ({spec['columns']}x{spec['rows']}) "
+            f"exceeds maximum {MAX_PET_FRAMES} frames"
         )
+
+    # 自定义 frame_count：允许用户注册时指定实际使用的帧数
+    # 未提供时默认为网格容量；提供时必须为正整数且 ≤ 网格容量
+    raw_frame_count = frame_spec_in.get("frame_count", frame_spec_in.get("frameCount"))
+    if raw_frame_count is not None:
+        frame_count = _parse_safe_positive_int(
+            raw_frame_count, "frame.frame_count", grid_capacity
+        )
+    else:
+        frame_count = grid_capacity
 
     # 校验帧网格精确覆盖真实精灵表尺寸
     if spritesheet_actual_dims is not None:
@@ -250,11 +334,18 @@ def _normalize_animations(
         raw_frames = list((raw or {}).get("frames") or [])
         if not raw_frames:
             raise ValueError(f"animation {name} must include at least one frame")
+        max_sprite_index = frame_count - 1
         for sprite_index in raw_frames:
-            if int(sprite_index) >= frame_count:
+            # 使用安全解析防止非数值/NaN/Infinity/负数注入
+            # 帧索引是 0-based，allow_zero=True
+            idx = _parse_safe_positive_int(
+                sprite_index, f"animation.{name}.frame", max_sprite_index,
+                allow_zero=True,
+            )
+            if idx > max_sprite_index:
                 raise ValueError(
-                    f"animation {name} references sprite index {sprite_index}, "
-                    f"but pet has {frame_count} frames"
+                    f"animation {name} references sprite index {idx}, "
+                    f"but pet has {frame_count} frames (valid range 0-{max_sprite_index})"
                 )
 
         fps_raw = (raw or {}).get("fps")

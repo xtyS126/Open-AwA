@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 pets 模块单元测试。
 
@@ -186,7 +186,7 @@ def test_parse_manifest_rejects_animation_frame_out_of_range(tmp_path):
     """动画帧索引超出网格时拒绝。"""
     bad = _base_manifest(sprite_version=2)
     bad["animations"] = {"idle": {"frames": [88]}}
-    with pytest.raises(ValueError, match="references sprite index 88"):
+    with pytest.raises(ValueError, match="88 exceeds maximum"):
         manifest.parse_manifest(
             manifest=bad,
             pet_id_override="bad",
