@@ -66,8 +66,18 @@ services:
       - BACKEND_URL=http://backend:8000
     ports:
       - "${FRONTEND_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       - openawa-frontend-logs:/var/log/nginx
+      # 挂载自签证书生成脚本（容器启动时由 command 调用）
+      - ./init-ssl.sh:/etc/nginx/init-ssl.sh:ro
+      # SSL 证书持久化目录（宿主机 deploy/ssl/ 对应容器 /etc/nginx/ssl/）
+      # init-ssl.sh 生成的 nginx.crt/nginx.key 会持久化到宿主机，重启不丢失
+      - ./ssl:/etc/nginx/ssl
+    # 启动前先生成自签证书，再启动 nginx（HTTP/2 需 SSL 证书就绪）
+    # nginx 官方镜像 entrypoint 会自动执行 /docker-entrypoint.d/ 下的初始化脚本，
+    # 然后执行此处 command；init-ssl.sh 幂等，证书已存在时跳过
+    command: ["/bin/sh", "-c", "/etc/nginx/init-ssl.sh && nginx -g 'daemon off;'"]
     networks:
       - openawa-net
     depends_on:

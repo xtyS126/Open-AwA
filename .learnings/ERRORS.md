@@ -4921,3 +4921,172 @@ run-all: passed=8, failed=2, total=10
 - **Notes**: Playwright 隔离启动器将有效端口同步为 `BACKEND_PORT` 后，单元契约测试 1 项通过，fresh run-all 为 9/10，唯一失败是结构化 `llm_api_key_missing`，`health-basic` 返回 ok。
 
 ---
+
+## [ERR-20260812-001] canonical-root-drift-test-fixture
+
+**Logged**: 2026-08-12T07:45:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+工作台路径漂移测试把目录移走后又在原路径创建同名目录，导致 canonical path 未变化，错误地期待 `ProjectRootChanged`。
+
+### Error
+```text
+Failed: DID NOT RAISE <class 'workbench.errors.ProjectRootChanged'>
+```
+
+### Context
+- Command: `.venv\Scripts\python.exe -m pytest --no-cov tests/test_workbench_path_policy.py tests/test_workbench_runtime_registry.py -q`
+- 原 fixture 将 `project-a` 重命名为 `project-moved`，随后重新创建 `project-a`。
+- canonical root 表达规范路径身份，不表达目录内容或 inode 身份；重新创建同名路径不会形成 canonical path drift。
+
+### Suggested Fix
+路径漂移测试应让保存的 canonical root 与当前真实解析结果确实不同，例如改变 symlink/junction 最终目标，或用两个已解析目录构造明确的 canonical mismatch；目录内容替换应另立完整性模型，不能混入路径漂移断言。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/tests/test_workbench_path_policy.py, backend/workbench/path_policy.py
+
+### Resolution
+- **Resolved**: 2026-08-12T07:46:00+08:00
+- **Notes**: 测试改为使用另一个已解析目录的 canonical 值，随后路径策略与运行时 registry 共 17 项通过。
+
+---
+
+## [ERR-20260812-002] powershell-rg-bash-glob-path
+
+**Logged**: 2026-08-12T08:16:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+在 PowerShell 中把 Bash 风格的 `src/**/*.module.css` 作为路径直接传给 `rg`，Windows 将其视为非法文件名并中断组合检索。
+
+### Error
+```text
+rg: src/**/*.module.css: 文件名、目录名或卷标语法不正确。 (os error 123)
+```
+
+### Context
+- Command: `rg -n "surface-hover|bg-hover|hover.*color|color.*hover" src/styles/tokens.css src/**/*.module.css`
+- Environment: Windows PowerShell，仓库路径为 `D:\代码\Open-AwA`。
+- 该命令只读，失败前后均未修改目标源码。
+
+### Suggested Fix
+向 `rg` 传入明确目录，并使用 `--glob '*.module.css'` 过滤；组合检索中允许无匹配的查询应单独处理退出码。
+
+### Metadata
+- Reproducible: yes
+- Related Files: frontend/src/styles/tokens.css, frontend/src/features/workbench/WorkbenchShell.module.css
+- See Also: ERR-20260713-010, ERR-20260722-003, ERR-20260726-008
+
+### Resolution
+- **Resolved**: 2026-08-12T08:16:00+08:00
+- **Notes**: 后续检索改为目录范围加 `--glob`，不再把通配路径直接交给 `rg`。
+
+---
+
+## [ERR-20260812-003] vitest-css-module-raw-import
+
+**Logged**: 2026-08-12T08:28:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Vitest 中对 CSS Module 使用 `?raw` 默认导入没有得到字符串，导致令牌静态断言在 `matchAll` 前报类型错误。
+
+### Error
+```text
+TypeError: default.matchAll is not a function or its return value is not iterable
+```
+
+### Context
+- Command: `npx vitest run --no-coverage src/__tests__/layouts/AppShell.workbenchPersistence.test.tsx`
+- Test attempted: `import workbenchShellCss from '@/features/workbench/WorkbenchShell.module.css?raw'`
+- 失败属于测试装载方式错误，不是预期的未定义 CSS 令牌 RED。
+
+### Suggested Fix
+静态检查 CSS Module 源文本时复用仓库现有模式，通过 `node:fs` 的 `readFileSync` 与 `process.cwd()` 读取文件，不依赖 Vite 的 CSS Module 导入转换。
+
+### Metadata
+- Reproducible: yes
+- Related Files: frontend/src/__tests__/layouts/AppShell.workbenchPersistence.test.tsx
+
+### Resolution
+- **Resolved**: 2026-08-12T08:29:00+08:00
+- **Notes**: 改为 `readFileSync` 后测试得到有效 RED，明确列出未定义令牌；修复令牌后测试通过。
+
+---
+
+## [ERR-20260815-001] powershell-rg-option-after-double-dash
+
+**Logged**: 2026-08-15T08:21:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+在 PowerShell 中把 `rg` 的 `--glob` 选项放到 `--` 之后，导致选项被当作字面路径并产生 Windows 路径错误。
+
+### Error
+```text
+rg: -g: 系统找不到指定的文件。 (os error 2)
+rg: *.css: 文件名、目录名或卷标语法不正确。 (os error 123)
+```
+
+### Context
+- Command: `rg -n -- "--shadow-lg|--radius-lg|--space-5" frontend/src/styles frontend/src -g "*.css"`
+- Environment: Windows PowerShell，仓库路径为 `D:\代码\Open-AwA`。
+- 该命令只读；所查三个 CSS token 已通过直接文件命中确认存在。
+
+### Suggested Fix
+所有 `rg` 选项必须放在 `--` 之前，例如 `rg -n -g '*.css' -- '<pattern>' <directories>`；`--` 之后只传模式和路径。
+
+### Metadata
+- Reproducible: yes
+- Related Files: frontend/src/styles/tokens.css, frontend/src/features/workbench/WorkbenchShell.module.css
+- See Also: ERR-20260812-002, ERR-20260713-010
+
+### Resolution
+- **Resolved**: 2026-08-15T08:22:00+08:00
+- **Notes**: 后续命令统一把 `--glob` 等选项放在 `--` 之前。
+
+---
+
+## [ERR-20260815-002] powershell-rg-wildcard-path-recurrence
+
+**Logged**: 2026-08-15T09:24:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+在已有相关教训的同一迭代中再次把 `backend/requirements*.txt` 作为 `rg` 路径参数，PowerShell 未展开通配符并触发 Windows 非法路径错误。
+
+### Error
+```text
+rg: backend/requirements*.txt: 文件名、目录名或卷标语法不正确。 (os error 123)
+```
+
+### Context
+- Operation: 只读确认 psutil 依赖与现有使用点。
+- Environment: Windows PowerShell，仓库路径为 `D:\代码\Open-AwA`。
+- 其他显式路径命中已证明 `backend/requirements.txt` 声明 `psutil>=5.9.0,<7.0.0`；失败未修改源码。
+
+### Suggested Fix
+永远只向 `rg` 传目录或显式文件；文件名过滤使用置于 `--` 前的 `--glob 'requirements*.txt'`，或先用 `rg --files backend` 枚举。
+
+### Metadata
+- Reproducible: yes
+- Related Files: backend/requirements.txt
+- See Also: ERR-20260812-002, ERR-20260713-010, ERR-20260722-003
+
+### Resolution
+- **Resolved**: 2026-08-15T09:25:00+08:00
+- **Notes**: 后续本轮检索只使用目录加前置 `--glob` 或显式文件。
+
+---

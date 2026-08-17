@@ -1,0 +1,233 @@
+# =========================
+# Python 字节码与缓存
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# =========================
+# Python 虚拟环境
+# =========================
+.venv/
+.venv
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# =========================
+# Python 包构建输出
+# =========================
+build/
+dist/
+eggs/
+.eggs/
+*.egg-info/
+*.egg
+
+# =========================
+# Python 测试与代码质量工具
+# =========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# =========================
+# Node.js / 前端依赖
+# =========================
+node_modules/
+
+# =========================
+# 前端构建输出（重组后位于 frontend/）
+# =========================
+frontend/dist/
+dist/
+dist-ssr/
+
+# =========================
+# 前端测试报告（重组后位于 frontend/）
+# =========================
+frontend/test-results/
+frontend/coverage/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/playwright/.cache/
+frontend/electron-report.json
+frontend/playwright-full-report.json
+frontend/.vite-e2e-cache/
+frontend/playwright-results/
+frontend/test-results-temp/
+
+# =========================
+# TypeScript 构建信息
+# =========================
+*.tsbuildinfo
+.vite/
+.vite-cache/
+
+# =========================
+# 环境变量文件（含敏感信息）
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# 日志文件
+# =========================
+*.log
+logs/
+
+# =========================
+# 数据库文件（运行态生成，不提交）
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# =========================
+# 操作系统文件
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =========================
+# IDE / 编辑器
+# =========================
+.vscode/
+.idea/
+.trae/
+.github/
+.claude/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+
+# =========================
+# 项目运行时数据（重组后统一存放于 var/，整体忽略）
+# =========================
+var/
+/data/
+/uploads/
+.openawa/
+.agents/
+.learnings/
+
+# 审计工具二进制 & 报告
+scripts/opencodereview.exe
+reports/audit-result*.txt
+reports/ocr-review.txt
+
+# =========================
+# 参考 / 归档文件夹（非项目源码）
+# =========================
+参考用文件夹/
+archive/
+
+# =========================
+# 生成的报告文件（重组后位于 backend/）
+# =========================
+backend/scan_report.txt
+backend/COMPLETE_SCAN_REPORT.md
+backend/TEST_REPORT_*.md
+
+# =========================
+# 临时文件 / 杂项
+# =========================
+*.orig
+*.bak
+*.tmp
+# 临时翻译/数据处理脚本（与项目无关，仅本地使用）
+split_jsonl.py
+test_libre.py
+test_translate.py
+translate_chunk.py
+
+# =========================
+# Android 原生项目构建产物（重组后位于 android/）
+# =========================
+android/Open-AwA-Android/.gradle/
+android/Open-AwA-Android/build/
+android/Open-AwA-Android/app/build/
+android/Open-AwA-Android/local.properties
+android/Open-AwA-Android/.idea/
+android/Open-AwA-Android/captures/
+android/Open-AwA-Android/.cxx/
+android/Open-AwA-Android/screenshots/
+android/Open-AwA-Android/*.iml
+android/Open-AwA-Android/app/*.iml
+android/test-reports/
+
+# =========================
+# 工具二进制与临时输出
+# =========================
+.codex/
+Android-Cli/
+dogfood-output/
+*.codex-disposable
+backend/uploads/
+backend/downloads/
+backend/data/
+backend/logs/
+backend/workspace/
+backend/openawa.db
+backend/openawa.db.bak.*
+backend/_e2e_sim.db*
+backend/tmp_*/
+backend/pytest_full.log
+backend/test_restore.txt
+backend/tmp_*_write.txt
+backend/rename_files.py
+uploads/tool_outputs/*.txt
+plugins/twitter-monitor/data/
+
+# Android 测试截图与测试报告（临时产物）
+android_test_*.png
+
+# =========================
+# 临时调试脚本与会话产物
+# =========================
+# E2E 调试/扫描脚本与中间输出（dumps 行号、扫 commit、路由守卫检查等临时产物）
+.e2e_*
+frontend/.e2e_*
+
+# =========================
+# 桌面端构建产物（重组后位于 desktop/）
+# =========================
+desktop/resources/frontend/
+desktop/dist/
+
+# 本地敏感/临时文件（不入库）
+cookies.txt
+session.xml
+
+# =========================
+# SSL 证书（自签证书由 deploy/init-ssl.sh 在容器内生成，持久化到 deploy/ssl/）
+# 生产环境 Let's Encrypt 证书存储在 docker volume 中，不在此目录
+# =========================
+deploy/ssl/*.crt
+deploy/ssl/*.key
+deploy/ssl/*.pem
+deploy/ssl/*.csr
