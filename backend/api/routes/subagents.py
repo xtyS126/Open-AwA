@@ -6,6 +6,17 @@
 架构参考: https://yangcazz.github.io/2026/05/22/subagent-architecture-isolation/
 新增: SubagentOrchestrator 委派-收集-合并模式 API（隔离/资源限制/生命周期）
 v2: 内置专业 Agent（CodeReviewAgent/SearchAgent/DataAnalysisAgent）+ 图定义持久化 + 执行历史
+
+与 task_runtime 的关系（Task 19 统一子代理系统）:
+  - 本模块的图编排是 task_runtime 之上的编排层：委派执行复用
+    core/task_runtime/facade.py 的 facade.spawn_agent 派生真实 LLM 子代理，
+    而非仅靠内置规则"伪 Agent"。
+  - 内置 analyzer/planner/executor/reviewer/code_reviewer/searcher/data_analyst
+    保留为"离线回退"实现：LLM 委派不可用（代理类型未注册/运行时异常）时降级，
+    保证无 LLM 环境下图编排仍可演示，且不破坏现有 API 与测试。
+  - 功能重叠说明: 代理生命周期/会话查询与停止见 /api/task-runtime/agents/*，
+    任务清单见 /api/task-runtime/tasks/*，代理类型清单见 /api/task-runtime/agent-types。
+    本模块 /api/subagents/* 专注于图编排与委派-收集-合并模式，两端点均保留不删除。
 """
 
 import threading
@@ -19,6 +30,10 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
+from core.subagent_task_runtime_bridge import (
+    make_llm_aware_handler,
+    run_task_via_task_runtime,
+)
 from core.subagent import (
     SubAgentManager,
     AgentState,
@@ -327,41 +342,41 @@ async def _builtin_data_analyst(state: AgentState) -> AgentState:
 
 def _register_builtin_agents(manager: SubAgentManager):
     """注册内置子Agent。"""
-    # 基础流水线 Agent
+    # 基础流水线 Agent（注册 LLM 感知包装器：use_llm 时委派 task_runtime 真实子代理）
     manager.register_agent(
-        'analyzer', _builtin_analyzer,
+        'analyzer', make_llm_aware_handler('analyzer', _builtin_analyzer),
         description='分析用户意图和上下文',
         capabilities=['intent_detection', 'entity_extraction']
     )
     manager.register_agent(
-        'planner', _builtin_planner,
+        'planner', make_llm_aware_handler('planner', _builtin_planner),
         description='根据分析结果制定执行计划',
         capabilities=['task_decomposition', 'step_planning']
     )
     manager.register_agent(
-        'executor', _builtin_executor,
+        'executor', make_llm_aware_handler('executor', _builtin_executor),
         description='执行计划中的步骤',
         capabilities=['tool_calling', 'code_execution']
     )
     manager.register_agent(
-        'reviewer', _builtin_reviewer,
+        'reviewer', make_llm_aware_handler('reviewer', _builtin_reviewer),
         description='审查和验证执行结果',
         capabilities=['quality_check', 'result_validation']
     )
 
     # 专业 Agent（路线图 2.3.1 要求）
     manager.register_agent(
-        'code_reviewer', _builtin_code_reviewer,
+        'code_reviewer', make_llm_aware_handler('code_reviewer', _builtin_code_reviewer),
         description='代码审查 Agent：基于规则识别安全漏洞、性能问题、错误处理缺陷',
         capabilities=['static_analysis', 'security_audit', 'code_quality']
     )
     manager.register_agent(
-        'searcher', _builtin_searcher,
+        'searcher', make_llm_aware_handler('searcher', _builtin_searcher),
         description='搜索 Agent：关键词扩展与结构化搜索结果聚合',
         capabilities=['keyword_expansion', 'result_aggregation']
     )
     manager.register_agent(
-        'data_analyst', _builtin_data_analyst,
+        'data_analyst', make_llm_aware_handler('data_analyst', _builtin_data_analyst),
         description='数据分析 Agent：基础统计、分布分析、异常检测',
         capabilities=['statistical_analysis', 'outlier_detection', 'data_summary']
     )
@@ -371,10 +386,10 @@ def _register_builtin_agents(manager: SubAgentManager):
         'default_pipeline',
         description='默认的分析-规划-执行-审查流水线'
     )
-    graph.add_node('analyzer', _builtin_analyzer, '分析用户意图')
-    graph.add_node('planner', _builtin_planner, '制定执行计划')
-    graph.add_node('executor', _builtin_executor, '执行计划步骤')
-    graph.add_node('reviewer', _builtin_reviewer, '审查执行结果')
+    graph.add_node('analyzer', make_llm_aware_handler('analyzer', _builtin_analyzer), '分析用户意图')
+    graph.add_node('planner', make_llm_aware_handler('planner', _builtin_planner), '制定执行计划')
+    graph.add_node('executor', make_llm_aware_handler('executor', _builtin_executor), '执行计划步骤')
+    graph.add_node('reviewer', make_llm_aware_handler('reviewer', _builtin_reviewer), '审查执行结果')
     graph.add_edge('analyzer', 'planner')
     graph.add_edge('planner', 'executor')
     graph.add_edge('executor', 'reviewer')
@@ -386,8 +401,8 @@ def _register_builtin_agents(manager: SubAgentManager):
         'code_review_pipeline',
         description='代码审查流水线：分析 -> 审查 -> 反馈'
     )
-    code_review_graph.add_node('analyzer', _builtin_analyzer, '分析代码结构')
-    code_review_graph.add_node('code_reviewer', _builtin_code_reviewer, '执行代码审查')
+    code_review_graph.add_node('analyzer', make_llm_aware_handler('analyzer', _builtin_analyzer), '分析代码结构')
+    code_review_graph.add_node('code_reviewer', make_llm_aware_handler('code_reviewer', _builtin_code_reviewer), '执行代码审查')
     code_review_graph.add_edge('analyzer', 'code_reviewer')
     code_review_graph.set_entry_point('analyzer')
     code_review_graph.set_finish_point('code_reviewer')
@@ -644,9 +659,28 @@ async def orchestrator_delegate(
             detail=f"无效的合并策略: {req.merge_strategy}",
         )
 
-    # 内置执行器：基于已注册的子 Agent 处理任务
+    # 内置执行器：优先复用 task_runtime 派生真实 LLM 子代理，
+    # task_runtime 侧不可用（代理类型未注册/运行时异常）时回退到已注册的内置规则 Agent
     async def _builtin_executor(task: SubagentTask) -> SubagentResult:
-        """内置执行器：将任务路由到已注册的子 Agent。"""
+        """
+        委派执行器（Task 19 统一子代理系统）。
+
+        执行链路: subagents 编排 -> facade.spawn_agent（task_runtime 真实 LLM 子代理）
+        -> 回退内置规则执行器（离线降级，保持向后兼容）。
+        """
+        # 1. 尝试 task_runtime LLM 委派（metadata.agent_type / agent_name 解析代理类型）
+        try:
+            llm_result = await run_task_via_task_runtime(task)
+            if llm_result is not None:
+                return llm_result
+        except Exception as exc:
+            # 委派边界：LLM 委派异常时回退规则执行器，不中断编排流程
+            logger.bind(
+                module="subagents",
+                task_id=task.task_id,
+            ).warning(f"task_runtime 委派失败，回退内置规则执行器: {exc}")
+
+        # 2. 回退：内置规则执行器（原有逻辑）
         manager = _get_manager()
         # 通过 metadata.agent_name 指定要调用的子 Agent
         agent_name = task.metadata.get("agent_name", "analyzer")

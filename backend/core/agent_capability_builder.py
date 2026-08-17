@@ -89,7 +89,7 @@ async def collect_mcp_capabilities(context: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         # 延迟导入避免在不启用 MCP 的部署中扩大 Agent 启动依赖。
-        from mcp.manager import MCPManager
+        from mcp_integration.manager import MCPManager
         manager = MCPManager()
         if manager is None:
             return default_payload
@@ -333,7 +333,24 @@ def _append_builtin_tools(
     tools: List[Dict[str, Any]],
     seen_names: Set[str],
 ) -> None:
-    """追加内置工具；加载失败时直接抛错，禁止静默剔除工具。"""
+    """追加内置工具；加载失败时直接抛错，禁止静默剔除工具。
+
+    单一事实来源：优先从 ToolRegistry 派生 LLM 可见定义（含 enabled/permission 过滤），
+    注册表未填充（启动早期）时回退到 builtin_tool_manager 静态列表以保持兼容。
+    """
+    from core.tool_registry import tool_registry
+
+    # 注册表已接线（startup 调用 register_builtin_tools 后非空）时统一从注册表派生
+    definitions = tool_registry.get_definitions_for_llm()
+    if definitions:
+        for tool_definition in definitions:
+            function_name = tool_definition.get("function", {}).get("name", "")
+            if function_name and function_name not in seen_names:
+                seen_names.add(function_name)
+                tools.append(tool_definition)
+        return
+
+    # 启动早期注册表未填充：回退静态列表（与旧行为一致）
     from core.builtin_tools.manager import builtin_tool_manager
 
     for tool_definition in builtin_tool_manager.get_tool_definitions():

@@ -17,7 +17,7 @@ from .runners import run_foreground, run_background, stop_run
 from .serializers import read_transcript
 from .message_bus import send_message, send_teammate_msg, check_mailbox, read_message
 from .task_store import create_task, get_task, list_tasks, update_task, claim_task, sync_todo_snapshot
-from .hook_dispatcher import hook_dispatcher, HookEventType, HOOK_TASK_CREATED, HOOK_STOP
+from core.hook_manager import hook_manager, HookName
 from .permission_guard import permission_guard
 from .team_manager import (
     create_team as _create_team,
@@ -67,7 +67,7 @@ class TaskRuntimeFacade:
     async def shutdown(self) -> None:
         """停机前完成度校验，触发 Stop 钩子。"""
         from datetime import datetime, timezone
-        await hook_dispatcher.dispatch(HOOK_STOP, {
+        await hook_manager.trigger(HookName.STOP, data={
             "reason": "shutdown",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
@@ -84,6 +84,8 @@ class TaskRuntimeFacade:
         provider: Optional[str] = None,
         model: Optional[str] = None,
         background: bool = False,
+        fork_mode: bool = False,
+        force_foreground: bool = False,
         isolation: str = "inherit",
         parent_session_id: Optional[str] = None,
         root_chat_session_id: Optional[str] = None,
@@ -92,23 +94,42 @@ class TaskRuntimeFacade:
         """
         派生子代理。
         前台模式返回 AsyncGenerator（SSE 事件流），后台模式返回 Dict（含 agent_id）。
+
+        fork_mode 为 True 时以 Fork 模式启动子代理：克隆父 Agent 消息上下文，
+        启动后立即返回 fork_started 事件并异步执行，不阻塞主 Agent。
+        Fork 模式优先于 background（fork 分支内部已异步启动）。
+
+        force_foreground 为 True 时忽略代理定义的 background_default，
+        强制以前台模式执行并返回事件流；供编排层（如 subagents 委派）同步取回结果。
         """
         agent_def = agent_registry.get(agent_type)
         if not agent_def:
             return {"ok": False, "error": f"未知代理类型: {agent_type}，可用类型: {agent_registry.list_types()}"}
 
-        # PermissionGuard：校验代理类型的权限模式
-        if agent_def.permission_mode in ("plan",):
+        # PermissionGuard：校验代理类型的权限模式，并把过滤结果真正透传到执行上下文。
+        # 此前仅打日志丢弃；现在 permission_mode 会经 execution_tool_runtime._check_tool_permission
+        # 触发 PermissionGuard.evaluate 在子代理执行时真正拦截越权工具（如 plan 模式的写工具），
+        # allowed_tools 白名单再由 _create_subagent_execution_bundle 按 AgentDefinition 精确计算。
+        effective_context = dict(context or {})
+        if agent_def.permission_mode in ("plan", "dont_ask"):
             allowed_tools = permission_guard.get_allowed_tools(agent_def.permission_mode)
             if allowed_tools:
+                effective_context["allowed_tools"] = allowed_tools
+                effective_context["permission_mode"] = agent_def.permission_mode
                 logger.bind(
                     module="task_runtime",
                     agent_type=agent_type,
                     permission_mode=agent_def.permission_mode,
                 ).debug(f"代理权限模式: {agent_def.permission_mode}，限制工具: {allowed_tools}")
 
-        # background 参数优先；若未显式指定，使用代理定义的 background_default
-        use_background = background or agent_def.background_default
+        # background 参数优先；若未显式指定，使用代理定义的 background_default。
+        # Fork 模式优先：fork 分支内部已异步启动（create_task），无需再走 run_background
+        # force_foreground：编排层需要同步取回执行结果时强制前台模式，忽略 background_default
+        use_background = (
+            (background or agent_def.background_default)
+            and not fork_mode
+            and not force_foreground
+        )
         if use_background:
             return await run_background(
                 agent_type=agent_type,
@@ -118,7 +139,7 @@ class TaskRuntimeFacade:
                 model=model,
                 parent_session_id=parent_session_id,
                 root_chat_session_id=root_chat_session_id,
-                context=context,
+                context=effective_context,
             )
         else:
             return run_foreground(
@@ -129,7 +150,8 @@ class TaskRuntimeFacade:
                 model=model,
                 parent_session_id=parent_session_id,
                 root_chat_session_id=root_chat_session_id,
-                context=context,
+                context=effective_context,
+                fork_mode=fork_mode,
             )
 
     # ── SendMessage 能力 ─────────────────────────────────────────
@@ -285,7 +307,7 @@ class TaskRuntimeFacade:
 
         result = await asyncio.to_thread(create_task_record)
         # TaskCreated 钩子：任务创建时校验命名/描述/依赖合法性
-        await hook_dispatcher.dispatch(HOOK_TASK_CREATED, {
+        await hook_manager.trigger(HookName.TASK_CREATED, data={
             "task_id": result["task_id"],
             "subject": subject,
             "description": description,
@@ -442,9 +464,9 @@ class TaskRuntimeFacade:
 
     # ── 钩子注册能力 ─────────────────────────────────────────────
 
-    def register_hook(self, event_type: HookEventType, handler) -> None:
+    def register_hook(self, plugin_id: str, event_type: str, handler) -> None:
         """注册生命周期钩子处理函数，供插件调用。"""
-        hook_dispatcher.register(event_type, handler)
+        hook_manager.register(plugin_id, event_type, handler)
 
     # ── 团队管理能力（Phase 4）──────────────────────────────────
 
@@ -512,3 +534,11 @@ class TaskRuntimeFacade:
 
 # 模块级单例
 task_runtime = TaskRuntimeFacade()
+
+
+# 保持向后兼容的模块级别名
+# 新代码应使用 get_agent_lifecycle().get_task_runtime()
+def _get_task_runtime():
+    """从 AgentLifecycle 获取 TaskRuntime（支持测试隔离）"""
+    from core.agent_lifecycle import get_agent_lifecycle
+    return get_agent_lifecycle().get_task_runtime()

@@ -15,13 +15,11 @@ from db.models import Skill
 
 class SkillLoader:
     """
-    封装与SkillLoader相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    技能加载器，从数据库或YAML文件加载技能配置，支持配置解析和缓存。
     """
     def __init__(self, db_session):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化技能加载器，绑定数据库会话并创建内存缓存。
         """
         self.db_session = db_session
         self._cache: Dict[str, Dict[str, Any]] = {}
@@ -29,43 +27,23 @@ class SkillLoader:
         self._cache_timestamps: Dict[str, float] = {}
 
     def _get_cache_key(self, identifier: str, source: str) -> str:
-        """
-        处理get、cache、key相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return f"{source}:{identifier}"
 
     def _is_cache_valid(self, cache_key: str) -> bool:
-        """
-        处理is、cache、valid相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if cache_key not in self._cache_timestamps:
             return False
         return (time.time() - self._cache_timestamps[cache_key]) < self._cache_ttl
 
     def _set_cache(self, cache_key: str, value: Dict[str, Any]) -> None:
-        """
-        处理set、cache相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self._cache[cache_key] = value
         self._cache_timestamps[cache_key] = time.time()
 
     def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        """
-        处理get、from、cache相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if self._is_cache_valid(cache_key):
             return self._cache.get(cache_key)
         return None
 
     def _clear_cache(self, cache_key: Optional[str] = None) -> None:
-        """
-        处理clear、cache相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if cache_key:
             self._cache.pop(cache_key, None)
             self._cache_timestamps.pop(cache_key, None)
@@ -212,7 +190,6 @@ class SkillLoader:
     def convert_to_skill_model(self, config: Dict) -> Skill:
         """
         处理convert、to、skill、model相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         skill_id = config.get('id') or str(uuid.uuid4())
         name = config.get('name')
@@ -318,10 +295,6 @@ class SkillLoader:
         return True
 
     def enable_skill(self, skill_name: str) -> bool:
-        """
-        处理enable、skill相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         skill = self.db_session.query(Skill).filter(Skill.name == skill_name).first()
         if not skill:
             logger.warning(f"Skill not found for enabling: {skill_name}")
@@ -334,10 +307,6 @@ class SkillLoader:
         return True
 
     def disable_skill(self, skill_name: str) -> bool:
-        """
-        处理disable、skill相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         skill = self.db_session.query(Skill).filter(Skill.name == skill_name).first()
         if not skill:
             logger.warning(f"Skill not found for disabling: {skill_name}")

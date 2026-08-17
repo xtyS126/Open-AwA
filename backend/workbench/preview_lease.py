@@ -11,7 +11,11 @@ from enum import Enum
 from typing import Awaitable, Callable
 
 from workbench.errors import WorkbenchError
-from workbench.runtime_registry import RuntimeResourceType, WorkbenchRuntimeRegistry
+from workbench.runtime_registry import (
+    RuntimeResourceType,
+    WorkbenchRuntimeRegistry,
+    runtime_registry,
+)
 
 
 class PreviewLeaseNotFound(WorkbenchError):
@@ -53,7 +57,10 @@ class PreviewLease:
 
 
 VerifyProject = Callable[[], Awaitable[None] | None]
-VerifyListener = Callable[[PreviewSessionKind, str, int], Awaitable[bool] | bool]
+VerifyListener = Callable[
+    [str, str, PreviewSessionKind, str, int],
+    Awaitable[bool] | bool,
+]
 NowFactory = Callable[[], datetime]
 
 
@@ -93,11 +100,18 @@ class PreviewLeaseRegistry:
     ) -> PreviewLease:
         if not 1 <= port <= 65535:
             raise PreviewLeaseForbidden()
+        await self._purge_expired()
 
         async def verify_all() -> None:
             await _resolve_callback_result(verify_project())
             listener_owned = await _resolve_callback_result(
-                verify_listener(session_kind, session_id, port)
+                verify_listener(
+                    str(user_id),
+                    str(project_id),
+                    session_kind,
+                    session_id,
+                    port,
+                )
             )
             if listener_owned is not True:
                 raise PreviewLeaseForbidden()
@@ -182,23 +196,53 @@ class PreviewLeaseRegistry:
         verify_project: VerifyProject,
         verify_listener: VerifyListener,
     ) -> PreviewLease:
-        lease = await self.get_owned(
+        lease = await self.consume(
             preview_id=preview_id,
             user_id=user_id,
             project_id=project_id,
+            verify_project=verify_project,
+            verify_listener=verify_listener,
         )
-        await _resolve_callback_result(verify_project())
-        listener_owned = await _resolve_callback_result(
-            verify_listener(lease.session_kind, lease.session_id, lease.port)
-        )
-        if listener_owned is not True:
-            raise PreviewLeaseForbidden()
         renewed = replace(lease, expires_at=self._now() + self.TTL)
         async with self._lock:
             if self._leases.get(preview_id) != lease:
                 raise PreviewLeaseNotFound()
             self._leases[preview_id] = renewed
         return renewed
+
+    async def consume(
+        self,
+        *,
+        preview_id: str,
+        user_id: str,
+        project_id: str,
+        verify_project: VerifyProject,
+        verify_listener: VerifyListener,
+    ) -> PreviewLease:
+        """每次代理消费前重验项目和 listener，但不延长租约。"""
+        lease = await self.get_owned(
+            preview_id=preview_id,
+            user_id=user_id,
+            project_id=project_id,
+        )
+        try:
+            await _resolve_callback_result(verify_project())
+            listener_owned = await _resolve_callback_result(
+                verify_listener(
+                    lease.user_id,
+                    lease.project_id,
+                    lease.session_kind,
+                    lease.session_id,
+                    lease.port,
+                )
+            )
+        except Exception:
+            await self._invalidate(lease)
+            raise
+        if listener_owned is not True:
+            await self._invalidate(lease)
+            raise PreviewLeaseForbidden()
+        return lease
 
     async def revoke(self, *, preview_id: str, user_id: str, project_id: str) -> None:
         lease = await self.get_owned(
@@ -240,3 +284,26 @@ class PreviewLeaseRegistry:
             resource_id=lease.preview_id,
         )
 
+    async def _invalidate(self, lease: PreviewLease) -> None:
+        """仅在租约仍是当前版本时移除，并同步释放运行时占用。"""
+        removed = False
+        async with self._lock:
+            if self._leases.get(lease.preview_id) == lease:
+                self._leases.pop(lease.preview_id, None)
+                removed = True
+        if removed:
+            await self._release_runtime(lease)
+
+    async def _purge_expired(self) -> None:
+        now = self._now()
+        async with self._lock:
+            expired = tuple(
+                lease for lease in self._leases.values() if lease.expires_at <= now
+            )
+            for lease in expired:
+                self._leases.pop(lease.preview_id, None)
+        for lease in expired:
+            await self._release_runtime(lease)
+
+
+preview_lease_registry = PreviewLeaseRegistry(runtime_registry=runtime_registry)

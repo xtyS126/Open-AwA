@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime
-from typing import NoReturn, Optional
+from typing import Any, NoReturn, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -91,6 +91,41 @@ def _check_if_match(if_match: Optional[str], updated_at: Optional[datetime]) -> 
             status_code=status.HTTP_409_CONFLICT,
             detail=_detail("workbench_context_conflict", "工作台上下文已被其他窗口更新"),
         )
+
+
+@router.get("/projects/{project_id}/files/preview")
+async def preview_project_file(
+    project_id: str,
+    path: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    path_policy: WorkbenchPathPolicy = Depends(get_workbench_path_policy),
+) -> Any:
+    """通过服务端权威项目上下文预览项目内文件。"""
+    forbidden_fields = {"cwd", "project_dir", "projectCwd", "projectDir"}
+    if forbidden_fields.intersection(request.query_params.keys()):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_detail(
+                "legacy_project_path_not_supported",
+                "不再支持客户端提供项目路径，请改用 project_id",
+            ),
+            headers={"Sunset": "Wed, 31 Dec 2026 23:59:59 GMT"},
+        )
+
+    # 复用 Coding 已验证文件句柄、RBAC 与内容投影实现，避免两套安全边界漂移。
+    from api.routes.coding import preview_file
+
+    return await preview_file(
+        path=path,
+        request=request,
+        project_id=project_id,
+        project_dir=None,
+        current_user=current_user,
+        db=db,
+        path_policy=path_policy,
+    )
 
 
 @router.get("/projects", response_model=WorkbenchProjectListResponse)
@@ -294,4 +329,3 @@ async def list_runtime_resources(
             for resource in resources
         ]
     )
-

@@ -313,10 +313,6 @@ class ExperienceManager:
         )
     
     def _extract_keywords(self, text: str) -> List[str]:
-        """
-        处理extract、keywords相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         stop_words = {'的', '了', '是', '在', '和', '与', '或', '我', '你', '他', '她', '它', '这', '那', '有', '没有', '要', '不', '能', '会', '可以', '如何', '怎么', '什么', '哪个', '哪些'}
         
         words = text.replace(',', ' ').replace('。', ' ').replace('！', ' ').replace('？', ' ').split()
@@ -400,10 +396,6 @@ class ExperienceManager:
         task_context: Dict[str, Any],
         max_experiences: int = 3
     ) -> List[ExperienceMemory]:
-        """
-        处理retrieve、relevant、experiences相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         experiences = []
         
         task_type = task_context.get('task_type', 'general')
@@ -441,10 +433,6 @@ class ExperienceManager:
         self,
         experiences: List[ExperienceMemory]
     ) -> List[ExperienceMemory]:
-        """
-        处理deduplicate、and、rank相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         seen_ids = set()
         unique_experiences = []
         
@@ -454,10 +442,6 @@ class ExperienceManager:
                 unique_experiences.append(exp)
         
         def calculate_score(exp: ExperienceMemory) -> float:
-            """
-            处理calculate、score相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             confidence_weight = 0.4
             usage_weight = 0.2
             success_weight = 0.3
@@ -575,9 +559,6 @@ class ExperienceManager:
 
     async def mark_for_review(self, experience_id: int) -> bool:
         """
-        处理mark、for、review相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-
         性能：通过 asyncio.to_thread 包装同步 DB 操作，避免阻塞事件循环。
         """
         return await asyncio.to_thread(self._mark_for_review_sync, experience_id)

@@ -555,3 +555,11 @@ class FeedbackLayer:
 
 # 全局 FeedbackLayer 实例注册表,供 API 路由访问
 feedback_layer_registry = FeedbackLayer()
+
+
+# 保持向后兼容的模块级别名
+# 新代码应使用 get_agent_lifecycle().get_feedback_layer()
+def _get_feedback_layer():
+    """从 AgentLifecycle 获取反馈层（支持测试隔离）"""
+    from core.agent_lifecycle import get_agent_lifecycle
+    return get_agent_lifecycle().get_feedback_layer()

@@ -17,8 +17,7 @@ from loguru import logger
 
 class PluginState(str, Enum):
     """
-    封装与PluginState相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件生命周期状态枚举，定义 REGISTERED/LOADED/ENABLED/DISABLED/UNLOADED/ERROR/UPDATING 七种状态。
     """
     REGISTERED = "registered"
     LOADED = "loaded"
@@ -32,8 +31,7 @@ class PluginState(str, Enum):
 @dataclass
 class TransitionResult:
     """
-    封装与TransitionResult相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件状态转换结果，记录转换是否成功、源状态、目标状态和回滚信息。
     """
     success: bool
     plugin_name: str
@@ -45,8 +43,7 @@ class TransitionResult:
 
 class PluginStateMachine:
     """
-    封装与PluginStateMachine相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件状态机，管理合法状态转换表并校验转换是否允许。
     """
     VALID_TRANSITIONS = {
         PluginState.REGISTERED: {PluginState.LOADED, PluginState.ERROR},
@@ -61,8 +58,7 @@ class PluginStateMachine:
 
     def __init__(self):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化状态字典和线程锁，每个插件名称对应一个当前状态。
         """
         self._states: Dict[str, PluginState] = {}
         self._lock = threading.Lock()
@@ -84,23 +80,17 @@ class PluginStateMachine:
             self._states[plugin_name] = new_state
 
     def can_transition(self, plugin_name: str, to_state: PluginState) -> bool:
-        """
-        处理can、transition相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         current = self.get_state(plugin_name)
         return to_state in self.VALID_TRANSITIONS.get(current, set())
 
 
 class TransitionExecutor:
     """
-    封装与TransitionExecutor相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    状态转换执行器，执行插件状态转换、生命周期钩子和回滚，支持幂等操作。
     """
     def __init__(self, state_machine: PluginStateMachine):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化执行器，绑定状态机引用并创建幂等缓存字典。
         """
         self.state_machine = state_machine
         self._idempotency_cache: Dict[str, TransitionResult] = {}
@@ -115,8 +105,7 @@ class TransitionExecutor:
         idempotency_key: Optional[str] = None,
     ) -> TransitionResult:
         """
-        处理execute相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        执行插件状态转换：先校验转换合法性，再执行动作，成功后调用状态钩子，失败时回滚。
         """
         from_state = self.state_machine.get_state(plugin_name)
         resolved_plugin_instance = self._resolve_plugin_instance(plugin_instance)
@@ -195,8 +184,7 @@ class TransitionExecutor:
 
     def _resolve_plugin_instance(self, plugin_instance: Any) -> Any:
         """
-        处理resolve、plugin、instance相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        解析插件实例：若传入可调用对象则调用获取实例，失败时返回None。
         """
         if callable(plugin_instance):
             try:
@@ -208,8 +196,7 @@ class TransitionExecutor:
 
     def _call_state_hook(self, plugin_instance: Any, state: PluginState) -> None:
         """
-        处理call、state、hook相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        根据目标状态调用对应的生命周期钩子方法（如 on_enabled、on_disabled 等）。
         """
         if plugin_instance is None:
             return
@@ -230,8 +217,7 @@ class TransitionExecutor:
 
     def _call_error_hook(self, plugin_instance: Any, error: Exception, from_state: PluginState, to_state: PluginState) -> None:
         """
-        处理call、error、hook相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        调用插件实例的 on_error 钩子，传递异常信息和状态转换上下文。
         """
         if plugin_instance is None or not hasattr(plugin_instance, "on_error"):
             return
@@ -242,8 +228,7 @@ class TransitionExecutor:
 
     def _call(self, callable_obj: Callable[[], Any]) -> Any:
         """
-        处理call相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        调用可调用对象，若返回值为可等待对象则通过协程执行器运行。
         """
         result = callable_obj()
         if inspect.isawaitable(result):
@@ -252,8 +237,7 @@ class TransitionExecutor:
 
     def _run_coroutine(self, awaitable: Any) -> Any:
         """
-        处理run、coroutine相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        在新线程的事件循环中执行异步协程，支持超时控制（60秒）。
         """
         try:
             loop = asyncio.get_running_loop()
@@ -265,8 +249,7 @@ class TransitionExecutor:
 
         def _runner() -> None:
             """
-            处理runner相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            在新线程中创建独立事件循环并执行协程，将结果或异常存入共享字典。
             """
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)

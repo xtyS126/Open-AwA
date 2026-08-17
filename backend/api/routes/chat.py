@@ -268,7 +268,6 @@ async def chat(
     current_user=Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    处理chat相关逻辑，并为调用方返回对应结果。
     如果请求 mode='stream'，则返回 SSE。否则返回 JSON。
     """
     # 校验 session 归属，防止用户越权使用他人 session_id 污染记忆
@@ -445,10 +444,6 @@ async def confirm_operation(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理confirm、operation相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     if not confirmation.step:
         logger.bind(
             event="chat_confirm_invalid",
@@ -678,9 +673,6 @@ async def websocket_endpoint(
     token: str = Query(None)
 ):
     """
-    处理websocket、endpoint相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-
     鉴权方式（按优先级）：
     1. query 参数 token（向后兼容，存在 URL 泄露风险，建议迁移）
     2. Sec-WebSocket-Protocol 子协议头 bearer.<token>（推荐，避免 URL 泄露）

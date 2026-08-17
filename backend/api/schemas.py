@@ -895,6 +895,9 @@ class MCPServerCreate(BaseModel):
     env: Optional[Dict[str, str]] = Field(default=None, description="环境变量")
     transport_type: str = Field(default="stdio", description="传输类型: stdio / sse")
     url: Optional[str] = Field(None, description="SSE 模式服务器地址")
+    # 安全：SSE 模式自定义请求头与认证令牌（auth_token 以 Bearer 方式附加）
+    headers: Optional[Dict[str, str]] = Field(default=None, description="SSE 模式自定义请求头")
+    auth_token: Optional[str] = Field(default=None, description="SSE 模式认证令牌（Bearer Token）")
 
 
 class MCPServerResponse(BaseModel):

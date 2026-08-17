@@ -13,9 +13,10 @@ from loguru import logger
 from api.dependencies import get_current_user
 from api.schemas import MCPServerCreate, MCPServerResponse, MCPToolCallCreate, MCPToolCallResponse
 from db.models import User
-from mcp.manager import MCPClientError, MCPManager, MCPServerConfig, TransportType
+from mcp_integration.manager import MCPClientError, MCPManager, MCPServerConfig, TransportType
+from mcp_integration.sandbox import SandboxError, _validate_command_path
 
-router = APIRouter(prefix="/api/mcp", tags=["MCP"])
+router = APIRouter(prefix="/mcp", tags=["MCP"])
 
 
 def _get_manager() -> MCPManager:
@@ -74,11 +75,19 @@ async def add_server(
 ) -> Dict[str, Any]:
     """添加 MCP Server 配置（自动绑定到当前用户）"""
     manager = _get_manager()
+    # 安全：stdio 模式必须校验启动命令路径，拒绝路径遍历 / null 字节 / 换行注入
+    if data.transport_type == TransportType.STDIO.value and data.command:
+        try:
+            _validate_command_path(data.command)
+        except SandboxError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     config = MCPServerConfig(
         name=data.name,
         command=data.command,
         args=data.args or [],
         env=data.env or {},
+        headers=data.headers or {},
+        auth_token=data.auth_token,
         transport_type=TransportType(data.transport_type),
         url=data.url,
     )

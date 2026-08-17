@@ -225,10 +225,6 @@ async def log_behavior(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理log、behavior相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     # 输入校验：防止超长字段写入
     if not action_type or len(action_type) > 64:
         raise HTTPException(status_code=400, detail="action_type 长度须为 1-64 个字符")

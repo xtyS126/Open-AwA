@@ -316,17 +316,20 @@ def load_conversation_for_resume(
     session_id: str,
     *,
     base_dir: Optional[str] = None,
+    transcript_only: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     从 JSONL 文件加载会话消息用于恢复，文件不存在时回退到数据库。
 
     优先使用 replay_transcript 从 JSONL 旁路日志加载完整消息列表；
     若 JSONL 文件不存在（返回空列表），则从 ConversationRecord 表按时间顺序
-    构造消息列表作为回退。
+    构造消息列表作为回退。transcript_only=True 时跳过数据库回退（仅消费
+    JSONL 旁路日志，供 agent 对话历史恢复路径使用，避免与短期记忆数据源漂移）。
 
     Args:
         session_id: 会话 ID。
         base_dir: JSONL 文件存放目录，默认为 None 时使用 replay_transcript 默认值。
+        transcript_only: 为 True 时 JSONL 不存在直接返回空列表，不触发数据库回退。
 
     Returns:
         消息字典列表，每个字典至少包含 {role, content}；
@@ -346,6 +349,10 @@ def load_conversation_for_resume(
             _convert_transcript_record_to_message(record)
             for record in transcript_records
         ]
+
+    if transcript_only:
+        # 仅消费 JSONL 旁路日志，不触发数据库回退
+        return []
 
     # JSONL 文件不存在时回退到数据库
     return _load_messages_from_db(normalized_session_id)

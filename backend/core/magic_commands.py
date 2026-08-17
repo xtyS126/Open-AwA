@@ -129,7 +129,7 @@ class MagicCommandRegistry:
 
     async def _handle_compact(self, context: dict) -> dict:
         """处理 /compact 命令 — 实际执行上下文压缩并保存到长期记忆。"""
-        from core.compaction_manager import CompactionManager
+        from core.compaction_manager import get_session_manager
         from core.context.token_budget import TokenBudget
         from core.executor import ExecutionLayer
         from memory.manager import MemoryManager
@@ -153,8 +153,11 @@ class MagicCommandRegistry:
             budget = TokenBudget(model_name=model_name)
             current_tokens = budget.count_messages(history)
 
-            # 使用 CompactionManager 进行压缩
-            compaction = CompactionManager(model_context_window=budget.max_tokens)
+            # 使用会话级 CompactionManager 复用实例，断路器失败计数跨调用点共享
+            compaction = get_session_manager(
+                session_id=session_id,
+                model_context_window=budget.max_tokens,
+            )
 
             # 设置 LLM 调用函数：复用 ExecutionLayer 的配置解析与调用能力
             executor = ExecutionLayer()
@@ -184,6 +187,20 @@ class MagicCommandRegistry:
                     llm_db.close()
 
             compaction.set_llm_call(_compaction_llm_call)
+
+            # 压缩结果落库：摘要与边界写入短期记忆，供后续轮次消费避免重复计费
+            async def _persist_compaction(
+                summary_session_id: Optional[str], summary_messages: list
+            ) -> None:
+                for msg in summary_messages:
+                    await memory_manager.add_short_term_memory(
+                        session_id=summary_session_id or session_id,
+                        role=msg["role"],
+                        content=str(msg["content"]),
+                        user_id=context.get("user_id", ""),
+                    )
+
+            compaction.set_persistence_hook(_persist_compaction)
 
             if compaction.should_compact(messages=history):
                 result = await compaction.compact(messages=history)

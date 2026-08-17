@@ -15,8 +15,7 @@ from db.models import Skill
 
 class SkillRegistry:
     """
-    封装与SkillRegistry相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    技能注册表，管理技能的CRUD、缓存、启用/禁用和使用计数，提供内存缓存加速查询。
     """
     def __init__(self, db_session):
         """初始化技能注册表：绑定数据库会话，初始化内存缓存字典。"""
@@ -193,8 +192,7 @@ class SkillRegistry:
 
     def increment_usage(self, skill_name: str) -> bool:
         """
-        处理increment、usage相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        递增指定技能的使用计数并持久化到数据库，同时清除列表缓存。
         """
         skill = self.get(skill_name)
         if not skill:
@@ -222,10 +220,6 @@ class SkillRegistry:
         return skill.usage_count
 
     def clear_cache(self) -> None:
-        """
-        处理clear、cache相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self._cache.clear()
         # 同步失效 list_all 缓存，确保下次 list_all 重新查库
         with self._list_cache_lock:
@@ -233,10 +227,6 @@ class SkillRegistry:
         logger.info("Skill cache cleared")
 
     def refresh_cache(self) -> int:
-        """
-        处理refresh、cache相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self._cache.clear()
         # 失效 list_all 缓存：强制下次 list_all 重新查库（refresh 后 list_all 应反映最新状态）
         with self._list_cache_lock:

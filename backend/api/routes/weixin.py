@@ -820,20 +820,19 @@ class WeixinMultimediaMessageResponse(BaseModel):
     timestamp: str = ""
 
 
-@router.get("/multimedia/recent", response_model=List[WeixinMultimediaMessageResponse])
-async def list_recent_multimedia(
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-    limit: int = Query(default=20, ge=1, le=100),
-    media_type: Optional[str] = Query(default=None, pattern=r"^(image|voice|file|video)$"),
-) -> Dict[str, Any]:
+def _list_recent_multimedia_sync(
+    db: Session,
+    user_id: str,
+    limit: int,
+    media_type: Optional[str],
+) -> List[WeixinMultimediaMessageResponse]:
     """
-    列出当前用户最近的微信多媒体消息。
+    同步执行多媒体消息查询：DB 拉取 + Python 循环解析。
 
-    通过扫描 ShortTermMemory 中 weixin:auto: 前缀的元数据，
-    返回包含多媒体描述的最近消息。可选 media_type 过滤特定类型。
+    通过 asyncio.to_thread 在工作线程中调用，避免阻塞 FastAPI 事件循环。
+    限制拉取条数为 limit * 2（最多 200 条），仅在内存中按 media_type 过滤，
+    避免一次性拉取 1000 条记录导致 TTFB 过高。
     """
-    user_id = str(current_user.id)
     try:
         memories = (
             db.query(ShortTermMemory)
@@ -842,7 +841,7 @@ async def list_recent_multimedia(
                 ShortTermMemory.workspace_id == "default",
             )
             .order_by(ShortTermMemory.timestamp.desc())
-            .limit(limit * 10)
+            .limit(limit * 2)
             .all()
         )
     except Exception as exc:
@@ -897,6 +896,30 @@ async def list_recent_multimedia(
             break
 
     return results
+
+
+@router.get("/multimedia/recent", response_model=List[WeixinMultimediaMessageResponse])
+async def list_recent_multimedia(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    limit: int = Query(default=20, ge=1, le=100),
+    media_type: Optional[str] = Query(default=None, pattern=r"^(image|voice|file|video)$"),
+) -> Dict[str, Any]:
+    """
+    列出当前用户最近的微信多媒体消息。
+
+    通过扫描 ShortTermMemory 中 weixin:auto: 前缀的元数据，
+    返回包含多媒体描述的最近消息。可选 media_type 过滤特定类型。
+
+    DB 查询与解析逻辑通过 asyncio.to_thread 在工作线程中执行，
+    避免同步 SQLAlchemy 调用阻塞 FastAPI 事件循环。
+    """
+    user_id = str(current_user.id)
+    # 路由声明为 Dict[str, Any]（保留原注解），同步函数返回 List[WeixinMultimediaMessageResponse]，
+    # 与 response_model 一致；type: ignore 抑制 mypy 对 to_thread 参数类型的上下文推断告警。
+    return await asyncio.to_thread(
+        _list_recent_multimedia_sync, db, user_id, limit, media_type  # type: ignore[arg-type]
+    )
 
 
 @router.get("/multimedia/{message_id}")

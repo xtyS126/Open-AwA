@@ -58,7 +58,6 @@ WEIXIN_QR_SESSIONS_LOCK = threading.Lock()
 def _build_default_weixin_config() -> Dict[str, Any]:
     """
     处理build、default、weixin、config相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     return {
         "account_id": "",
@@ -77,7 +76,6 @@ def _build_weixin_bound_snapshot(
 ) -> Dict[str, str]:
     """
     处理build、weixin、bound、snapshot相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     normalized_user_id = str(user_id or "").strip()
     normalized_binding_status = _normalize_binding_status(binding_status, user_id=normalized_user_id)
@@ -89,10 +87,6 @@ def _build_weixin_bound_snapshot(
 
 
 def _normalize_timeout_seconds(timeout_seconds: Optional[int], fallback: int = 15) -> int:
-    """
-    处理normalize、timeout、seconds相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     if timeout_seconds is None:
         return fallback
     try:
@@ -129,7 +123,6 @@ def _save_weixin_config_to_db(
 ) -> None:
     """
     处理save、weixin、config、to、db相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     normalized_app_user_id = str(app_user_id or "").strip()
     normalized_user_id = str(user_id or "").strip()
@@ -229,7 +222,6 @@ def _migrate_weixin_config_from_skill(db: Session) -> None:
 def _coerce_weixin_response_payload(payload: Any) -> Dict[str, Any]:
     """
     处理coerce、weixin、response、payload相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     if isinstance(payload, dict):
         return dict(payload)
@@ -309,10 +301,6 @@ def _coerce_weixin_response_payload(payload: Any) -> Dict[str, Any]:
 
 
 def _extract_qrcode_fields(result: Dict[str, Any]) -> Dict[str, str]:
-    """
-    处理extract、qrcode、fields相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     payload_source = result.get("data") if isinstance(result, dict) and result.get("data") is not None else result
     payload = _coerce_weixin_response_payload(payload_source)
     raw_text = str(payload.get("raw_text") or "").strip()
@@ -355,10 +343,6 @@ def _build_qr_session(
     timeout_seconds: int,
     user_id: str = ""
 ) -> Dict[str, Any]:
-    """
-    处理build、qr、session相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     return {
         "qrcode": qrcode,
         "qrcode_url": qrcode_url,
@@ -413,10 +397,6 @@ def _build_qr_response(
     ticket: str = "",
     hint: str = ""
 ) -> Dict[str, Any]:
-    """
-    处理build、qr、response相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     normalized_status = str(status or "waiting").strip().lower() or "waiting"
     normalized_message = str(message or WEIXIN_QR_MESSAGE_MAP.get(normalized_status, "login status updating")).strip() or WEIXIN_QR_MESSAGE_MAP.get(normalized_status, "login status updating")
     normalized_user_id = str(user_id or "").strip()
@@ -444,10 +424,6 @@ def _build_qr_response(
 
 
 def _build_qr_logger(session_key: str, event: str, **fields: Any):
-    """
-    处理build、qr、logger相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     return logger.bind(
         feature="weixin_qr",
         session_key=str(session_key or "").strip(),
@@ -459,7 +435,6 @@ def _build_qr_logger(session_key: str, event: str, **fields: Any):
 def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
     """
     处理build、qrcode、upstream、error、detail相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     payload_source = result.get("data") if isinstance(result, dict) and result.get("data") is not None else result
     payload = _coerce_weixin_response_payload(payload_source)
@@ -489,7 +464,6 @@ def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
 def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
     """
     处理normalize、qr、wait、status相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     payload_source = status_result.get("data") if isinstance(status_result, dict) and status_result.get("data") is not None else status_result
     payload = _coerce_weixin_response_payload(payload_source)
@@ -560,7 +534,6 @@ def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
 def _purge_expired_qr_sessions() -> None:
     """
     处理purge、expired、qr、sessions相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     now = time.time()
     with WEIXIN_QR_SESSIONS_LOCK:
@@ -604,10 +577,6 @@ class WeixinConfigReq(BaseModel):
 
 
 class WeixinQrStartReq(BaseModel):
-    """
-    封装与WeixinQrStartReq相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     session_key: Optional[str] = None
     base_url: Optional[str] = None
     bot_type: Optional[str] = None
@@ -616,10 +585,6 @@ class WeixinQrStartReq(BaseModel):
 
 
 class WeixinQrWaitReq(BaseModel):
-    """
-    封装与WeixinQrWaitReq相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     session_key: str
     timeout_seconds: Optional[int] = 35
     qrcode: Optional[str] = None
@@ -627,10 +592,6 @@ class WeixinQrWaitReq(BaseModel):
 
 
 class WeixinQrExitReq(BaseModel):
-    """
-    封装与WeixinQrExitReq相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     session_key: Optional[str] = None
     clear_config: Optional[bool] = True
 
@@ -638,7 +599,6 @@ class WeixinQrExitReq(BaseModel):
 def _coerce_weixin_payload_dict(raw_body: Any) -> Dict[str, Any]:
     """
     处理coerce、weixin、payload、dict相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     if isinstance(raw_body, dict):
         return raw_body
@@ -674,7 +634,6 @@ def _coerce_weixin_payload_dict(raw_body: Any) -> Dict[str, Any]:
 async def _parse_weixin_request_payload(request: Request) -> Dict[str, Any]:
     """
     处理parse、weixin、request、payload相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     raw_body = await request.body()
     return _coerce_weixin_payload_dict(raw_body)
@@ -684,10 +643,6 @@ async def weixin_health_check(
     request: Request,
     current_user=Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理weixin、health、check相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     config = WeixinConfigReq(**(await _parse_weixin_request_payload(request)))
     adapter = WeixinSkillAdapter()
     runtime_config = WeixinRuntimeConfig(
@@ -774,10 +729,6 @@ async def weixin_qr_start(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理weixin、qr、start相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     payload = WeixinQrStartReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     adapter = WeixinSkillAdapter()
@@ -852,10 +803,6 @@ async def weixin_qr_image(
     qrcode_url: Optional[str] = None,
     current_user=Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理weixin、qr、image相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     _purge_expired_qr_sessions()
     session: Optional[Dict[str, Any]] = None
     if session_key:
@@ -892,10 +839,6 @@ async def weixin_qr_wait(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理weixin、qr、wait相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     payload = WeixinQrWaitReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     session: Optional[Dict[str, Any]] = None
@@ -1082,10 +1025,6 @@ async def weixin_qr_exit(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理weixin、qr、exit相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     payload = WeixinQrExitReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     cleared_sessions = 0
@@ -1151,6 +1090,70 @@ async def get_skills(
         raise HTTPException(status_code=500, detail="获取技能列表失败，请稍后重试")
 
 
+@router.get("/market")
+async def get_market_skills(
+    search: Optional[str] = None,
+    source: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    获取技能市场中的可用技能列表。
+    支持按关键词搜索和按来源筛选。
+
+    路由顺序说明：本路由必须定义在 @router.get(\"/{skill_id}\") 之前，
+    否则 FastAPI 会把 \"market\" 当作 skill_id 匹配到 404 \"Skill not found\"。
+
+    错误降级策略：
+    - pool_manager.fetch_market_listing 内部已捕获所有外部源错误并返回 source_errors
+    - 路由层不再因源错误返回 500，而是返回 200 + 空列表 + error/source_errors 字段
+    - 业务层错误（如配置缺失）通过 logger.warning 记录，不静默吞
+    - 仅当 pool_manager 自身抛出未预期异常时进入兜底 except 分支
+    """
+    from skills.pool_manager import SkillPoolManager
+
+    pool = SkillPoolManager()
+    try:
+        result = await pool.fetch_market_listing()
+    except RuntimeError as e:
+        # 历史路径兼容：旧版 fetch_market_listing 会 raise RuntimeError
+        logger.warning(f"技能市场拉取失败（RuntimeError）: {str(e)}")
+        return {
+            "skills": [],
+            "total": 0,
+            "error": str(e),
+            "source_errors": [],
+        }
+    except Exception as e:
+        # 兜底：未预期异常也不返回 500，避免代理层把 500 转成 404 误导前端
+        logger.warning(f"技能市场拉取失败（未预期异常）: {str(e)}")
+        return {
+            "skills": [],
+            "total": 0,
+            "error": str(e),
+            "source_errors": [],
+        }
+
+    skills = result.get("skills", []) or []
+    source_errors = result.get("source_errors", []) or []
+
+    # 筛选
+    if source:
+        skills = [s for s in skills if s.get("source") == source]
+    if search:
+        keyword = search.lower()
+        skills = [
+            s for s in skills
+            if keyword in (s.get("name") or "").lower() or keyword in (s.get("description") or "").lower()
+        ]
+
+    return {
+        "skills": skills,
+        "total": len(skills),
+        "source_errors": source_errors,
+    }
+
+
 @router.get("/{skill_id}", response_model=SkillResponse)
 async def get_skill(
     skill_id: str,
@@ -1190,10 +1193,6 @@ async def install_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理install、skill相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     existing_skill = db.query(Skill).filter(Skill.name == skill.name).first()
     if existing_skill:
         raise HTTPException(status_code=400, detail="Skill already installed")
@@ -1259,10 +1258,6 @@ async def uninstall_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理uninstall、skill相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -1279,10 +1274,6 @@ async def toggle_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理toggle、skill相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -1303,10 +1294,6 @@ async def extract_experience(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理extract、experience相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     from skills.experience_extractor import ExperienceExtractor
 
     try:
@@ -1440,10 +1427,6 @@ async def execute_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理execute、skill相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -1740,7 +1723,6 @@ async def install_skill_from_package(
 ) -> Dict[str, Any]:
     """
     处理install、skill、from、package相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     支持两种配置文件格式：优先 SKILL.md（agentskills.io 标准），回退 skill.yaml。
     """
     try:
@@ -1906,35 +1888,6 @@ class MarketSkillInstallRequest(BaseModel):
     name: str
     source: Optional[str] = "clawhub"
     source_url: Optional[str] = None
-
-
-@router.get("/market")
-def get_market_skills(
-    search: Optional[str] = None,
-    source: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
-):
-    """
-    获取技能市场中的可用技能列表。
-    支持按关键词搜索和按来源筛选。
-    """
-    from skills.pool_manager import SkillPoolManager
-
-    pool = SkillPoolManager()
-    skills = pool.fetch_market_listing()
-
-    # 筛选
-    if source:
-        skills = [s for s in skills if s["source"] == source]
-    if search:
-        keyword = search.lower()
-        skills = [
-            s for s in skills
-            if keyword in s["name"].lower() or keyword in s["description"].lower()
-        ]
-
-    return {"skills": skills, "total": len(skills)}
 
 
 @router.post("/market/install")

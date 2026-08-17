@@ -8,10 +8,12 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from config.settings import settings
+from config.thresholds import MAX_TOOL_EVENT_RESULT_CHARS as _TEV_CHARS
+from config.thresholds import MAX_TOOL_RESULT_CHARS as _TR_CHARS
 
 
-MAX_TOOL_RESULT_CHARS = 8_000
-MAX_TOOL_EVENT_RESULT_CHARS = 2_000
+MAX_TOOL_RESULT_CHARS = _TR_CHARS
+MAX_TOOL_EVENT_RESULT_CHARS = _TEV_CHARS
 
 
 def resolve_max_tool_call_rounds(context: Dict[str, Any]) -> int:

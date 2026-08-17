@@ -13,15 +13,7 @@ from loguru import logger
 
 
 class BudgetManager:
-    """
-    封装与BudgetManager相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def __init__(self, db: Session):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self.db = db
 
     def create_budget(
@@ -220,10 +212,6 @@ class BudgetManager:
         }
 
     def _get_period_dates(self, period_type: str) -> tuple:
-        """
-        处理get、period、dates相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         today = date.today()
         
         if period_type == "daily":
@@ -255,10 +243,6 @@ class BudgetManager:
         period_start: date,
         period_end: date
     ) -> float:
-        """
-        处理calculate、current、usage相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         from billing.tracker import UsageTracker
         tracker = UsageTracker(self.db)
         usage = tracker.get_user_usage(user_id, period_start, period_end)

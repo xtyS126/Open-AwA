@@ -125,6 +125,14 @@ prometheus_registry.register_counter(
     "openawa_tool_execution_total",
     "工具执行总数",
 )
+prometheus_registry.register_counter(
+    "openawa_prompt_cache_hits_total",
+    "Prompt Cache 命中次数",
+)
+prometheus_registry.register_counter(
+    "openawa_prompt_cache_misses_total",
+    "Prompt Cache 未命中次数",
+)
 
 
 def record_model_service_metric(provider: str, purpose: str, status: str, duration_ms: float) -> None:
@@ -169,3 +177,14 @@ def record_tool_execution_metric(execution_type: str, status: str) -> None:
         execution_type=execution_type,
         status=status,
     )
+
+
+def record_prompt_cache_metric(hit: bool) -> None:
+    """
+    记录 Prompt Cache 命中/未命中情况。
+    """
+
+    if hit:
+        prometheus_registry.inc("openawa_prompt_cache_hits_total")
+    else:
+        prometheus_registry.inc("openawa_prompt_cache_misses_total")

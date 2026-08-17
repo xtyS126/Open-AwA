@@ -13,6 +13,7 @@ import asyncio
 import os
 import re
 import shlex
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Any, Optional
 from loguru import logger
@@ -27,6 +28,31 @@ from security.command_whitelist import (
     is_path_allowed as _is_path_in_workspace,
     validate_command_safety_detailed as _validate_command_safety_detailed,
 )
+
+
+# ---------------------------------------------------------------------------
+# 统一沙箱资源限制与错误类型（合并自 mcp_integration/sandbox.py）
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SandboxLimits:
+    """沙箱资源限制配置"""
+    max_memory_mb: int = 512
+    max_cpu_time_seconds: float = 30.0
+    max_output_size_bytes: int = 10 * 1024 * 1024  # 10MB
+    max_file_size_bytes: int = 50 * 1024 * 1024  # 50MB
+    network_enabled: bool = False
+    allow_write: bool = True
+    working_dir: Optional[str] = None
+
+
+class SandboxError(Exception):
+    """沙箱执行错误"""
+    def __init__(self, message: str, exit_code: int = -1, stderr: str = ""):
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.stderr = stderr
 
 
 # 向后兼容：原 sandbox.py 内部白名单/黑名单/参数模式常量
@@ -45,7 +71,22 @@ _DENY_PATH_PATTERNS = [
     re.compile(r'^/var/log/'),                              # 系统日志
     re.compile(r'^[A-Za-z]:[\\/]windows[\\/]system32[\\/]', re.IGNORECASE),  # Windows 系统目录
     re.compile(r'^[A-Za-z]:[\\/]windows[\\/]', re.IGNORECASE),               # Windows 安装目录
-    re.compile(r'\.env$'),                                  # .env 文件（任意位置）
+    # .env 及常见变体文件（任意位置，忽略大小写覆盖 .ENV 等写法）
+    re.compile(r'\.env(\.local|\.production|\.dev|\.test)?$', re.IGNORECASE),
+]
+
+# 敏感密钥文件 deny 模式：匹配则拒绝访问（任意位置）
+# 覆盖常见私钥文件名、云厂商凭据与密钥目录，防止密钥泄露
+_DENY_SECRET_FILE_PATTERNS = [
+    # .env 及常见变体（与 _DENY_PATH_PATTERNS 中的 .env 规则互补，这里锚定路径分隔符）
+    re.compile(r'(^|[\\/])\.env(\.local|\.production|\.dev|\.test)?$', re.IGNORECASE),
+    re.compile(r'(^|[\\/])id_rsa$'),                                   # RSA 私钥
+    re.compile(r'(^|[\\/])id_ed25519$'),                               # Ed25519 私钥
+    re.compile(r'(^|[\\/])id_ecdsa$'),                                 # ECDSA 私钥
+    re.compile(r'(^|[\\/])id_dsa$'),                                   # DSA 私钥
+    re.compile(r'(^|[\\/])\.aws[\\/]credentials$', re.IGNORECASE),     # AWS 凭据
+    re.compile(r'(^|[\\/])\.ssh[\\/]'),                                # .ssh 目录（私钥/known_hosts）
+    re.compile(r'(^|[\\/])\.gnupg[\\/]'),                              # GPG 密钥目录
 ]
 
 # 路径 allow 规则：匹配则允许访问（在白名单和内部可编辑路径之后生效）
@@ -334,8 +375,11 @@ def is_path_allowed(
             logger.warning(f"写操作禁止 glob 模式或路径穿越: {path}")
             return False
 
-    # 第 1 层：deny 规则
+    # 第 1 层：deny 规则（系统目录 + 敏感密钥文件）
     for pattern in _DENY_PATH_PATTERNS:
+        if pattern.search(path_str):
+            return False
+    for pattern in _DENY_SECRET_FILE_PATTERNS:
         if pattern.search(path_str):
             return False
 
@@ -415,6 +459,14 @@ class Sandbox:
         """
         if not file_path or not file_path.strip():
             raise SandboxPathError("文件路径不能为空")
+
+        # 拒绝系统目录与敏感密钥文件路径（.env 变体、私钥、.ssh 等）
+        for pattern in _DENY_PATH_PATTERNS:
+            if pattern.search(file_path):
+                raise SandboxPathError(f"文件路径命中系统拒绝规则: {file_path!r}")
+        for pattern in _DENY_SECRET_FILE_PATTERNS:
+            if pattern.search(file_path):
+                raise SandboxPathError(f"文件路径命中敏感密钥拒绝规则: {file_path!r}")
 
         # 拒绝包含危险字符的路径
         for pattern in _DANGEROUS_ARG_PATTERNS:

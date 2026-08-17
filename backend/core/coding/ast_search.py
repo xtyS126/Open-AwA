@@ -583,6 +583,11 @@ class ASTSearchService:
             # 跳过隐藏目录（.git/.venv 等）
             if any(part.startswith(".") for part in file_path.parts):
                 continue
+            try:
+                resolved_file = file_path.resolve(strict=True)
+                resolved_file.relative_to(self.root_dir)
+            except (OSError, ValueError):
+                continue
             if not file_path.is_file():
                 continue
             if file_path.suffix.lower() in _BINARY_EXTS:

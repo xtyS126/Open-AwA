@@ -10,10 +10,6 @@ from .plugin_context import PluginContext
 
 
 class BasePlugin(ABC):
-    """
-    封装与BasePlugin相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     name: str = ""
     version: str = "1.0.0"
     description: str = ""

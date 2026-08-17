@@ -11,11 +11,20 @@
 import asyncio
 import json
 import re
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
+from config.thresholds import (
+    BUFFER_TOKENS,
+    COMPACTION_TOOL_OUTPUT_MAX_CHARS,
+    MAX_CONSECUTIVE_FAILURES,
+    MICRO_COMPACT_KEEP_RECENT,
+    RESERVED_TOKENS_MIN,
+    SUMMARY_OUTPUT_TOKENS,
+)
 from core.context.token_budget import TokenBudget
 
 
@@ -62,14 +71,14 @@ SUMMARY_TEMPLATE = """Output exactly the Markdown structure shown inside <templa
 class CompactionConfig:
     """压缩配置参数"""
     auto: bool = True
-    buffer_tokens: int = 20_000
-    keep_tokens: int = 8_000
-    summary_output_tokens: int = 4_096
-    tool_output_max_chars: int = 2_000
+    buffer_tokens: int = BUFFER_TOKENS
+    keep_tokens: int = RESERVED_TOKENS_MIN
+    summary_output_tokens: int = SUMMARY_OUTPUT_TOKENS
+    tool_output_max_chars: int = COMPACTION_TOOL_OUTPUT_MAX_CHARS
 
 
 # 断路器阈值：连续摘要生成失败达到此次数后，跳过压缩以保护系统
-MAX_CONSECUTIVE_FAILURES = 3
+# 值由 config.thresholds.MAX_CONSECUTIVE_FAILURES 提供
 
 # 可安全清除输出的工具集合
 # 这些工具的输出通常较大且可安全清除，用于 MicroCompact 轻量级压缩
@@ -77,6 +86,48 @@ COMPACTABLE_TOOLS = {"Read", "Shell", "Grep", "Glob", "WebSearch", "Edit", "Writ
 
 # MicroCompact 保留的最近消息条数：超出此阈值之前的工具输出会被清除
 MICRO_COMPACT_RECENT_THRESHOLD = 5
+
+# 会话级 CompactionManager 注册表：同一 session_id 复用同一实例，
+# 使断路器失败计数在多次 compact() 调用之间保持（跨 agent / magic_commands / 路由调用点共享）。
+# 使用可重入锁保护模块级可变状态：get_session_manager 持锁构造实例时，
+# __init__ 会再次获取同一把锁（非重入锁会死锁），故必须使用 RLock。
+_SESSION_MANAGERS: Dict[str, "CompactionManager"] = {}
+_SESSION_MANAGERS_LOCK = threading.RLock()
+
+
+def get_session_manager(
+    session_id: Optional[str] = None,
+    model_context_window: int = 128_000,
+    config: Optional[CompactionConfig] = None,
+) -> "CompactionManager":
+    """
+    获取会话级 CompactionManager 实例。
+
+    同一 session_id 复用注册表中的同一实例，保证断路器连续失败计数跨多次
+    compact() 调用（以及跨不同调用点）保持连续；session_id 为空时返回
+    全新实例（不注册，不共享计数）。
+    """
+    if not session_id:
+        return CompactionManager(
+            model_context_window=model_context_window,
+            config=config,
+        )
+    with _SESSION_MANAGERS_LOCK:
+        manager = _SESSION_MANAGERS.get(session_id)
+        if manager is None:
+            manager = CompactionManager(
+                session_id=session_id,
+                model_context_window=model_context_window,
+                config=config,
+            )
+            _SESSION_MANAGERS[session_id] = manager
+        return manager
+
+
+def clear_session_managers() -> None:
+    """清空会话级实例注册表（主要用于测试隔离）。"""
+    with _SESSION_MANAGERS_LOCK:
+        _SESSION_MANAGERS.clear()
 
 
 @dataclass
@@ -204,12 +255,21 @@ class CompactionManager:
         self,
         model_context_window: int = 128_000,
         config: Optional[CompactionConfig] = None,
+        session_id: Optional[str] = None,
     ):
         self.model_context_window = model_context_window
         self.config = config or CompactionConfig()
+        self.session_id = session_id
         self.llm_call: Optional[callable] = None  # LLM 调用函数
+        # 压缩结果落库回调：async def(session_id, messages) -> None，
+        # 由调用方注册，将摘要与边界写回持久层，避免每轮重复压缩重复计费
+        self._persistence_hook: Optional[callable] = None
         # 断路器：连续摘要生成失败计数，达到 MAX_CONSECUTIVE_FAILURES 后跳过压缩
         self._consecutive_failures: int = 0
+        # 提供 session_id 时注册到会话级注册表，供 get_session_manager 复用
+        if session_id:
+            with _SESSION_MANAGERS_LOCK:
+                _SESSION_MANAGERS[session_id] = self
 
     def set_llm_call(self, llm_call: callable) -> None:
         """
@@ -218,6 +278,16 @@ class CompactionManager:
         llm_call 签名为 async def(prompt: str, **kwargs) -> str
         """
         self.llm_call = llm_call
+
+    def set_persistence_hook(self, persistence_hook: Optional[callable]) -> None:
+        """
+        设置压缩结果落库回调。
+
+        hook 签名为 async def(session_id: Optional[str], messages: List[Dict[str, Any]]) -> None，
+        在压缩成功后携带摘要系统消息与压缩边界消息调用，由调用方写入
+        ShortTermMemory 等持久层，避免摘要每轮重复生成重复计费。
+        """
+        self._persistence_hook = persistence_hook
 
     def should_compact(
         self,
@@ -589,8 +659,41 @@ class CompactionManager:
             "content": f"## 对话上下文摘要\n\n{summary}\n\n---\n以上是历史对话的结构化摘要。请基于摘要和以下最近的对话继续工作。",
         }
 
-        # 组装压缩后的消息列表：[摘要消息] + [最近消息]
-        compacted_messages = [summary_message] + recent_messages
+        # 构建压缩边界消息（复用 CompactBoundaryMessage 标记），标记压缩发生的位置
+        anchor_uuid = self._extract_message_uuid(
+            head_messages[-1], "compact-anchor"
+        ) if head_messages else "compact-anchor"
+        head_uuid = self._extract_message_uuid(
+            head_messages[0], "compact-head"
+        ) if head_messages else "compact-head"
+        tail_uuid = self._extract_message_uuid(
+            recent_messages[0], "compact-tail"
+        ) if recent_messages else "compact-tail"
+        boundary_message = create_compact_boundary_message(
+            anchor_uuid, head_uuid, tail_uuid
+        )
+        boundary = CompactBoundaryMessage(
+            preserved_segment=PreservedSegment(
+                anchor_uuid=anchor_uuid,
+                head_uuid=head_uuid,
+                tail_uuid=tail_uuid,
+            ),
+        )
+
+        # 组装压缩后的消息列表：[摘要消息] + [压缩边界消息] + [最近消息]
+        compacted_messages = [summary_message, boundary_message] + recent_messages
+
+        # 将压缩结果写回持久层：调用方注册的落库回调负责写入 ShortTermMemory 等，
+        # 使后续轮次消费摘要边界，避免摘要每轮重复生成重复计费
+        if self._persistence_hook is not None:
+            try:
+                await self._persistence_hook(
+                    self.session_id,
+                    [summary_message, boundary_message],
+                )
+            except Exception as exc:
+                # 落库失败不阻断压缩结果，但必须记录日志以便排查
+                logger.error(f"压缩结果落库失败: {exc}")
 
         logger.info(
             f"上下文压缩完成: {len(messages)} -> {len(compacted_messages)} 条消息,"
@@ -602,7 +705,23 @@ class CompactionManager:
             "messages": compacted_messages,
             "summary": summary,
             "summary_message": summary_message,
+            "boundary_message": boundary_message,
+            "boundary": boundary,
+            "_reset_cache_baseline": True,  # 压缩后需重置 Prompt Cache 基线
         }
+
+    @staticmethod
+    def _extract_message_uuid(message: Dict[str, Any], fallback: str) -> str:
+        """
+        提取消息的 uuid 标识，缺失时使用占位标记。
+
+        消息可能来自短期记忆转换（无 uuid 字段）或 JSONL 回放（带 uuid），
+        边界标记对缺失 uuid 的消息使用语义化占位，保证边界信息始终可构造。
+        """
+        raw = message.get("uuid") or message.get("id")
+        if isinstance(raw, str) and raw:
+            return raw
+        return fallback
 
     @staticmethod
     def parse_compaction_sections(summary: str) -> Dict[str, str]:

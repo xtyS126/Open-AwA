@@ -11,31 +11,15 @@ from .plugin_loader import PluginLoader
 
 
 class ValidationResult:
-    """
-    封装与ValidationResult相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def __init__(self, valid: bool, errors: List[str], warnings: List[str]):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self.valid = valid
         self.errors = errors
         self.warnings = warnings
 
     def __repr__(self) -> str:
-        """
-        处理repr相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return f"ValidationResult(valid={self.valid}, errors={len(self.errors)}, warnings={len(self.warnings)})"
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        处理to、dict相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return {
             "valid": self.valid,
             "errors": self.errors,
@@ -44,19 +28,11 @@ class ValidationResult:
 
 
 class PluginValidator:
-    """
-    封装与PluginValidator相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     REQUIRED_METHODS = ["initialize", "execute", "cleanup"]
     REQUIRED_CONFIG_FIELDS = ["name", "version"]
     OPTIONAL_CONFIG_FIELDS = ["description", "author", "dependencies"]
 
     def __init__(self):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self.logger = logger
 
     def validate_base_class(self, plugin_class: Type) -> bool:

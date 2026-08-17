@@ -44,10 +44,6 @@ router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 
 def _safe_deserialize(value: Optional[str]) -> Any:
-    """
-    处理safe、deserialize相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     if value is None:
         return None
     if not isinstance(value, str):
@@ -59,10 +55,6 @@ def _safe_deserialize(value: Optional[str]) -> Any:
 
 
 def _to_dict(record: ConversationRecord) -> Dict[str, Any]:
-    """
-    处理to、dict相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     return {
         "id": record.id,
         "session_id": record.session_id,
@@ -379,10 +371,6 @@ async def export_records_jsonl(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """
-    处理export、records、jsonl相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     query = db.query(ConversationRecord).filter(ConversationRecord.user_id == current_user.id)
 
     if start_time is not None:
@@ -403,10 +391,6 @@ async def export_records_jsonl(
     ).info("conversation export started")
 
     def iter_jsonl():
-        """
-        处理iter、jsonl相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         for record in query.yield_per(200):
             payload = _to_dict(record)
             yield json.dumps(payload, ensure_ascii=False, default=str) + "\n"
@@ -427,10 +411,6 @@ async def cleanup_records(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """
-    处理cleanup、records相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     deleted = (

@@ -39,6 +39,7 @@ class PTYSession:
         cols: int = 80,
         rows: int = 24,
         on_output: Optional[Callable[[str], None]] = None,
+        output_filter: Optional[Callable[[str], str]] = None,
     ) -> None:
         """
         初始化 PTY 会话。
@@ -51,6 +52,7 @@ class PTYSession:
             rows: 终端行数。
             on_output: 可选的输出回调；每次从 PTY 读取到数据后会被调用，
                 参数为解码后的字符串。回调同步执行，应避免阻塞。
+            output_filter: 可选的输出过滤器；在数据进入 VT 屏幕和输出回调前调用。
         """
         if not command:
             raise ValueError("command 不能为空")
@@ -86,6 +88,7 @@ class PTYSession:
 
         # 输出回调
         self._on_output: Optional[Callable[[str], None]] = on_output
+        self._output_filter: Optional[Callable[[str], str]] = output_filter
 
         # 运行状态
         self._closed: bool = False
@@ -175,21 +178,11 @@ class PTYSession:
                 data_bytes = await self._read_once(loop)
                 if not data_bytes:
                     # EOF：子进程已退出
+                    self._flush_output_filter()
                     break
                 # 解码并喂给 pyte Stream 解析 ANSI 流
                 data_str = data_bytes.decode("utf-8", errors="replace")
-                self._stream.feed(data_str)
-                # 触发输出回调（如已注册）
-                if self._on_output is not None:
-                    try:
-                        self._on_output(data_str)
-                    except Exception as e:
-                        logger.bind(
-                            event="pty_output_callback_error",
-                            module="terminal",
-                            error_type=type(e).__name__,
-                            error_message=str(e),
-                        ).warning(f"PTY 输出回调异常: {e}")
+                self._consume_output(data_str)
         except asyncio.CancelledError:
             # 被显式取消：正常退出
             raise
@@ -203,11 +196,51 @@ class PTYSession:
                 error_type=type(e).__name__,
                 error_message=str(e),
             ).warning(f"PTY 读取循环异常: {e}")
-            if self._on_output is not None:
-                try:
-                    self._on_output(f"\r\n[PTY 会话错误] {type(e).__name__}: {e}\r\n")
-                except Exception as cb_exc:
-                    logger.warning(f"PTY 错误帧发送失败: {cb_exc}")
+            try:
+                self._consume_output(
+                    f"\r\n[PTY 会话错误] {type(e).__name__}: {e}\r\n"
+                )
+            except Exception as output_exc:
+                logger.bind(
+                    event="pty_error_frame_filter_error",
+                    module="terminal",
+                    error_type=type(output_exc).__name__,
+                ).warning("PTY 错误帧净化失败，已阻止原始错误投影")
+
+    def _consume_output(self, data: str) -> None:
+        """先过滤 PTY 输出，再同步更新 VT 屏幕并通知订阅者。"""
+        filtered_data = self._output_filter(data) if self._output_filter else data
+        if not isinstance(filtered_data, str):
+            raise TypeError("PTY 输出过滤器必须返回字符串")
+        self._publish_filtered_output(filtered_data)
+
+    def _flush_output_filter(self) -> None:
+        """在输出结束时释放有状态过滤器保留的安全尾部。"""
+        flush = getattr(self._output_filter, "flush", None)
+        if not callable(flush):
+            return
+        filtered_data = flush()
+        if not isinstance(filtered_data, str):
+            raise TypeError("PTY 输出过滤器 flush 必须返回字符串")
+        self._publish_filtered_output(filtered_data)
+
+    def _publish_filtered_output(self, filtered_data: str) -> None:
+        """仅发布已经过滤的文本，禁止原始 PTY 数据绕过此入口。"""
+        if not filtered_data:
+            return
+
+        self._stream.feed(filtered_data)
+        if self._on_output is None:
+            return
+        try:
+            self._on_output(filtered_data)
+        except Exception as e:
+            logger.bind(
+                event="pty_output_callback_error",
+                module="terminal",
+                error_type=type(e).__name__,
+                error_message=str(e),
+            ).warning(f"PTY 输出回调异常: {e}")
 
     async def _read_once(self, loop: asyncio.AbstractEventLoop) -> bytes:
         """读取一次数据，跨平台抽象。"""
@@ -383,6 +416,14 @@ class PTYSession:
     def get_reader_error(self) -> Optional[str]:
         """返回读取循环错误信息（None 表示读取正常）。"""
         return self._reader_error
+
+    def get_root_pid(self) -> Optional[int]:
+        """返回当前平台 PTY 根进程的真实 PID，无有效进程时返回 None。"""
+        process = self._winpty_proc if _is_windows else self.process
+        pid = getattr(process, "pid", None)
+        if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+            return None
+        return pid
 
     def is_alive(self) -> bool:
         """子进程是否仍在运行。"""

@@ -25,6 +25,8 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 from loguru import logger
 
+from config.thresholds import HOOK_TIMEOUT_SECONDS, HOOK_TIMING_DISPLAY_THRESHOLD_MS
+
 
 class HookName(str, Enum):
     """预定义的 Hook 名称"""
@@ -51,6 +53,17 @@ class HookName(str, Enum):
     SKILL_DISCOVERED = "skill.discovered"
     PLUGIN_LOADED = "plugin.loaded"
 
+    # 子代理生命周期事件（从 task_runtime/hook_dispatcher 迁移合并）
+    SUBAGENT_START = "subagent_start"
+    SUBAGENT_STOP = "subagent_stop"
+    SUBAGENT_ERROR = "subagent_error"
+    SUBAGENT_COMPLETE = "subagent_complete"
+
+    # 任务运行时事件（从 task_runtime/hook_dispatcher 迁移合并）
+    TASK_COMPLETED = "task_completed"
+    TASK_CREATED = "task_created"
+    STOP = "stop"
+
 
 class HookResultType(str, Enum):
     """
@@ -63,6 +76,8 @@ class HookResultType(str, Enum):
     APPROVE = "approve"
     # 拒绝执行
     DENY = "deny"
+    # 需要用户确认（暂停执行，等待用户决策）
+    ASK = "ask"
     # 修改输入（携带 modified_input 字段）
     MODIFY_INPUT = "modify_input"
     # 修改输出（携带 modified_output 字段）
@@ -76,7 +91,7 @@ class HookResultType(str, Enum):
 
 
 # 钩子执行耗时告警阈值（毫秒），超过该值会记录 warning 日志
-HOOK_TIMING_DISPLAY_THRESHOLD_MS = 500
+# 值由 config.thresholds.HOOK_TIMING_DISPLAY_THRESHOLD_MS 提供
 
 
 @dataclass
@@ -185,8 +200,9 @@ def _coerce_to_hook_result(raw: Any) -> HookResult:
                 )
             if decision_str == "ask":
                 return HookResult(
-                    result_type=HookResultType.DENY,
+                    result_type=HookResultType.ASK,
                     reason=raw.get("reason", "钩子要求人工确认"),
+                    modified_input=raw.get("updated_input"),
                 )
             # allow / defer 等视为 APPROVE
             return HookResult(
@@ -382,7 +398,7 @@ class HookManager:
         hook_name: str,
         data: Any = None,
         context: Optional[HookContext] = None,
-        default_timeout: float = 30.0,
+        default_timeout: float = HOOK_TIMEOUT_SECONDS,
     ) -> List[HookResult]:
         """
         触发 Hook。
@@ -469,7 +485,7 @@ class HookManager:
             if not reg.enabled:
                 continue
 
-            timeout = reg.timeout_seconds or 30.0
+            timeout = reg.timeout_seconds or HOOK_TIMEOUT_SECONDS
             try:
                 current_data = await asyncio.wait_for(
                     reg.callback(ctx, current_data),
@@ -504,3 +520,11 @@ class HookManager:
 
 # 全局 HookManager 实例
 hook_manager = HookManager()
+
+
+# 保持向后兼容的模块级别名
+# 新代码应使用 get_agent_lifecycle().get_hook_manager()
+def _get_hook_manager():
+    """从 AgentLifecycle 获取钩子管理器（支持测试隔离）"""
+    from core.agent_lifecycle import get_agent_lifecycle
+    return get_agent_lifecycle().get_hook_manager()

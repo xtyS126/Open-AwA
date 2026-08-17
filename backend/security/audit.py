@@ -175,10 +175,6 @@ class AuditLogger:
         old_value: Any,
         new_value: Any
     ) -> AuditLog:
-        """
-        处理log、config、change相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return await self.log(
             user_id=user_id,
             action="config:change",

@@ -11,7 +11,15 @@ from workbench.errors import (
     WorkbenchError,
 )
 from workbench.path_policy import WorkbenchPathPolicy
-from workbench.preview_lease import PreviewLeaseRegistry, PreviewSessionKind
+from workbench.listener_registry import (
+    PreviewListenerVerifierRegistry,
+    listener_verifier_registry,
+)
+from workbench.preview_lease import (
+    PreviewLeaseRegistry,
+    PreviewSessionKind,
+    preview_lease_registry,
+)
 from workbench.project_service import WorkbenchProjectService
 from workbench.runtime_registry import RuntimeResourceType, WorkbenchRuntimeRegistry, runtime_registry
 
@@ -27,6 +35,9 @@ __all__ = [
     "WorkbenchPathPolicy",
     "PreviewLeaseRegistry",
     "PreviewSessionKind",
+    "PreviewListenerVerifierRegistry",
+    "listener_verifier_registry",
+    "preview_lease_registry",
     "WorkbenchProjectService",
     "RuntimeResourceType",
     "WorkbenchRuntimeRegistry",

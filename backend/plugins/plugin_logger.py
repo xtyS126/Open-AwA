@@ -19,10 +19,6 @@ LOG_LEVELS = {
 
 
 class LogEntry:
-    """
-    封装与LogEntry相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def __init__(
         self,
         level: str,
@@ -49,10 +45,6 @@ class LogEntry:
 
 
 class PluginLogger:
-    """
-    封装与PluginLogger相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def __init__(self, plugin_id: str, max_entries: int = 500):
         """初始化插件日志记录器：绑定插件 ID，设置默认级别 DEBUG，分配固定容量环形缓冲区。"""
         self.plugin_id = plugin_id
@@ -130,10 +122,6 @@ class PluginLogger:
 
 
 class LogManager:
-    """
-    封装与LogManager相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     _instance: Optional["LogManager"] = None
     _lock: Lock = Lock()
     _loggers: Dict[str, PluginLogger] = {}

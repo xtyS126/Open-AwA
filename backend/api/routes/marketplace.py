@@ -486,33 +486,35 @@ async def rate_plugin(
     }
 
 
-@router.get(
-    "/plugins/{plugin_id}/rating",
-    response_model=PluginRatingSummaryResponse,
-    summary="获取插件评分汇总",
-)
-async def get_plugin_rating(
+def _get_plugin_rating_sync(
+    db: Session,
     plugin_id: str,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    user_id: str,
 ) -> Dict[str, Any]:
-    """获取插件评分汇总信息"""
-    # 使用 SQL 聚合避免全量加载评分记录
+    """
+    同步执行插件评分汇总查询。
+
+    通过 asyncio.to_thread 在工作线程中调用，避免阻塞 FastAPI 事件循环。
+    原先 4 次串行 DB 查询合并为 3 次：
+      1. COUNT + AVG 合并为单条聚合查询
+      2. GROUP BY 评分分布查询
+      3. 当前用户评分查询
+    """
     from sqlalchemy import func as _func
 
-    total_row = (
-        db.query(_func.count(PluginRating.id).label("cnt"))
+    # 第 1 次：COUNT + AVG 合并查询
+    count_avg_row = (
+        db.query(
+            _func.count(PluginRating.id).label("cnt"),
+            _func.avg(PluginRating.score).label("avg"),
+        )
         .filter(PluginRating.plugin_id == plugin_id)
-        .scalar()
+        .first()
     )
-    total = int(total_row or 0)
-    avg_row = (
-        db.query(_func.avg(PluginRating.score).label("avg"))
-        .filter(PluginRating.plugin_id == plugin_id)
-        .scalar()
-    )
-    avg = float(avg_row) if avg_row is not None else 0.0
+    total = int(count_avg_row.cnt or 0) if count_avg_row else 0
+    avg = float(count_avg_row.avg) if count_avg_row and count_avg_row.avg is not None else 0.0
 
+    # 第 2 次：评分分布 GROUP BY 查询
     dist_rows = (
         db.query(
             PluginRating.score.label("score"),
@@ -527,10 +529,10 @@ async def get_plugin_rating(
         if row.score in distribution:
             distribution[row.score] = int(row.cnt)
 
-    # 当前用户评分
+    # 第 3 次：当前用户评分查询
     user_rating = db.query(PluginRating).filter(
         PluginRating.plugin_id == plugin_id,
-        PluginRating.user_id == str(current_user.id),
+        PluginRating.user_id == user_id,
     ).first()
 
     return {
@@ -540,6 +542,26 @@ async def get_plugin_rating(
         "distribution": distribution,
         "user_score": user_rating.score if user_rating else None,
     }
+
+
+@router.get(
+    "/plugins/{plugin_id}/rating",
+    response_model=PluginRatingSummaryResponse,
+    summary="获取插件评分汇总",
+)
+async def get_plugin_rating(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> Dict[str, Any]:
+    """获取插件评分汇总信息
+
+    DB 查询通过 asyncio.to_thread 在工作线程中执行，
+    避免同步 SQLAlchemy 调用阻塞 FastAPI 事件循环。
+    """
+    return await asyncio.to_thread(
+        _get_plugin_rating_sync, db, plugin_id, str(current_user.id)
+    )
 
 
 @router.post(

@@ -88,6 +88,179 @@ DANGEROUS_COMMAND_PATTERNS: list[re.Pattern] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# 子命令/标志安全策略（参考 Claude Code 安全模型 CommandConfig 细化放行）
+# 白名单中承载任意操作的高风险命令需按子命令/标志二次校验：
+# - git 可经 hooks 执行任意代码，仅放行只读子命令，写操作子命令一律拦截
+# - tar --to-command 可在解压时执行任意命令，必须拦截
+# - tar -x / unzip 解压目标目录必须受控，防止 zip-slip 路径穿越
+# ---------------------------------------------------------------------------
+
+# git 只读子命令：放行（不修改仓库状态、不触发 hooks/远程交互）
+GIT_READONLY_SUBCOMMANDS: frozenset[str] = frozenset([
+    'status', 'diff', 'log', 'show', 'blame', 'describe',
+    'ls-files', 'ls-tree', 'rev-parse', 'help', 'version',
+])
+
+# git 写操作子命令：拦截（commit/push/checkout 等可触发 hooks 或修改仓库）
+GIT_WRITE_SUBCOMMANDS: frozenset[str] = frozenset([
+    'commit', 'push', 'checkout', 'switch', 'merge', 'rebase',
+    'reset', 'revert', 'cherry-pick', 'fetch', 'pull', 'clone',
+    'init', 'add', 'rm', 'mv', 'tag', 'branch', 'remote',
+    'config', 'clean', 'restore', 'stash', 'apply', 'am',
+    'submodule', 'update-index', 'gc', 'prune', 'archive',
+])
+
+# git 全局选项：其后跟随独立值参数（如 -C <dir>、--git-dir <path>、-c <key>=<value>）
+_GIT_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(['-C', '--git-dir', '--work-tree', '-c'])
+
+# 解压目标允许的绝对目录（其余绝对目录一律拒绝，防止解压到系统目录）
+EXTRACT_ALLOWED_ABS_DIRS: frozenset[str] = frozenset(['/tmp', '/var/tmp'])
+
+
+def _check_git_subcommand(args: list[str]) -> Tuple[bool, Optional[str]]:
+    """
+    校验 git 子命令：仅放行只读子命令，写操作子命令一律拦截。
+
+    git 可经 hooks（commit/checkout 等）或远程交互（push/fetch 等）
+    执行任意代码或泄露敏感信息，因此白名单中仅放行纯只读子命令。
+
+    Args:
+        args: git 的参数列表（不含可执行文件名）。
+
+    Returns:
+        (is_safe, error_message) 元组。
+    """
+    if not args:
+        # 无参数 git 仅打印帮助信息（只读），放行
+        return (True, None)
+    # 跳过全局选项（-C <dir>、--git-dir <path> 等），定位真实子命令
+    subcommand: Optional[str] = None
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg.startswith('-'):
+            # 带独立值参数的全局选项跳过其值
+            if arg in _GIT_OPTIONS_WITH_VALUE:
+                i += 2
+                continue
+            i += 1
+            continue
+        subcommand = arg
+        break
+    if subcommand is None:
+        # 仅有全局选项，等价于 git --help（只读），放行
+        return (True, None)
+    if subcommand in GIT_WRITE_SUBCOMMANDS:
+        return (False, f"git 子命令 '{subcommand}' 为写操作，禁止在沙箱内执行")
+    if subcommand not in GIT_READONLY_SUBCOMMANDS:
+        return (False, f"git 子命令 '{subcommand}' 不在只读白名单中，禁止执行")
+    return (True, None)
+
+
+def _check_archive_dangerous_flags(args: list[str]) -> Tuple[bool, Optional[str]]:
+    """
+    校验归档命令危险标志：--to-command 可在解压时执行任意命令。
+
+    Args:
+        args: 归档命令的参数列表。
+
+    Returns:
+        (is_safe, error_message) 元组。
+    """
+    for arg in args:
+        if arg == '--to-command' or arg.startswith('--to-command='):
+            return (False, "归档命令禁止使用 --to-command 标志（可执行任意命令）")
+    return (True, None)
+
+
+def _check_extract_destination(args: list[str]) -> Tuple[bool, Optional[str]]:
+    """
+    校验解压目标目录（tar -C / unzip -d），防止 zip-slip 路径穿越。
+
+    目标目录必须满足：
+    1. 不含 .. 路径穿越
+    2. 绝对路径必须位于允许目录（EXTRACT_ALLOWED_ABS_DIRS）内
+
+    Args:
+        args: 归档命令的参数列表。
+
+    Returns:
+        (is_safe, error_message) 元组。
+    """
+    # 解析目标目录参数：tar 用 -C/--directory，unzip 用 -d
+    target: Optional[str] = None
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ('-C', '-d', '--directory') and i + 1 < len(args):
+            target = args[i + 1]
+            break
+        if arg.startswith('--directory='):
+            target = arg.split('=', 1)[1]
+            break
+        i += 1
+    if target is None:
+        return (True, None)
+    # 目标路径含 .. 视为路径穿越（zip-slip 直接载体）
+    if '..' in target:
+        return (False, f"解压目标路径包含路径穿越: {target!r}")
+    # 绝对目标目录必须位于允许目录内
+    normalized = target.replace('\\', '/')
+    if normalized.startswith('/') or re.match(r'^[A-Za-z]:/', normalized):
+        allowed = any(
+            normalized == d or normalized.startswith(d + '/')
+            for d in EXTRACT_ALLOWED_ABS_DIRS
+        )
+        if not allowed:
+            return (False, f"解压目标目录不在允许范围内: {target!r}")
+    return (True, None)
+
+
+def validate_subcommand_safety(
+    executable: str,
+    args: list[str],
+) -> Tuple[bool, Optional[str]]:
+    """
+    校验白名单命令的子命令/标志安全性。
+
+    当前策略：
+    - git：仅放行只读子命令，写操作子命令（commit/push/checkout 等）拦截
+    - tar：拦截 --to-command 危险标志；解压（-x）时校验目标目录
+    - unzip：解压时校验目标目录（-d），防止 zip-slip
+
+    Args:
+        executable: 可执行文件名（已在白名单内）。
+        args: 命令参数列表。
+
+    Returns:
+        (is_safe, error_message) 元组。
+    """
+    # git 子命令策略
+    if executable == 'git':
+        return _check_git_subcommand(args)
+
+    # tar 危险标志与解压目标目录检查
+    if executable == 'tar':
+        is_safe, err_msg = _check_archive_dangerous_flags(args)
+        if not is_safe:
+            return (False, err_msg)
+        # 解压检测：-x 短标志组合（-xf/-xzf 等）或 --extract/--get 长选项
+        is_extract = any(
+            (arg.startswith('--') and arg in ('--extract', '--get'))
+            or (arg.startswith('-') and not arg.startswith('--') and 'x' in arg)
+            for arg in args
+        )
+        if is_extract:
+            return _check_extract_destination(args)
+
+    # unzip 解压目标目录检查（unzip 默认即解压）
+    if executable == 'unzip':
+        return _check_extract_destination(args)
+
+    return (True, None)
+
+
 def validate_command_safety(cmd: list[str]) -> bool:
     """
     校验命令是否安全可执行（统一入口，新代码推荐使用）。
@@ -124,6 +297,11 @@ def validate_command_safety(cmd: list[str]) -> bool:
         for pattern in DANGEROUS_ARG_PATTERNS:
             if pattern.search(arg):
                 return False
+
+    # 子命令/标志安全策略（git 只读、tar --to-command、解压目标目录）
+    is_safe, _ = validate_subcommand_safety(executable, args)
+    if not is_safe:
+        return False
 
     # ACP 硬阻断策略：rm -rf / / sudo rm -rf / / mkfs / dd if= 直接拒绝
     full_cmd = ' '.join(cmd)
@@ -170,6 +348,11 @@ def validate_command_safety_detailed(
         for pattern in DANGEROUS_ARG_PATTERNS:
             if pattern.search(arg):
                 return (False, f"命令参数包含不允许的字符或模式: {arg!r}")
+
+    # 子命令/标志安全策略（git 只读、tar --to-command、解压目标目录）
+    is_safe, err_msg = validate_subcommand_safety(executable, args)
+    if not is_safe:
+        return (False, err_msg)
 
     # ACP 硬阻断策略：rm -rf / / sudo rm -rf / / mkfs / dd if= 直接拒绝
     full_cmd = ' '.join([executable] + list(args))

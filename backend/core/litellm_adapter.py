@@ -1277,13 +1277,21 @@ async def litellm_chat_completion_stream(
             )
 
             delta_tool_calls: Dict[int, Dict[str, Any]] = {}
+            # 流尾透传的真实 finish_reason 与 usage（OpenAI finish_reason / Anthropic stop_reason）
+            finish_reason: Optional[str] = None
 
             async for chunk in response:
                 content = ""
                 reasoning = ""
+                chunk_finish_reason: Optional[str] = None
+                chunk_usage: Optional[Dict[str, Any]] = None
 
                 if hasattr(chunk, "choices") and chunk.choices:
-                    delta = chunk.choices[0].delta
+                    first_choice = chunk.choices[0]
+                    # 解析真实 stop_reason（流尾 message_delta 中的 finish_reason）
+                    if hasattr(first_choice, "finish_reason"):
+                        chunk_finish_reason = first_choice.finish_reason or None
+                    delta = first_choice.delta
                     if delta:
                         content = delta.content or ""
                         if hasattr(delta, "reasoning_content"):
@@ -1303,10 +1311,35 @@ async def litellm_chat_completion_stream(
                                     if tc_delta.function.arguments:
                                         delta_tool_calls[idx]["function"]["arguments"] += tc_delta.function.arguments
 
-                if content or reasoning:
-                    yield {"content": content, "reasoning_content": reasoning}
+                # 透传流尾 usage（OpenAI include_usage / Anthropic message_delta.usage）
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    if isinstance(chunk_usage, dict) and chunk_usage:
+                        chunk_usage = dict(chunk_usage)
+                    elif hasattr(chunk_usage, "model_dump"):
+                        chunk_usage = chunk_usage.model_dump()
+                    elif hasattr(chunk_usage, "dict"):
+                        chunk_usage = chunk_usage.dict()
+                    else:
+                        chunk_usage = None
 
-            # 如果有累积的 tool_calls，发出 tool_calls 事件
+                # 记录最新 finish_reason 供 tool_calls 事件透传
+                if chunk_finish_reason:
+                    finish_reason = chunk_finish_reason
+
+                # 有正文、推理、finish_reason 或 usage 时均透传，保证上层能拿到完整状态
+                if content or reasoning or chunk_finish_reason or chunk_usage:
+                    payload: Dict[str, Any] = {
+                        "content": content,
+                        "reasoning_content": reasoning,
+                    }
+                    if chunk_finish_reason:
+                        payload["finish_reason"] = chunk_finish_reason
+                    if chunk_usage:
+                        payload["usage"] = chunk_usage
+                    yield payload
+
+            # 如果有累积的 tool_calls，发出 tool_calls 事件（携带 finish_reason）
             if delta_tool_calls:
                 tool_calls_list = []
                 for idx in sorted(delta_tool_calls.keys()):
@@ -1319,7 +1352,13 @@ async def litellm_chat_completion_stream(
                             "arguments": tc["function"]["arguments"],
                         }
                     })
-                yield {"type": "tool_calls", "tool_calls": tool_calls_list}
+                tool_calls_event: Dict[str, Any] = {
+                    "type": "tool_calls",
+                    "tool_calls": tool_calls_list,
+                }
+                if finish_reason:
+                    tool_calls_event["finish_reason"] = finish_reason
+                yield tool_calls_event
 
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             await circuit_breaker.on_success()
@@ -1397,6 +1436,21 @@ async def litellm_chat_completion_stream(
                 await circuit_breaker.on_failure()
                 yield {"error": mapped_error}
                 return
+
+        finally:
+            # 无论成功、异常还是重试，都显式关闭流式响应，防止连接与迭代器泄漏
+            if response is not None:
+                try:
+                    close_fn = getattr(response, "aclose", None) or getattr(response, "close", None)
+                    if close_fn is not None:
+                        close_result = close_fn()
+                        if asyncio.iscoroutine(close_result) or hasattr(close_result, "__await__"):
+                            await close_result
+                except Exception:
+                    # 响应清理失败不影响已获取的结果，降级为 debug 避免每次调用产生噪音
+                    logger.bind(module="litellm_adapter", event="stream_response_close_error").debug(
+                        "关闭流式响应失败（结果已获取，忽略）"
+                    )
 
         if attempt < num_retries:
             if is_rate_limit and _last_exc is not None:

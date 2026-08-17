@@ -21,6 +21,8 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from config.thresholds import MAX_TOOL_OUTPUT_CHARS
+
 
 class ToolPriority(int, Enum):
     """工具优先级"""
@@ -135,6 +137,45 @@ def resolve_concurrency_safe(
     return False
 
 
+def resolve_read_only(
+    definition: ToolDefinition,
+    input_params: dict,
+) -> bool:
+    """
+    根据工具定义和输入参数解析只读性。
+
+    失败关闭原则：任何异常或不确定情况均返回 False（视为非只读）。
+
+    Args:
+        definition: 工具定义实例
+        input_params: 工具调用的输入参数
+
+    Returns:
+        是否只读
+    """
+    is_ro = definition.is_read_only
+    # bool 类型直接返回
+    if isinstance(is_ro, bool):
+        return is_ro
+    # callable 类型调用判定函数
+    if callable(is_ro):
+        try:
+            result = is_ro(input_params)
+            return bool(result)
+        except Exception as e:
+            # 失败关闭：callable 抛异常时返回 False
+            logger.warning(
+                f"工具 '{definition.name}' 的 is_read_only callable 抛异常，"
+                f"默认返回 False: {type(e).__name__}: {e}"
+            )
+            return False
+    # 既不是 bool 也不是 callable，失败关闭返回 False
+    logger.warning(
+        f"工具 '{definition.name}' 的 is_read_only 类型非法: {type(is_ro).__name__}"
+    )
+    return False
+
+
 @dataclass
 class ToolExecutionResult:
     """工具执行结果"""
@@ -170,8 +211,8 @@ class ToolRegistry:
     5. 工具执行与输出管理
     """
 
-    # 最大工具输出长度（字符数）
-    MAX_OUTPUT_CHARS = 10_000
+    # 最大工具输出长度（字符数），值由 config.thresholds.MAX_TOOL_OUTPUT_CHARS 提供
+    MAX_OUTPUT_CHARS = MAX_TOOL_OUTPUT_CHARS
 
     def __init__(self):
         # 工具存储：name -> 优先级排序的工具列表
@@ -240,10 +281,16 @@ class ToolRegistry:
         from core.permission_manager import wildcard_match
 
         definitions = []
-        for tool_name, tools_list in self._tools.items():
+        # 按名称排序保证 prompt-cache 断点稳定（参考 ch07 §7.4.2）
+        for tool_name in sorted(self._tools.keys()):
+            tools_list = self._tools[tool_name]
             if not tools_list:
                 continue
             tool = tools_list[0]
+
+            # enabled 过滤：与执行侧可用性保持一致
+            if not tool.enabled:
+                continue
 
             # 权限检查
             if permissions is not None:
@@ -310,13 +357,14 @@ class ToolRegistry:
             # 更新统计
             self._update_stats(tool_name, "completed")
 
-            # 检查输出是否需要截断
+            # 检查输出是否需要截断（per-tool 截断优先，回退到类常量）
+            max_chars = tool.max_result_size_chars if tool.max_result_size_chars is not None else self.MAX_OUTPUT_CHARS
             output_str = json.dumps(result, ensure_ascii=False)
-            truncated = len(output_str) > self.MAX_OUTPUT_CHARS
+            truncated = len(output_str) > max_chars
 
             if truncated:
                 output_path = await self._store_output(tool_name, output_str)
-                result_summary = output_str[:self.MAX_OUTPUT_CHARS] + f"\n[输出已截断，完整内容: {output_path}]"
+                result_summary = output_str[:max_chars] + f"\n[输出已截断，完整内容: {output_path}]"
                 return ToolExecutionResult(
                     tool_name=tool_name,
                     status=ToolStatus.COMPLETED,
@@ -382,3 +430,11 @@ class ToolRegistry:
 
 # 全局工具注册中心实例
 tool_registry = ToolRegistry()
+
+
+# 保持向后兼容的模块级别名
+# 新代码应使用 get_agent_lifecycle().get_tool_registry()
+def _get_tool_registry():
+    """从 AgentLifecycle 获取工具注册表（支持测试隔离）"""
+    from core.agent_lifecycle import get_agent_lifecycle
+    return get_agent_lifecycle().get_tool_registry()

@@ -11,8 +11,7 @@ import re
 
 class ValidationResult(NamedTuple):
     """
-    封装与ValidationResult相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    技能配置校验结果，包含有效性标志、错误列表和警告列表。
     """
     valid: bool
     errors: List[str]
@@ -41,8 +40,7 @@ class ValidationResult(NamedTuple):
 
 class SkillValidator:
     """
-    封装与SkillValidator相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    技能配置校验器，校验必填字段、权限声明、YAML格式和Schema结构。
     """
     REQUIRED_FIELDS = ['name', 'version', 'description']
 

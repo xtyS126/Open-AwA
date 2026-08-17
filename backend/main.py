@@ -299,6 +299,36 @@ async def _startup_infrastructure(profiler: StartupProfiler) -> None:
     with profiler.step("api_key_init"):
         _ensure_api_key()
 
+    # 注册内置工具到 ToolRegistry（单一事实来源）
+    # 必须在 Agent 首次工具调用前完成，否则 builtin 分支会因注册表为空而拒绝执行
+    with profiler.step("register_builtin_tools"):
+        _register_builtin_tools_at_startup()
+
+
+def _register_builtin_tools_at_startup() -> None:
+    """启动时注册内置工具到 ToolRegistry。
+
+    幂等：重复调用只补充未注册的工具，不覆盖已注册的高优先级定义。
+    ask_user 的权限映射与并发属性由模块级 ensure_ask_user_permissions() 注入。
+    """
+    from core.tool_entries import register_builtin_tools
+    from core.tool_registry import tool_registry
+
+    try:
+        register_builtin_tools(tool_registry)
+        registered = tool_registry.list_all()
+        logger.bind(
+            event="builtin_tools_registered",
+            module="main",
+            tool_count=len(registered),
+        ).info(f"已注册 {len(registered)} 个内置工具到 ToolRegistry")
+    except Exception as exc:
+        logger.bind(
+            event="builtin_tools_register_error",
+            module="main",
+        ).error(f"注册内置工具到 ToolRegistry 失败: {exc}")
+        raise
+
 
 def _scan_legacy_encrypted_keys_sync(db_session) -> None:
     """启动时扫描 provider_credentials 和 model_configurations 两表中的 enc: 旧密文，记录 WARNING 日志。
@@ -967,7 +997,7 @@ def _startup_mcp_sse_origin(profiler: StartupProfiler) -> None:
         RuntimeError: 未配置 MCP_SSE_ALLOWED_ORIGINS（fail-closed 拒绝启动）。
     """
     with profiler.step("mcp_sse_origin_config"):
-        from mcp.manager import SSETransport
+        from mcp_integration.manager import SSETransport
 
         raw_origins = os.getenv("MCP_SSE_ALLOWED_ORIGINS", "")
         origins = [item.strip() for item in raw_origins.split(",") if item.strip()]
@@ -1008,11 +1038,22 @@ async def _startup_mcp_preheat(profiler: StartupProfiler) -> None:
     """MCPManager 启动期预热：触发单例构造与配置恢复，避免首次对话时同步阻塞。"""
     with profiler.step("mcp_preheat"):
         try:
-            from mcp.manager import MCPManager
+            from mcp_integration.manager import MCPManager
             MCPManager()
             logger.bind(event="mcp_preheat_done", module="startup").info("MCPManager 预热完成")
         except Exception as e:
             logger.bind(event="mcp_preheat_error", module="startup").warning(f"MCPManager 预热失败: {e}")
+
+
+async def _startup_task_runtime(profiler: StartupProfiler) -> None:
+    """task_runtime 初始化异步包装，供并行启动分组使用。"""
+    with profiler.step("task_runtime_init"):
+        await task_runtime.initialize()
+
+
+async def _startup_mcp_sse_origin_async(profiler: StartupProfiler) -> None:
+    """MCP SSE origin 配置异步包装，供并行启动分组使用。"""
+    _startup_mcp_sse_origin(profiler)
 
 
 async def _shutdown_autonomous_mode() -> None:
@@ -1069,6 +1110,15 @@ async def lifespan(app: FastAPI):
     profiler.start()
     app.state.startup_failures = {}
 
+    # 初始化 Agent 生命周期管理器（替代模块级全局单例，支持测试隔离）
+    from core.agent_lifecycle import AgentLifecycle, set_agent_lifecycle
+    lifecycle = AgentLifecycle()
+    lifecycle.init_tool_registry()
+    lifecycle.init_hook_manager()
+    lifecycle.init_feedback_layer()
+    set_agent_lifecycle(lifecycle)
+    logger.bind(event="agent_lifecycle_initialized", module="main").info("AgentLifecycle 已初始化")
+
     try:
         # 注入 AskUserPortAdapter 到 AIAgentRegistry 单例，
         # 解耦 core.agent 对 api.routes.ask_user 的反向依赖（fix-brooks-lint-wave2 Task 3）
@@ -1079,41 +1129,64 @@ async def lifespan(app: FastAPI):
         logger.bind(event="ask_user_port_injected", module="main").info(
             "AskUserPortAdapter 与 WorkflowRepositoryAdapter 已注入 AIAgentRegistry"
         )
+        # 第一阶段：串行执行有依赖关系的基础启动步骤
         await _startup_infrastructure(profiler)
         await _startup_data_init(profiler)
         await _startup_owner_user_init(profiler)
-        # 首个记忆/聊天请求前完成共享向量运行时预热，避免请求级 15 秒超时。
-        # memory_runtime 是 CLAUDE.md 19.x 文档化的可降级启动，失败仅记录不拒绝启动；
-        # 其余启动步骤失败一律拒绝启动（fail-fast，禁止带病启动）。
-        await _run_optional_startup_step(
-            app, "memory_runtime", lambda: prewarm_agent_memory(SessionLocal),
-            degradable=True,
-        )
-        await _run_optional_startup_step(
-            app, "plugin_system", lambda: _startup_plugin_system(profiler)
-        )
-        await _run_optional_startup_step(
-            app, "background_tasks", lambda: _startup_background_tasks(profiler)
-        )
-        # task_runtime 初始化：回收悬挂会话（原 @router.on_event("startup") 迁移至 lifespan）
-        # task_runtime.initialize 为 async 函数，直接 await 调用（asyncio.to_thread 不适用于 async 函数）
-        # 初始化失败并入启动失败（拒绝带病启动）
-        with profiler.step("task_runtime_init"):
-            await task_runtime.initialize()
-        # 17. 自主运行模式初始化（在所有其他初始化之后）
-        await _run_optional_startup_step(
-            app, "autonomous_mode", lambda: _startup_autonomous_mode(profiler)
-        )
-        # 18. ACP 服务初始化（数据库初始化之后，按 agent 注册 ACPService 实例）
-        await _run_optional_startup_step(
-            app, "acp_service", lambda: _startup_acp_service(profiler)
-        )
-        # 19. 配置 MCP SSE 传输层 origin 白名单（未配置时拒绝启动，fail-closed）
-        _startup_mcp_sse_origin(profiler)
-        # 21. MCPManager 预热：触发单例构造与持久化配置恢复，避免首次对话同步阻塞
-        await _run_optional_startup_step(
-            app, "mcp_preheat", lambda: _startup_mcp_preheat(profiler)
-        )
+
+        # 第二阶段：并行执行独立的启动步骤（无相互依赖，均可并行）
+        # 使用 asyncio.gather(return_exceptions=True) 保留失败聚合语义，
+        # 每个步骤失败后继续执行其他步骤，最终统一报告失败
+        parallel_steps = [
+            _run_optional_startup_step(
+                app, "memory_runtime", lambda: prewarm_agent_memory(SessionLocal),
+                degradable=True,
+            ),
+            _run_optional_startup_step(
+                app, "plugin_system", lambda: _startup_plugin_system(profiler)
+            ),
+            _run_optional_startup_step(
+                app, "background_tasks", lambda: _startup_background_tasks(profiler)
+            ),
+            _startup_task_runtime(profiler),
+            _run_optional_startup_step(
+                app, "autonomous_mode", lambda: _startup_autonomous_mode(profiler)
+            ),
+            _run_optional_startup_step(
+                app, "acp_service", lambda: _startup_acp_service(profiler)
+            ),
+            _startup_mcp_sse_origin_async(profiler),
+            _run_optional_startup_step(
+                app, "mcp_preheat", lambda: _startup_mcp_preheat(profiler)
+            ),
+        ]
+        parallel_results = await asyncio.gather(*parallel_steps, return_exceptions=True)
+        # 聚合失败：收集所有异常，统一报告
+        parallel_errors: list[Exception] = []
+        for i, result in enumerate(parallel_results):
+            if isinstance(result, Exception):
+                parallel_errors.append(result)
+                step_names = [
+                    "memory_runtime", "plugin_system", "background_tasks",
+                    "task_runtime_init", "autonomous_mode", "acp_service",
+                    "mcp_sse_origin", "mcp_preheat",
+                ]
+                logger.bind(
+                    event="startup_parallel_step_failed",
+                    module="main",
+                    step=step_names[i] if i < len(step_names) else f"step_{i}",
+                ).error(f"并行启动步骤失败: {result}")
+        if parallel_errors:
+            # 非降级步骤失败时聚合抛出，拒绝带病启动
+            non_degradable_errors = [
+                e for i, e in enumerate(parallel_errors)
+                if i != 0  # memory_runtime 是可降级步骤
+            ]
+            if non_degradable_errors:
+                raise RuntimeError(
+                    f"启动阶段并行步骤失败 ({len(non_degradable_errors)} 个): "
+                    + "; ".join(str(e) for e in non_degradable_errors[:3])
+                )
     except Exception:
         logger.bind(event="app_startup_failed", module="main").error("启动过程发生异常，服务将终止")
         raise
@@ -1423,10 +1496,6 @@ async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    """
-    处理unhandled、exception、handler相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     request_id = getattr(request.state, "request_id", "") or generate_request_id()
     logger.bind(
         event="unhandled_exception",
@@ -1614,7 +1683,7 @@ app.include_router(experiences.router, prefix=settings.API_V1_STR)
 app.include_router(experience_files.router, prefix=settings.API_V1_STR)
 app.include_router(conversation.router, prefix=settings.API_V1_STR)
 app.include_router(logs.router, prefix=settings.API_V1_STR)
-app.include_router(mcp.router)
+app.include_router(mcp.router, prefix=settings.API_V1_STR)
 app.include_router(models.router)
 app.include_router(billing.router)
 app.include_router(marketplace_router)
@@ -1650,8 +1719,7 @@ app.include_router(role_market_router, prefix=settings.API_V1_STR)
 app.include_router(data_router, prefix=settings.API_V1_STR)
 app.include_router(terminal_router, prefix=settings.API_V1_STR)
 app.include_router(im_router, prefix=settings.API_V1_STR)
-# ACP 路由前缀已内置在 router 定义中（/api/acp），无需 settings.API_V1_STR 前缀
-app.include_router(acp_router)
+app.include_router(acp_router, prefix=settings.API_V1_STR)
 # 本地开发服务器反向代理，前缀 /api/preview 已内置在 router 定义中
 app.include_router(preview_proxy_router)
 # 通知 HTTP API，前缀 /api/notifications 已内置在 router 定义中

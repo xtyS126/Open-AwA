@@ -28,8 +28,7 @@ from .skill_fork_executor import execute_forked_skill
 @dataclass
 class PerformanceMetrics:
     """
-    封装与PerformanceMetrics相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    技能执行性能指标的数据容器，记录开始时间、耗时、步骤数和内存使用量。
     """
     skill_name: str
     start_time: float
@@ -47,8 +46,7 @@ class PerformanceMetrics:
 
     def to_dict(self) -> Dict[str, Any]:
         """
-        处理to、dict相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        将性能指标数据序列化为字典，供日志记录和API响应使用。
         """
         return {
             'skill_name': self.skill_name,
@@ -65,8 +63,7 @@ class PerformanceMetrics:
 @dataclass
 class ExecutionLog:
     """
-    封装与ExecutionLog相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    技能执行日志条目，记录事件类型、消息内容和时间戳等执行追踪信息。
     """
     log_id: str
     skill_name: str
@@ -78,8 +75,7 @@ class ExecutionLog:
 
     def to_dict(self) -> Dict[str, Any]:
         """
-        处理to、dict相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        将日志条目序列化为字典，供日志查询和导出使用。
         """
         return {
             'log_id': self.log_id,
@@ -94,8 +90,7 @@ class ExecutionLog:
 
 class SkillEngine:
     """
-    封装与SkillEngine相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    技能执行引擎，负责技能查找、校验、环境初始化、执行分派和性能追踪。
 
     Task 16 扩展：根据 skill_config.execution_mode 分派执行模式
     - "steps": 执行传统步骤逻辑（默认）
@@ -120,15 +115,13 @@ class SkillEngine:
 
     def _generate_log_id(self) -> str:
         """
-        处理generate、log、id相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        生成唯一的日志条目ID，用于执行日志追踪。
         """
         return str(uuid.uuid4())
 
     def _get_timestamp(self) -> str:
         """
-        处理get、timestamp相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        获取当前UTC时间戳的ISO格式字符串，用于日志和指标记录。
         """
         return datetime.now(timezone.utc).isoformat()
 
@@ -141,8 +134,7 @@ class SkillEngine:
         details: Optional[Dict[str, Any]] = None
     ) -> ExecutionLog:
         """
-        处理add、execution、log相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        创建并追加一条执行日志，同时写入logger和内存日志缓冲区。
         """
         log = ExecutionLog(
             log_id=self._generate_log_id(),
@@ -172,8 +164,7 @@ class SkillEngine:
 
     def _start_performance_tracking(self, skill_name: str) -> PerformanceMetrics:
         """
-        处理start、performance、tracking相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        为指定技能创建性能追踪指标对象，记录开始时间。
         """
         metrics = PerformanceMetrics(
             skill_name=skill_name,
@@ -188,8 +179,7 @@ class SkillEngine:
 
     def _get_current_memory_usage(self) -> Optional[int]:
         """
-        处理get、current、memory、usage相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        获取当前进程的内存占用（RSS），psutil不可用时返回None。
         """
         try:
             import psutil
@@ -325,7 +315,9 @@ class SkillEngine:
             execution_mode = skill_config.get('execution_mode', 'steps')
 
             if execution_mode == 'prompt':
-                # prompt 模式：技能作为 prompt 注入，返回 prompt 文本
+                # prompt 模式：技能作为 prompt 注入，返回 prompt 文本。
+                # Task 18: 结果以 user 消息回注入主对话（context["conversation_history"]），
+                # 并在返回值中标记 inject_as_user=True，供 plan_executor 消费。
                 self._add_execution_log(
                     skill_name=skill_name,
                     event_type='PROMPT_MODE_DISPATCH',
@@ -335,6 +327,17 @@ class SkillEngine:
                 prompt_text = get_prompt_for_command(
                     skill_name, merged_inputs, skill_config=skill_config
                 )
+                if prompt_text:
+                    history = context.get("conversation_history")
+                    if history is None:
+                        history = []
+                        context["conversation_history"] = history
+                    if isinstance(history, list) and not (
+                        history
+                        and history[-1].get("role") == "user"
+                        and history[-1].get("content") == prompt_text
+                    ):
+                        history.append({"role": "user", "content": prompt_text})
                 metrics.finalize()
 
                 self._add_execution_log(
@@ -354,6 +357,7 @@ class SkillEngine:
                     'execution_id': execution_id,
                     'execution_mode': 'prompt',
                     'prompt': prompt_text,
+                    'inject_as_user': True,
                     'outputs': {'prompt': prompt_text},
                     'steps': [],
                     'metrics': metrics.to_dict(),
@@ -361,14 +365,22 @@ class SkillEngine:
                 }
 
             if execution_mode == 'fork':
-                # fork 模式：启动 Fork 子 Agent 执行，返回 task_id（异步执行）
+                # fork 模式：桥接 task_runtime.spawn_agent(fork_mode=True) 真实调度
+                # Fork 子 Agent，等待完成后提取结果文本返回（Task 18）
                 self._add_execution_log(
                     skill_name=skill_name,
                     event_type='FORK_MODE_DISPATCH',
                     message=f'Dispatching to fork mode: {skill_name}',
                     details={'execution_id': execution_id, 'execution_mode': execution_mode}
                 )
-                task_id = execute_forked_skill(skill_config, context)
+                fork_result = await execute_forked_skill(skill_config, context)
+                if isinstance(fork_result, dict):
+                    task_id = str(fork_result.get("task_id") or "")
+                    result_text = str(fork_result.get("result") or "")
+                else:
+                    # 兼容旧实现返回的 task_id 字符串
+                    task_id = str(fork_result or "")
+                    result_text = ""
                 metrics.finalize()
 
                 self._add_execution_log(
@@ -388,7 +400,8 @@ class SkillEngine:
                     'execution_id': execution_id,
                     'execution_mode': 'fork',
                     'task_id': task_id,
-                    'outputs': {'task_id': task_id},
+                    'result': result_text,
+                    'outputs': {'task_id': task_id, 'result': result_text},
                     'steps': [],
                     'metrics': metrics.to_dict(),
                     'execution_time': metrics.duration,
@@ -724,8 +737,7 @@ class SkillEngine:
 
     def clear_logs(self) -> int:
         """
-        处理clear、logs相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        清空内存中的执行日志缓冲区，返回被清除的日志条目数量。
         """
         count = len(self._execution_logs)
         self._execution_logs.clear()
@@ -734,8 +746,7 @@ class SkillEngine:
 
     def clear_metrics(self) -> int:
         """
-        处理clear、metrics相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        清空内存中的性能指标缓冲区，返回被清除的指标条目数量。
         """
         count = len(self._performance_metrics)
         self._performance_metrics.clear()

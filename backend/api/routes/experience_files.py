@@ -19,10 +19,6 @@ _ALLOWED_EXTENSIONS = {".md", ".markdown"}
 
 
 class ExperienceFileSummary(BaseModel):
-    """
-    封装与ExperienceFileSummary相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     file_name: str
     title: str
     updated_at: datetime
@@ -31,10 +27,6 @@ class ExperienceFileSummary(BaseModel):
 
 
 class ExperienceFileDetail(BaseModel):
-    """
-    封装与ExperienceFileDetail相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     file_name: str
     title: str
     updated_at: datetime
@@ -43,18 +35,10 @@ class ExperienceFileDetail(BaseModel):
 
 
 class ExperienceFileSaveRequest(BaseModel):
-    """
-    封装与ExperienceFileSaveRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     content: str
 
 
 class ExperienceFileSaveResponse(BaseModel):
-    """
-    封装与ExperienceFileSaveResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     file_name: str
     updated_at: datetime
     size: int
@@ -98,10 +82,6 @@ def _resolve_safe_markdown_path(file_name: str, user_id: int) -> Path:
 
 
 def _extract_title(content: str, fallback: str) -> str:
-    """
-    处理extract、title相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     for line in content.splitlines():
         stripped = line.strip()
         if stripped.startswith("#"):
@@ -112,10 +92,6 @@ def _extract_title(content: str, fallback: str) -> str:
 
 
 def _extract_summary(content: str) -> str:
-    """
-    处理extract、summary相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     for line in content.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):

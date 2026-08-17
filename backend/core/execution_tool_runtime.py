@@ -11,12 +11,120 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from loguru import logger
 
 from core.execution_support import MAX_TOOL_RESULT_CHARS, _handle_audit_task_result
-from core.tool_use_context import ToolUseContext, coerce_tool_context
-from mcp.manager import MCPManager
+from core.tool_use_context import ToolUseContext
+from core.tool_execution import (
+    ToolExecutionContext,
+    ToolExecutionStrategyRegistry,
+    BuiltinToolStrategy,
+    PluginToolStrategy,
+    MCPToolStrategy,
+    TaskToolStrategy,
+)
+
+
+# 工具名到权限 action 类别的精确映射（与 PermissionManager 规则 action 对齐：
+# read/glob/grep/web_search/web_fetch/skill/write/edit/delete/bash 等）
+_TOOL_ACTION_EXACT_MAP: Dict[str, str] = {
+    "read_file": "read",
+    "list_files": "read",
+    "file_exists": "read",
+    "local_search": "read",
+    "glob": "glob",
+    "grep": "grep",
+    "web_search": "web_search",
+    "web_fetch": "web_fetch",
+    "write_file": "write",
+    "create_file": "write",
+    "edit_file": "edit",
+    "apply_patch": "edit",
+    "delete_file": "delete",
+    "execute_command": "bash",
+    "run_shell": "bash",
+}
+
+# 只读工具名前缀
+_READ_TOOL_PREFIXES = ("read_", "list_", "search_", "get_", "find_", "query_", "check_", "fetch_")
+# 写入工具名前缀
+_WRITE_TOOL_PREFIXES = ("write_", "create_", "save_", "upload_")
+# 编辑工具名前缀
+_EDIT_TOOL_PREFIXES = ("edit_", "patch_", "update_", "modify_")
+# 删除工具名前缀
+_DELETE_TOOL_PREFIXES = ("delete_", "remove_", "drop_", "truncate_", "purge_")
+# 命令执行工具名前缀
+_BASH_TOOL_PREFIXES = ("execute_", "run_", "bash", "shell_", "terminal")
+
+
+def _infer_permission_action(tool_name: str) -> str:
+    """
+    根据工具名推断权限 action 类别（read/write/edit/delete/bash 等）。
+
+    供 PermissionManager 规则评估使用，与 _get_agent_rules 中的规则 action 对齐。
+    未识别时返回工具名本身，保证未知工具至少可被 catch-all 规则约束。
+    """
+    name = tool_name
+    if name.startswith("builtin_"):
+        name = name[len("builtin_"):]
+
+    if name in _TOOL_ACTION_EXACT_MAP:
+        return _TOOL_ACTION_EXACT_MAP[name]
+
+    if name.startswith("install_"):
+        return "skill"
+    if name.startswith(_READ_TOOL_PREFIXES):
+        return "read"
+    if name.startswith(_WRITE_TOOL_PREFIXES):
+        return "write"
+    if name.startswith(_EDIT_TOOL_PREFIXES):
+        return "edit"
+    if name.startswith(_DELETE_TOOL_PREFIXES):
+        return "delete"
+    if name.startswith(_BASH_TOOL_PREFIXES):
+        return "bash"
+    if name.startswith("plugin_"):
+        return "plugin"
+    if name.startswith("task_"):
+        return "system"
+    if name.startswith("mcp_"):
+        return "network"
+    return name
+
+
+def _extract_permission_resources(tool_args: Dict[str, Any], tool_name: str) -> List[str]:
+    """
+    从工具参数中提取权限检查所需的资源列表（路径/命令/URL 等）。
+
+    与 _request_user_permission 的资源提取逻辑保持一致；
+    无可用参数时回退为工具名本身，保证资源列表非空。
+    """
+    resources: List[str] = []
+    for key in ("path", "file", "files", "command", "url", "directory"):
+        value = tool_args.get(key)
+        if isinstance(value, str) and value:
+            resources.append(value)
+        elif isinstance(value, list):
+            resources.extend(str(v) for v in value if v)
+    if not resources:
+        resources = [tool_name]
+    return resources
 
 
 class ExecutionToolRuntimeMixin:
     """由 ExecutionLayer 组合的内部协作者。"""
+
+    def _ensure_tool_strategy_registry(self) -> ToolExecutionStrategyRegistry:
+        """延迟初始化工具执行策略注册表（首次调用时创建）。"""
+        if not hasattr(self, "_tool_strategy_registry") or self._tool_strategy_registry is None:
+            from core.task_runtime import task_runtime as _task_runtime
+            from core.tool_registry import tool_registry as _tool_reg
+
+            registry = ToolExecutionStrategyRegistry()
+            # 注册四种策略：内置工具作为兜底（can_handle 同时匹配 builtin_ 和无前缀工具）
+            registry.register("builtin_", BuiltinToolStrategy(tool_registry=_tool_reg, mixin=self))
+            registry.register("plugin_", PluginToolStrategy(mixin=self))
+            registry.register("mcp_", MCPToolStrategy(mixin=self))
+            registry.register("task_", TaskToolStrategy(task_runtime=_task_runtime, mixin=self))
+            self._tool_strategy_registry = registry
+        return self._tool_strategy_registry
 
     @staticmethod
     def build_assistant_tool_call_message(
@@ -281,6 +389,242 @@ class ExecutionToolRuntimeMixin:
         ).info(f"权限请求回复: {tool_name} -> {reply}")
         return reply
 
+    async def _check_tool_permission(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        工具分发前的权限检查链（PermissionGuard 模式检查 + PermissionManager 规则评估 + 拒绝追踪）。
+
+        检查顺序：
+        1. PermissionGuard 模式检查（plan/accept_edits/dont_ask），仅在 context 配置了
+           非 default 的 permission_mode 时启用，避免破坏默认行为
+        2. PermissionManager 规则评估（deny > allow > ask），仅在存在生效规则时启用，
+           无规则时默认放行，避免默认 ASK 破坏既有行为
+        3. 需要确认时触发 enqueue_permission_request（经 _request_user_permission），
+           用户回复 once/always 继续执行，reject 拒绝执行
+        4. 拒绝追踪：deny/拒绝时 record_denial，放行时 record_success，
+           auto 模式下连续拒绝超限自动回退到人工确认模式
+
+        返回 None 表示放行，返回 dict 表示拦截结果（直接作为工具执行结果返回）。
+        """
+        # 用户交互类工具无需权限门禁（本身需要用户参与确认）
+        if tool_name in ("ask_user", "builtin_ask_user"):
+            return None
+
+        permission_mode = context.get("permission_mode")
+        user_id = str(context.get("user_id", "") or "")
+        agent_id = context.get("agent_id") or context.get("agent_name")
+        work_dir = context.get("work_dir")
+
+        # 第一层：PermissionGuard 模式检查。
+        # 仅对非 default 的强制模式启用；bypass_permissions 全部放行（直接跳过整个检查链）。
+        if permission_mode == "bypass_permissions":
+            return None
+        if permission_mode in ("plan", "accept_edits", "dont_ask"):
+            try:
+                from core.task_runtime.permission_guard import permission_guard as _guard
+            except ImportError:
+                _guard = None
+            if _guard is not None:
+                decision = _guard.evaluate(
+                    tool_name,
+                    tool_args,
+                    permission_mode=str(permission_mode),
+                    work_dir=work_dir,
+                )
+                if not decision.allowed:
+                    logger.bind(
+                        module="executor",
+                        event="permission_mode_denied",
+                        tool_name=tool_name,
+                        permission_mode=permission_mode,
+                        reason=decision.reason,
+                    ).warning(f"权限模式拒绝工具调用: {tool_name} ({permission_mode})")
+                    return {
+                        "ok": False,
+                        "error": decision.reason or f"权限模式拒绝工具调用: {tool_name}",
+                        "tool_name": tool_name,
+                        "denied_by": "permission_mode",
+                    }
+                if decision.require_user_confirm:
+                    # 模式级确认：写操作等需要用户确认
+                    reply = await self._request_user_permission(tool_name, tool_args, context)
+                    if reply == "reject":
+                        return {
+                            "ok": False,
+                            "error": f"用户拒绝权限: {tool_name}",
+                            "tool_name": tool_name,
+                            "denied_by": "user",
+                        }
+
+        # 第二层：PermissionManager 规则评估（deny > allow > ask）。
+        try:
+            from core.denial_tracking import record_denial as _record_denial
+            from core.denial_tracking import record_success as _record_success
+            from core.permission_manager import (
+                PermissionEffect as _PE,
+                get_permission_manager,
+            )
+        except ImportError:
+            logger.warning("[权限检查] permission_manager 模块导入失败，规则评估已跳过")
+            return None
+
+        try:
+            _pm = get_permission_manager(context.get("db"))
+        except TypeError:
+            # 传入的 db 无法被 PermissionManager 接受时回退到无会话实例
+            _pm = get_permission_manager()
+
+        # 无任何生效规则时默认放行（防止默认 ASK 改变既有行为）
+        _agent_rules = _pm._get_agent_rules(agent_id)
+        _global_rules = list(_pm._global_rules)
+        _saved_rules = await _pm._get_saved_rules(user_id)
+        if not _agent_rules and not _global_rules and not _saved_rules:
+            return None
+
+        action = _infer_permission_action(tool_name)
+        resources = _extract_permission_resources(tool_args, tool_name)
+
+        # 评估所有资源，deny 优先、ask 其次（与 PermissionManager.ask 语义一致）
+        effects = set()
+        for resource in resources:
+            effect = await _pm.evaluate(action, resource, agent_id=agent_id, user_id=user_id)
+            effects.add(effect)
+
+        if _PE.DENY in effects:
+            # 记录拒绝并检查 auto 模式是否需要回退人工
+            _new_state = _record_denial(_pm.denial_state)
+            _pm._update_denial_state(_new_state, None)
+            _pm._check_and_fallback(_new_state, None)
+            logger.bind(
+                module="executor",
+                event="permission_rule_denied",
+                tool_name=tool_name,
+                action=action,
+                resources=resources,
+            ).warning(f"权限规则拒绝工具调用: {tool_name} ({action})")
+            return {
+                "ok": False,
+                "error": f"操作 {action} 被权限规则拒绝: {resources}",
+                "tool_name": tool_name,
+                "denied_by": "permission",
+            }
+
+        if _PE.ASK in effects:
+            # 需要用户确认：经 enqueue_permission_request 推送前端并阻塞等待回复
+            reply = await self._request_user_permission(tool_name, tool_args, context)
+            if reply == "reject":
+                _new_state = _record_denial(_pm.denial_state)
+                _pm._update_denial_state(_new_state, None)
+                _pm._check_and_fallback(_new_state, None)
+                return {
+                    "ok": False,
+                    "error": f"用户拒绝权限: {tool_name}",
+                    "tool_name": tool_name,
+                    "denied_by": "user",
+                }
+            # once/always：放行并记录成功（重置连续拒绝）
+            _pm._update_denial_state(_record_success(_pm.denial_state), None)
+            return None
+
+        # allow：记录成功以重置连续拒绝
+        _pm._update_denial_state(_record_success(_pm.denial_state), None)
+        return None
+
+    async def _check_mcp_permission(
+        self,
+        full_tool_name: str,
+        server_id: str,
+        context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        MCP 工具调用的服务级权限门禁。
+
+        在 mcp 分支调用 manager.call_tool 前评估 (action=工具全限定名, resource=server_id)：
+        - 服务级规则 mcp__<server> 可匹配该服务下所有工具（matches_mcp_server 语义）
+        - 工具级规则 mcp__<server>__<tool> 精确匹配（wildcard_match 语义）
+        - 无规则命中时默认放行（向后兼容，未配置权限规则的 MCP Server 工具保持可用）
+        - 命中 DENY 规则时拒绝执行并返回错误结果
+        - ALLOW / ASK 均放行（ASK 的用户确认已由前置 _check_tool_permission 处理，
+          此处避免重复弹窗阻塞 Agent 执行流程）
+
+        返回 None 表示放行；返回 dict 表示拒绝结果（直接作为工具执行结果返回）。
+        """
+        try:
+            from core.permission_manager import (
+                PermissionEffect,
+                get_permission_manager,
+                matches_mcp_server,
+                wildcard_match,
+            )
+        except ImportError:
+            # 权限模块不可用：默认放行，避免阻断已连接 MCP Server 的工具调用
+            logger.bind(
+                module="executor",
+                event="mcp_permission_module_missing",
+                tool_name=full_tool_name,
+            ).warning("权限管理模块导入失败，MCP 工具调用默认放行")
+            return None
+
+        try:
+            _pm = get_permission_manager(context.get("db"))
+        except TypeError:
+            # 传入的 db 无法被 PermissionManager 接受时回退到无会话实例
+            _pm = get_permission_manager()
+
+        user_id = str(context.get("user_id", "") or "")
+        agent_id = context.get("agent_id") or context.get("agent_name")
+
+        # 与 _check_tool_permission 一致：无任何生效规则时默认放行
+        _agent_rules = _pm._get_agent_rules(agent_id)
+        _global_rules = list(_pm._global_rules)
+        _saved_rules = await _pm._get_saved_rules(user_id)
+        if not _agent_rules and not _global_rules and not _saved_rules:
+            return None
+
+        # 遍历规则（last-match-wins）：action 支持 matches_mcp_server 服务级匹配，
+        # resource 匹配 server_id（wildcard_match 语义）
+        matched_rule = None
+        for ruleset in (_agent_rules, _global_rules, _saved_rules):
+            for rule in ruleset:
+                action_matched = wildcard_match(rule.action, full_tool_name) or (
+                    rule.action.startswith("mcp__")
+                    and matches_mcp_server(rule.action, full_tool_name)
+                )
+                resource_matched = wildcard_match(rule.resource, server_id)
+                if action_matched and resource_matched:
+                    matched_rule = rule
+
+        if matched_rule is None:
+            # 无规则命中：默认放行（避免破坏现有未配置权限的 MCP 调用）
+            logger.bind(
+                module="executor",
+                event="mcp_permission_no_rule",
+                tool_name=full_tool_name,
+                server_id=server_id,
+            ).debug(f"MCP 工具无权限规则命中，默认放行: {full_tool_name}")
+            return None
+
+        if matched_rule.effect == PermissionEffect.DENY:
+            logger.bind(
+                module="executor",
+                event="mcp_permission_denied",
+                tool_name=full_tool_name,
+                server_id=server_id,
+            ).warning(f"MCP 工具调用被权限规则拒绝: {full_tool_name}")
+            return {
+                "ok": False,
+                "error": f"MCP 工具调用被权限规则拒绝: {full_tool_name}",
+                "tool_name": full_tool_name,
+                "denied_by": "permission",
+            }
+
+        # ALLOW 或显式 ASK：放行
+        return None
+
     async def _apply_post_tool_use_hooks(
         self,
         result: Dict[str, Any],
@@ -451,26 +795,10 @@ class ExecutionToolRuntimeMixin:
                         normalized_tool_name=func_name,
                     ).warning(f"检测到工具名前缀大小写异常，已自动归一化: {raw_func_name} -> {func_name}")
 
-        # PreToolUse 钩子：分发前校验工具调用权限
-        try:
-            from core.task_runtime.hook_dispatcher import hook_dispatcher, HOOK_PRE_TOOL_USE
-            results = await hook_dispatcher.dispatch(HOOK_PRE_TOOL_USE, {
-                "tool_name": func_name,
-                "tool_args": func_args,
-                "context": context,
-            })
-            deny_result = hook_dispatcher.has_deny(results)
-            if deny_result:
-                return {"ok": False, "error": deny_result.reason or f"工具调用被阻止: {func_name}",
-                        "blocked_by_hook": True}
-            # 合并钩子对参数的覆写
-            updated_input = hook_dispatcher.get_updated_input(results)
-            if updated_input:
-                func_args = {**func_args, **updated_input}
-        except ImportError:
-            logger.warning("[PreToolUse] 钩子调度模块导入失败，工具调用前校验已跳过")
-
-        # PreToolUse 钩子（hook_manager 系统）：支持 APPROVE/DENY/MODIFY_INPUT/REPLACE_RESULT/ERROR
+        # PreToolUse 钩子（hook_manager 插件系统）：统一的工具执行前钩子。
+        # 职责边界：hook_manager（core）负责所有 Hook 事件，包括插件级工具钩子（APPROVE/DENY/MODIFY_INPUT/REPLACE_RESULT/ERROR）
+        # 和子代理生命周期事件（SUBAGENT_START/STOP/ERROR/COMPLETE、TASK_CREATED/COMPLETED、STOP 等），
+        # 不在通用工具执行路径中触发，避免 PreToolUse 双触发。
         try:
             from core.hook_manager import (
                 HookContext as _HookContext,
@@ -514,349 +842,57 @@ class ExecutionToolRuntimeMixin:
                         "tool_name": func_name,
                         "replaced_by_hook": True,
                     }
+                if _pre_result.result_type == _HookResultType.ASK:
+                    # ASK 语义：需要用户确认才能继续执行，经 _request_user_permission 推送前端
+                    reply = await self._request_user_permission(func_name, func_args, context)
+                    if reply == "reject":
+                        return {
+                            "ok": False,
+                            "error": _pre_result.reason or f"用户拒绝钩子确认: {func_name}",
+                            "blocked_by_hook": True,
+                            "tool_name": func_name,
+                        }
             # 合并所有 MODIFY_INPUT 结果到 func_args
             func_args = _hook_updated_input(_pre_results, func_args)
         except ImportError:
             logger.warning("[PreToolUse] hook_manager 模块导入失败，跳过 hook_manager 钩子校验")
 
-        if func_name.startswith("plugin_"):
-            remaining = func_name[len("plugin_"):]
-            if "__" in remaining:
-                plugin_name, plugin_method = remaining.split("__", 1)
-            else:
-                return {"ok": False, "error": f"plugin tool name missing '__' separator: {func_name}"}
-            from plugins import plugin_instance
-            try:
-                pm = plugin_instance.get()
-                candidate_names = []
-                for candidate in (
-                    plugin_name,
-                    plugin_name.replace("_", "-"),
-                    plugin_name.replace("-", "_"),
-                ):
-                    if candidate and candidate not in candidate_names:
-                        candidate_names.append(candidate)
+        # 权限检查链：PermissionGuard 模式检查 + PermissionManager 规则评估 + 拒绝追踪。
+        # 仅在配置了 permission_mode 或存在权限规则时拦截，默认放行以保持既有行为。
+        # 拦截结果直接作为工具执行结果返回，不再进入 plugin_/mcp_/builtin_/task_ 分发。
+        _permission_result = await self._check_tool_permission(func_name, func_args, context)
+        if _permission_result is not None:
+            return _permission_result
 
-                if not any(pm.has_plugin(candidate) for candidate in candidate_names):
-                    discovered = pm.discover_plugins()
-                    logger.bind(
-                        module="executor",
-                        event="plugin_metadata_refreshed",
-                        requested_plugin=plugin_name,
-                        discovered_count=len(discovered) if isinstance(discovered, list) else None,
-                    ).debug(f"工具调用前刷新插件元数据: {plugin_name}")
+        # 策略模式分发：根据工具名前缀查找匹配的执行策略并委托执行
+        _strategy_context = ToolExecutionContext(
+            session_id=str(context.get("session_id", "") or ""),
+            user_id=int(context.get("user_id", 0) or 0),
+            tool_name=func_name,
+            tool_input=func_args,
+            tool_call_id=tool_call.get("id", ""),
+            abort_controller=context.get("abort_controller"),
+            content_replacement_state=context.get("content_replacement_state"),
+            permission_mode=str(context.get("permission_mode", "auto") or "auto"),
+            record_usage=context.get("record_usage"),
+            record_latency=context.get("record_latency"),
+            raw_context=context,
+            extra={
+                "on_subagent_event": on_subagent_event,
+                "_tool_use_context": _tool_use_context,
+            },
+        )
 
-                resolved_plugin_name = next(
-                    (
-                        candidate
-                        for candidate in candidate_names
-                        if pm.has_plugin(candidate) or pm.is_plugin_loaded(candidate)
-                    ),
-                    plugin_name,
-                )
+        _strategy_result = await self._ensure_tool_strategy_registry().execute(_strategy_context)
 
-                if (
-                    resolved_plugin_name not in pm.loaded_plugins
-                    and not pm.load_plugin(resolved_plugin_name)
-                ):
-                    return {"ok": False, "error": f"Failed to load plugin: {resolved_plugin_name}"}
-                result = await pm.execute_registered_tool_async(
-                    resolved_plugin_name,
-                    plugin_method,
-                    db=context.get("db"),
-                    user_id=context.get("user_id"),
-                    **func_args,
-                )
-                # 检查插件返回结果状态，非成功状态标记为失败
-                if isinstance(result, dict) and result.get("status") == "error":
-                    return {"ok": False, "error": result.get("message", "Plugin returned error"), "result": result, "tool_name": func_name}
-                _plugin_output = {"ok": True, "result": result, "tool_name": func_name}
-                return await self._apply_post_tool_use_hooks(_plugin_output, func_name, context)
-            except Exception as exc:
-                logger.bind(
-                    module="executor",
-                    event="plugin_execution_error",
-                    plugin_name=plugin_name,
-                    plugin_method=plugin_method,
-                ).error(f"插件执行异常: {exc}")
-                return {"ok": False, "error": f"Plugin execution error: {str(exc)}"}
+        # 将 ToolExecutionResult 转换回 Dict 格式
+        if _strategy_result.error is not None:
+            return {"ok": False, "error": _strategy_result.error, "tool_name": func_name}
 
-        if func_name.startswith("mcp_"):
-            remaining = func_name[len("mcp_"):]
-            if "__" in remaining:
-                server_id, mcp_tool_name = remaining.split("__", 1)
-            else:
-                return {"ok": False, "error": f"MCP tool name missing '__' separator: {func_name}"}
-            try:
-                manager = MCPManager()
-                result = await manager.call_tool(server_id, mcp_tool_name, func_args)
-                _mcp_output = {"ok": True, "result": result, "tool_name": func_name}
-                return await self._apply_post_tool_use_hooks(_mcp_output, func_name, context)
-            except Exception as exc:
-                logger.bind(
-                    module="executor",
-                    event="mcp_execution_error",
-                    server_id=server_id,
-                    tool_name=mcp_tool_name,
-                ).error(f"MCP工具执行异常: {exc}")
-                return {"ok": False, "error": f"MCP tool execution error: {str(exc)}"}
+        if isinstance(_strategy_result.output, dict):
+            return _strategy_result.output
 
-        if func_name.startswith("builtin_"):
-            builtin_name = func_name[len("builtin_"):]
-            # ask_user 特殊处理：注入 user_id 和 session_id 到工具参数
-            # AskUserTool 需要这些信息创建与用户会话关联的 Future
-            if builtin_name == "ask_user":
-                func_args.setdefault("user_id", str(context.get("user_id", "") or ""))
-                func_args.setdefault("session_id", str(context.get("session_id", "") or ""))
-            # 构造包含 ToolUseContext 的工具执行上下文副本，避免污染原 context
-            tool_exec_context = {**context, "_tool_use_context": _tool_use_context}
-            # 通过 ToolRegistry 执行（支持权限检查、截断、统计等）。
-            # ToolRegistry 不可用时 fail-closed：禁止绕过权限检查直接执行
-            from core.tool_registry import tool_registry as _tool_reg
-            try:
-                registered_tool = _tool_reg.get(func_name)
-                if registered_tool is None or not registered_tool.execute:
-                    # 工具未在 ToolRegistry 注册，拒绝执行（防止绕过权限检查）
-                    logger.bind(
-                        module="executor",
-                        event="tool_not_registered_denied",
-                        tool_name=func_name,
-                    ).warning(f"工具 {func_name} 未在 ToolRegistry 注册，已拒绝执行")
-                    return {
-                        "ok": False,
-                        "error": f"工具 {func_name} 未在 ToolRegistry 注册，已拒绝执行",
-                        "tool_name": func_name,
-                    }
-                exec_result = await _tool_reg.execute(func_name, func_args, tool_exec_context)
-                _builtin_reg_output = {
-                    "ok": exec_result.status.value == "completed",
-                    "result": exec_result.result,
-                    "error": exec_result.error,
-                    "tool_name": func_name,
-                    "truncated": exec_result.truncated,
-                    "output_path": exec_result.output_path,
-                    "execution_time_ms": exec_result.execution_time_ms,
-                }
-                return await self._apply_post_tool_use_hooks(_builtin_reg_output, func_name, context)
-            except PermissionError:
-                # 权限拒绝：尝试通过实时推送队列请求用户授权
-                reply = await self._request_user_permission(
-                    tool_name=func_name,
-                    tool_args=func_args,
-                    context=context,
-                )
-                if reply == "reject":
-                    return {
-                        "ok": False,
-                        "error": f"用户拒绝权限: {func_name}",
-                        "tool_name": func_name,
-                        "denied_by": "user",
-                    }
-                # 用户允许（once/always），重新执行工具
-                try:
-                    exec_result = await _tool_reg.execute(func_name, func_args, tool_exec_context)
-                    _builtin_reg_output = {
-                        "ok": exec_result.status.value == "completed",
-                        "result": exec_result.result,
-                        "error": exec_result.error,
-                        "tool_name": func_name,
-                        "truncated": exec_result.truncated,
-                        "output_path": exec_result.output_path,
-                        "execution_time_ms": exec_result.execution_time_ms,
-                    }
-                    return await self._apply_post_tool_use_hooks(_builtin_reg_output, func_name, context)
-                except PermissionError:
-                    # 用户授权后仍被拒绝（可能是 always 规则尚未持久化生效）
-                    return {
-                        "ok": False,
-                        "error": f"权限不足: {func_name}",
-                        "tool_name": func_name,
-                        "denied_by": "security",
-                    }
-            except Exception:
-                # ToolRegistry 执行意外失败时记录日志并拒绝执行，
-                # 不得回退到未经过权限检查的 builtin_tool_manager 路径
-                logger.bind(
-                    module="executor",
-                    event="tool_registry_execution_failed",
-                    tool_name=func_name,
-                ).exception(f"ToolRegistry 执行异常，已拒绝回退到直接执行: {func_name}")
-                return {
-                    "ok": False,
-                    "error": f"Tool registry execution failed for {func_name}",
-                    "tool_name": func_name,
-                }
-
-        # 任务运行时工具（task_spawn_agent / task_send_message / task_stop_agent / task_create_team 等）
-        if func_name.startswith("task_"):
-            task_action = func_name[len("task_"):]
-            from core.task_runtime import task_runtime
-
-            await task_runtime.initialize()
-
-            if task_action == "spawn_agent":
-                agent_type = func_args.get("agent_type", "Explore")
-                prompt = func_args.get("prompt", "")
-                description = func_args.get("description", "")
-                provider, model, model_error = self._resolve_subagent_model_selection(
-                    context,
-                    func_args.get("provider"),
-                    func_args.get("model"),
-                )
-                if model_error:
-                    logger.bind(
-                        module="executor",
-                        event="subagent_model_resolution_failed",
-                        agent_type=agent_type,
-                    ).warning(model_error)
-                    return {"ok": False, "error": model_error, "tool_name": func_name}
-
-                background = func_args.get("background", False)
-                logger.bind(
-                    module="executor",
-                    event="subagent_spawn_requested",
-                    agent_type=agent_type,
-                    provider=provider,
-                    model=model,
-                    background=background,
-                ).info(f"准备启动子代理: {agent_type}")
-                result = await task_runtime.spawn_agent(
-                    agent_type=agent_type,
-                    prompt=prompt,
-                    description=description,
-                    provider=provider,
-                    model=model,
-                    background=background,
-                    root_chat_session_id=context.get("session_id"),
-                    context=context,
-                )
-                if isinstance(result, dict):
-                    return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-                return await self._consume_foreground_subagent_stream(
-                    result,
-                    func_name,
-                    on_subagent_event=on_subagent_event,
-                )
-
-            elif task_action == "send_message":
-                to = func_args.get("to", "")
-                message = func_args.get("message", "")
-                result = await task_runtime.send_message(to=to, message=message)
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            elif task_action == "stop_agent":
-                agent_id = func_args.get("agent_id", "")
-                result = await task_runtime.stop_agent(agent_id)
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            elif task_action == "list_agents":
-                agent_type_filter = func_args.get("agent_type")
-                state_filter = func_args.get("state")
-                result = await task_runtime.list_agents(state=state_filter)
-                return {"ok": True, "result": {"agents": result}, "tool_name": func_name}
-
-            elif task_action == "list_agent_types":
-                result = await task_runtime.list_agent_types()
-                return {"ok": True, "result": {"agent_types": result}, "tool_name": func_name}
-
-            elif task_action == "create_task":
-                result = await task_runtime.create_task_item(
-                    list_id=func_args.get("list_id"),
-                    subject=func_args.get("subject", ""),
-                    description=func_args.get("description"),
-                    dependencies=func_args.get("dependencies"),
-                    owner_agent_id=func_args.get("owner_agent_id"),
-                )
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            elif task_action == "list_tasks":
-                result = await task_runtime.list_task_items(
-                    list_id=func_args.get("list_id"),
-                    status=func_args.get("status"),
-                )
-                return {"ok": True, "result": {"tasks": result}, "tool_name": func_name}
-
-            elif task_action == "update_task":
-                result = await task_runtime.update_task_item(
-                    func_args.get("task_id", ""),
-                    status=func_args.get("status"),
-                    subject=func_args.get("subject"),
-                    owner_agent_id=func_args.get("owner_agent_id"),
-                    result_summary=func_args.get("result_summary"),
-                )
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            elif task_action == "claim_task":
-                task_id = func_args.get("task_id", "")
-                agent_id = context.get("agent_id", context.get("session_id", "unknown"))
-                result = await task_runtime.claim_task_item(task_id=task_id, agent_id=agent_id)
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            elif task_action == "get_task":
-                task_id = func_args.get("task_id", "")
-                result = await task_runtime.get_task_item(task_id)
-                if not result:
-                    return {"ok": False, "error": f"任务不存在: {task_id}"}
-                return {"ok": True, "result": result, "tool_name": func_name}
-
-            elif task_action == "create_team":
-                result = await task_runtime.create_team(
-                    lead_agent_id=func_args.get("lead_agent_id", ""),
-                    name=func_args.get("name", ""),
-                    teammate_agent_ids=func_args.get("teammate_agent_ids"),
-                    task_list_id=func_args.get("task_list_id"),
-                )
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            elif task_action == "delete_team":
-                result = await task_runtime.delete_team(func_args.get("team_id", ""))
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            elif task_action == "list_teams":
-                result = await task_runtime.list_teams(state=func_args.get("state"))
-                return {"ok": True, "result": {"teams": result}, "tool_name": func_name}
-
-            elif task_action == "get_team":
-                result = await task_runtime.get_team(func_args.get("team_id", ""))
-                if not result:
-                    return {"ok": False, "error": f"团队不存在: {func_args.get('team_id')}"}
-                return {"ok": True, "result": result, "tool_name": func_name}
-
-            elif task_action == "add_teammate":
-                result = await task_runtime.add_teammate(
-                    func_args.get("team_id", ""),
-                    func_args.get("agent_id", ""),
-                    func_args.get("name", ""),
-                )
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            elif task_action == "remove_teammate":
-                result = await task_runtime.remove_teammate(
-                    func_args.get("team_id", ""),
-                    func_args.get("agent_id", ""),
-                )
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            elif task_action == "get_mailbox":
-                result = await task_runtime.get_mailbox(
-                    agent_id=func_args.get("agent_id", ""),
-                    unread_only=func_args.get("unread_only", False),
-                )
-                return {"ok": True, "result": {"messages": result}, "tool_name": func_name}
-
-            elif task_action == "todo_write":
-                result = await task_runtime.sync_todo_snapshot(
-                    list_id=func_args.get("list_id"),
-                    todos=func_args.get("todos", []),
-                )
-                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-
-            else:
-                return {"ok": False, "error": f"未知任务运行时工具: {task_action}"}
-
-        output = {"ok": False, "error": f"No handler for tool: {func_name}"}
-
-        return output
+        return {"ok": False, "error": f"No handler for tool: {func_name}"}
 
     async def _execute_tool_calls_concurrent(
         self,
@@ -900,7 +936,16 @@ class ExecutionToolRuntimeMixin:
             streaming_executor.submit(tc_id, func_name, func_args)
 
         # 工具执行函数：构造合成 tool_call 并委托给 _execute_tool_call
-        async def _execute_fn(tool_name: str, input_params: dict) -> Dict[str, Any]:
+        async def _execute_fn(
+            tool_name: str,
+            input_params: dict,
+            abort_controller=None,
+        ) -> Dict[str, Any]:
+            # 将工具级 abort_controller 注入 context，使 _build_tool_use_context
+            # 能取到非 None 的中止控制器（级联中止信号贯通工具执行链）
+            exec_context = dict(context)
+            if abort_controller is not None:
+                exec_context["abort_controller"] = abort_controller
             synthetic_tc = {
                 "id": "",
                 "type": "function",
@@ -909,7 +954,7 @@ class ExecutionToolRuntimeMixin:
                     "arguments": json.dumps(input_params, ensure_ascii=False),
                 },
             }
-            return await self._execute_tool_call(synthetic_tc, context)
+            return await self._execute_tool_call(synthetic_tc, exec_context)
 
         # 启动调度循环（后台任务，与 yield_completed 并发运行）
         schedule_task = asyncio.create_task(

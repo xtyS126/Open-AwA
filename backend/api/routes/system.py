@@ -167,7 +167,7 @@ def _check_mcp() -> Dict[str, Any]:
     检查MCP服务器状态。
     """
     try:
-        from mcp.manager import MCPManager
+        from mcp_integration.manager import MCPManager
         manager = MCPManager()
         servers = manager.get_all_servers()
         connected = [s for s in servers if s.get("status") == "connected"]

@@ -52,10 +52,6 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
-    """
-    处理login相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     client_ip = request.client.host if request.client else "unknown"
     rate_limit_key = _build_login_rate_limit_key(form_data.username, client_ip)
     rate_limit_store = get_rate_limit_store()

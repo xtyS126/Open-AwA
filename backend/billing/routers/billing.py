@@ -44,10 +44,6 @@ def _invalidate_provider_models_cache(provider_id: Optional[str] = None):
 
 
 class UsageRecordResponse(BaseModel):
-    """
-    封装与UsageRecordResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     call_id: str
     user_id: Optional[str]
     session_id: Optional[str]
@@ -66,10 +62,6 @@ class UsageRecordResponse(BaseModel):
 
 
 class PricingUpdateRequest(BaseModel):
-    """
-    封装与PricingUpdateRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     input_price: Optional[float] = None
     output_price: Optional[float] = None
     currency: Optional[str] = None
@@ -95,10 +87,6 @@ class PricingUpdateRequest(BaseModel):
 
 
 class BudgetCreateRequest(BaseModel):
-    """
-    封装与BudgetCreateRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     budget_type: str
     max_amount: float
     scope_id: Optional[str] = None
@@ -108,10 +96,6 @@ class BudgetCreateRequest(BaseModel):
 
 
 class BudgetUpdateRequest(BaseModel):
-    """
-    封装与BudgetUpdateRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     max_amount: Optional[float] = None
     period_type: Optional[str] = None
     currency: Optional[str] = None
@@ -120,10 +104,6 @@ class BudgetUpdateRequest(BaseModel):
 
 
 class ProviderModelSelectionRequest(BaseModel):
-    """
-    封装与ProviderModelSelectionRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     selected_models: List[str] = []
 
 
@@ -136,10 +116,6 @@ class ProviderModelsFetchRequest(BaseModel):
 
 
 class ModelConfigCreateRequest(BaseModel):
-    """
-    封装与ModelConfigCreateRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     provider: str
     model: str
     display_name: Optional[str] = None
@@ -161,10 +137,6 @@ class ModelConfigCreateRequest(BaseModel):
 
 
 class ModelConfigUpdateRequest(BaseModel):
-    """
-    封装与ModelConfigUpdateRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     provider: Optional[str] = None
     model: Optional[str] = None
     display_name: Optional[str] = None
@@ -185,10 +157,6 @@ class ModelConfigUpdateRequest(BaseModel):
 
 
 class RetentionUpdateRequest(BaseModel):
-    """
-    封装与RetentionUpdateRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     retention_days: int = Query(..., ge=1, le=3650)
     cleanup: bool = Query(False)
 
@@ -646,10 +614,6 @@ async def estimate_cost(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理estimate、cost相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     pricing_manager = PricingManager(db)
     pricing = pricing_manager.get_pricing(provider, model)
     
@@ -687,10 +651,6 @@ async def initialize_default_pricing(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理initialize、default、pricing相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     pricing_manager = PricingManager(db)
     count = pricing_manager.initialize_default_pricing()
     

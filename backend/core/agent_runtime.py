@@ -11,6 +11,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from config.settings import settings
+from config.thresholds import CAPABILITIES_CACHE_TTL
 from core.agent_capability_builder import (
     build_native_tools,
     collect_configured_model_capabilities,
@@ -121,7 +122,7 @@ def _initialize_runtime_dependencies(
     agent._experience_manager_factory = ExperienceManager
     agent._max_self_correction_rounds = settings.AGENT_SELF_CORRECTION_MAX_ROUNDS
     agent._capability_aggregator = CapabilityAggregator(
-        agent._CAPABILITIES_CACHE_TTL,
+        CAPABILITIES_CACHE_TTL,
         collect_configured_models=lambda context: (
             collect_configured_model_capabilities(context, agent._db_session)
         ),
@@ -144,6 +145,7 @@ def _initialize_runtime_dependencies(
         agent.content_replacement_state,
         agent._record_round_budget_usage,
         unregister_task,
+        finalize_agent_response=agent._finalize_agent_response,
     )
     agent._plan_executor = PlanExecutor(
         agent.executor,

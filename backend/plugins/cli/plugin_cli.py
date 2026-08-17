@@ -16,10 +16,6 @@ from plugins.schema_validator import ManifestExtensionSchemaValidator
 
 @click.group()
 def cli():
-    """
-    处理cli相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     pass
 
 
@@ -30,10 +26,6 @@ def cli():
 @click.option("--author", default="", help="作者")
 @click.option("--description", default="A new plugin", help="插件描述")
 def cmd_init(plugin_dir: str, name: str, version: str, author: str, description: str) -> None:
-    """
-    处理cmd、init相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     target = Path(plugin_dir)
     if target.exists():
         raise click.ClickException(f"目录已存在：{plugin_dir}")
@@ -73,10 +65,6 @@ def cmd_init(plugin_dir: str, name: str, version: str, author: str, description:
 @click.argument("plugin_dir")
 @click.option("--output", "-o", default=".", show_default=True, help="输出目录")
 def cmd_build(plugin_dir: str, output: str) -> None:
-    """
-    处理cmd、build相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     src = Path(plugin_dir)
     manifest_path = src / "manifest.json"
     if not manifest_path.exists():
@@ -115,10 +103,6 @@ def cmd_build(plugin_dir: str, output: str) -> None:
 @cli.command("validate")
 @click.argument("zip_path")
 def cmd_validate(zip_path: str) -> None:
-    """
-    处理cmd、validate相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     path = Path(zip_path)
     if not path.exists():
         raise click.ClickException(f"文件不存在：{zip_path}")
@@ -168,10 +152,6 @@ def cmd_validate(zip_path: str) -> None:
     "--output", "-o", default=None, help="signature.json 输出路径，默认与 zip 同目录"
 )
 def cmd_sign(zip_path: str, output: Optional[str]) -> None:
-    """
-    处理cmd、sign相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     path = Path(zip_path)
     if not path.exists():
         raise click.ClickException(f"文件不存在：{zip_path}")

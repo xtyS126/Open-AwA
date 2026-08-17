@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import json
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -44,10 +44,6 @@ async def query_logs(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """
-    处理query、logs相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     result = query_log_buffer(
         start_time=start_time,
         end_time=end_time,
@@ -77,10 +73,6 @@ async def export_logs(
     keyword: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """
-    处理export、logs相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     result = query_log_buffer(
         start_time=start_time,
         end_time=end_time,
@@ -100,10 +92,6 @@ async def export_logs(
     ).info("system logs exported")
 
     def iter_jsonl():
-        """
-        处理iter、jsonl相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         for item in result["records"]:
             yield json.dumps(item, ensure_ascii=False, default=str) + "\n"
 
@@ -213,33 +201,25 @@ class ClientErrorReport(BaseModel):
     extra: dict = Field(default_factory=dict)
 
 
-@router.post("/client-errors")
-async def report_client_error(
-    request: Request,
-    report: ClientErrorReport,
-    current_user: Optional[User] = Depends(get_optional_current_user),
-) -> Dict[str, Any]:
+# 批量上报时 reports 数组的最大长度，防止超大请求体导致日志膨胀或 DoS
+_CLIENT_ERROR_MAX_BATCH = 100
+
+
+def _save_client_error(report_data: Dict[str, Any], current_user: Optional[User]) -> None:
+    """保存单条客户端错误到后端日志系统。
+
+    用 ClientErrorReport Pydantic 模型校验字段长度与类型，
+    通过后绑定 loguru 日志，使前端的 console.error 级别错误也能在后端日志中查看。
+    校验失败时抛出 HTTPException(422)，由调用方决定是否中断批量处理。
     """
-    接收前端上报的错误信息，统一写入后端日志系统。
-    使前端的 console.error 级别错误也能在后端日志中查看和分析。
-    未登录用户也可上报错误，user_id 为 None。
-    """
-    # SEC-19: 基于 client IP 的速率限制，防止未认证用户高频上报导致磁盘耗尽
-    client_ip = request.client.host if request.client else "unknown"
-    now = time.time()
-    window = _CLIENT_ERROR_WINDOW_SECONDS
-    timestamps = _client_error_timestamps.get(client_ip, [])
-    # 清理超出时间窗口的过期时间戳
-    timestamps = [ts for ts in timestamps if now - ts < window]
-    if len(timestamps) >= _CLIENT_ERROR_RATE_LIMIT:
-        logger.bind(
-            event="client_error_rate_limited",
-            module="logs",
-            client_ip=client_ip,
-        ).warning(f"客户端错误上报被速率限制: {client_ip}")
-        raise HTTPException(status_code=429, detail="错误上报过于频繁，请稍后再试")
-    timestamps.append(now)
-    _client_error_timestamps[client_ip] = timestamps
+    # 用 Pydantic 模型校验字段长度与类型，SEC-19 防止超长字符串导致磁盘耗尽
+    try:
+        report = ClientErrorReport(**report_data)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"客户端错误上报字段校验失败: {exc}",
+        )
 
     # SEC-19: 限制 extra 字段序列化后字节数，防止超大字典导致日志膨胀
     extra_bytes = len(
@@ -262,4 +242,62 @@ async def report_client_error(
         client_timestamp=report.timestamp,
         client_extra=report.extra,
     ).log(level_name, f"[前端错误] {report.message}\n{report.stack}")
+
+
+@router.post("/client-errors")
+async def report_client_error(
+    request: Request,
+    payload: Dict[str, Any],
+    current_user: Optional[User] = Depends(get_optional_current_user),
+) -> Dict[str, Any]:
+    """接收前端上报的错误信息，统一写入后端日志系统。
+
+    支持两种 payload 形式：
+    1. 批量：``{"reports": [report, ...]}``，单次 POST 上传多条，减少请求数
+    2. 单条：``{level, message, ...}``，向后兼容旧客户端
+
+    未登录用户也可上报错误，user_id 为 None。
+    SEC-19: 基于 client IP 的速率限制，防止未认证用户高频上报导致磁盘耗尽。
+    """
+    # SEC-19: 基于 client IP 的速率限制，防止未认证用户高频上报导致磁盘耗尽
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    window = _CLIENT_ERROR_WINDOW_SECONDS
+    timestamps = _client_error_timestamps.get(client_ip, [])
+    # 清理超出时间窗口的过期时间戳
+    timestamps = [ts for ts in timestamps if now - ts < window]
+    if len(timestamps) >= _CLIENT_ERROR_RATE_LIMIT:
+        logger.bind(
+            event="client_error_rate_limited",
+            module="logs",
+            client_ip=client_ip,
+        ).warning(f"客户端错误上报被速率限制: {client_ip}")
+        raise HTTPException(status_code=429, detail="错误上报过于频繁，请稍后再试")
+    timestamps.append(now)
+    _client_error_timestamps[client_ip] = timestamps
+
+    reports = payload.get("reports")
+    if reports is not None:
+        # 批量模式：单次 POST 上传多条
+        if not isinstance(reports, list):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="reports 必须是数组",
+            )
+        if len(reports) > _CLIENT_ERROR_MAX_BATCH:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"批量上报条数超过上限 {_CLIENT_ERROR_MAX_BATCH}",
+            )
+        count = 0
+        for report_data in reports:
+            if not isinstance(report_data, dict):
+                # 跳过非对象元素，避免阻断整批上报
+                continue
+            _save_client_error(report_data, current_user)
+            count += 1
+        return {"status": "received", "received": count}
+
+    # 单条模式（向后兼容）：整个 payload 视为一条报告
+    _save_client_error(payload, current_user)
     return {"status": "received"}

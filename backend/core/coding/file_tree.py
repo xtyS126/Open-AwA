@@ -26,6 +26,15 @@ class FileTreeService:
         self.root_dir = Path(root_dir).resolve()
         self.ignore_dirs = ignore_dirs or DEFAULT_IGNORE_DIRS
 
+    def _resolve_inside_root(self, path: Path) -> Optional[Path]:
+        """解析目录项并拒绝指向项目根外的符号链接。"""
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(self.root_dir)
+        except (OSError, ValueError):
+            return None
+        return resolved
+
     def list_directory(self, rel_path: str = "") -> dict:
         """
         列出指定目录的内容。
@@ -43,14 +52,17 @@ class FileTreeService:
                 name = entry.name
                 if name in self.ignore_dirs or name.startswith("."):
                     continue
+                resolved_entry = self._resolve_inside_root(entry)
+                if resolved_entry is None:
+                    continue
                 item = {
                     "name": name,
                     "path": str(Path(rel_path) / name).replace("\\", "/"),
-                    "type": "directory" if entry.is_dir() else "file",
+                    "type": "directory" if resolved_entry.is_dir() else "file",
                 }
-                if entry.is_file():
+                if resolved_entry.is_file():
                     try:
-                        size = entry.stat().st_size
+                        size = resolved_entry.stat().st_size
                         item["size"] = size
                     except OSError:
                         item["size"] = 0
@@ -115,11 +127,14 @@ class FileTreeService:
                 for fname in files:
                     if pattern.lower() in fname.lower():
                         full = Path(root) / fname
+                        resolved_full = self._resolve_inside_root(full)
+                        if resolved_full is None or not resolved_full.is_file():
+                            continue
                         rel = full.relative_to(self.root_dir)
                         results.append({
                             "name": fname,
                             "path": str(rel).replace("\\", "/"),
-                            "size": full.stat().st_size if full.exists() else 0,
+                            "size": resolved_full.stat().st_size,
                         })
         except PermissionError:
             pass
@@ -129,7 +144,7 @@ class FileTreeService:
         """
         获取目录树结构（嵌套格式，用于前端渲染）。
         """
-        def _build_tree(path: Path, depth: int) -> list[dict]:
+        def _build_tree(path: Path, depth: int, ancestors: frozenset[Path]) -> list[dict]:
             if depth > max_depth:
                 return [{"name": "...", "type": "overflow"}]
             items = []
@@ -140,8 +155,17 @@ class FileTreeService:
             for entry in entries:
                 if entry.name in self.ignore_dirs or entry.name.startswith("."):
                     continue
-                if entry.is_dir():
-                    children = _build_tree(entry, depth + 1)
+                resolved_entry = self._resolve_inside_root(entry)
+                if resolved_entry is None:
+                    continue
+                if resolved_entry.is_dir():
+                    if resolved_entry in ancestors:
+                        continue
+                    children = _build_tree(
+                        resolved_entry,
+                        depth + 1,
+                        ancestors | {resolved_entry},
+                    )
                     items.append({
                         "name": entry.name,
                         "type": "directory",
@@ -156,7 +180,12 @@ class FileTreeService:
             return items
 
         full_path = self.root_dir / rel_path if rel_path else self.root_dir
+        resolved_full_path = self._resolve_inside_root(full_path)
         return {
-            "root": str(self.root_dir),
-            "tree": _build_tree(full_path, 0),
+            "root": ".",
+            "tree": (
+                _build_tree(resolved_full_path, 0, frozenset({resolved_full_path}))
+                if resolved_full_path is not None
+                else []
+            ),
         }

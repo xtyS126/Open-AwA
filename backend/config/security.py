@@ -64,10 +64,6 @@ def _is_legacy_bcrypt_hash(hashed_password: str) -> bool:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    处理verify、password相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     normalized_hash = str(hashed_password or "")
     if not normalized_hash:
         return False
@@ -197,10 +193,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def decode_access_token(token: str) -> Optional[dict]:
-    """
-    处理decode、access、token相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.ALGORITHM])
         expires_at = payload.get("exp")

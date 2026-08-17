@@ -1159,7 +1159,6 @@ class PluginManager:
     def register_plugin_from_npm_source(self, npm_source: str) -> Dict[str, str]:
         """
         处理register、plugin、from、npm、source相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         npm_info = self.parse_npm_source(npm_source)
         logger.info(
@@ -1168,10 +1167,6 @@ class PluginManager:
         return npm_info
 
     def _build_release_id(self, plugin_name: str, metadata: Dict[str, Any]) -> str:
-        """
-        处理build、release、id相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self._rollout_release_counter += 1
         version = str(metadata.get("version", "1.0.0"))
         path = str(metadata.get("path", ""))
@@ -1180,10 +1175,6 @@ class PluginManager:
         return f"{plugin_name}-{version}-{digest}"
 
     def _normalize_rollout_targets(self, targets: Optional[Dict[str, Any]]) -> Dict[str, List[str]]:
-        """
-        处理normalize、rollout、targets相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         normalized: Dict[str, List[str]] = {
             "user_ids": [],
             "regions": [],
@@ -1200,10 +1191,6 @@ class PluginManager:
         return normalized
 
     def _normalize_rollout_policy(self, policy: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        处理normalize、rollout、policy相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         default_policy = {
             "enabled": False,
             "rollout_percentage": 0.0,
@@ -1231,10 +1218,6 @@ class PluginManager:
         return default_policy
 
     def _ensure_runtime_route(self, plugin_name: str) -> Optional[Dict[str, Any]]:
-        """
-        处理ensure、runtime、route相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         route = self.hot_update_manager.get_runtime_route(plugin_name)
         if route:
             return route
@@ -1350,10 +1333,6 @@ class PluginManager:
         self.hot_update_manager.persist_runtime_routes()
 
     def _version_matches(self, selector_version: str, rule: str) -> bool:
-        """
-        处理version、matches相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         selector = (selector_version or "").strip()
         target_rule = (rule or "").strip()
         if not target_rule:
@@ -1366,10 +1345,6 @@ class PluginManager:
         return selector == target_rule
 
     def _selector_matches_targets(self, selector: Dict[str, str], targets: Dict[str, List[str]]) -> bool:
-        """
-        处理selector、matches、targets相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         user_id = selector.get("user_id", "")
         region = selector.get("region", "")
         version = selector.get("version", "")
@@ -1390,18 +1365,10 @@ class PluginManager:
         return True
 
     def _selector_bucket(self, selector: Dict[str, str]) -> int:
-        """
-        处理selector、bucket相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         payload = f"{selector.get('user_id', '')}|{selector.get('region', '')}|{selector.get('version', '')}".encode("utf-8")
         return int(hashlib.sha256(payload).hexdigest()[:8], 16) % 100
 
     def _resolve_execution_slot(self, plugin_name: str, selector: Dict[str, str], force_slot: Optional[str] = None) -> str:
-        """
-        处理resolve、execution、slot相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         route = self._runtime_routes.get(plugin_name)
         if route is None:
             return "active"
@@ -1435,7 +1402,6 @@ class PluginManager:
     def _apply_active_route_slot(self, plugin_name: str) -> None:
         """
         处理apply、active、route、slot相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         route = self._runtime_routes.get(plugin_name)
         if route is None:
@@ -1453,10 +1419,6 @@ class PluginManager:
         self.state_machine.set_state(plugin_name, PluginState.ENABLED)
 
     def _load_plugin_release(self, plugin_name: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理load、plugin、release相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         plugin_path = metadata["path"]
         plugin_class = self.loader.load_module(plugin_path)
         if plugin_class is None:
@@ -1507,10 +1469,6 @@ class PluginManager:
         }
 
     def _cleanup_release_binding(self, plugin_name: str, binding: Optional[Dict[str, Any]]) -> None:
-        """
-        处理cleanup、release、binding相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if not binding:
             return
         plugin_instance = binding.get("plugin_instance")
@@ -1539,10 +1497,6 @@ class PluginManager:
         rollout_policy: Optional[Dict[str, Any]] = None,
         strategy: str = "gray",
     ) -> Dict[str, Any]:
-        """
-        处理hot、update、plugin相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if plugin_name not in self.plugin_metadata:
             raise ValueError(f"Plugin '{plugin_name}' not found")
 
@@ -1679,10 +1633,6 @@ class PluginManager:
         return statuses
 
     def _scan_plugin_file(self, plugin_path: str) -> Optional[Dict[str, Any]]:
-        """
-        处理scan、plugin、file相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         plugin_name = os.path.splitext(os.path.basename(plugin_path))[0]
         module_name = self._build_scan_module_name(plugin_path)
 
@@ -1842,10 +1792,6 @@ class PluginManager:
         holder: Dict[str, Any] = {}
 
         def _load_action() -> None:
-            """
-            处理load、action相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             plugin_class = self.loader.load_module(plugin_path)
             if plugin_class is None:
                 raise RuntimeError(f"Failed to load plugin class for '{plugin_name}'")
@@ -1906,10 +1852,6 @@ class PluginManager:
                 self.extension_registry.register_manifest(plugin_name, manifest)
 
         def _load_rollback(previous_state: PluginState) -> None:
-            """
-            处理load、rollback相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             if plugin_name in self.loaded_plugins:
                 instance = self.loaded_plugins[plugin_name]
                 try:
@@ -1967,10 +1909,6 @@ class PluginManager:
         return True
 
     def unload_plugin(self, plugin_name: str) -> bool:
-        """
-        处理unload、plugin相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         # 失效 discover 缓存：卸载后插件目录可能被清理或更新
         self.invalidate_discover_cache()
         if plugin_name not in self.loaded_plugins:
@@ -1980,10 +1918,6 @@ class PluginManager:
         plugin_instance = self.loaded_plugins[plugin_name]
 
         def _unload_action() -> None:
-            """
-            处理unload、action相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             try:
                 plugin_instance.cleanup()
             finally:
@@ -1994,10 +1928,6 @@ class PluginManager:
                 self._plugin_sandboxes.pop(plugin_name, None)
 
         def _unload_rollback(previous_state: PluginState) -> None:
-            """
-            处理unload、rollback相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             self.loaded_plugins[plugin_name] = plugin_instance
             metadata = self.plugin_metadata.get(plugin_name, {})
             self._plugin_sandboxes[plugin_name] = self._create_plugin_sandbox(metadata.get("resource_limits"))
@@ -2024,10 +1954,6 @@ class PluginManager:
         return True
 
     def enable_plugin(self, plugin_name: str) -> bool:
-        """
-        处理enable、plugin相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if plugin_name not in self.loaded_plugins:
             logger.error(f"Plugin '{plugin_name}' is not loaded")
             return False
@@ -2046,10 +1972,6 @@ class PluginManager:
         return result.success
 
     def disable_plugin(self, plugin_name: str) -> bool:
-        """
-        处理disable、plugin相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if plugin_name not in self.loaded_plugins:
             logger.error(f"Plugin '{plugin_name}' is not loaded")
             return False
@@ -2068,10 +1990,6 @@ class PluginManager:
         return result.success
 
     def reload_plugin(self, plugin_name: str) -> bool:
-        """
-        处理reload、plugin相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         logger.info(f"Reloading plugin '{plugin_name}'")
 
         if plugin_name in self.loaded_plugins:
@@ -2244,10 +2162,6 @@ class PluginManager:
         return None
 
     def execute_plugin(self, plugin_name: str, method: str, **kwargs) -> Dict[str, Any]:
-        """
-        处理execute、plugin相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if plugin_name not in self.loaded_plugins:
             logger.error(f"Plugin '{plugin_name}' is not loaded")
             return {
@@ -2296,10 +2210,6 @@ class PluginManager:
         return self._normalize_plugin_execution_result(result)
 
     async def execute_plugin_async(self, plugin_name: str, method: str, **kwargs) -> Dict[str, Any]:
-        """
-        处理execute、plugin、async相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if plugin_name not in self.loaded_plugins:
             logger.error(f"Plugin '{plugin_name}' is not loaded")
             return {
@@ -2597,10 +2507,6 @@ class PluginManager:
         return all_tools
 
     def _register_plugin_tools(self, plugin_name: str, plugin_instance: BasePlugin) -> None:
-        """
-        处理register、plugin、tools相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         try:
             tools = self._collect_plugin_tools(plugin_name, plugin_instance)
             self._tools_registry[plugin_name] = tools
@@ -2609,10 +2515,6 @@ class PluginManager:
             logger.error(f"Error registering tools for plugin '{plugin_name}': {e}")
 
     def _unregister_plugin_tools(self, plugin_name: str) -> None:
-        """
-        处理unregister、plugin、tools相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if plugin_name in self._tools_registry:
             del self._tools_registry[plugin_name]
             logger.debug(f"Unregistered tools for plugin '{plugin_name}'")
@@ -2669,10 +2571,6 @@ class PluginManager:
 
 
     def _normalize_manifest_dependencies(self, dependencies: Any) -> Dict[str, str]:
-        """
-        处理normalize、manifest、dependencies相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         normalized: Dict[str, str] = {}
         if isinstance(dependencies, dict):
             for name, version_range in dependencies.items():
@@ -2692,10 +2590,6 @@ class PluginManager:
         return normalized
 
     def _normalize_plugin_dependencies(self, dependencies: Any) -> Dict[str, str]:
-        """
-        处理normalize、plugin、dependencies相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         normalized = self._normalize_manifest_dependencies(dependencies)
         plugin_only: Dict[str, str] = {}
         for plugin_name, version_range in normalized.items():
@@ -2704,10 +2598,6 @@ class PluginManager:
         return plugin_only
 
     def _parse_semver(self, version: str) -> Tuple[int, int, int]:
-        """
-        处理parse、semver相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if not isinstance(version, str):
             raise ValueError("semver must be string")
         value = version.strip()
@@ -2724,10 +2614,6 @@ class PluginManager:
         return int(parts[0]), int(parts[1]), int(parts[2])
 
     def _compare_semver(self, left: Tuple[int, int, int], right: Tuple[int, int, int]) -> int:
-        """
-        处理compare、semver相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if left == right:
             return 0
         if left < right:
@@ -2735,31 +2621,15 @@ class PluginManager:
         return 1
 
     def _inc_major(self, version: Tuple[int, int, int]) -> Tuple[int, int, int]:
-        """
-        处理inc、major相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return version[0] + 1, 0, 0
 
     def _inc_minor(self, version: Tuple[int, int, int]) -> Tuple[int, int, int]:
-        """
-        处理inc、minor相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return version[0], version[1] + 1, 0
 
     def _inc_patch(self, version: Tuple[int, int, int]) -> Tuple[int, int, int]:
-        """
-        处理inc、patch相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return version[0], version[1], version[2] + 1
 
     def _parse_wildcard_range(self, token: str) -> Optional[List[Tuple[Optional[Tuple[int, int, int]], bool, Optional[Tuple[int, int, int]], bool]]]:
-        """
-        处理parse、wildcard、range相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         lowered = token.strip().lower()
         if lowered in {"*", "x"}:
             return [(None, True, None, True)]
@@ -2803,10 +2673,6 @@ class PluginManager:
         left: Tuple[Optional[Tuple[int, int, int]], bool, Optional[Tuple[int, int, int]], bool],
         right: Tuple[Optional[Tuple[int, int, int]], bool, Optional[Tuple[int, int, int]], bool],
     ) -> Optional[Tuple[Optional[Tuple[int, int, int]], bool, Optional[Tuple[int, int, int]], bool]]:
-        """
-        处理intersect、interval相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         left_lower, left_lower_inclusive, left_upper, left_upper_inclusive = left
         right_lower, right_lower_inclusive, right_upper, right_upper_inclusive = right
 
@@ -2842,10 +2708,6 @@ class PluginManager:
         left: List[Tuple[Optional[Tuple[int, int, int]], bool, Optional[Tuple[int, int, int]], bool]],
         right: List[Tuple[Optional[Tuple[int, int, int]], bool, Optional[Tuple[int, int, int]], bool]],
     ) -> List[Tuple[Optional[Tuple[int, int, int]], bool, Optional[Tuple[int, int, int]], bool]]:
-        """
-        处理intersect、interval、list相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         intersections: List[Tuple[Optional[Tuple[int, int, int]], bool, Optional[Tuple[int, int, int]], bool]] = []
         for left_item in left:
             for right_item in right:
@@ -2858,10 +2720,6 @@ class PluginManager:
         self,
         version_range: str,
     ) -> List[Tuple[Optional[Tuple[int, int, int]], bool, Optional[Tuple[int, int, int]], bool]]:
-        """
-        处理parse、semver、range相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         value = (version_range or "*").strip()
         if not value:
             value = "*"
@@ -2931,10 +2789,6 @@ class PluginManager:
         return all_intervals
 
     def _satisfies_semver_range(self, version: str, version_range: str) -> bool:
-        """
-        处理satisfies、semver、range相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         parsed_version = self._parse_semver(version)
         intervals = self._parse_semver_range(version_range)
         for lower, lower_inclusive, upper, upper_inclusive in intervals:
@@ -2950,19 +2804,11 @@ class PluginManager:
         return False
 
     def _ranges_compatible(self, left: str, right: str) -> bool:
-        """
-        处理ranges、compatible相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         left_intervals = self._parse_semver_range(left)
         right_intervals = self._parse_semver_range(right)
         return bool(self._intersect_interval_list(left_intervals, right_intervals))
 
     def _format_semver(self, version: Tuple[int, int, int]) -> str:
-        """
-        处理format、semver相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return f"{version[0]}.{version[1]}.{version[2]}"
 
     def _format_interval_as_range(
@@ -2971,7 +2817,6 @@ class PluginManager:
     ) -> str:
         """
         处理format、interval、as、range相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         lower, lower_inclusive, upper, upper_inclusive = interval
         parts: List[str] = []
@@ -2988,10 +2833,6 @@ class PluginManager:
         return " ".join(parts)
 
     def _suggest_common_range(self, ranges: List[str]) -> Optional[str]:
-        """
-        处理suggest、common、range相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if not ranges:
             return None
         try:
@@ -3071,10 +2912,6 @@ class PluginManager:
         }
 
     def _detect_dependency_cycles(self, graph: Dict[str, Any]) -> List[List[str]]:
-        """
-        处理detect、dependency、cycles相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         adjacency: Dict[str, List[str]] = {}
         for edge in graph.get("edges", []):
             if edge.get("status") == "missing":
@@ -3091,10 +2928,6 @@ class PluginManager:
         cycles: List[List[str]] = []
 
         def dfs(node: str) -> None:
-            """
-            处理dfs相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             visited.add(node)
             stack.append(node)
             stack_set.add(node)
@@ -3124,10 +2957,6 @@ class PluginManager:
         external_conflicts: List[Dict[str, Any]],
         cycles: List[List[str]],
     ) -> List[Dict[str, Any]]:
-        """
-        处理build、dependency、suggestions相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         suggestions: List[Dict[str, Any]] = []
 
         for issue in plugin_dependency_issues:
@@ -3184,10 +3013,6 @@ class PluginManager:
         return suggestions
 
     def analyze_dependency_conflicts(self) -> Dict[str, Any]:
-        """
-        处理analyze、dependency、conflicts相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         graph = self.build_dependency_graph()
 
         plugin_dependency_issues: List[Dict[str, Any]] = []
@@ -3344,18 +3169,10 @@ class PluginManager:
         plugin_name: str,
         snapshot_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        处理rollback、plugin相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if plugin_name not in self.plugin_metadata:
             raise ValueError(f"Plugin '{plugin_name}' not found")
 
         def _restore(snapshot: Dict[str, Any]) -> Any:
-            """
-            处理restore相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             meta = snapshot.get("metadata", {})
             path = meta.get("path", "")
             if not path or not os.path.exists(path):

@@ -57,6 +57,7 @@ from .core import (
     ACPConfig,
     ACPSessionError,
 )
+from workbench.preview_lease import PreviewSessionKind, preview_lease_registry
 
 
 __all__ = [
@@ -70,6 +71,17 @@ __all__ = [
 
 # 消息回调签名：(payload, is_last) -> Awaitable[None]
 MessageHandler = Callable[[dict[str, Any], bool], Awaitable[None]]
+
+
+def _preview_session_id_from_chat_id(*, chat_id: str, user_id: str) -> str:
+    """从服务端构造的 chat_id 中提取外部 ACP 会话 ID。"""
+    prefix = f"{user_id}:"
+    if not chat_id.startswith(prefix):
+        raise ACPSessionError("ACP chat identity does not match the bound user")
+    session_id = chat_id[len(prefix):]
+    if not session_id:
+        raise ACPSessionError("ACP chat identity is missing the session id")
+    return session_id
 
 
 # 敏感环境变量键名（精确匹配，命中即过滤不传递给子进程）
@@ -232,6 +244,9 @@ class _Conversation:
 
     chat_id: str
     agent: str
+    user_id: str
+    project_id: str
+    resolved_root: str
     acp_session_id: str
     cwd: str
     conn: Any
@@ -263,6 +278,43 @@ class ACPService:
         self._session_locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._session_lock_refs: dict[tuple[str, str], int] = {}
 
+    @staticmethod
+    def _require_project_identity(
+        *,
+        user_id: str,
+        project_id: str,
+        resolved_root: str,
+    ) -> None:
+        """普通运行时操作必须携带完整的工作台项目身份。"""
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (user_id, project_id, resolved_root)
+        ):
+            raise ACPSessionError("ACP workbench project identity is required")
+
+    @staticmethod
+    def _assert_project_binding(
+        conversation: _Conversation,
+        *,
+        user_id: str = "",
+        project_id: str = "",
+        resolved_root: str = "",
+    ) -> None:
+        """核验运行时会话仍绑定同一完整项目身份。"""
+        ACPService._require_project_identity(
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
+        existing_identity = (
+            getattr(conversation, "user_id", ""),
+            getattr(conversation, "project_id", ""),
+            getattr(conversation, "resolved_root", conversation.cwd),
+        )
+        requested_identity = (user_id, project_id, resolved_root or conversation.cwd)
+        if existing_identity != requested_identity:
+            raise ACPSessionError("ACP workbench project binding mismatch")
+
     @asynccontextmanager
     async def _session_guard(self, session_key: tuple[str, str]):
         """获取带引用计数的会话锁，并在会话关闭后安全回收。"""
@@ -289,6 +341,9 @@ class ACPService:
         agent: str,
         prompt_blocks: list[dict[str, Any]],
         cwd: str,
+        user_id: str = "",
+        project_id: str = "",
+        resolved_root: str = "",
         on_message: MessageHandler,
         restart: bool = False,
         require_existing: bool = False,
@@ -319,14 +374,38 @@ class ACPService:
             ACPConfigurationError: acp SDK 未安装。
             ACPSessionError: 会话状态非法（已有挂起权限或正在处理 prompt）。
         """
+        self._require_project_identity(
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
         if restart:
-            await self.close_chat_session(chat_id=chat_id, agent=agent)
+            preview_session_id = _preview_session_id_from_chat_id(
+                chat_id=chat_id,
+                user_id=user_id,
+            )
+            await self.close_chat_session(
+                chat_id=chat_id,
+                agent=agent,
+                user_id=user_id,
+                project_id=project_id,
+                resolved_root=resolved_root,
+            )
+            await preview_lease_registry.revoke_session(
+                user_id=user_id,
+                project_id=project_id,
+                session_kind=PreviewSessionKind.ACP,
+                session_id=preview_session_id,
+            )
 
         conversation = await self._get_or_create_session(
             chat_id=chat_id,
             agent=agent,
             cwd=cwd,
             require_existing=require_existing,
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root or cwd,
         )
         async with conversation.turn_lock:
             if conversation.client.pending_permission is not None:
@@ -365,6 +444,9 @@ class ACPService:
         acp_session_id: str,
         option_id: str,
         on_message: MessageHandler,
+        user_id: str = "",
+        project_id: str = "",
+        resolved_root: str = "",
     ) -> dict[str, Any]:
         """恢复被挂起的权限审批请求。
 
@@ -383,9 +465,20 @@ class ACPService:
             ACPConfigurationError: acp SDK 未安装。
             ACPSessionError: 会话不存在、无挂起权限或 prompt 未在等待恢复。
         """
+        self._require_project_identity(
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
         conversation = await self._find_session_by_acp_id(acp_session_id)
         if conversation is None:
             raise ACPSessionError(f"Session not found: {acp_session_id}")
+        self._assert_project_binding(
+            conversation,
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
         if conversation.client.pending_permission is None:
             raise ACPSessionError(
                 f"Session {acp_session_id} has no pending permission request",
@@ -404,7 +497,15 @@ class ACPService:
                 on_message=on_message,
             )
 
-    async def close_chat_session(self, *, chat_id: str, agent: str) -> None:
+    async def close_chat_session(
+        self,
+        *,
+        chat_id: str,
+        agent: str,
+        user_id: str = "",
+        project_id: str = "",
+        resolved_root: str = "",
+    ) -> None:
         """关闭指定 (chat_id, agent) 的会话。
 
         从 _sessions 字典中弹出会话并调用 _close_conversation 清理资源。
@@ -414,20 +515,37 @@ class ACPService:
             chat_id: 聊天会话 ID。
             agent: ACP Agent 标识。
         """
+        self._require_project_identity(
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
         session_key = (chat_id, agent)
         async with self._session_guard(session_key):
             async with self._lock:
-                conversation = self._sessions.pop(session_key, None)
+                conversation = self._sessions.get(session_key)
             if conversation is not None:
+                self._assert_project_binding(
+                    conversation,
+                    user_id=user_id,
+                    project_id=project_id,
+                    resolved_root=resolved_root,
+                )
                 await self._close_conversation(conversation)
+                async with self._lock:
+                    if self._sessions.get(session_key) is conversation:
+                        self._sessions.pop(session_key, None)
 
-    async def close_all_sessions(self) -> None:
-        """关闭所有会话并清空 _sessions 字典。"""
+    async def close_all_sessions_internal(self) -> None:
+        """仅供服务替换与进程退出使用的特权全量关闭入口。"""
         async with self._lock:
             conversations = list(self._sessions.values())
-            self._sessions.clear()
         for conversation in conversations:
             await self._close_conversation(conversation)
+            session_key = (conversation.chat_id, conversation.agent)
+            async with self._lock:
+                if self._sessions.get(session_key) is conversation:
+                    self._sessions.pop(session_key, None)
         async with self._lock:
             if not self._session_lock_refs:
                 self._session_locks.clear()
@@ -436,6 +554,10 @@ class ACPService:
         self,
         chat_id: str,
         agent: str,
+        *,
+        user_id: str = "",
+        project_id: str = "",
+        resolved_root: str = "",
     ) -> Optional[_Conversation]:
         """按 (chat_id, agent) 获取已存在的会话。
 
@@ -446,14 +568,30 @@ class ACPService:
         Returns:
             _Conversation 实例；不存在时返回 None。
         """
+        self._require_project_identity(
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
         async with self._lock:
-            return self._sessions.get((chat_id, agent))
+            conversation = self._sessions.get((chat_id, agent))
+        if conversation is not None:
+            self._assert_project_binding(
+                conversation,
+                user_id=user_id,
+                project_id=project_id,
+                resolved_root=resolved_root,
+            )
+        return conversation
 
     async def get_pending_permission(
         self,
         *,
         chat_id: str,
         agent: str,
+        user_id: str = "",
+        project_id: str = "",
+        resolved_root: str = "",
     ) -> Any | None:
         """获取指定会话当前挂起的权限审批请求。
 
@@ -464,12 +602,26 @@ class ACPService:
         Returns:
             挂起的 SuspendedPermission 实例；无会话或无挂起时返回 None。
         """
-        conversation = await self.get_session(chat_id, agent)
+        conversation = await self.get_session(
+            chat_id,
+            agent,
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
         if conversation is None:
             return None
         return conversation.client.pending_permission
 
-    async def cancel_turn(self, *, chat_id: str, agent: str) -> bool:
+    async def cancel_turn(
+        self,
+        *,
+        chat_id: str,
+        agent: str,
+        user_id: str = "",
+        project_id: str = "",
+        resolved_root: str = "",
+    ) -> bool:
         """取消指定会话当前正在进行的 prompt 任务。
 
         调用 conn.cancel 通知子进程取消，并通过 asyncio.wait_for +
@@ -483,7 +635,18 @@ class ACPService:
             True 表示 prompt_task 已结束（成功取消或自然完成）；False 表示
             会话不存在、无运行中的 prompt 或取消失败。
         """
-        conversation = await self.get_session(chat_id, agent)
+        self._require_project_identity(
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
+        conversation = await self.get_session(
+            chat_id,
+            agent,
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
         if conversation is None:
             return False
 
@@ -534,6 +697,9 @@ class ACPService:
         agent: str,
         cwd: str,
         require_existing: bool,
+        user_id: str = "",
+        project_id: str = "",
+        resolved_root: str = "",
     ) -> _Conversation:
         """获取或创建 ACP 会话。
 
@@ -557,6 +723,11 @@ class ACPService:
             ACPConfigurationError: agent 配置缺失或禁用，或 acp SDK 未安装。
             ACPSessionError: require_existing=True 但会话不存在或已失效。
         """
+        self._require_project_identity(
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
         agent_config = self._get_agent_config(agent)
         session_key = (chat_id, agent)
         async with self._session_guard(session_key):
@@ -565,10 +736,17 @@ class ACPService:
 
             if existing is not None:
                 if existing.process.returncode is None:
+                    self._assert_project_binding(
+                        existing,
+                        user_id=user_id,
+                        project_id=project_id,
+                        resolved_root=resolved_root,
+                    )
                     return existing
-                async with self._lock:
-                    self._sessions.pop(session_key, None)
                 await self._close_conversation(existing)
+                async with self._lock:
+                    if self._sessions.get(session_key) is existing:
+                        self._sessions.pop(session_key, None)
                 if require_existing:
                     raise ACPSessionError(
                         f"ACP session for runner '{agent}' is no longer "
@@ -586,6 +764,9 @@ class ACPService:
                 agent=agent,
                 cwd=session_cwd,
                 agent_config=agent_config,
+                user_id=user_id,
+                project_id=project_id,
+                resolved_root=resolved_root or session_cwd,
             )
 
             async with self._lock:
@@ -642,6 +823,9 @@ class ACPService:
         agent: str,
         cwd: str,
         agent_config: ACPAgentConfig,
+        user_id: str = "",
+        project_id: str = "",
+        resolved_root: str = "",
     ) -> _Conversation:
         """启动新的 ACP 会话。
 
@@ -661,6 +845,11 @@ class ACPService:
             ACPConfigurationError: acp SDK 未安装。
             ACPSessionError: 协议版本不匹配或会话创建失败。
         """
+        self._require_project_identity(
+            user_id=user_id,
+            project_id=project_id,
+            resolved_root=resolved_root,
+        )
         if not _ACP_AVAILABLE or spawn_agent_process is None:
             raise ACPConfigurationError("acp SDK not installed")
 
@@ -700,6 +889,9 @@ class ACPService:
             return _Conversation(
                 chat_id=chat_id,
                 agent=agent,
+                user_id=user_id,
+                project_id=project_id,
+                resolved_root=resolved_root or cwd,
                 acp_session_id=new_session.session_id,
                 cwd=cwd,
                 conn=conn,
@@ -912,9 +1104,9 @@ def init_acp_service(agent_id: str, config: ACPConfig) -> ACPService:
                 loop = None
         if loop is not None and not loop.is_closed():
             if loop.is_running():
-                loop.create_task(previous_service.close_all_sessions())
+                loop.create_task(previous_service.close_all_sessions_internal())
             else:
-                loop.run_until_complete(previous_service.close_all_sessions())
+                loop.run_until_complete(previous_service.close_all_sessions_internal())
     return new_service
 
 
@@ -940,9 +1132,9 @@ def close_acp_service(agent_id: str) -> None:
             loop = None
     if loop is not None and not loop.is_closed():
         if loop.is_running():
-            loop.create_task(previous_service.close_all_sessions())
+            loop.create_task(previous_service.close_all_sessions_internal())
         else:
-            loop.run_until_complete(previous_service.close_all_sessions())
+            loop.run_until_complete(previous_service.close_all_sessions_internal())
 
 
 def _shutdown_acp_services() -> None:
@@ -960,15 +1152,25 @@ def _shutdown_acp_services() -> None:
         loop = asyncio.get_running_loop()
         if loop.is_running():
             for service in services:
-                loop.create_task(service.close_all_sessions())
+                close_method = getattr(service, "close_all_sessions_internal", None)
+                if close_method is None:
+                    close_method = getattr(service, "close_all_sessions")
+                loop.create_task(close_method())
             return
     except RuntimeError:
         pass
 
+    async def _close_service_internal(service: Any) -> None:
+        """兼容测试替身并优先调用显式特权关闭入口。"""
+        close_method = getattr(service, "close_all_sessions_internal", None)
+        if close_method is None:
+            close_method = getattr(service, "close_all_sessions")
+        await close_method()
+
     async def _close_all_services() -> None:
         """在同一事件循环内创建并等待全部关闭协程。"""
         await asyncio.gather(
-            *(service.close_all_sessions() for service in services),
+            *(_close_service_internal(service) for service in services),
         )
 
     try:

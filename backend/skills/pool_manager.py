@@ -2,6 +2,7 @@
 技能池管理器 — 两层架构的共享技能仓库。
 支持技能广播、版本管理和内置技能自动注册。
 """
+import asyncio
 import json
 import shutil
 import uuid
@@ -9,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+import httpx
 from loguru import logger
 
 
@@ -219,71 +221,78 @@ class SkillPoolManager:
         except Exception as e:
             return {"success": False, "error": f"市场导入失败: {str(e)}"}
 
-    def fetch_market_listing(self) -> list[dict]:
+    async def fetch_market_listing(self) -> dict:
         """
-        从已配置的技能市场获取可用技能列表。
-        返回合并后的技能列表，包含名称/描述/版本/来源/作者等信息。
+        异步从已配置的技能市场源拉取可用技能列表。
 
-        Raises:
-            RuntimeError: 所有市场源均获取失败时抛出（无可用源不返回静默空列表）。
+        设计要点：
+        - 源列表来自 settings.SKILL_MARKET_SOURCES，默认空数组（不再硬编码不存在的域名）
+        - 使用 httpx.AsyncClient 并发拉取，单源 5 秒超时（避免阻塞事件循环）
+        - 单源失败记录到 source_errors，不中断其他源
+        - 全源失败也不抛异常，由路由层根据 source_errors 决定 HTTP 状态码
+        - 返回结构统一为 {"skills": list[dict], "source_errors": list[dict]}
+
+        Returns:
+            dict: {"skills": [...], "source_errors": [{"source": str, "error": str}, ...]}
         """
-        import urllib.request
-        import json as json_mod
+        # 延迟导入避免模块加载阶段对 settings 的强依赖
+        from config.settings import settings
+
+        sources = settings.SKILL_MARKET_SOURCES or []
+        if not sources:
+            return {"skills": [], "source_errors": []}
+
+        async def fetch_one(src: dict) -> tuple[str, list[dict] | None, str | None]:
+            """拉取单个源，返回 (源名, 技能列表, 错误信息)。"""
+            url = src.get("url", "")
+            name = src.get("name") or url
+            if not url:
+                return name, None, "missing url in source config"
+            try:
+                async with httpx.AsyncClient(timeout=5) as client:
+                    resp = await asyncio.wait_for(
+                        client.get(url, headers={"User-Agent": "Open-AwA/1.0", "Accept": "application/json"}),
+                        timeout=5,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                # 兼容上游返回数组或 {"skills": [...]} / {"data": [...]} 三种结构
+                skills_list = data if isinstance(data, list) else data.get("skills", data.get("data", []))
+                normalized: list[dict] = []
+                for s in skills_list:
+                    normalized.append({
+                        "name": s.get("name", s.get("id", "")),
+                        "description": s.get("description", s.get("summary", "")),
+                        "version": s.get("version", "1.0.0"),
+                        "source": name,
+                        "source_url": s.get("url", s.get("source_url", "")),
+                        "author": s.get("author", s.get("owner", "community")),
+                        "downloads": s.get("downloads", s.get("install_count", 0)),
+                    })
+                return name, normalized, None
+            except asyncio.TimeoutError:
+                return name, None, "timeout after 5s"
+            except httpx.HTTPError as e:
+                return name, None, f"http error: {e}"
+            except Exception as e:
+                # 兜底：未预期异常也记录到 source_errors，不向上抛
+                return name, None, f"unexpected: {e}"
+
+        results = await asyncio.gather(*[fetch_one(s) for s in sources])
 
         all_skills: list[dict] = []
-        source_errors: dict[str, str] = {}
-        sources = [
-            {"name": "clawhub", "url": "https://clawhub.ai/api/skills"},
-            {"name": "skills.sh", "url": "https://skills.sh/api/skills"},
-        ]
-
-        for src in sources:
-            try:
-                req = urllib.request.Request(
-                    src["url"],
-                    headers={"User-Agent": "Open-AwA/1.0", "Accept": "application/json"},
-                )
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = json_mod.loads(resp.read())
-                    skills_list = data if isinstance(data, list) else data.get("skills", data.get("data", []))
-                    for s in skills_list:
-                        all_skills.append({
-                            "name": s.get("name", s.get("id", "")),
-                            "description": s.get("description", s.get("summary", "")),
-                            "version": s.get("version", "1.0.0"),
-                            "source": src["name"],
-                            "source_url": s.get("url", s.get("source_url", f"https://{src['name']}.ai/skills/{s.get('name', '')}")),
-                            "author": s.get("author", s.get("owner", "community")),
-                            "downloads": s.get("downloads", s.get("install_count", 0)),
-                        })
-            except Exception as e:
-                logger.bind(event="market_listing_error", source=src["name"]).error(f"获取市场列表失败: {str(e)}")
-                source_errors[src["name"]] = str(e)
-
-        if source_errors and not all_skills:
-            # 双源全失败：返回结构化错误（不静默返回空列表伪装"无技能"）
-            detail = "; ".join(f"{name}: {err}" for name, err in source_errors.items())
-            raise RuntimeError(f"技能市场获取失败（无可用源）: {detail}")
-
-        # 单源失败：在结果中追加显式错误条目，失败源不静默消失
-        for src_name, error in source_errors.items():
-            all_skills.append({
-                "name": f"{src_name} 市场获取失败",
-                "description": error,
-                "version": "",
-                "source": src_name,
-                "source_url": "",
-                "author": "",
-                "downloads": 0,
-                "installed": False,
-                "source_error": error,
-            })
+        source_errors: list[dict] = []
+        for name, source_skills, error in results:
+            if error is not None:
+                logger.bind(event="market_listing_error", source=name).warning(f"获取市场列表失败: {error}")
+                source_errors.append({"source": name, "error": error})
+            elif source_skills:
+                all_skills.extend(source_skills)
 
         # 合并已安装信息
         manifest = self.get_manifest()
         installed = set(manifest.get("skills", {}).keys())
         for skill in all_skills:
-            if not skill.get("source_error"):
-                skill["installed"] = skill["name"] in installed
+            skill["installed"] = skill.get("name") in installed
 
-        return all_skills
+        return {"skills": all_skills, "source_errors": source_errors}

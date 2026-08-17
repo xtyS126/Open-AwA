@@ -52,6 +52,32 @@ class TrackedTool:
     error: Optional[Exception] = None
 
 
+def _execute_fn_accepts_abort(execute_fn: Callable) -> bool:
+    """
+    判断工具执行函数是否接受第三个参数 abort_controller。
+
+    兼容旧签名（tool_name, input_params）与 3 参数签名（含 abort_controller）。
+    无法检视签名时（builtin/partial 等）按 3 参数签名处理（生产执行链均使用）。
+
+    Args:
+        execute_fn: 工具执行函数
+
+    Returns:
+        是否接受 abort_controller 参数
+    """
+    try:
+        import inspect
+        sig = inspect.signature(execute_fn)
+        params = [
+            p for p in sig.parameters.values()
+            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+        return len(params) >= 3
+    except (TypeError, ValueError):
+        # 无法检视签名（如 builtin/部分 partial），默认按 3 参数签名处理
+        return True
+
+
 def can_execute_tool(
     tracked: TrackedTool,
     queue: List[TrackedTool],
@@ -94,8 +120,10 @@ def can_execute_tool(
             return False
 
     # 规则 4：新工具是只读并发安全的，可以并发执行
+    # is_read_only 支持输入驱动判定（如 run_command 按命令内容判断）
     is_concurrency_safe = resolve_concurrency_safe(tool_definition, tracked.input_params)
-    if tool_definition.is_read_only and is_concurrency_safe:
+    from core.tool_registry import resolve_read_only
+    if resolve_read_only(tool_definition, tracked.input_params) and is_concurrency_safe:
         return True
 
     # 规则 5：其他情况，保守策略返回 False
@@ -318,12 +346,24 @@ class StreamingToolExecutor:
         调用 execute_fn 执行工具，捕获异常并记录结果。
         无论成功或失败，都将 tracked 放入完成队列。
 
+        级联中止策略（参考 ch09 §9.2.2）：仅 Bash 类工具（run_command）出错时
+        中止 sibling controller，避免只读工具失败影响无关兄弟工具。
+
         Args:
             tracked: 工具跟踪对象
-            execute_fn: 工具执行函数，签名 (tool_name, input_params) -> result
+            execute_fn: 工具执行函数，签名 (tool_name, input_params, abort_controller) -> result
         """
         try:
-            result = execute_fn(tracked.tool_name, tracked.input_params)
+            # 将工具级 abort_controller 传入执行函数，使中止信号可到达工具执行链。
+            # 兼容旧签名（tool_name, input_params）与 3 参数签名（含 abort_controller）。
+            if _execute_fn_accepts_abort(execute_fn):
+                result = execute_fn(
+                    tracked.tool_name,
+                    tracked.input_params,
+                    tracked.abort_controller,
+                )
+            else:
+                result = execute_fn(tracked.tool_name, tracked.input_params)
             # 支持异步执行函数
             if asyncio.iscoroutine(result):
                 result = await result
@@ -337,16 +377,37 @@ class StreamingToolExecutor:
                 tool_name=tracked.tool_name,
                 error_type=type(e).__name__,
             ).error(f"工具执行失败 [{tracked.tool_name}]: {e}")
-            # 工具出错时级联中止 sibling controller，停止其他正在执行的兄弟工具
-            if self._sibling_abort_controller is not None:
-                self._sibling_abort_controller.abort(
-                    reason=f"sibling_tool_error:{tracked.tool_name}"
-                )
+            # 仅 Bash 类工具出错时级联中止 sibling controller（参考 ch09 §9.2.2）
+            if self._is_bash_tool(tracked.tool_name):
+                if self._sibling_abort_controller is not None:
+                    self._sibling_abort_controller.abort(
+                        reason=f"sibling_tool_error:{tracked.tool_name}"
+                    )
         finally:
             tracked.end_time = time.perf_counter()
             tracked.state = ToolExecutionState.COMPLETED
             await self._completed.put(tracked)
             self._total_completed += 1
+
+    @staticmethod
+    def _is_bash_tool(tool_name: str) -> bool:
+        """
+        判断工具是否为 Bash 类工具（命令执行）。
+
+        参考 ch09 §9.2.2：仅 Bash 错误取消兄弟工具，独立只读工具失败不应影响其他工具。
+
+        Args:
+            tool_name: 工具名称
+
+        Returns:
+            是否为 Bash 类工具
+        """
+        bash_names = {
+            "run_command",
+            "builtin_run_command",
+            "terminal_executor",
+        }
+        return tool_name in bash_names
 
     async def yield_completed(self) -> AsyncGenerator[TrackedTool, None]:
         """

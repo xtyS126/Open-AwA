@@ -30,11 +30,8 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 # 项目内部
+from config.thresholds import COMPACTION_MESSAGE_THRESHOLD, MAX_HISTORY_MESSAGE_CHARS
 from core.agent_state import AgentState
-
-
-COMPACTION_MESSAGE_THRESHOLD = 40
-MAX_HISTORY_MESSAGE_CHARS = 5_000
 
 
 def is_final_only_mode(context: Dict[str, Any]) -> bool:

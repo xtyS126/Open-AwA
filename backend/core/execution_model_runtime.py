@@ -5,12 +5,17 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from billing.token_counter import count_from_stream, count_from_usage
 from config.settings import settings
+from config.thresholds import (
+    OUTPUT_TOKEN_RECOVERY_MAX_RETRIES,
+    OUTPUT_TOKEN_RECOVERY_THRESHOLD,
+    STREAM_CHUNK_TIMEOUT_SECONDS,
+)
 from core.circuit_breaker import CircuitOpenError, get_circuit_breaker
 from core.execution_support import MAX_TOOL_EVENT_RESULT_CHARS, resolve_max_tool_call_rounds
 from core.litellm_adapter import build_standard_error
@@ -57,6 +62,8 @@ class ExecutionModelRuntimeMixin:
                 )
             return resolved
 
+        # 将解析后的 provider 注入 context，供 prompt builder 判断是否需要 Prompt Cache
+        context["provider"] = resolved["provider"]
         messages = self._build_messages_with_history(prompt, context)
         llm_input_payload.update({
             "provider": resolved["provider"],
@@ -287,6 +294,8 @@ class ExecutionModelRuntimeMixin:
             yield {"error": resolved.get("error")}
             return
 
+        # 将解析后的 provider 注入 context，供 prompt builder 判断是否需要 Prompt Cache
+        context["provider"] = resolved["provider"]
         messages = self._build_messages_with_history(prompt, context)
         tool_messages = context.get("_tool_messages", [])
         if tool_messages:
@@ -328,99 +337,153 @@ class ExecutionModelRuntimeMixin:
 
         # 跟踪本次调用是否已记录成功/失败，避免 yield 错误 chunk 后重复计数
         cb_outcome_recorded = False
-        try:
-            _thinking_params = context.get("_thinking_params")
-            stream_gen = self._get_llm_stream_callable()(
-                provider=resolved["provider"],
-                model=resolved["model"],
-                messages=messages,
-                api_key=resolved["api_key"],
-                api_base=resolved.get("api_endpoint"),
-                max_tokens=self._resolve_max_tokens(resolved),
-                request_id=resolved.get("request_id"),
-                tools=_tools,
-                thinking_params=_thinking_params,
-            )
+        # max_output_tokens 恢复链：输出被 length 截断时升级并重试，上限 3 次
+        MAX_OUTPUT_RETRY_LIMIT = 3
+        MAX_OUTPUT_RETRY_TOKENS = 64_000
+        max_output_retries_left = MAX_OUTPUT_RETRY_LIMIT
+        max_output_tokens = self._resolve_max_tokens(resolved)
+        # 透传的真实 finish_reason 与 usage（来自流尾 chunk）
+        finish_reason: Optional[str] = None
+        last_usage: Optional[Dict[str, Any]] = None
 
-            # 流式整体超时控制：每个 chunk 之间最长等待 STREAM_CHUNK_TIMEOUT_SECONDS
-            # 防止 LLM 服务 hang 住但不断开连接导致永久阻塞
-            STREAM_CHUNK_TIMEOUT_SECONDS = 120.0
-            stream_iter = stream_gen.__aiter__()
+        try:
             while True:
+                _thinking_params = context.get("_thinking_params")
+                stream_gen = self._get_llm_stream_callable()(
+                    provider=resolved["provider"],
+                    model=resolved["model"],
+                    messages=messages,
+                    api_key=resolved["api_key"],
+                    api_base=resolved.get("api_endpoint"),
+                    max_tokens=max_output_tokens,
+                    request_id=resolved.get("request_id"),
+                    tools=_tools,
+                    thinking_params=_thinking_params,
+                )
                 try:
-                    chunk = await asyncio.wait_for(
-                        stream_iter.__anext__(),
-                        timeout=STREAM_CHUNK_TIMEOUT_SECONDS,
-                    )
-                except asyncio.TimeoutError as timeout_exc:
-                    # 流式超时计入熔断器失败统计
-                    await breaker.record_failure(timeout_exc)
-                    cb_outcome_recorded = True
-                    duration_ms = int((time.perf_counter() - started_at) * 1000)
-                    record_model_service_metric(resolved["provider"], "chat_stream", "timeout", duration_ms)
+                    # 流式整体超时控制：每个 chunk 之间最长等待时间
+                    # 防止 LLM 服务 hang 住但不断开连接导致永久阻塞
+                    # 值由 config.thresholds.STREAM_CHUNK_TIMEOUT_SECONDS 提供
+                    stream_iter = stream_gen.__aiter__()
+                    while True:
+                        try:
+                            chunk = await asyncio.wait_for(
+                                stream_iter.__anext__(),
+                                timeout=STREAM_CHUNK_TIMEOUT_SECONDS,
+                            )
+                        except asyncio.TimeoutError as timeout_exc:
+                            # 流式超时计入熔断器失败统计
+                            await breaker.record_failure(timeout_exc)
+                            cb_outcome_recorded = True
+                            duration_ms = int((time.perf_counter() - started_at) * 1000)
+                            record_model_service_metric(resolved["provider"], "chat_stream", "timeout", duration_ms)
+                            logger.bind(
+                                event="llm_stream_timeout",
+                                module="executor",
+                                provider=resolved["provider"],
+                                model=resolved["model"],
+                                timeout_seconds=STREAM_CHUNK_TIMEOUT_SECONDS,
+                            ).error(f"流式 LLM 调用超时（{STREAM_CHUNK_TIMEOUT_SECONDS}s 无响应）")
+                            yield {
+                                "error": {
+                                    "message": f"流式响应超时（{STREAM_CHUNK_TIMEOUT_SECONDS}s 无数据）",
+                                    "type": "timeout",
+                                }
+                            }
+                            return
+                        except StopAsyncIteration:
+                            break
+
+                        # 收集 chunk 用于后续 token 计数（count_from_stream 查找 usage 字段）
+                        if isinstance(chunk, dict):
+                            stream_chunks.append(chunk)
+
+                        # 错误事件直接转发
+                        if "error" in chunk:
+                            # 流式错误事件计入熔断器失败统计
+                            err_exc = Exception(chunk["error"].get("message", "stream error"))
+                            await breaker.record_failure(err_exc)
+                            cb_outcome_recorded = True
+                            duration_ms = int((time.perf_counter() - started_at) * 1000)
+                            record_model_service_metric(resolved["provider"], "chat_stream", "error", duration_ms)
+                            if callable(record_hook):
+                                record_hook(
+                                    node_type="llm_call",
+                                    user_message=context.get("message", prompt),
+                                    context=context,
+                                    status="error",
+                                    error_message=chunk["error"].get("message"),
+                                    llm_input={"prompt": prompt, "context": serialized_context},
+                                    llm_output=chunk,
+                                    execution_duration_ms=duration_ms,
+                                    metadata={
+                                        "provider": resolved["provider"],
+                                        "model": resolved["model"],
+                                        "mode": "stream",
+                                    }
+                                )
+                            yield chunk
+                            return
+
+                        if chunk.get("type") == "tool_calls":
+                            # tool_calls 事件视为成功完成（LLM 已返回完整结构化响应）
+                            await breaker.record_success()
+                            cb_outcome_recorded = True
+                            yield chunk
+                            return
+
+                        # 透传真实 finish_reason 与 usage（流尾 chunk 携带）
+                        if chunk.get("finish_reason"):
+                            finish_reason = chunk["finish_reason"]
+                        if isinstance(chunk.get("usage"), dict):
+                            last_usage = chunk["usage"]
+
+                        content = chunk.get("content", "")
+                        reasoning = chunk.get("reasoning_content", "")
+                        if content:
+                            full_content += content
+                        if reasoning:
+                            full_reasoning += reasoning
+                        if content or reasoning or finish_reason:
+                            payload: Dict[str, Any] = {
+                                "content": content,
+                                "reasoning_content": reasoning,
+                            }
+                            if finish_reason:
+                                payload["finish_reason"] = finish_reason
+                            yield payload
+                finally:
+                    # 显式关闭内层流式生成器，避免流中断后资源泄漏
+                    close_gen = getattr(stream_gen, "aclose", None)
+                    if close_gen is not None:
+                        try:
+                            await close_gen()
+                        except Exception:
+                            logger.bind(
+                                event="llm_stream_generator_close_error",
+                                module="executor",
+                            ).debug("关闭流式生成器失败（已忽略）")
+
+                # max_output_tokens 恢复链：默认 8k 输出被 length 截断时
+                # 升级到 64k 并注入 meta 恢复消息重试，上限 3 次
+                if finish_reason == "length" and max_output_retries_left > 0:
+                    max_output_retries_left -= 1
+                    max_output_tokens = MAX_OUTPUT_RETRY_TOKENS
+                    messages.append({
+                        "role": "user",
+                        "content": "Output token limit hit. Resume directly from the previous response without repeating content.",
+                    })
                     logger.bind(
-                        event="llm_stream_timeout",
+                        event="llm_stream_output_limit_retry",
                         module="executor",
                         provider=resolved["provider"],
                         model=resolved["model"],
-                        timeout_seconds=STREAM_CHUNK_TIMEOUT_SECONDS,
-                    ).error(f"流式 LLM 调用超时（{STREAM_CHUNK_TIMEOUT_SECONDS}s 无响应）")
-                    yield {
-                        "error": {
-                            "message": f"流式响应超时（{STREAM_CHUNK_TIMEOUT_SECONDS}s 无数据）",
-                            "type": "timeout",
-                        }
-                    }
-                    return
-                except StopAsyncIteration:
-                    break
-
-                # 收集 chunk 用于后续 token 计数（count_from_stream 查找 usage 字段）
-                if isinstance(chunk, dict):
-                    stream_chunks.append(chunk)
-
-                # 错误事件直接转发
-                if "error" in chunk:
-                    # 流式错误事件计入熔断器失败统计
-                    err_exc = Exception(chunk["error"].get("message", "stream error"))
-                    await breaker.record_failure(err_exc)
-                    cb_outcome_recorded = True
-                    duration_ms = int((time.perf_counter() - started_at) * 1000)
-                    record_model_service_metric(resolved["provider"], "chat_stream", "error", duration_ms)
-                    if callable(record_hook):
-                        record_hook(
-                            node_type="llm_call",
-                            user_message=context.get("message", prompt),
-                            context=context,
-                            status="error",
-                            error_message=chunk["error"].get("message"),
-                            llm_input={"prompt": prompt, "context": serialized_context},
-                            llm_output=chunk,
-                            execution_duration_ms=duration_ms,
-                            metadata={
-                                "provider": resolved["provider"],
-                                "model": resolved["model"],
-                                "mode": "stream",
-                            }
-                        )
-                    yield chunk
-                    return
-
-                if chunk.get("type") == "tool_calls":
-                    # tool_calls 事件视为成功完成（LLM 已返回完整结构化响应）
-                    await breaker.record_success()
-                    cb_outcome_recorded = True
-                    yield chunk
-                    return
-
-                content = chunk.get("content", "")
-                reasoning = chunk.get("reasoning_content", "")
-                if content:
-                    full_content += content
-                if reasoning:
-                    full_reasoning += reasoning
-                if content or reasoning:
-                    yield {"content": content, "reasoning_content": reasoning}
+                        retries_left=max_output_retries_left,
+                    ).warning(f"输出 token 上限截断（finish_reason=length），升级 max_tokens 到 {MAX_OUTPUT_RETRY_TOKENS} 重试")
+                    finish_reason = None
+                    last_usage = None
+                    continue
+                break
 
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat_stream", "success", duration_ms)

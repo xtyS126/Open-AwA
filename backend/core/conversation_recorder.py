@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -19,12 +20,16 @@ class ConversationRecorder:
     """
     对话记录器，负责异步批量记录用户与 AI 的对话数据。
     支持按用户控制数据采集开关，使用队列缓冲和批量写入优化性能。
+    同时内置 JSONL 旁路日志转录（JsonlTranscriptWriter）运行时接线：
+    user 消息预写、assistant 消息 fire-and-forget 写入。
     """
     def __init__(
         self,
         batch_size: int = 50,
         flush_interval: float = 1.0,
         queue_maxsize: int = 2000,
+        transcript_enabled: bool = True,
+        transcript_base_dir: Optional[str | Path] = None,
     ):
         """
         初始化对话记录器。
@@ -33,6 +38,8 @@ class ConversationRecorder:
             batch_size: 批量写入的记录数量阈值。
             flush_interval: 刷新间隔时间（秒）。
             queue_maxsize: 队列最大容量。
+            transcript_enabled: 是否启用 JSONL 旁路日志转录（受用户采集开关约束）。
+            transcript_base_dir: JSONL 转录目录，默认为项目根 var/data/transcripts。
         """
         self.batch_size = batch_size
         self.flush_interval = flush_interval
@@ -41,6 +48,12 @@ class ConversationRecorder:
         self._shutdown_event = asyncio.Event()
         self._collection_preferences: Dict[str, bool] = {}
         self._dropped_count = 0
+        # JSONL 旁路日志转录状态（会话级写入器惰性创建）
+        self.transcript_enabled = transcript_enabled
+        self._transcript_base_dir = Path(transcript_base_dir) if transcript_base_dir else TRANSCRIPTS_DIR
+        self._transcript_writers: Dict[str, JsonlTranscriptWriter] = {}
+        self._last_user_uuid: Dict[str, str] = {}   # session_id -> 最近一条 user 消息 uuid（父链）
+        self._last_user_content: Dict[str, str] = {}  # session_id -> 最近一条 user 内容（去重）
 
     async def start(self) -> None:
         """
@@ -54,12 +67,14 @@ class ConversationRecorder:
     async def stop(self) -> None:
         """
         停止后台工作线程，等待队列中剩余记录写入完成。
+        同时关闭所有 JSONL 转录写入器。
         """
         if not self._worker_task:
             return
         self._shutdown_event.set()
         await self._worker_task
         self._worker_task = None
+        self.close_all_transcripts()
 
     def set_collection_enabled(self, enabled: bool, current_user: Any = None, user_id: Optional[str] = None) -> bool:
         """
@@ -143,6 +158,14 @@ class ConversationRecorder:
         if not self.is_collection_enabled(user_id=resolved_user_id):
             return False
 
+        # JSONL 旁路日志转录（运行时接线）：user 消息预写、assistant 消息 fire-and-forget
+        self._transcribe_record(
+            session_id=session_id,
+            node_type=node_type,
+            user_message=user_message,
+            llm_output=llm_output,
+        )
+
         await self.start()
 
         payload = {
@@ -188,6 +211,123 @@ class ConversationRecorder:
             "dropped_count": self._dropped_count,
             "tracked_user_count": len(self._collection_preferences),
         }
+
+    # ---- JSONL 旁路日志转录（运行时接线） ----
+
+    def set_transcript_enabled(self, enabled: bool) -> None:
+        """开启或关闭 JSONL 旁路日志转录。"""
+        self.transcript_enabled = enabled
+
+    def _transcribe_record(
+        self,
+        *,
+        session_id: str,
+        node_type: str,
+        user_message: str,
+        llm_output: Any,
+    ) -> None:
+        """
+        根据记录节点类型接线 JSONL 转录。
+
+        - user 消息：intent_recognition（非流式轮次入口）与 llm_call（LLM 调用）
+          时预写；同一会话连续相同 user 内容自动去重，避免工具循环内重复写入。
+        - assistant 消息：feedback_generation（最终反馈生成）时 fire-and-forget 写入。
+        """
+        if not self.transcript_enabled:
+            return
+        if node_type in ("intent_recognition", "llm_call") and user_message:
+            if self._last_user_content.get(session_id) != user_message:
+                self._last_user_content[session_id] = user_message
+                self.write_transcript(session_id, "user", user_message)
+        elif node_type == "feedback_generation" and llm_output is not None:
+            assistant_content = self._extract_assistant_transcript_content(llm_output)
+            if assistant_content:
+                self._schedule_transcript_write(
+                    session_id, "assistant", assistant_content
+                )
+
+    @staticmethod
+    def _extract_assistant_transcript_content(llm_output: Any) -> Optional[str]:
+        """从 llm_output 中提取助手消息文本用于转录。"""
+        if isinstance(llm_output, str):
+            return llm_output
+        if isinstance(llm_output, dict):
+            for key in ("content", "text", "response"):
+                if key in llm_output and llm_output[key]:
+                    value = llm_output[key]
+                    return value if isinstance(value, str) else json.dumps(
+                        value, ensure_ascii=False
+                    )
+            return json.dumps(llm_output, ensure_ascii=False)
+        return str(llm_output)
+
+    def write_transcript(self, session_id: str, role: str, content: Any) -> None:
+        """
+        同步写入一条 JSONL 转录消息。
+
+        user 消息预写（记录入队前立即落盘），assistant 消息由
+        _schedule_transcript_write fire-and-forget 调用。父链：assistant
+        消息的 parent_uuid 指向该会话最近一条 user 消息。
+        """
+        if not self.transcript_enabled:
+            return
+        if not session_id or content is None or content == "":
+            return
+        writer = self._get_transcript_writer(session_id)
+        message_uuid = str(uuid.uuid4())
+        parent_uuid = None
+        if role == "assistant":
+            parent_uuid = self._last_user_uuid.get(session_id)
+        else:
+            self._last_user_uuid[session_id] = message_uuid
+        writer.append(
+            uuid=message_uuid,
+            parent_uuid=parent_uuid,
+            type=role,
+            content=content,
+        )
+
+    def _get_transcript_writer(self, session_id: str) -> "JsonlTranscriptWriter":
+        """获取会话对应的 JSONL 写入器，惰性创建并缓存。"""
+        writer = self._transcript_writers.get(session_id)
+        if writer is None:
+            writer = JsonlTranscriptWriter(
+                session_id=session_id,
+                base_dir=self._transcript_base_dir,
+            )
+            self._transcript_writers[session_id] = writer
+        return writer
+
+    def _schedule_transcript_write(
+        self, session_id: str, role: str, content: Any
+    ) -> None:
+        """fire-and-forget 异步写入转录消息，失败仅记录日志不阻断主流程。"""
+        task = asyncio.create_task(
+            asyncio.to_thread(self.write_transcript, session_id, role, content)
+        )
+        task.add_done_callback(self._handle_transcript_task_result)
+
+    @staticmethod
+    def _handle_transcript_task_result(task: asyncio.Task) -> None:
+        """检查后台转录写入任务结果，对异常记录告警日志。"""
+        try:
+            exc = task.exception()
+            if exc is not None:
+                logger.warning(f"JSONL 转录写入失败: {exc}")
+        except asyncio.CancelledError:
+            pass
+
+    def close_transcript(self, session_id: str) -> None:
+        """关闭指定会话的 JSONL 写入器并移除缓存。"""
+        writer = self._transcript_writers.pop(session_id, None)
+        if writer is not None:
+            writer.close()
+
+    def close_all_transcripts(self) -> None:
+        """关闭所有会话的 JSONL 写入器。"""
+        for writer in self._transcript_writers.values():
+            writer.close()
+        self._transcript_writers.clear()
 
     async def _worker_loop(self) -> None:
         """

@@ -139,6 +139,9 @@ class PlanExecutor:
                 auto_results,
                 "auto_plugin_error",
             )
+            # Task 18: prompt 模式技能结果回注入主对话（auto 执行路径）
+            for item in auto_results["skills"]:
+                self._inject_prompt_to_conversation(item.get("result"), context)
         except Exception as error:
             # 自动执行失败必须传播，禁止以空结果静默继续
             logger.bind(
@@ -284,6 +287,34 @@ class PlanExecutor:
                 } for value in entity_values)
         return intent_keywords, entities_list
 
+    @staticmethod
+    def _inject_prompt_to_conversation(
+        result: Any,
+        context: Dict[str, Any],
+    ) -> None:
+        """prompt 模式技能结果以 user 消息回注入主对话（幂等）。
+
+        skill_engine 的 prompt 分支返回 inject_as_user=True 与 prompt 文本；
+        此处消费该标记，把 prompt 追加到 context["conversation_history"]，
+        使后续 LLM 轮次能读取到注入的 user 消息。为避免与 skill_engine 直接
+        注入重复，仅当对话末尾不存在相同内容的 user 消息时追加。
+        """
+        if not isinstance(result, dict) or not result.get("inject_as_user"):
+            return
+        outputs = result.get("outputs") if isinstance(result.get("outputs"), dict) else {}
+        prompt_text = result.get("prompt") or outputs.get("prompt")
+        if not prompt_text:
+            return
+        history = context.get("conversation_history")
+        if history is None:
+            history = []
+            context["conversation_history"] = history
+        if not isinstance(history, list):
+            return
+        if history and history[-1].get("role") == "user" and history[-1].get("content") == prompt_text:
+            return
+        history.append({"role": "user", "content": prompt_text})
+
     async def execute_single_step(
         self,
         step: Dict[str, Any],
@@ -298,6 +329,8 @@ class PlanExecutor:
                 result = await self._execute_skill(
                     skill_name=skill_name, inputs=step.get("inputs", {}), context=context,
                 )
+                # Task 18: prompt 模式技能结果回注入主对话
+                self._inject_prompt_to_conversation(result, context)
                 self._record_execution(
                     "skill", step, result, user_input, context, results,
                     {"skill_name": skill_name}, error_key="error",

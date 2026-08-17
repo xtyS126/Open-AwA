@@ -61,18 +61,10 @@ MANIFEST_SCHEMA: Dict[str, Any] = {
 
 @dataclass
 class SchemaValidationResult:
-    """
-    封装与SchemaValidationResult相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     valid: bool
     errors: List[str]
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        处理to、dict相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return {
             "valid": self.valid,
             "errors": self.errors,
@@ -80,10 +72,6 @@ class SchemaValidationResult:
 
 
 class JsonSchemaValidator:
-    """
-    封装与JsonSchemaValidator相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     TYPE_MAPPING = {
         "object": dict,
         "array": list,
@@ -94,19 +82,11 @@ class JsonSchemaValidator:
     }
 
     def validate(self, data: Any, schema: Dict[str, Any]) -> SchemaValidationResult:
-        """
-        处理validate相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         errors: List[str] = []
         self._validate(data=data, schema=schema, path="$", errors=errors)
         return SchemaValidationResult(valid=len(errors) == 0, errors=errors)
 
     def _validate(self, data: Any, schema: Dict[str, Any], path: str, errors: List[str]) -> None:
-        """
-        处理validate相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         schema_type = schema.get("type")
         if schema_type:
             expected_type = self.TYPE_MAPPING.get(schema_type)
@@ -154,15 +134,7 @@ class JsonSchemaValidator:
 
 
 class ManifestExtensionSchemaValidator:
-    """
-    封装与ManifestExtensionSchemaValidator相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def __init__(self) -> None:
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self._validator = JsonSchemaValidator()
 
     def validate_manifest(self, manifest: Dict[str, Any]) -> SchemaValidationResult:

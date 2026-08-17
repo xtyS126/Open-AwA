@@ -77,7 +77,7 @@ async def trigger_compact(
     将对话历史压缩为摘要，保留最近几轮完整对话。
     使用 CompactionManager 进行结构化摘要压缩。
     """
-    from core.compaction_manager import CompactionManager
+    from core.compaction_manager import get_session_manager
     from core.context.token_budget import TokenBudget
     from core.executor import ExecutionLayer
     from memory.manager import MemoryManager
@@ -110,8 +110,11 @@ async def trigger_compact(
         budget = TokenBudget(model_name=model_name)
         current_tokens = budget.count_messages(history)
 
-        # 使用 CompactionManager 进行压缩
-        compaction = CompactionManager(model_context_window=budget.max_tokens)
+        # 使用会话级 CompactionManager 复用实例，断路器失败计数跨调用点共享
+        compaction = get_session_manager(
+            session_id=session_id,
+            model_context_window=budget.max_tokens,
+        )
 
         # 设置 LLM 调用函数：复用 ExecutionLayer 的配置解析与调用能力
         executor = ExecutionLayer()
@@ -130,6 +133,31 @@ async def trigger_compact(
                 llm_db.close()
 
         compaction.set_llm_call(_compaction_llm_call)
+
+        # 压缩结果落库：摘要与边界写入短期记忆，供后续轮次消费避免重复计费
+        from db.models import ShortTermMemory, SessionLocal
+
+        async def _persist_compaction(
+            summary_session_id: Optional[str], summary_messages: list
+        ) -> None:
+            persist_db = SessionLocal()
+            try:
+                for msg in summary_messages:
+                    persist_db.add(
+                        ShortTermMemory(
+                            session_id=summary_session_id or session_id,
+                            role=msg["role"],
+                            content=str(msg["content"]),
+                        )
+                    )
+                persist_db.commit()
+            except Exception:
+                persist_db.rollback()
+                raise
+            finally:
+                persist_db.close()
+
+        compaction.set_persistence_hook(_persist_compaction)
 
         if compaction.should_compact(messages=history):
             result = await compaction.compact(messages=history)

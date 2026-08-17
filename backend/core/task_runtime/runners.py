@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -28,9 +28,10 @@ from core.streaming_events import (
     emit_subagent_stop_event,
     emit_agent_message_event,
 )
-from .hook_dispatcher import hook_dispatcher, HOOK_SUBAGENT_START, HOOK_SUBAGENT_STOP
+from core.hook_manager import hook_manager, HookName
 from .worktree_manager import worktree_manager
 from .agent_memory import load_agent_memory_prompt
+from .permission_guard import permission_guard
 from .fork import (
     build_forked_messages,
     build_child_message,
@@ -39,7 +40,14 @@ from .fork import (
 )
 
 # 运行中的后台任务引用，用于 TaskStop
-_running_background_tasks: Dict[str, asyncio.Task] = {}
+# 已从模块级字典迁移到 AgentLifecycle._running_background_tasks，
+# 通过 _get_running_tasks() 辅助函数访问，支持测试隔离
+
+
+def _get_running_tasks() -> Dict[str, asyncio.Task]:
+    """从 AgentLifecycle 获取运行中的后台任务字典（支持测试隔离）"""
+    from core.agent_lifecycle import get_agent_lifecycle
+    return get_agent_lifecycle()._running_background_tasks
 
 # 子代理流式消息达到该阈值后再刷出，避免按 token 级别污染思维链。
 SUBAGENT_STREAM_MESSAGE_FLUSH_THRESHOLD = 96
@@ -268,7 +276,40 @@ def _resolve_subagent_provider_and_model(
     return normalized_provider, normalized_model
 
 
-def _create_subagent_execution_bundle(
+def _resolve_agent_allowed_tools(
+    agent_def: Optional[AgentDefinition],
+    permission_mode: str,
+) -> Optional[List[str]]:
+    """按 AgentDefinition 声明的 tools / disallowed_tools 计算子代理可用工具白名单。
+
+    组合规则（Task 17，安全语义真实生效）：
+    - tools 声明非空：以声明为准（白名单），再剔除 disallowed_tools
+    - tools 声明为空：无白名单限制（返回 None，表示不限制）
+    - plan / dont_ask 权限模式：与 PermissionGuard 只读白名单求交集，
+      保证只读 Agent 的写工具永不进入白名单
+
+    返回 None 表示不限制；返回列表（可能为空）表示仅允许列表内工具。
+    """
+    declared = list(agent_def.tools or []) if agent_def else []
+    disallowed = set(agent_def.disallowed_tools or []) if agent_def else set()
+
+    if declared:
+        allowed = [t for t in declared if t not in disallowed]
+    else:
+        allowed = None
+
+    # plan / dont_ask 模式下只保留只读工具
+    if permission_mode in ("plan", "dont_ask"):
+        readonly = set(permission_guard.get_allowed_tools(permission_mode) or [])
+        if allowed is None:
+            allowed = sorted(readonly)
+        else:
+            allowed = [t for t in allowed if t in readonly]
+
+    return allowed
+
+
+async def _create_subagent_execution_bundle(
     agent_id: str,
     agent_type: str,
     provider: Optional[str],
@@ -336,10 +377,11 @@ def _create_subagent_execution_bundle(
             agent_type=agent_type,
         ).debug(f"已省略项目上下文注入: {agent_id}")
 
-    # Task 15: 注入代理记忆 prompt，根据 memory_scope 从对应存储加载
+    # Task 15: 注入代理记忆 prompt，根据 memory_scope 从对应存储加载。
+    # 存储键使用 agent_type（而非随机 agent_id），保证同类型代理跨会话共享记忆
     memory_scope = getattr(agent_def, "memory_scope", None) if agent_def else None
     if memory_scope is not None:
-        memory_prompt = load_agent_memory_prompt(agent_id, memory_scope)
+        memory_prompt = await load_agent_memory_prompt(agent_type, memory_scope)
         if memory_prompt:
             sub_context["agent_memory"] = memory_prompt
             logger.bind(
@@ -348,6 +390,17 @@ def _create_subagent_execution_bundle(
                 agent_type=agent_type,
                 memory_scope=memory_scope.value,
             ).debug(f"已注入代理记忆: {agent_id}")
+
+    # Task 17: 应用 AgentDefinition 声明的权限模式与工具约束。
+    # permission_mode 注入后，execution_tool_runtime._check_tool_permission 会经
+    # PermissionGuard.evaluate 真正拦截 plan 模式子代理的写工具调用（此前仅 facade 打日志丢弃）；
+    # allowed_tools 白名单由执行层消费（tools / disallowed_tools 声明真实生效）。
+    permission_mode = getattr(agent_def, "permission_mode", "default") if agent_def else "default"
+    if permission_mode and permission_mode != "default":
+        sub_context["permission_mode"] = permission_mode
+    resolved_allowed_tools = _resolve_agent_allowed_tools(agent_def, permission_mode or "default")
+    if resolved_allowed_tools is not None:
+        sub_context["allowed_tools"] = resolved_allowed_tools
 
     try:
         sub_agent = AIAgent(
@@ -465,6 +518,221 @@ def _format_subagent_stream_chunk(chunk: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+async def _execute_subagent_core(
+    *,
+    agent_id: str,
+    agent_type: str,
+    prompt: str,
+    provider: Optional[str],
+    model: Optional[str],
+    context: Optional[Dict[str, Any]],
+    agent_def: Optional[AgentDefinition],
+    work_dir: Optional[str] = None,
+    run_mode: str = "subagent",
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """子 Agent 执行核心逻辑。
+
+    统一 run_foreground 和 _background_execute 的公共流程：
+    创建子 Agent 执行上下文 -> process_stream 迭代 -> 保存 transcript ->
+    处理 MaxTurnsExceeded -> 构建摘要 -> 触发 SubagentStop 钩子 ->
+    通过 async generator yield 返回事件。
+
+    参数:
+        agent_id: 代理会话 ID
+        agent_type: 代理类型
+        prompt: 用户提示词
+        provider: 模型提供商
+        model: 模型名称
+        context: 执行上下文
+        agent_def: 代理定义
+        work_dir: 工作目录（worktree 隔离模式时传入）
+        run_mode: 运行模式标识（"foreground" / "background" / "subagent"）
+    """
+    subagent_db: Optional[Session] = None
+
+    try:
+        sub_agent, subagent_db, sub_context = await _create_subagent_execution_bundle(
+            agent_id=agent_id,
+            agent_type=agent_type,
+            provider=provider,
+            model=model,
+            context=context,
+            work_dir=work_dir,
+            agent_def=agent_def,
+        )
+
+        full_response = ""
+        tool_results: list[Dict[str, Any]] = []
+        buffered_stream_chunk: Optional[Dict[str, Any]] = None
+        # Task 11.2: 轮次计数器，用于强制 max_turns 限制
+        current_turn = 0
+        max_turns_limit: Optional[int] = agent_def.max_turns if agent_def else None
+
+        yielded_messages: list[Dict[str, Any]] = []
+
+        async def flush_buffered_agent_message() -> None:
+            nonlocal buffered_stream_chunk
+            buffered_stream_chunk, buffered_message = _flush_subagent_stream_chunk(buffered_stream_chunk)
+            if buffered_message:
+                save_transcript_entry(agent_id, {
+                    "event": "agent_message",
+                    "message": buffered_message,
+                })
+                yield_event = emit_agent_message_event(agent_id, buffered_message, agent_type=agent_type)
+                yielded_messages.append(yield_event)
+
+        async for chunk in sub_agent.process_stream(prompt, sub_context):
+            chunk_type = str(chunk.get("type") or "").strip()
+
+            if chunk_type != "chunk":
+                await flush_buffered_agent_message()
+                while yielded_messages:
+                    yield yielded_messages.pop(0)
+
+            # 记录 transcript
+            if chunk_type in ("plan", "task", "tool", "usage", "status"):
+                save_transcript_entry(agent_id, chunk)
+
+            # 收集工具执行结果
+            if chunk_type == "tool":
+                tool_data = chunk.get("tool", {})
+                tool_results.append(tool_data)
+                # Task 11.2: 每次工具调用记为一次轮次，达到上限时抛出异常
+                current_turn += 1
+                if max_turns_limit is not None and current_turn >= max_turns_limit:
+                    logger.bind(
+                        module="task_runtime",
+                        agent_id=agent_id,
+                        agent_type=agent_type,
+                        current_turn=current_turn,
+                        max_turns=max_turns_limit,
+                    ).warning(f"Agent {agent_id} 达到最大轮次限制 {max_turns_limit}")
+                    raise MaxTurnsExceededError(agent_id, max_turns_limit)
+
+            # 收集文本响应
+            if chunk_type == "chunk" and chunk.get("content"):
+                full_response += chunk["content"]
+
+            if chunk_type == "chunk":
+                buffered_stream_chunk = _merge_subagent_stream_chunk(buffered_stream_chunk, chunk)
+                if _get_subagent_stream_chunk_size(buffered_stream_chunk) >= SUBAGENT_STREAM_MESSAGE_FLUSH_THRESHOLD:
+                    await flush_buffered_agent_message()
+                    while yielded_messages:
+                        yield yielded_messages.pop(0)
+                continue
+
+            message = _format_subagent_stream_chunk(chunk)
+            if message:
+                save_transcript_entry(agent_id, {
+                    "event": "agent_message",
+                    "message": message,
+                })
+                yield emit_agent_message_event(agent_id, message, agent_type=agent_type)
+
+        await flush_buffered_agent_message()
+        while yielded_messages:
+            yield yielded_messages.pop(0)
+
+        # 构建摘要
+        summary = build_summary(
+            {"response": full_response, "tool_results": tool_results},
+            max_length=2000,
+        )
+
+        # 更新为完成状态
+        await _update_session_record(
+            agent_id,
+            "completed",
+            summary=summary,
+            transcript_path=get_transcript_path(agent_id),
+        )
+
+        save_transcript_entry(agent_id, {
+            "event": "subagent_stop",
+            "state": "completed",
+            "summary": summary,
+        })
+
+        # SubagentStop 钩子：子代理完成前触发
+        await hook_manager.trigger(HookName.SUBAGENT_STOP, data={
+            "agent_id": agent_id,
+            "agent_type": agent_type,
+            "state": "completed",
+            "summary": summary,
+        })
+
+        # 发射完成事件 + 摘要消息
+        yield emit_subagent_stop_event(agent_id, "completed", summary, agent_type=agent_type, run_mode=run_mode)
+
+    except MaxTurnsExceededError as exc:
+        # Task 11.2: 达到最大轮次限制，记录为 completed 状态（属于预期内的优雅终止）
+        max_turns_summary = f"代理达到最大轮次限制 {exc.max_turns}，已停止执行。已收集响应: {full_response[:200]}"
+        logger.bind(
+            module="task_runtime",
+            agent_id=agent_id,
+            agent_type=agent_type,
+            max_turns=exc.max_turns,
+        ).warning(f"Agent {agent_id} 达到最大轮次限制 {exc.max_turns}")
+
+        await _update_session_record(
+            agent_id,
+            "completed",
+            summary=max_turns_summary,
+            transcript_path=get_transcript_path(agent_id),
+            last_error=f"MaxTurnsExceeded: {exc.max_turns}",
+        )
+
+        save_transcript_entry(agent_id, {
+            "event": "subagent_stop",
+            "state": "completed",
+            "reason": "max_turns_exceeded",
+            "max_turns": exc.max_turns,
+            "summary": max_turns_summary,
+        })
+
+        # SubagentStop 钩子
+        await hook_manager.trigger(HookName.SUBAGENT_STOP, data={
+            "agent_id": agent_id,
+            "agent_type": agent_type,
+            "state": "completed",
+            "reason": "max_turns_exceeded",
+            "summary": max_turns_summary,
+        })
+
+        yield emit_subagent_stop_event(agent_id, "completed", max_turns_summary, agent_type=agent_type, run_mode=run_mode)
+
+    except Exception as exc:
+        error_msg = f"{type(exc).__name__}: {str(exc)}"
+        logger.bind(
+            module="task_runtime",
+            agent_id=agent_id,
+            error=error_msg,
+        ).error(f"子代理执行失败: {agent_id}")
+
+        await _update_session_record(agent_id, "failed", last_error=error_msg)
+
+        save_transcript_entry(agent_id, {
+            "event": "subagent_stop",
+            "state": "failed",
+            "error": error_msg,
+        })
+
+        # SubagentStop 钩子：子代理失败时也触发
+        await hook_manager.trigger(HookName.SUBAGENT_STOP, data={
+            "agent_id": agent_id,
+            "agent_type": agent_type,
+            "state": "failed",
+            "error": error_msg,
+        })
+
+        yield emit_subagent_stop_event(agent_id, "failed", error_msg, agent_type=agent_type, run_mode=run_mode)
+        yield {"type": "error", "error": f"子代理执行失败: {error_msg}"}
+
+    finally:
+        if subagent_db is not None:
+            subagent_db.close()
+
+
 async def run_foreground(
     *,
     agent_type: str = "Explore",
@@ -551,7 +819,7 @@ async def run_foreground(
                 agent_def=agent_def,
             )
         )
-        _running_background_tasks[agent_id] = task
+        _get_running_tasks()[agent_id] = task
 
         logger.bind(
             module="task_runtime",
@@ -585,7 +853,7 @@ async def run_foreground(
     await _update_session_record(agent_id, "running")
 
     # SubagentStart 钩子：子代理启动时注入附加上下文
-    await hook_dispatcher.dispatch(HOOK_SUBAGENT_START, {
+    await hook_manager.trigger(HookName.SUBAGENT_START, data={
         "agent_id": agent_id,
         "agent_type": agent_type,
         "prompt": prompt,
@@ -594,195 +862,26 @@ async def run_foreground(
 
     # worktree 隔离：写操作型代理创建独立工作副本
     worktree_info = None
-    subagent_db: Optional[Session] = None
     if agent_def.isolation_mode == "worktree":
         worktree_info = await worktree_manager.create_worktree(agent_id)
 
     try:
-        # 构建子代理上下文，运行独立的 AIAgent
-        sub_agent, subagent_db, sub_context = _create_subagent_execution_bundle(
+        async for event in _execute_subagent_core(
             agent_id=agent_id,
             agent_type=agent_type,
+            prompt=prompt,
             provider=provider,
             model=model,
             context=context,
-            work_dir=worktree_info.path if worktree_info else None,
             agent_def=agent_def,
-        )
-
-        full_response = ""
-        tool_results = []
-        buffered_stream_chunk: Optional[Dict[str, Any]] = None
-        # Task 11.2: 轮次计数器，用于强制 max_turns 限制
-        current_turn = 0
-        max_turns_limit: Optional[int] = agent_def.max_turns
-
-        async def flush_buffered_agent_message() -> None:
-            nonlocal buffered_stream_chunk
-            buffered_stream_chunk, buffered_message = _flush_subagent_stream_chunk(buffered_stream_chunk)
-            if buffered_message:
-                save_transcript_entry(agent_id, {
-                    "event": "agent_message",
-                    "message": buffered_message,
-                })
-                yield_event = emit_agent_message_event(agent_id, buffered_message, agent_type=agent_type)
-                yielded_messages.append(yield_event)
-
-        yielded_messages: list[Dict[str, Any]] = []
-
-        async for chunk in sub_agent.process_stream(prompt, sub_context):
-            chunk_type = str(chunk.get("type") or "").strip()
-
-            if chunk_type != "chunk":
-                await flush_buffered_agent_message()
-                while yielded_messages:
-                    yield yielded_messages.pop(0)
-
-            # 记录 transcript
-            if chunk_type in ("plan", "task", "tool", "usage", "status"):
-                save_transcript_entry(agent_id, chunk)
-
-            # 收集工具执行结果
-            if chunk_type == "tool":
-                tool_data = chunk.get("tool", {})
-                tool_results.append(tool_data)
-                # Task 11.2: 每次工具调用记为一次轮次，达到上限时抛出异常
-                current_turn += 1
-                if max_turns_limit is not None and current_turn >= max_turns_limit:
-                    logger.bind(
-                        module="task_runtime",
-                        agent_id=agent_id,
-                        agent_type=agent_type,
-                        current_turn=current_turn,
-                        max_turns=max_turns_limit,
-                    ).warning(f"Agent {agent_id} 达到最大轮次限制 {max_turns_limit}")
-                    raise MaxTurnsExceededError(agent_id, max_turns_limit)
-
-            # 收集文本响应
-            if chunk_type == "chunk" and chunk.get("content"):
-                full_response += chunk["content"]
-
-            if chunk_type == "chunk":
-                buffered_stream_chunk = _merge_subagent_stream_chunk(buffered_stream_chunk, chunk)
-                if _get_subagent_stream_chunk_size(buffered_stream_chunk) >= SUBAGENT_STREAM_MESSAGE_FLUSH_THRESHOLD:
-                    await flush_buffered_agent_message()
-                    while yielded_messages:
-                        yield yielded_messages.pop(0)
-                continue
-
-            message = _format_subagent_stream_chunk(chunk)
-            if message:
-                save_transcript_entry(agent_id, {
-                    "event": "agent_message",
-                    "message": message,
-                })
-                yield emit_agent_message_event(agent_id, message, agent_type=agent_type)
-
-        await flush_buffered_agent_message()
-        while yielded_messages:
-            yield yielded_messages.pop(0)
-
-        # 构建摘要
-        summary = build_summary(
-            {"response": full_response, "tool_results": tool_results},
-            max_length=2000,
-        )
-
-        # 更新为完成状态
-        await _update_session_record(
-            agent_id,
-            "completed",
-            summary=summary,
-            transcript_path=get_transcript_path(agent_id),
-        )
-
-        save_transcript_entry(agent_id, {
-            "event": "subagent_stop",
-            "state": "completed",
-            "summary": summary,
-        })
-
-        # SubagentStop 钩子：子代理完成前触发
-        await hook_dispatcher.dispatch(HOOK_SUBAGENT_STOP, {
-            "agent_id": agent_id,
-            "agent_type": agent_type,
-            "state": "completed",
-            "summary": summary,
-        })
-
-        # 发射完成事件 + 摘要消息
-        yield emit_subagent_stop_event(agent_id, "completed", summary, agent_type=agent_type, run_mode="foreground")
-
-    except MaxTurnsExceededError as exc:
-        # Task 11.2: 达到最大轮次限制，记录为 completed 状态（属于预期内的优雅终止）
-        max_turns_summary = f"代理达到最大轮次限制 {exc.max_turns}，已停止执行。已收集响应: {full_response[:200]}"
-        logger.bind(
-            module="task_runtime",
-            agent_id=agent_id,
-            agent_type=agent_type,
-            max_turns=exc.max_turns,
-        ).warning(f"Agent {agent_id} 达到最大轮次限制 {exc.max_turns}")
-
-        await _update_session_record(
-            agent_id,
-            "completed",
-            summary=max_turns_summary,
-            transcript_path=get_transcript_path(agent_id),
-            last_error=f"MaxTurnsExceeded: {exc.max_turns}",
-        )
-
-        save_transcript_entry(agent_id, {
-            "event": "subagent_stop",
-            "state": "completed",
-            "reason": "max_turns_exceeded",
-            "max_turns": exc.max_turns,
-            "summary": max_turns_summary,
-        })
-
-        # SubagentStop 钩子
-        await hook_dispatcher.dispatch(HOOK_SUBAGENT_STOP, {
-            "agent_id": agent_id,
-            "agent_type": agent_type,
-            "state": "completed",
-            "reason": "max_turns_exceeded",
-            "summary": max_turns_summary,
-        })
-
-        yield emit_subagent_stop_event(agent_id, "completed", max_turns_summary, agent_type=agent_type, run_mode="foreground")
-
-    except Exception as exc:
-        error_msg = f"{type(exc).__name__}: {str(exc)}"
-        logger.bind(
-            module="task_runtime",
-            agent_id=agent_id,
-            error=error_msg,
-        ).error(f"子代理执行失败: {agent_id}")
-
-        await _update_session_record(agent_id, "failed", last_error=error_msg)
-
-        save_transcript_entry(agent_id, {
-            "event": "subagent_stop",
-            "state": "failed",
-            "error": error_msg,
-        })
-
-        # SubagentStop 钩子：子代理失败时也触发
-        await hook_dispatcher.dispatch(HOOK_SUBAGENT_STOP, {
-            "agent_id": agent_id,
-            "agent_type": agent_type,
-            "state": "failed",
-            "error": error_msg,
-        })
-
-        yield emit_subagent_stop_event(agent_id, "failed", error_msg, agent_type=agent_type, run_mode="foreground")
-        yield {"type": "error", "error": f"子代理执行失败: {error_msg}"}
-
+            work_dir=worktree_info.path if worktree_info else None,
+            run_mode="foreground",
+        ):
+            yield event
     finally:
         # 清理 worktree（若有）
         if worktree_info:
             await worktree_manager.cleanup_worktree(agent_id)
-        if subagent_db is not None:
-            subagent_db.close()
 
 
 async def run_background(
@@ -835,7 +934,7 @@ async def run_background(
             agent_def=agent_def,
         )
     )
-    _running_background_tasks[agent_id] = task
+    _get_running_tasks()[agent_id] = task
 
     return {
         "ok": True,
@@ -897,11 +996,11 @@ async def _background_execute(
     root_chat_session_id: Optional[str] = None,
     agent_def: Optional[AgentDefinition] = None,
 ) -> None:
-    """后台执行子代理的实际逻辑，使用 process_stream() 支持多轮工具调用，并通过 WebSocket 推送事件给父会话。"""
+    """后台执行子代理的实际逻辑，委托给 _execute_subagent_core，通过 WebSocket 推送事件给父会话。"""
     await _update_session_record(agent_id, "running")
 
     # SubagentStart 钩子
-    await hook_dispatcher.dispatch(HOOK_SUBAGENT_START, {
+    await hook_manager.trigger(HookName.SUBAGENT_START, data={
         "agent_id": agent_id,
         "agent_type": agent_type,
         "prompt": prompt,
@@ -911,114 +1010,19 @@ async def _background_execute(
     # 启动心跳续租
     lease_owner = f"bg_{agent_id}"
     heartbeat_task = asyncio.create_task(_heartbeat_loop(agent_id, lease_owner, interval_seconds=60))
-    subagent_db: Optional[Session] = None
 
     try:
-        sub_agent, subagent_db, sub_context = _create_subagent_execution_bundle(
+        async for event in _execute_subagent_core(
             agent_id=agent_id,
             agent_type=agent_type,
+            prompt=prompt,
             provider=provider,
             model=model,
             context=context,
             agent_def=agent_def,
-        )
-
-        full_response = ""
-        tool_results = []
-        buffered_stream_chunk: Optional[Dict[str, Any]] = None
-        # Task 11.2: 轮次计数器，用于强制 max_turns 限制
-        current_turn = 0
-        max_turns_limit: Optional[int] = agent_def.max_turns if agent_def else None
-
-        async def flush_buffered_agent_message() -> None:
-            nonlocal buffered_stream_chunk
-            buffered_stream_chunk, buffered_message = _flush_subagent_stream_chunk(buffered_stream_chunk)
-            if buffered_message:
-                save_transcript_entry(agent_id, {
-                    "event": "agent_message",
-                    "message": buffered_message,
-                })
-                push_event = emit_agent_message_event(agent_id, buffered_message, agent_type=agent_type)
-                await _push_event_to_parent_session(root_chat_session_id, push_event, agent_id)
-
-        # 使用 process_stream() 支持多轮 LLM + 工具调用
-        async for chunk in sub_agent.process_stream(prompt, sub_context):
-            chunk_type = str(chunk.get("type") or "").strip()
-
-            if chunk_type != "chunk":
-                await flush_buffered_agent_message()
-
-            # 保存 transcript 条目，供前端轮询获取进度
-            if chunk_type in ("plan", "task", "tool", "usage", "status"):
-                save_transcript_entry(agent_id, chunk)
-
-            # 收集工具执行结果
-            if chunk_type == "tool":
-                tool_data = chunk.get("tool", {})
-                tool_results.append(tool_data)
-                # Task 11.2: 每次工具调用记为一次轮次，达到上限时抛出异常
-                current_turn += 1
-                if max_turns_limit is not None and current_turn >= max_turns_limit:
-                    logger.bind(
-                        module="task_runtime",
-                        agent_id=agent_id,
-                        agent_type=agent_type,
-                        current_turn=current_turn,
-                        max_turns=max_turns_limit,
-                    ).warning(f"Agent {agent_id} 达到最大轮次限制 {max_turns_limit}")
-                    raise MaxTurnsExceededError(agent_id, max_turns_limit)
-
-            # 收集文本响应
-            if chunk_type == "chunk" and chunk.get("content"):
-                full_response += chunk["content"]
-
-            if chunk_type == "chunk":
-                buffered_stream_chunk = _merge_subagent_stream_chunk(buffered_stream_chunk, chunk)
-                if _get_subagent_stream_chunk_size(buffered_stream_chunk) >= SUBAGENT_STREAM_MESSAGE_FLUSH_THRESHOLD:
-                    await flush_buffered_agent_message()
-                continue
-
-            # 将可读消息保存到 transcript 并推送至父会话
-            message = _format_subagent_stream_chunk(chunk)
-            if message:
-                save_transcript_entry(agent_id, {
-                    "event": "agent_message",
-                    "message": message,
-                })
-                push_event = emit_agent_message_event(agent_id, message, agent_type=agent_type)
-                await _push_event_to_parent_session(root_chat_session_id, push_event, agent_id)
-
-        await flush_buffered_agent_message()
-
-        summary = build_summary(
-            {"response": full_response, "tool_results": tool_results},
-            max_length=2000,
-        )
-
-        await _update_session_record(
-            agent_id,
-            "completed",
-            summary=summary,
-            transcript_path=get_transcript_path(agent_id),
-        )
-
-        save_transcript_entry(agent_id, {
-            "event": "subagent_stop",
-            "state": "completed",
-            "summary": summary,
-        })
-
-        # 推送完成事件至父会话
-        stop_event = emit_subagent_stop_event(agent_id, "completed", summary, agent_type=agent_type, run_mode="background")
-        await _push_event_to_parent_session(root_chat_session_id, stop_event, agent_id)
-
-        # SubagentStop 钩子
-        await hook_dispatcher.dispatch(HOOK_SUBAGENT_STOP, {
-            "agent_id": agent_id,
-            "agent_type": agent_type,
-            "state": "completed",
-            "summary": summary,
-        })
+            run_mode="background",
+        ):
+            await _push_event_to_parent_session(root_chat_session_id, event, agent_id)
 
         logger.bind(
             module="task_runtime",
@@ -1026,72 +1030,12 @@ async def _background_execute(
             agent_type=agent_type,
         ).info(f"后台代理执行完成: {agent_id}")
 
-    except MaxTurnsExceededError as exc:
-        # Task 11.2: 达到最大轮次限制，记录为 completed 状态（属于预期内的优雅终止）
-        max_turns_summary = f"代理达到最大轮次限制 {exc.max_turns}，已停止执行。已收集响应: {full_response[:200]}"
-        logger.bind(
-            module="task_runtime",
-            agent_id=agent_id,
-            agent_type=agent_type,
-            max_turns=exc.max_turns,
-        ).warning(f"Agent {agent_id} 达到最大轮次限制 {exc.max_turns}")
-
-        await _update_session_record(
-            agent_id,
-            "completed",
-            summary=max_turns_summary,
-            transcript_path=get_transcript_path(agent_id),
-            last_error=f"MaxTurnsExceeded: {exc.max_turns}",
-        )
-
-        save_transcript_entry(agent_id, {
-            "event": "subagent_stop",
-            "state": "completed",
-            "reason": "max_turns_exceeded",
-            "max_turns": exc.max_turns,
-            "summary": max_turns_summary,
-        })
-
-        # 推送完成事件至父会话
-        stop_event = emit_subagent_stop_event(agent_id, "completed", max_turns_summary, agent_type=agent_type, run_mode="background")
-        await _push_event_to_parent_session(root_chat_session_id, stop_event, agent_id)
-
-        # SubagentStop 钩子
-        await hook_dispatcher.dispatch(HOOK_SUBAGENT_STOP, {
-            "agent_id": agent_id,
-            "agent_type": agent_type,
-            "state": "completed",
-            "reason": "max_turns_exceeded",
-            "summary": max_turns_summary,
-        })
-
-    except Exception as exc:
-        error_msg = f"{type(exc).__name__}: {str(exc)}"
-        logger.bind(
-            module="task_runtime",
-            agent_id=agent_id,
-            error=error_msg,
-        ).error(f"后台代理执行失败: {agent_id}")
-
-        await _update_session_record(agent_id, "failed", last_error=error_msg)
-
-        save_transcript_entry(agent_id, {
-            "event": "subagent_stop",
-            "state": "failed",
-            "error": error_msg,
-        })
-
-        # 推送失败事件至父会话
-        fail_event = emit_subagent_stop_event(agent_id, "failed", error_msg, agent_type=agent_type, run_mode="background")
-        await _push_event_to_parent_session(root_chat_session_id, fail_event, agent_id)
     finally:
         heartbeat_task.cancel()
         try:
             await heartbeat_task
         except asyncio.CancelledError:
             pass
-        if subagent_db is not None:
-            subagent_db.close()
         _running_background_tasks.pop(agent_id, None)
 
 
@@ -1105,7 +1049,7 @@ async def stop_run(agent_id: str) -> Dict[str, Any]:
         return {"ok": False, "error": f"代理 {agent_id} 当前状态为 {session.state}，无法停止"}
 
     # 尝试取消后台任务
-    bg_task = _running_background_tasks.get(agent_id)
+    bg_task = _get_running_tasks().get(agent_id)
     if bg_task and not bg_task.done():
         bg_task.cancel()
         logger.bind(module="task_runtime", agent_id=agent_id).info(f"后台代理任务已取消: {agent_id}")

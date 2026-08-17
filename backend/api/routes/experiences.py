@@ -211,9 +211,6 @@ async def extract_experience(
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    处理extract、experience相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-
     性能：异步调用 extractor；同步 DB 写入通过 asyncio.to_thread 包装避免阻塞事件循环。
     """
     from skills.experience_extractor import ExperienceExtractor
@@ -280,10 +277,6 @@ async def search_experiences(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理search、experiences相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     experiences = await manager.search_experiences(
         query_text=query,
         experience_type=experience_type,
@@ -407,10 +400,6 @@ def review_experience(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    处理review、experience相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     experience = manager.db.query(ExperienceMemory).filter(
         ExperienceMemory.id == experience_id,
         ExperienceMemory.user_id == current_user.id

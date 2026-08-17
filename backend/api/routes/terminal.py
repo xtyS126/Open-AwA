@@ -10,10 +10,10 @@
 
 安全策略：
 1. 所有 HTTP 端点强制鉴权（Depends(get_current_user)）
-2. WebSocket 端点通过 token 查询参数或 Sec-WebSocket-Protocol 子协议鉴权
+2. WebSocket 端点只通过 Sec-WebSocket-Protocol 子协议鉴权，token 不进入 URL
 3. WebSocket 端点校验 Origin 头，防止 CSWSH 跨站 WebSocket 劫持
 4. 命令执行前过滤危险命令、高危路径、危险模式
-5. cwd 参数必须位于允许的工作区根目录内
+5. 客户端只提交 project_id，服务端统一解析并复验工作台项目根
 6. PTY 每条完整命令行（以 \\n 结束）都校验是否在黑名单中
 7. 所有会话访问端点校验 owner_user_id 归属，防止 IDOR 越权访问
 8. 模块级会话字典使用 OrderedDict + per-user/总容量上限，防止 OOM
@@ -28,11 +28,13 @@ import sys
 import uuid
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NoReturn, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.exceptions import RequestValidationError
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketState
 
 from api.dependencies import get_current_user
@@ -42,8 +44,27 @@ from api.security.ws_auth import (
     validate_ws_origin,
 )
 from core.terminal import PTYSession
+from config.settings import settings
 from db.models import SessionLocal, User
 from security.command_hard_block import is_hard_blocked_command
+from workbench.errors import (
+    ProjectDisabled,
+    ProjectNotFound,
+    ProjectRootChanged,
+    ProjectRootForbidden,
+    ProjectRootInvalid,
+    WorkbenchError,
+)
+from workbench.listener_ownership import process_tree_owns_listener
+from workbench.listener_registry import listener_verifier_registry
+from workbench.path_policy import WorkbenchPathPolicy
+from workbench.preview_lease import PreviewSessionKind, preview_lease_registry
+from workbench.project_service import WorkbenchProjectService
+from workbench.runtime_registry import (
+    RuntimeResourceType,
+    WorkbenchRuntimeRegistry,
+    runtime_registry,
+)
 
 router = APIRouter(prefix="/terminal", tags=["terminal"])
 
@@ -69,17 +90,462 @@ _MAX_TOTAL_SESSIONS = 1000
 _DEFAULT_PTY_COMMAND_WIN: List[str] = ["cmd.exe"]
 _DEFAULT_PTY_COMMAND_POSIX: List[str] = ["/bin/bash"]
 
-# 允许作为 cwd 的根目录白名单（默认为当前工作目录与其下级子目录）
-_ALLOWED_WORKSPACE_ROOTS: List[str] = [os.path.abspath(os.getcwd())]
+# 旧项目路径字段仅用于给出明确退役错误，绝不再参与工作目录解析
+_LEGACY_PROJECT_PATH_SUNSET = "2026-09-01"
+_LEGACY_PROJECT_PATH_FIELDS = frozenset({"cwd", "project_dir", "projectCwd", "projectDir"})
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(
+    r"(?i)(?<![\w])(?:[A-Z]:[\\/]|\\\\)[^\s\"'<>|]+"
+)
+_POSIX_ABSOLUTE_PATH_RE = re.compile(
+    r"(?<![:/\\\w])/(?!/)[^\s\"'<>|]+"
+)
+
+
+def get_terminal_workbench_path_policy() -> WorkbenchPathPolicy:
+    """按当前设置构建终端使用的工作台路径策略。"""
+    return WorkbenchPathPolicy.from_settings(settings)
+
+
+def get_terminal_runtime_registry() -> WorkbenchRuntimeRegistry:
+    return runtime_registry
+
+
+def _detail(code: str, message: str) -> dict[str, str]:
+    return {"code": code, "message": message}
+
+
+def _raise_workbench_http_error(exc: WorkbenchError) -> NoReturn:
+    """把工作台领域错误映射为终端 API 的结构化响应。"""
+    status_code = status.HTTP_409_CONFLICT
+    if isinstance(exc, ProjectNotFound):
+        status_code = status.HTTP_404_NOT_FOUND
+    elif isinstance(exc, ProjectRootForbidden):
+        status_code = status.HTTP_403_FORBIDDEN
+    elif isinstance(exc, ProjectRootInvalid):
+        status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    elif isinstance(exc, (ProjectDisabled, ProjectRootChanged)):
+        status_code = status.HTTP_409_CONFLICT
+    raise HTTPException(
+        status_code=status_code,
+        detail=_detail(exc.code, exc.message),
+    ) from exc
+
+
+def _legacy_project_path_response() -> JSONResponse:
+    """构造不依赖全局异常处理器的旧路径字段退役响应。"""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={
+            "detail": _detail(
+                "legacy_project_path_not_supported",
+                "不再支持客户端提供项目路径，请改用 project_id",
+            )
+        },
+        headers={"Sunset": _LEGACY_PROJECT_PATH_SUNSET},
+    )
+
+
+def _contains_legacy_project_path(request: Request, payload: object) -> bool:
+    """检查查询串与 JSON 对象中是否出现旧项目路径字段。"""
+    payload_keys = payload.keys() if isinstance(payload, dict) else ()
+    return bool(
+        _LEGACY_PROJECT_PATH_FIELDS.intersection(request.query_params.keys())
+        or _LEGACY_PROJECT_PATH_FIELDS.intersection(payload_keys)
+    )
+
+
+async def _read_json_payload(request: Request) -> object:
+    """读取 JSON 请求体；空请求体按空对象处理。"""
+    if not await request.body():
+        return {}
+    try:
+        return await request.json()
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise RequestValidationError(
+            [{"type": "json_invalid", "loc": ("body",), "msg": "JSON 解析失败", "input": None}],
+            body=None,
+        ) from exc
+
+
+def _validate_pty_create_payload(payload: object) -> "PTYCreateRequest":
+    """沿用 Pydantic 请求模型校验，同时让旧字段检查先于通用 extra 校验。"""
+    try:
+        return PTYCreateRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors(), body=payload) from exc
+
+
+def _require_project_id(project_id: Optional[str]) -> str:
+    normalized = project_id.strip() if project_id is not None else ""
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_detail("workbench_project_required", "请先选择工作台项目"),
+        )
+    return normalized
+
+
+def _resolve_project_root_in_worker(
+    *,
+    project_id: str,
+    user_id: str,
+    user_role: str,
+    path_policy: WorkbenchPathPolicy,
+) -> Path:
+    """在当前工作线程内创建并关闭解析项目所需的数据库 Session。"""
+    with SessionLocal() as db:
+        service = WorkbenchProjectService(db, path_policy)
+        try:
+            return service.resolve_project_root(
+                user_id=user_id,
+                user_role=user_role,
+                project_id=project_id,
+            )
+        except WorkbenchError as exc:
+            _raise_workbench_http_error(exc)
+
+
+async def _resolve_project_root(
+    *,
+    project_id: str,
+    current_user: User,
+    path_policy: WorkbenchPathPolicy,
+) -> Path:
+    """在线程池中解析项目，避免同步 SQLAlchemy 查询阻塞事件循环。"""
+    user_id = str(current_user.id)
+    user_role = str(current_user.role)
+    return await asyncio.to_thread(
+        _resolve_project_root_in_worker,
+        project_id=project_id,
+        user_id=user_id,
+        user_role=user_role,
+        path_policy=path_policy,
+    )
+
+
+async def _resolve_bound_session_root(
+    *,
+    session: Any,
+    current_user: User,
+    path_policy: WorkbenchPathPolicy,
+) -> Path:
+    """校验会话所有权，并重新解析其绑定项目根。"""
+    _assert_session_owner(session, current_user)
+    project_id = getattr(session, "project_id", None)
+    if not project_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_detail("terminal_session_project_missing", "终端会话缺少工作台项目绑定"),
+        )
+    resolved_root = await _resolve_project_root(
+        project_id=project_id,
+        current_user=current_user,
+        path_policy=path_policy,
+    )
+    if str(resolved_root) != str(getattr(session, "cwd", "")):
+        _raise_workbench_http_error(ProjectRootChanged())
+    return resolved_root
+
+
+def _assert_session_owner(session: Any, current_user: User) -> None:
+    """在任何项目解析或失败清理前验证会话所有权。"""
+    if getattr(session, "owner_user_id", None) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该会话")
+
+
+async def _revalidate_ws_bound_session(session: Any, current_user: User) -> None:
+    """WebSocket 每次消费前用独立数据库会话重验绑定项目。"""
+    await _resolve_bound_session_root(
+        session=session,
+        current_user=current_user,
+        path_policy=get_terminal_workbench_path_policy(),
+    )
+
+
+async def _release_session_runtime(session: Any, resource_type: RuntimeResourceType) -> None:
+    registry = getattr(session, "runtime_registry", None)
+    if registry is None or getattr(session, "runtime_released", False):
+        return
+    await registry.release(
+        user_id=str(session.owner_user_id),
+        project_id=str(session.project_id),
+        resource_type=resource_type,
+        resource_id=str(session.session_id),
+    )
+    session.runtime_released = True
+
+
+async def _revoke_session_preview_leases(session: Any) -> None:
+    """按会话服务端绑定身份撤销全部 Terminal 预览租约。"""
+    user_id = getattr(session, "owner_user_id", None)
+    project_id = getattr(session, "project_id", None)
+    session_id = getattr(session, "session_id", None)
+    if not user_id or not project_id or not session_id:
+        return
+    await preview_lease_registry.revoke_session(
+        user_id=str(user_id),
+        project_id=str(project_id),
+        session_kind=PreviewSessionKind.TERMINAL,
+        session_id=str(session_id),
+    )
+
+
+async def _close_bound_session(session: Any, resource_type: RuntimeResourceType) -> None:
+    """关闭会话，并确保预览租约和工作台运行时占用最终释放。"""
+    try:
+        await session.close()
+    finally:
+        try:
+            await _revoke_session_preview_leases(session)
+        finally:
+            await _release_session_runtime(session, resource_type)
+
+
+def _project_error_detail(exc: HTTPException) -> dict[str, str]:
+    """从工作台 HTTP 异常中提取可安全返回的领域错误。"""
+    if isinstance(exc.detail, dict):
+        code = exc.detail.get("code")
+        message = exc.detail.get("message")
+        if isinstance(code, str) and isinstance(message, str):
+            return _detail(code, message)
+    return _detail("workbench_project_unavailable", "工作台项目当前不可用")
+
+
+def _project_error_response(exc: HTTPException) -> JSONResponse:
+    """直接返回领域错误，避免全局处理器把结构化 code 转成字符串。"""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": _project_error_detail(exc)},
+        headers=exc.headers,
+    )
+
+
+async def _discard_session(
+    sessions: "OrderedDict[str, Any]",
+    session_id: str,
+    session: Any,
+    resource_type: RuntimeResourceType,
+) -> None:
+    """从索引移除会话，并尽最大努力关闭进程与释放 registry。"""
+    sessions.pop(session_id, None)
+    try:
+        await _close_bound_session(session, resource_type)
+    except Exception as exc:
+        logger.bind(
+            event="terminal_session_discard_error",
+            module="terminal",
+            session_id=session_id,
+            error_type=type(exc).__name__,
+        ).error("终端会话清理失败")
+
+
+async def _reject_ws_project_error(
+    websocket: WebSocket,
+    exc: HTTPException,
+    *,
+    sessions: "OrderedDict[str, Any]",
+    session_id: str,
+    session: Any,
+    resource_type: RuntimeResourceType,
+) -> None:
+    """向 WS 返回原项目错误，并确保绑定运行时被销毁。"""
+    detail = _project_error_detail(exc)
+    try:
+        await websocket.send_json({"type": "error", **detail})
+        await websocket.close(code=4003, reason="Project unavailable")
+    finally:
+        await _discard_session(sessions, session_id, session, resource_type)
+
+
+def _terminal_root_pid(session: Any) -> Optional[int]:
+    """从普通子进程或 PTY 底层进程提取服务端真实根 PID。"""
+    pty = getattr(session, "pty", None)
+    if pty is not None:
+        is_alive = getattr(pty, "is_alive", None)
+        if not callable(is_alive) or is_alive() is not True:
+            return None
+        getter = getattr(pty, "get_root_pid", None)
+        if not callable(getter):
+            return None
+        pid = getter()
+    else:
+        process = getattr(session, "process", None)
+        if process is None or getattr(process, "returncode", object()) is not None:
+            return None
+        pid = getattr(process, "pid", None)
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return None
+    return pid
+
+
+async def verify_terminal_listener(
+    user_id: str,
+    project_id: str,
+    session_kind: PreviewSessionKind,
+    session_id: str,
+    port: int,
+) -> bool:
+    """仅用绑定身份与真实进程树证据验证 Terminal listener。"""
+    if (
+        session_kind is not PreviewSessionKind.TERMINAL
+        or isinstance(port, bool)
+        or not isinstance(port, int)
+        or not 1 <= port <= 65535
+    ):
+        return False
+
+    candidates = tuple(
+        session
+        for session in (
+            _terminal_sessions.get(session_id),
+            _pty_sessions.get(session_id),
+        )
+        if session is not None
+        and getattr(session, "active", False) is True
+        and str(getattr(session, "owner_user_id", "")) == str(user_id)
+        and str(getattr(session, "project_id", "")) == str(project_id)
+    )
+    if len(candidates) != 1:
+        return False
+    try:
+        root_pid = _terminal_root_pid(candidates[0])
+        if root_pid is None:
+            return False
+        return await asyncio.to_thread(
+            process_tree_owns_listener,
+            root_pid=root_pid,
+            port=port,
+        )
+    except Exception as exc:
+        logger.bind(
+            event="terminal_listener_verification_failed",
+            session_id=session_id,
+            error_type=type(exc).__name__,
+        ).warning("Terminal listener 归属验证失败，已拒绝预览")
+        return False
+
+
+listener_verifier_registry.register(
+    PreviewSessionKind.TERMINAL,
+    verify_terminal_listener,
+)
+
+
+def _bound_path_variants(cwd: object) -> tuple[str, ...]:
+    """返回会话绑定根的分隔符变体，供输出投影统一净化。"""
+    if not isinstance(cwd, str) or not cwd or not os.path.isabs(cwd):
+        return ()
+    candidates = {
+        cwd,
+        cwd.replace("\\", "/"),
+        cwd.replace("/", "\\"),
+    }
+    return tuple(sorted((item for item in candidates if item), key=len, reverse=True))
+
+
+def _sanitize_bound_text(value: object, cwd: object) -> str:
+    """把投影文本中的会话绑定绝对根替换为当前目录标记。"""
+    text = value if isinstance(value, str) else str(value)
+    for variant in _bound_path_variants(cwd):
+        text = re.sub(re.escape(variant), ".", text, flags=re.IGNORECASE)
+    return text
+
+
+def _sanitize_passive_text(value: object, cwd: object) -> str:
+    """净化错误等被动元数据中的绑定根和其他绝对路径。"""
+    text = _sanitize_bound_text(value, cwd)
+    text = _WINDOWS_ABSOLUTE_PATH_RE.sub("[absolute-path]", text)
+    return _POSIX_ABSOLUTE_PATH_RE.sub("[absolute-path]", text)
+
+
+def _sanitize_passive_value(value: Any, cwd: object) -> Any:
+    """递归净化结构化被动错误值，同时保留原有容器形状。"""
+    if isinstance(value, str):
+        return _sanitize_passive_text(value, cwd)
+    if isinstance(value, dict):
+        return {
+            key: _sanitize_passive_value(item, cwd)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_passive_value(item, cwd) for item in value]
+    return value
+
+
+def _sanitize_terminal_result(result: Dict[str, Any], session: Any) -> Dict[str, Any]:
+    """净化普通终端命令结果中的所有客户端可见文本字段。"""
+    sanitized = dict(result)
+    for key in ("stdout", "stderr", "command"):
+        if key in sanitized:
+            sanitized[key] = _sanitize_bound_text(sanitized[key], session.cwd)
+    for key in ("error", "detail", "message"):
+        if key in sanitized:
+            sanitized[key] = _sanitize_passive_value(sanitized[key], session.cwd)
+    return sanitized
+
+
+class _BoundOutputRedactor:
+    """跨读取分块过滤 PTY 输出，避免敏感根在相邻数据块中重组。"""
+
+    def __init__(self, cwd: object) -> None:
+        self._cwd = cwd
+        self._variants = _bound_path_variants(cwd)
+        self._pending = ""
+
+    def __call__(self, data: str) -> str:
+        combined = self._pending + data
+        self._pending = ""
+        redacted = _sanitize_bound_text(combined, self._cwd)
+        if not self._variants:
+            return redacted
+
+        folded = redacted.casefold()
+        pending_length = 0
+        for variant in self._variants:
+            variant_folded = variant.casefold()
+            limit = min(len(redacted), len(variant) - 1)
+            for length in range(limit, pending_length, -1):
+                if folded.endswith(variant_folded[:length]):
+                    pending_length = length
+                    break
+        if pending_length:
+            self._pending = redacted[-pending_length:]
+            return redacted[:-pending_length]
+        return redacted
+
+    def flush(self) -> str:
+        """在 PTY 输出结束时释放未构成完整绑定根的尾部文本。"""
+        pending, self._pending = self._pending, ""
+        return _sanitize_bound_text(pending, self._cwd)
+
+
+def _safe_shell_label(session: Any) -> str:
+    """返回不会携带项目绝对根的 shell 展示值。"""
+    command = getattr(session, "command", None)
+    shell = command[0] if isinstance(command, list) and command else ""
+    if not isinstance(shell, str) or not shell:
+        return ""
+    shell_path = Path(shell)
+    if not shell_path.is_absolute():
+        return shell
+    try:
+        relative = shell_path.resolve(strict=False).relative_to(
+            Path(str(session.cwd)).resolve(strict=False)
+        )
+    except (OSError, ValueError):
+        return shell
+    return relative.as_posix()
 
 
 def _schedule_evicted_session_close(session_id: str, session: Any) -> None:
     """调度被 LRU 淘汰会话的异步关闭，防止其子进程继续存活。"""
-    close = getattr(session, "close", None)
-    if not callable(close):
-        return
+    resource_type = (
+        RuntimeResourceType.PTY_SESSION
+        if isinstance(session, PTYTerminalSession)
+        else RuntimeResourceType.TERMINAL_SESSION
+    )
     try:
-        result = close()
+        result = _close_bound_session(session, resource_type)
     except Exception as exc:
         logger.bind(
             event="session_lru_close_error",
@@ -180,23 +646,20 @@ def _evict_idle_user_pty(owner_user_id: str) -> bool:
         # 无订阅者 = 无活跃 WS 连接 = 可安全淘汰
         if getattr(session, "_subscribers", None) is None or len(session._subscribers) == 0:
             _pty_sessions.pop(sid, None)
-            close = getattr(session, "close", None)
-            if callable(close):
+            try:
+                result = _close_bound_session(session, RuntimeResourceType.PTY_SESSION)
                 try:
-                    result = close()
-                    if inspect.isawaitable(result):
-                        try:
-                            asyncio.get_running_loop().create_task(result)
-                        except RuntimeError:
-                            result.close()
-                except Exception as exc:
-                    logger.bind(
-                        event="pty_evict_close_error",
-                        module="terminal",
-                        session_id=sid,
-                        owner_user_id=owner_user_id,
-                        error_type=type(exc).__name__,
-                    ).warning("淘汰空闲 PTY 会话关闭失败")
+                    asyncio.get_running_loop().create_task(result)
+                except RuntimeError:
+                    result.close()
+            except Exception as exc:
+                logger.bind(
+                    event="pty_evict_close_error",
+                    module="terminal",
+                    session_id=sid,
+                    owner_user_id=owner_user_id,
+                    error_type=type(exc).__name__,
+                ).warning("淘汰空闲 PTY 会话关闭失败")
             logger.bind(
                 event="pty_session_evicted_idle",
                 module="terminal",
@@ -322,51 +785,25 @@ def _is_command_safe(command: str) -> bool:
     return True
 
 
-def _validate_cwd(cwd: Optional[str]) -> str:
-    """
-    校验 cwd 参数：必须为 None（使用默认工作目录）或位于允许的工作区根目录内。
-    返回校验通过后的绝对路径。校验失败抛出 400 HTTPException。
-    """
-    if not cwd:
-        return os.getcwd()
-
-    # 拒绝空字符串
-    cwd_str = cwd.strip()
-    if not cwd_str:
-        raise HTTPException(status_code=400, detail="cwd 不能为空字符串")
-
-    # 解析为绝对路径并规范化（解析 ..、符号链接等）
-    try:
-        cwd_path = Path(cwd_str).resolve()
-    except (OSError, ValueError) as e:
-        logger.warning(f"cwd 路径解析失败: {cwd_str}, 错误: {e}")
-        raise HTTPException(status_code=400, detail="cwd 路径无效")
-
-    # 校验路径必须位于允许的工作区根目录内
-    for root in _ALLOWED_WORKSPACE_ROOTS:
-        try:
-            cwd_path.relative_to(Path(root).resolve())
-            return str(cwd_path)
-        except ValueError:
-            continue
-
-    logger.warning(f"cwd 路径越权: {cwd_str} 不在允许的工作区内")
-    raise HTTPException(status_code=400, detail="cwd 路径不在允许的工作区内")
-
-
 class TerminalSession:
     """终端会话，管理子进程和输出流。"""
 
     def __init__(
         self,
         session_id: str,
-        cwd: str = None,
+        cwd: str,
         owner_user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        runtime_registry: Optional[WorkbenchRuntimeRegistry] = None,
     ):
         self.session_id = session_id
-        self.cwd = cwd or os.getcwd()
+        self.cwd = cwd
         # 会话所有者用户 ID，用于 IDOR 越权访问防护
         self.owner_user_id: Optional[str] = owner_user_id
+        self.project_id: Optional[str] = project_id
+        self.runtime_registry = runtime_registry
+        self.runtime_released = False
+        self.listener_ports: set[int] = set()
         self.process: Optional[asyncio.subprocess.Process] = None
         self.active = True
         # 安全防护：过滤敏感环境变量，防止用户通过 printenv/env/echo 读取密钥
@@ -467,7 +904,9 @@ class TerminalCommandRequest(BaseModel):
 
 class PTYCreateRequest(BaseModel):
     """PTY 会话创建请求。"""
-    cwd: Optional[str] = Field(default=None, description="子进程工作目录")
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: Optional[str] = Field(default=None, description="工作台项目 ID")
     cols: int = Field(default=80, ge=10, le=500, description="初始列数")
     rows: int = Field(default=24, ge=2, le=200, description="初始行数")
     command: Optional[List[str]] = Field(
@@ -493,11 +932,17 @@ class PTYTerminalSession:
         cols: int = 80,
         rows: int = 24,
         owner_user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        runtime_registry: Optional[WorkbenchRuntimeRegistry] = None,
     ) -> None:
         self.session_id: str = session_id
         self.cwd: str = cwd
         # 会话所有者用户 ID，用于 IDOR 越权访问防护
         self.owner_user_id: Optional[str] = owner_user_id
+        self.project_id: Optional[str] = project_id
+        self.runtime_registry = runtime_registry
+        self.runtime_released = False
+        self.listener_ports: set[int] = set()
         self.active: bool = True
 
         # 选择默认命令
@@ -509,6 +954,7 @@ class PTYTerminalSession:
             )
         self.command: List[str] = list(command)
 
+        self._output_redactor = _BoundOutputRedactor(cwd)
         # 创建底层 PTY 会话（注册输出回调以广播给订阅者）
         self.pty: PTYSession = PTYSession(
             command=self.command,
@@ -516,6 +962,7 @@ class PTYTerminalSession:
             cols=cols,
             rows=rows,
             on_output=self._on_pty_output,
+            output_filter=self._output_redactor,
         )
 
         # 输出广播队列：每个连接的客户端一个队列，PTY reader 向所有队列推送
@@ -543,6 +990,7 @@ class PTYTerminalSession:
         Args:
             data: PTY 输出的原始字符串数据。
         """
+        data = _sanitize_bound_text(data, self.cwd)
         # 维护最近输出缓冲
         self._recent_output.append(data)
         if len(self._recent_output) > self._recent_output_limit:
@@ -593,7 +1041,7 @@ class PTYTerminalSession:
                 return {
                     "ok": False,
                     "error": "命令被安全策略拒绝",
-                    "command": clean_line,
+                    "command": _sanitize_bound_text(clean_line, self.cwd),
                 }
 
         # 所有完整行都通过校验，写入 PTY
@@ -602,15 +1050,27 @@ class PTYTerminalSession:
 
     def get_snapshot(self) -> Dict[str, Any]:
         """返回当前屏幕快照与尺寸。"""
+        grid = self.pty.get_snapshot()
+        flattened = "".join("".join(row) for row in grid)
+        sanitized = _sanitize_bound_text(flattened, self.cwd)
+        total_cells = len(grid) * self.pty.cols
+        sanitized = sanitized[:total_cells].ljust(total_cells)
+        safe_grid = [
+            list(sanitized[index:index + self.pty.cols])
+            for index in range(0, total_cells, self.pty.cols)
+        ]
         return {
-            "grid": self.pty.get_snapshot(),
+            "grid": safe_grid,
             "cols": self.pty.cols,
             "rows": self.pty.rows,
         }
 
     def get_scrollback(self, limit: int = 100) -> List[str]:
         """返回滚动历史。"""
-        return self.pty.get_scrollback(limit)
+        return [
+            _sanitize_bound_text(line, self.cwd)
+            for line in self.pty.get_scrollback(limit)
+        ]
 
     def subscribe(self) -> asyncio.Queue[Dict[str, Any]]:
         """订阅本会话的输出消息流，返回一个新队列。"""
@@ -644,21 +1104,36 @@ class PTYTerminalSession:
 
 @router.post("/sessions/pty")
 async def create_pty_session(
-    request: PTYCreateRequest,
+    raw_request: Request,
     current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
+    path_policy: WorkbenchPathPolicy = Depends(get_terminal_workbench_path_policy),
+    registry: WorkbenchRuntimeRegistry = Depends(get_terminal_runtime_registry),
+) -> Any:
     """
     创建 PTY 持久化终端会话。
 
     与 `/sessions` 不同，PTY 会话长期持有交互式 shell 进程，支持断线重连与屏幕恢复。
     """
-    # 校验 cwd 路径安全性
-    safe_cwd = _validate_cwd(request.cwd)
+    payload = await _read_json_payload(raw_request)
+    if _contains_legacy_project_path(raw_request, payload):
+        return _legacy_project_path_response()
+    request = _validate_pty_create_payload(payload)
+
+    project_id = _require_project_id(request.project_id)
+    safe_cwd = str(
+        await _resolve_project_root(
+            project_id=project_id,
+            current_user=current_user,
+            path_policy=path_policy,
+        )
+    )
 
     # 清理已关闭的 PTY 会话
     closed = [sid for sid, s in _pty_sessions.items() if not s.active]
     for sid in closed:
-        _pty_sessions.pop(sid, None)
+        stale_session = _pty_sessions.pop(sid, None)
+        if stale_session is not None:
+            await _close_bound_session(stale_session, RuntimeResourceType.PTY_SESSION)
 
     # per-user 会话数限制（防止单用户耗尽全局配额）
     owner_id = str(current_user.id)
@@ -676,11 +1151,30 @@ async def create_pty_session(
         cols=request.cols,
         rows=request.rows,
         owner_user_id=owner_id,
+        project_id=project_id,
+        runtime_registry=registry,
     )
 
+    async def _verify_project() -> None:
+        await _resolve_project_root(
+            project_id=project_id,
+            current_user=current_user,
+            path_policy=path_policy,
+        )
+
     try:
+        await registry.acquire(
+            user_id=owner_id,
+            project_id=project_id,
+            resource_type=RuntimeResourceType.PTY_SESSION,
+            resource_id=session_id,
+            verify_project=_verify_project,
+            close_callback=session.close,
+        )
         await session.start()
     except Exception as e:
+        await _release_session_runtime(session, RuntimeResourceType.PTY_SESSION)
+        await session.close()
         logger.bind(
             event="pty_session_start_failed",
             module="terminal",
@@ -689,7 +1183,7 @@ async def create_pty_session(
             error_message=str(e),
             user_id=current_user.id,
         ).error(f"PTY 会话启动失败: {e}")
-        return {"ok": False, "error": f"PTY 会话启动失败: {str(e)}"}
+        return {"ok": False, "error": "PTY 会话启动失败"}
 
     # 通过 LRU 辅助函数添加（处理总容量上限淘汰）
     _add_session(_pty_sessions, session_id, session, owner_id, MAX_PTY_SESSIONS)
@@ -707,32 +1201,41 @@ async def create_pty_session(
     return {
         "ok": True,
         "session_id": session_id,
-        "cwd": safe_cwd,
+        "project_id": project_id,
         "cols": request.cols,
         "rows": request.rows,
-        "shell": session.command[0] if session.command else "",
+        "shell": _safe_shell_label(session),
     }
 
 
 @router.get("/sessions/pty")
 async def list_pty_sessions(
     current_user: User = Depends(get_current_user),
+    path_policy: WorkbenchPathPolicy = Depends(get_terminal_workbench_path_policy),
 ) -> Dict[str, Any]:
     """列出当前用户所有活跃的 PTY 终端会话（按 owner_user_id 过滤）。"""
     owner_id = str(current_user.id)
-    return {
-        "ok": True,
-        "sessions": [
+    sessions = []
+    for sid, session in _pty_sessions.items():
+        if not session.active or getattr(session, "owner_user_id", None) != owner_id:
+            continue
+        await _resolve_bound_session_root(
+            session=session,
+            current_user=current_user,
+            path_policy=path_policy,
+        )
+        sessions.append(
             {
                 "session_id": sid,
-                "cwd": s.cwd,
-                "active": s.active,
-                "alive": s.pty.is_alive(),
-                "shell": s.command[0] if s.command else "",
+                "project_id": session.project_id,
+                "active": session.active,
+                "alive": session.pty.is_alive(),
+                "shell": _safe_shell_label(session),
             }
-            for sid, s in _pty_sessions.items()
-            if s.active and getattr(s, "owner_user_id", None) == owner_id
-        ],
+        )
+    return {
+        "ok": True,
+        "sessions": sessions,
     }
 
 
@@ -740,18 +1243,35 @@ async def list_pty_sessions(
 async def close_pty_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
+    path_policy: WorkbenchPathPolicy = Depends(get_terminal_workbench_path_policy),
+) -> Any:
     """关闭 PTY 终端会话（仅会话所有者可操作）。"""
     session = _pty_sessions.get(session_id)
     if session is None:
         return {"ok": False, "error": "PTY 会话不存在"}
 
-    # IDOR 校验：仅会话所有者可关闭
-    if getattr(session, "owner_user_id", None) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="无权访问该会话")
+    _assert_session_owner(session, current_user)
+    try:
+        await _resolve_bound_session_root(
+            session=session,
+            current_user=current_user,
+            path_policy=path_policy,
+        )
+    except HTTPException as exc:
+        await _discard_session(
+            _pty_sessions,
+            session_id,
+            session,
+            RuntimeResourceType.PTY_SESSION,
+        )
+        return _project_error_response(exc)
 
-    _pty_sessions.pop(session_id, None)
-    await session.close()
+    await _discard_session(
+        _pty_sessions,
+        session_id,
+        session,
+        RuntimeResourceType.PTY_SESSION,
+    )
 
     logger.bind(
         event="pty_session_closed",
@@ -767,6 +1287,7 @@ async def close_pty_session(
 async def get_pty_snapshot(
     session_id: str,
     current_user: User = Depends(get_current_user),
+    path_policy: WorkbenchPathPolicy = Depends(get_terminal_workbench_path_policy),
 ) -> Dict[str, Any]:
     """
     返回 PTY 会话的屏幕快照（仅会话所有者可访问）。
@@ -778,9 +1299,11 @@ async def get_pty_snapshot(
     if session is None or not session.active:
         raise HTTPException(status_code=404, detail="PTY 会话不存在或已关闭")
 
-    # IDOR 校验：仅会话所有者可访问
-    if getattr(session, "owner_user_id", None) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="无权访问该会话")
+    await _resolve_bound_session_root(
+        session=session,
+        current_user=current_user,
+        path_policy=path_policy,
+    )
 
     snapshot = session.get_snapshot()
     return {
@@ -796,6 +1319,7 @@ async def get_pty_snapshot(
 async def get_session_snapshot(
     session_id: str,
     current_user: User = Depends(get_current_user),
+    path_policy: WorkbenchPathPolicy = Depends(get_terminal_workbench_path_policy),
 ) -> Dict[str, Any]:
     """
     返回终端会话的屏幕快照（兼容路径，仅会话所有者可访问）。
@@ -806,9 +1330,11 @@ async def get_session_snapshot(
     if session is None or not session.active:
         raise HTTPException(status_code=404, detail="会话不存在或已关闭")
 
-    # IDOR 校验：仅会话所有者可访问
-    if getattr(session, "owner_user_id", None) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="无权访问该会话")
+    await _resolve_bound_session_root(
+        session=session,
+        current_user=current_user,
+        path_policy=path_policy,
+    )
 
     snapshot = session.get_snapshot()
     return {
@@ -823,7 +1349,6 @@ async def get_session_snapshot(
 async def terminal_pty_websocket(
     websocket: WebSocket,
     session_id: str,
-    token: str = Query(default=None, description="JWT 访问令牌"),
 ):
     """
     PTY 持久化终端 WebSocket 端点。
@@ -846,10 +1371,8 @@ async def terminal_pty_websocket(
         await websocket.close(code=4003, reason="Origin not allowed")
         return
 
-    # token 解析：优先取 query 参数，缺失时尝试从 Sec-WebSocket-Protocol 子协议提取
-    subprotocol: Optional[str] = None
-    if not token:
-        token, subprotocol = extract_token_from_subprotocol(websocket)
+    # token 只从子协议提取，避免进入 access log、Referer 或浏览器历史。
+    token, subprotocol = extract_token_from_subprotocol(websocket)
 
     # 鉴权（统一支持 API Key 与 JWT 双路径，与 chat WS 一致）：
     # APP/API Key 登录用户无 JWT，若只认 JWT 会导致连接被 4002 拒绝后前端
@@ -900,6 +1423,19 @@ async def terminal_pty_websocket(
         await websocket.close(code=4003, reason="Forbidden")
         return
 
+    try:
+        await _revalidate_ws_bound_session(session, user)
+    except HTTPException as exc:
+        await _reject_ws_project_error(
+            websocket,
+            exc,
+            sessions=_pty_sessions,
+            session_id=session_id,
+            session=session,
+            resource_type=RuntimeResourceType.PTY_SESSION,
+        )
+        return
+
     logger.bind(
         event="pty_ws_connected",
         module="terminal",
@@ -910,7 +1446,7 @@ async def terminal_pty_websocket(
     # 推送 shell_info
     await websocket.send_json({
         "type": "shell_info",
-        "shell": session.command[0] if session.command else "",
+        "shell": _safe_shell_label(session),
     })
 
     # 推送 scrollback（最近 100 行）
@@ -941,6 +1477,18 @@ async def terminal_pty_websocket(
                 raise WebSocketDisconnect()
 
             msg_type = data.get("type")
+            try:
+                await _revalidate_ws_bound_session(session, user)
+            except HTTPException as exc:
+                await _reject_ws_project_error(
+                    websocket,
+                    exc,
+                    sessions=_pty_sessions,
+                    session_id=session_id,
+                    session=session,
+                    resource_type=RuntimeResourceType.PTY_SESSION,
+                )
+                return
             if msg_type == "input":
                 input_data = data.get("data", "")
                 if not isinstance(input_data, str):
@@ -954,8 +1502,13 @@ async def terminal_pty_websocket(
                     # 命令被拦截
                     await websocket.send_json({
                         "type": "command_blocked",
-                        "command": result.get("command", ""),
-                        "message": result.get("error", "命令被安全策略拒绝"),
+                        "command": _sanitize_bound_text(
+                            result.get("command", ""), session.cwd
+                        ),
+                        "message": _sanitize_passive_text(
+                            result.get("error", "命令被安全策略拒绝"),
+                            session.cwd,
+                        ),
                     })
             elif msg_type == "resize":
                 cols = int(data.get("cols", 80))
@@ -970,7 +1523,9 @@ async def terminal_pty_websocket(
                 except Exception as e:
                     await websocket.send_json({
                         "type": "error",
-                        "message": f"调整大小失败: {str(e)}",
+                        "message": _sanitize_passive_text(
+                            f"调整大小失败: {str(e)}", session.cwd
+                        ),
                     })
             else:
                 await websocket.send_json({
@@ -1039,17 +1594,31 @@ async def terminal_pty_websocket(
 
 @router.post("/sessions")
 async def create_session(
-    cwd: Optional[str] = Query(default=None, description="工作目录"),
+    request: Request,
+    project_id: Optional[str] = Query(default=None, description="工作台项目 ID"),
     current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
+    path_policy: WorkbenchPathPolicy = Depends(get_terminal_workbench_path_policy),
+    registry: WorkbenchRuntimeRegistry = Depends(get_terminal_runtime_registry),
+) -> Any:
     """创建新的终端会话。需要认证。"""
-    # 校验 cwd 路径安全性
-    safe_cwd = _validate_cwd(cwd)
+    payload = await _read_json_payload(request)
+    if _contains_legacy_project_path(request, payload):
+        return _legacy_project_path_response()
+    normalized_project_id = _require_project_id(project_id)
+    safe_cwd = str(
+        await _resolve_project_root(
+            project_id=normalized_project_id,
+            current_user=current_user,
+            path_policy=path_policy,
+        )
+    )
 
     # 清理已关闭的会话
     closed = [sid for sid, s in _terminal_sessions.items() if not s.active]
     for sid in closed:
-        _terminal_sessions.pop(sid, None)
+        stale_session = _terminal_sessions.pop(sid, None)
+        if stale_session is not None:
+            await _close_bound_session(stale_session, RuntimeResourceType.TERMINAL_SESSION)
 
     # per-user 会话数限制（防止单用户耗尽全局配额）
     owner_id = str(current_user.id)
@@ -1057,7 +1626,29 @@ async def create_session(
         return {"ok": False, "error": "已达到最大会话数限制"}
 
     session_id = str(uuid.uuid4())[:8]
-    session = TerminalSession(session_id, safe_cwd, owner_user_id=owner_id)
+    session = TerminalSession(
+        session_id,
+        safe_cwd,
+        owner_user_id=owner_id,
+        project_id=normalized_project_id,
+        runtime_registry=registry,
+    )
+
+    async def _verify_project() -> None:
+        await _resolve_project_root(
+            project_id=normalized_project_id,
+            current_user=current_user,
+            path_policy=path_policy,
+        )
+
+    await registry.acquire(
+        user_id=owner_id,
+        project_id=normalized_project_id,
+        resource_type=RuntimeResourceType.TERMINAL_SESSION,
+        resource_id=session_id,
+        verify_project=_verify_project,
+        close_callback=session.close,
+    )
     _add_session(_terminal_sessions, session_id, session, owner_id, MAX_SESSIONS)
 
     logger.bind(
@@ -1068,7 +1659,11 @@ async def create_session(
         user_id=current_user.id,
     ).info(f"终端会话已创建: {session_id}")
 
-    return {"ok": True, "session_id": session_id, "cwd": session.cwd}
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "project_id": normalized_project_id,
+    }
 
 
 @router.post("/sessions/{session_id}/execute")
@@ -1076,15 +1671,18 @@ async def execute_command(
     session_id: str,
     request: TerminalCommandRequest,
     current_user: User = Depends(get_current_user),
+    path_policy: WorkbenchPathPolicy = Depends(get_terminal_workbench_path_policy),
 ) -> Dict[str, Any]:
     """在指定会话中执行命令。需要认证（仅会话所有者可执行）。"""
     session = _terminal_sessions.get(session_id)
     if not session or not session.active:
         return {"ok": False, "error": "会话不存在或已关闭"}
 
-    # IDOR 校验：仅会话所有者可执行命令
-    if getattr(session, "owner_user_id", None) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="无权访问该会话")
+    await _resolve_bound_session_root(
+        session=session,
+        current_user=current_user,
+        path_policy=path_policy,
+    )
 
     result = await session.execute(request.command, request.timeout)
 
@@ -1097,25 +1695,42 @@ async def execute_command(
         user_id=current_user.id,
     ).info(f"终端命令执行: {request.command[:50]}...")
 
-    return result
+    return _sanitize_terminal_result(result, session)
 
 
 @router.delete("/sessions/{session_id}")
 async def close_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
+    path_policy: WorkbenchPathPolicy = Depends(get_terminal_workbench_path_policy),
+) -> Any:
     """关闭终端会话。需要认证（仅会话所有者可关闭）。"""
     session = _terminal_sessions.get(session_id)
     if not session:
         return {"ok": False, "error": "会话不存在"}
 
-    # IDOR 校验：仅会话所有者可关闭
-    if getattr(session, "owner_user_id", None) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="无权访问该会话")
+    _assert_session_owner(session, current_user)
+    try:
+        await _resolve_bound_session_root(
+            session=session,
+            current_user=current_user,
+            path_policy=path_policy,
+        )
+    except HTTPException as exc:
+        await _discard_session(
+            _terminal_sessions,
+            session_id,
+            session,
+            RuntimeResourceType.TERMINAL_SESSION,
+        )
+        return _project_error_response(exc)
 
-    await session.close()
-    _terminal_sessions.pop(session_id, None)
+    await _discard_session(
+        _terminal_sessions,
+        session_id,
+        session,
+        RuntimeResourceType.TERMINAL_SESSION,
+    )
 
     logger.bind(
         event="terminal_session_closed",
@@ -1130,20 +1745,29 @@ async def close_session(
 @router.get("/sessions")
 async def list_sessions(
     current_user: User = Depends(get_current_user),
+    path_policy: WorkbenchPathPolicy = Depends(get_terminal_workbench_path_policy),
 ) -> Dict[str, Any]:
     """列出当前用户所有活跃的终端会话（按 owner_user_id 过滤）。"""
     owner_id = str(current_user.id)
-    return {
-        "ok": True,
-        "sessions": [
+    sessions = []
+    for sid, session in _terminal_sessions.items():
+        if not session.active or getattr(session, "owner_user_id", None) != owner_id:
+            continue
+        await _resolve_bound_session_root(
+            session=session,
+            current_user=current_user,
+            path_policy=path_policy,
+        )
+        sessions.append(
             {
                 "session_id": sid,
-                "cwd": s.cwd,
-                "active": s.active,
+                "project_id": session.project_id,
+                "active": session.active,
             }
-            for sid, s in _terminal_sessions.items()
-            if s.active and getattr(s, "owner_user_id", None) == owner_id
-        ],
+        )
+    return {
+        "ok": True,
+        "sessions": sessions,
     }
 
 
@@ -1151,11 +1775,10 @@ async def list_sessions(
 async def terminal_websocket(
     websocket: WebSocket,
     session_id: str,
-    token: str = Query(default=None, description="JWT 访问令牌"),
 ):
     """
     终端 WebSocket 连接，支持实时命令执行和输出流。
-    通过 token 查询参数或 Sec-WebSocket-Protocol 子协议鉴权，
+    只通过 Sec-WebSocket-Protocol 子协议鉴权，
     未认证或令牌无效时直接关闭连接。
     """
     # Origin 校验（防 CSWSH 跨站 WebSocket 劫持）：在 accept 之前 close
@@ -1164,10 +1787,8 @@ async def terminal_websocket(
         await websocket.close(code=4003, reason="Origin not allowed")
         return
 
-    # token 解析：优先取 query 参数，缺失时尝试从 Sec-WebSocket-Protocol 子协议提取
-    subprotocol: Optional[str] = None
-    if not token:
-        token, subprotocol = extract_token_from_subprotocol(websocket)
+    # token 只从子协议提取，避免进入 access log、Referer 或浏览器历史。
+    token, subprotocol = extract_token_from_subprotocol(websocket)
 
     # 鉴权（统一支持 API Key 与 JWT 双路径，与 chat WS 一致）：
     # API Key 登录用户无 JWT，若只认 JWT 会导致连接被拒后前端无限重连
@@ -1211,6 +1832,19 @@ async def terminal_websocket(
         await websocket.close(code=4003, reason="Forbidden")
         return
 
+    try:
+        await _revalidate_ws_bound_session(session, user)
+    except HTTPException as exc:
+        await _reject_ws_project_error(
+            websocket,
+            exc,
+            sessions=_terminal_sessions,
+            session_id=session_id,
+            session=session,
+            resource_type=RuntimeResourceType.TERMINAL_SESSION,
+        )
+        return
+
     logger.bind(
         event="terminal_ws_connected",
         module="terminal",
@@ -1228,17 +1862,32 @@ async def terminal_websocket(
                 await websocket.send_json({"type": "error", "message": "空命令"})
                 continue
 
-            await websocket.send_json({"type": "command", "command": command})
-
-            result = await session.execute(command, timeout)
+            try:
+                await _revalidate_ws_bound_session(session, user)
+            except HTTPException as exc:
+                detail = _project_error_detail(exc)
+                await websocket.send_json({"type": "error", **detail})
+                await websocket.close(code=4003, reason="Project unavailable")
+                return
 
             await websocket.send_json({
-                "type": "output",
-                "stdout": result.get("stdout", ""),
-                "stderr": result.get("stderr", ""),
-                "exit_code": result.get("exit_code"),
-                "ok": result.get("ok"),
+                "type": "command",
+                "command": _sanitize_bound_text(command, session.cwd),
             })
+
+            result = await session.execute(command, timeout)
+            safe_result = _sanitize_terminal_result(result, session)
+
+            output_event = {
+                "type": "output",
+                "stdout": safe_result.get("stdout", ""),
+                "stderr": safe_result.get("stderr", ""),
+                "exit_code": safe_result.get("exit_code"),
+                "ok": safe_result.get("ok"),
+            }
+            if "error" in safe_result:
+                output_event["error"] = safe_result["error"]
+            await websocket.send_json(output_event)
 
     except WebSocketDisconnect:
         logger.bind(
@@ -1257,5 +1906,9 @@ async def terminal_websocket(
             error_message=str(e),
         ).error(f"终端 WebSocket 错误: {e}")
     finally:
-        await session.close()
-        _terminal_sessions.pop(session_id, None)
+        await _discard_session(
+            _terminal_sessions,
+            session_id,
+            session,
+            RuntimeResourceType.TERMINAL_SESSION,
+        )

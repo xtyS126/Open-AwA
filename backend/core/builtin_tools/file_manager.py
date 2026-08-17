@@ -10,10 +10,6 @@ from loguru import logger
 
 
 def safe_resolve_path(file_path: str) -> str:
-    """
-    处理safe、resolve、path相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     return os.path.realpath(file_path)
 
 
@@ -67,10 +63,6 @@ def is_path_safe(file_path: str, allowed_directories: List[str]) -> bool:
 
 
 class FileManagerSkill:
-    """
-    封装与FileManagerSkill相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     name: str = "file_manager"
     version: str = "1.0.0"
     description: str = "文件管理技能"
@@ -106,10 +98,6 @@ class FileManagerSkill:
         return True
 
     def _setup_allowed_directories(self):
-        """
-        处理setup、allowed、directories相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if not self.allowed_directories:
             self.allowed_directories = [os.getcwd()]
         self.allowed_directories = [
@@ -136,10 +124,6 @@ class FileManagerSkill:
         return file_path
 
     def _validate_path(self, file_path: str) -> bool:
-        """
-        处理validate、path相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         resolved = self._resolve_relative_path(file_path)
         if is_path_safe(resolved, self.allowed_directories):
             return True
@@ -175,10 +159,6 @@ class FileManagerSkill:
             return {"success": False, "error": f"Unknown action: {action}"}
 
     async def _read_file(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理read、file相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         file_path = self._resolve_relative_path(kwargs.get('path', ''))
         if not file_path:
             return {"success": False, "error": "path parameter is required"}
@@ -231,10 +211,6 @@ class FileManagerSkill:
             return {"success": False, "error": str(e)}
 
     async def _write_file(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理write、file相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         file_path = self._resolve_relative_path(kwargs.get('path', ''))
         content = kwargs.get('content', '')
 
@@ -274,10 +250,6 @@ class FileManagerSkill:
             return {"success": False, "error": str(e)}
 
     async def _list_files(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理list、files相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         directory = self._resolve_relative_path(kwargs.get('path', ''))
         pattern = kwargs.get('pattern', '*')
 
@@ -312,10 +284,6 @@ class FileManagerSkill:
             return {"success": False, "error": str(e)}
 
     async def _delete_file(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理delete、file相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         file_path = self._resolve_relative_path(kwargs.get('path', ''))
 
         if not file_path:
@@ -352,10 +320,6 @@ class FileManagerSkill:
             return {"success": False, "error": str(e)}
 
     async def _file_exists(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理file、exists相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         file_path = self._resolve_relative_path(kwargs.get('path', ''))
 
         if not file_path:
@@ -373,10 +337,6 @@ class FileManagerSkill:
         }
 
     async def _create_directory(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理create、directory相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         directory = self._resolve_relative_path(kwargs.get('path', ''))
 
         if not directory:

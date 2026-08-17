@@ -90,6 +90,17 @@ def _get_owner_from_settings() -> Optional[User]:
         return None
 
 
+async def _get_owner_from_settings_async() -> Optional[User]:
+    """异步包装 _get_owner_from_settings，避免同步 DB 查询阻塞事件循环。
+
+    API Key 模式下 get_current_user 的降级路径调用此函数，
+    通过 asyncio.to_thread 将同步 SQLAlchemy 查询放到线程池执行，
+    避免在 async 路由中直接阻塞事件循环导致 TTFB 升高。
+    同步函数内部已处理异常并返回 None，此处不再吞异常，保证异常正常传播。
+    """
+    return await asyncio.to_thread(_get_owner_from_settings)
+
+
 async def _resolve_jwt_user(token: str, db: Session) -> Optional[User]:
     """
     解析 JWT token 并返回对应用户。
@@ -252,7 +263,7 @@ async def get_current_user(
                     "加载 owner 用户失败（缓存路径），回退到 _get_owner_from_settings",
                     exc_info=exc,
                 )
-            owner = _get_owner_from_settings()
+            owner = await _get_owner_from_settings_async()
             if owner is not None:
                 return owner
 

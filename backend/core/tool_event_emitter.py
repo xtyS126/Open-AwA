@@ -53,11 +53,11 @@ class ToolEventEmitter:
     async def _dispatch_post_tool_use_hook(
         tool_call: Dict[str, Any], context: Dict[str, Any], call_state: Any,
     ) -> None:
-        """触发可选的 PostToolUse 钩子，缺少运行时模块时保持降级。"""
+        """触发可选的 PostToolUse 钩子，使用统一的 hook_manager。"""
         try:
-            from core.task_runtime.hook_dispatcher import hook_dispatcher, HOOK_POST_TOOL_USE
+            from core.hook_manager import hook_manager, HookName
             arguments = tool_call.get("function", {}).get("arguments", "{}")
-            await hook_dispatcher.dispatch(HOOK_POST_TOOL_USE, {
+            await hook_manager.trigger(HookName.TOOL_AFTER_EXECUTE, data={
                 "tool_name": call_state.tool_name,
                 "tool_args": json.loads(arguments) if isinstance(arguments, str) else {},
                 "result": call_state.result,

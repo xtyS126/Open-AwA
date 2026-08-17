@@ -1,23 +1,28 @@
 """
 记忆管理模块，负责短期记忆、长期记忆、工作内存与向量检索能力的统一编排。
+
+MemoryManager 作为薄门面层，委托给以下子组件：
+- MemoryCacheManager：缓存管理（向量搜索缓存、历史缓存）
+- MemoryWriter：写入操作（短期/长期记忆的创建、更新、归档、删除）
+- MemoryReader：读取操作（检索、查询、统计、质量评估）
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
-import time
-from collections import OrderedDict
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from loguru import logger
-from sqlalchemy import func, case
 
 from db.models import ConversationRecord, LongTermMemory, ShortTermMemory
 from core.conversation_sessions import ensure_conversation
 from memory.consolidation import calculate_similarity
+from memory.memory_cache import MemoryCacheManager
+from memory.memory_reader import MemoryReader
+from memory.memory_writer import MemoryWriter
 from memory.pii_guard import scrub as pii_scrub
 from memory.vector_store_manager import VectorStoreManager
 from memory.working_memory import working_memory_store
@@ -25,8 +30,12 @@ from memory.working_memory import working_memory_store
 
 class MemoryManager:
     """
-    记忆管理器。
-    提供长期记忆的向量化写入、混合检索、质量评估、归档与统计功能。
+    记忆管理器（门面层）。
+
+    委托给以下子组件：
+    - MemoryCacheManager：缓存管理（向量搜索缓存、历史缓存）
+    - MemoryWriter：写入操作（短期/长期记忆的创建、更新、归档、删除）
+    - MemoryReader：读取操作（检索、查询、统计、质量评估）
     """
 
     _shared_vector_store: Optional[VectorStoreManager] = None
@@ -52,31 +61,76 @@ class MemoryManager:
                     self.__class__._shared_vector_store = VectorStoreManager()
         self.vector_store = self.__class__._shared_vector_store
         self.working_memory = working_memory_store
-        # 向量检索查询级 LRU 缓存：相同 (query, user_id) 短时间内复用结果，避免重复嵌入计算与 Qdrant 查询
-        self._vector_search_cache: "OrderedDict[Tuple[str, Optional[str]], List[Any]]" = OrderedDict()
-        self._vector_search_cache_lock = Lock()
-        self._VECTOR_CACHE_MAX = 128
-        # 对话历史请求级缓存：同 (session_id, limit, workspace_id) 在 5 秒内复用，避免连续对话重复查询 DB
-        # 新消息写入时通过 invalidate_history_cache 失效
-        self._history_cache: "OrderedDict[Tuple[str, int, str], Tuple[List[ShortTermMemory], float]]" = OrderedDict()
-        self._history_cache_maxsize = 128
-        self._history_cache_ttl = 5.0  # 5 秒 TTL
-        self._history_cache_lock = Lock()
         # 短消息阈值：低于此长度的查询跳过向量检索，只做关键词检索
-        # 中文字符在 Python len() 中按 1 计，"你好"=2、"Python"=6、"我喜欢Python"=10
-        # 原阈值 20 过高导致常见中文查询（如"用户喜欢什么编程语言"=10）被跳过向量检索
-        # 降到 4：保留对超短查询（如"你好"）的跳过逻辑，同时允许 5+ 字符的查询触发向量检索
         self._SHORT_QUERY_THRESHOLD = 4
         # Spec memory-quality-and-short-term-recovery：写入去重时合并内容的 LLM callback
-        # 注入回调签名：async def merge(existing: str, new: str) -> str
-        # 回调失败或未注入且两段内容无包含关系时直接抛错，不做低质量拼接兜底
         self._llm_merge_callback: Optional[Callable[[str, str], Awaitable[str]]] = None
-        # Spec memory-model-config-chain：检索重排器（可选，未配置时为 None）；
-        # 重排器初始化失败时缓存异常并重新抛出，不静默退回融合排序
+        # Spec memory-model-config-chain：检索重排器（可选，未配置时为 None）
         self._reranker = None
         self._reranker_failure: Optional[Exception] = None
         self._reranker_lock = Lock()
+
+        # 子组件：缓存管理器、写入器、读取器
+        self._cache = MemoryCacheManager()
+        self._writer = MemoryWriter(self)
+        self._reader = MemoryReader(self, self._cache)
+
         logger.info("MemoryManager initialized")
+
+    def __getattr__(self, name: str):
+        """
+        懒初始化子组件，支持 object.__new__ 绕过 __init__ 的测试场景。
+
+        当 __init__ 未被调用时，首次访问 _cache/_writer/_reader 时自动创建。
+        """
+        if name in ('_cache', '_writer', '_reader'):
+            if name == '_cache':
+                val = MemoryCacheManager()
+            elif name == '_writer':
+                val = MemoryWriter(self)
+            else:  # '_reader'
+                if '_cache' not in self.__dict__:
+                    object.__setattr__(self, '_cache', MemoryCacheManager())
+                val = MemoryReader(self, self._cache)
+            object.__setattr__(self, name, val)
+            return val
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    # ------------------------------------------------------------------
+    # 向后兼容属性：旧缓存属性委托给 self._cache
+    # ------------------------------------------------------------------
+
+    @property
+    def _vector_search_cache(self):
+        return self._cache._vector_search_cache
+
+    @property
+    def _vector_search_cache_lock(self):
+        return self._cache._vector_search_cache_lock
+
+    @property
+    def _VECTOR_CACHE_MAX(self):
+        return self._cache._max_vector_cache_size
+
+    @_VECTOR_CACHE_MAX.setter
+    def _VECTOR_CACHE_MAX(self, value):
+        self._cache._max_vector_cache_size = value
+
+    @property
+    def _history_cache(self):
+        return self._cache._history_cache
+
+    @property
+    def _history_cache_lock(self):
+        return self._cache._history_cache_lock
+
+    @property
+    def _history_cache_maxsize(self):
+        return self._cache._history_cache_maxsize
+
+    @property
+    def _history_cache_ttl(self):
+        return self._cache._history_cache_ttl
 
     def _get_reranker(self):
         """
@@ -131,13 +185,8 @@ class MemoryManager:
         return [memory for memory, _ in paired[:limit]]
 
     def set_llm_merge_callback(self, callback: Callable[[str, str], Awaitable[str]]) -> None:
-        """
-        注入 LLM 合并回调，用于写入去重时把新旧内容合并为提炼后的文本。
-
-        生产环境必须注入真实 LLM 调用；未注入时去重合并仅支持无损子串规则，
-        其余情况显式抛错，不产生低质量拼接结果。
-        """
-        self._llm_merge_callback = callback
+        """注入 LLM 合并回调（委托给写入器）。"""
+        self._writer.set_llm_merge_callback(callback)
 
     def _compute_similarity_hash(self, content: str) -> str:
         """
@@ -530,12 +579,10 @@ class MemoryManager:
         tool_events: Optional[list] = None,
         workspace_id: str = "default",
     ) -> ShortTermMemory:
-        memory = await asyncio.to_thread(
-            self._add_short_term_memory_sync,
+        """添加短期记忆（委托给写入器）。"""
+        return await self._writer.add_short_term_memory(
             session_id, role, content, user_id, reasoning_content, tool_events, workspace_id,
         )
-        logger.debug(f"Added short-term memory for session {session_id}")
-        return memory
 
     def _append_to_last_assistant_memory_sync(
         self,
@@ -641,16 +688,10 @@ class MemoryManager:
         reasoning_content: Optional[str] = None,
         tool_events: Optional[list] = None,
     ) -> ShortTermMemory:
-        memory = await asyncio.to_thread(
-            self._append_to_last_assistant_memory_sync,
-            session_id,
-            content,
-            user_id,
-            reasoning_content,
-            tool_events,
+        """追加到最近一条助手短期记忆（委托给写入器）。"""
+        return await self._writer.append_to_last_assistant_memory(
+            session_id, content, user_id, reasoning_content, tool_events,
         )
-        logger.debug(f"Appended assistant short-term memory for session {session_id}")
-        return memory
 
     def _get_short_term_memories_sync(self, session_id: str, limit: int, workspace_id: str = "default") -> List[ShortTermMemory]:
         with self.session_factory() as db:
@@ -667,55 +708,12 @@ class MemoryManager:
             return memories
 
     async def get_short_term_memories(self, session_id: str, limit: int = 50, workspace_id: str = "default") -> List[ShortTermMemory]:
-        """从短期记忆中获取指定会话的历史消息（带 5 秒 TTL 缓存）。"""
-        cache_key: Tuple[str, int, str] = (session_id, limit, workspace_id)
-        now = time.time()
-
-        # 缓存命中检查
-        with self._history_cache_lock:
-            cached = self._history_cache.get(cache_key)
-            if cached is not None:
-                memories, expired_at = cached
-                if now < expired_at:
-                    # 命中，move_to_end 维护 LRU 顺序
-                    self._history_cache.move_to_end(cache_key)
-                    logger.bind(
-                        event="history_cache_hit",
-                        module="memory",
-                        session_id=session_id,
-                    ).debug("对话历史缓存命中")
-                    return memories
-                else:
-                    # 已过期，移除 stale 条目
-                    self._history_cache.pop(cache_key, None)
-
-        # 缓存未命中，查询 DB（保留原有查询逻辑）
-        memories = await asyncio.to_thread(self._get_short_term_memories_sync, session_id, limit, workspace_id)
-
-        # 写入缓存
-        with self._history_cache_lock:
-            self._history_cache[cache_key] = (memories, now + self._history_cache_ttl)
-            self._history_cache.move_to_end(cache_key)
-            # LRU 淘汰：超过容量时移除最久未使用的条目
-            if len(self._history_cache) > self._history_cache_maxsize:
-                self._history_cache.popitem(last=False)
-
-        return memories
+        """获取短期记忆（委托给读取器，带缓存）。"""
+        return await self._reader.get_short_term_memories(session_id, limit, workspace_id)
 
     def invalidate_history_cache(self, session_id: str) -> None:
-        """失效指定 session_id 的对话历史缓存（新消息写入后调用）。"""
-        with self._history_cache_lock:
-            # 遍历所有 key，移除 session_id 匹配的（不同 limit、workspace_id 都要失效）
-            keys_to_remove = [k for k in self._history_cache if k[0] == session_id]
-            for k in keys_to_remove:
-                self._history_cache.pop(k, None)
-            if keys_to_remove:
-                logger.bind(
-                    event="history_cache_invalidated",
-                    module="memory",
-                    session_id=session_id,
-                    invalidated_count=len(keys_to_remove),
-                ).debug("对话历史缓存已失效")
+        """失效指定 session_id 的对话历史缓存（委托给缓存管理器）。"""
+        self._cache.invalidate_history_cache(session_id)
 
     # ------------------------------------------------------------------
     # Spec memory-quality-and-short-term-recovery Task 11
@@ -781,32 +779,8 @@ class MemoryManager:
         limit: int = 20,
         workspace_id: str = "default",
     ) -> List[ShortTermMemory]:
-        """获取用户最近 N 条短期记忆（Spec memory-quality-and-short-term-recovery Task 11）。
-
-        用于新对话开始时注入 system prompt 上下文恢复，让 AI 在新会话开始时
-        能"记得"用户最近的对话内容（跨 session_id）。
-
-        Args:
-            user_id: 用户 ID，必填（按用户隔离）
-            limit: 返回上限，默认 20，最大 100
-            workspace_id: 工作区隔离，默认 "default"
-
-        Returns:
-            短期记忆列表，按时间倒序排列，最早的消息在前（注入 system prompt 时
-            会反转顺序为正序，使对话历史顺序符合自然阅读习惯）。
-
-        Raises:
-            ValueError: 当 user_id 为空或 limit 超出合理范围时
-        """
-        if not user_id:
-            raise ValueError("user_id is required for get_recent_short_term_memories")
-        limit = max(1, min(100, int(limit or 20)))
-        return await asyncio.to_thread(
-            self._get_recent_short_term_memories_sync,
-            user_id,
-            limit,
-            workspace_id,
-        )
+        """获取用户最近 N 条短期记忆（委托给读取器）。"""
+        return await self._reader.get_recent_short_term_memories(user_id, limit, workspace_id)
 
     def _clear_short_term_memory_sync(self, session_id: str, workspace_id: str = "default") -> int:
         with self.session_factory() as db:
@@ -820,9 +794,8 @@ class MemoryManager:
             return count
 
     async def clear_short_term_memory(self, session_id: str, workspace_id: str = "default") -> int:
-        count = await asyncio.to_thread(self._clear_short_term_memory_sync, session_id, workspace_id)
-        logger.info(f"Cleared {count} short-term memories for session {session_id}")
-        return count
+        """清空短期记忆（委托给写入器）。"""
+        return await self._writer.clear_short_term_memory(session_id, workspace_id)
 
     def _search_short_term_memories_sync(
         self,
@@ -882,26 +855,8 @@ class MemoryManager:
         limit: int = 10,
         workspace_id: str = "default",
     ) -> List[ShortTermMemory]:
-        """
-        Spec memory-quality-and-short-term-recovery Task 15：
-        异步包装 _search_short_term_memories_sync，供 builtin_memory_search_short_term 工具调用。
-
-        Args:
-            query: 搜索关键词，必填
-            session_id: 可选，按会话 ID 过滤
-            limit: 返回上限，默认 10，最大 50
-            workspace_id: 工作区隔离
-
-        Returns:
-            匹配的短期记忆列表，按 timestamp 倒序排列
-        """
-        return await asyncio.to_thread(
-            self._search_short_term_memories_sync,
-            query,
-            session_id,
-            limit,
-            workspace_id,
-        )
+        """搜索短期记忆（委托给读取器）。"""
+        return await self._reader.search_short_term_memories(query, session_id, limit, workspace_id)
 
     def _add_long_term_memory_sync(
         self,
@@ -1079,59 +1034,10 @@ class MemoryManager:
         extracted_from: Optional[List[int]] = None,
         images: Optional[List[Dict[str, Any]]] = None,
     ) -> LongTermMemory:
-        """
-        写入一条长期记忆，自动执行 PII 脱敏 + 去重合并。
-
-        Spec memory-quality-and-short-term-recovery：
-        1. PII 脱敏（pii_guard.scrub）
-        2. 长度校验（> 500 字符拒绝）
-        3. 嵌入向量计算
-        4. 去重查询（相似度 > 0.85）
-            - 命中：合并内容（LLM 合并或无损确定性合并，无法合并时显式抛错）→ 更新已有 memory
-            - 未命中：写入新 memory
-        5. 同步 vector_store 与 working_memory
-        6. 返回 memory 对象，去重信息通过 memory_metadata._dedup_info 透出
-
-        实现已拆分为三个内部 helper（brooks-lint D1 Cognitive Overload）：
-        - :meth:`_scrub_and_embed`：长度校验 + PII 脱敏 + 嵌入计算
-        - :meth:`_try_dedup_merge`：去重查询 + 合并写入（返回 merged_memory 或 None）
-        - :meth:`_write_new_memory`：写入新 memory + 同步 vector_store 与 working_memory
-
-        Args:
-            extracted_from: 来源短期记忆 ID 列表，写入 memory_metadata.extracted_from
-                             （供 consolidation_runner 追溯来源）
-        """
-        scrubbed_content, vector = await self._scrub_and_embed(content, embedding)
-
-        # 多模态图片引用（Spec 多模态记忆）：写入 memory_metadata["images"]，
-        # 供记忆页展示与多模态检索（配置视觉/多模态嵌入模型后启用）
-        metadata = dict(memory_metadata or {})
-        if images:
-            metadata["images"] = [dict(img) for img in images if isinstance(img, dict)]
-
-        merged = await self._try_dedup_merge(
-            scrubbed_content,
-            vector,
-            importance=importance,
-            user_id=user_id,
-            memory_metadata=metadata,
-            source_type=source_type,
-            workspace_id=workspace_id,
-            extracted_from=extracted_from,
-        )
-        if merged is not None:
-            return merged
-
-        return await self._write_new_memory(
-            scrubbed_content,
-            vector,
-            importance=importance,
-            user_id=user_id,
-            memory_metadata=metadata,
-            source_type=source_type,
-            workspace_id=workspace_id,
-            memory_layer=memory_layer,
-            extracted_from=extracted_from,
+        """写入长期记忆（委托给写入器，含 PII 脱敏 + 去重合并）。"""
+        return await self._writer.add_long_term_memory(
+            content, importance, embedding, user_id, memory_metadata,
+            source_type, workspace_id, memory_layer, extracted_from, images,
         )
 
     async def _scrub_and_embed(
@@ -1454,19 +1360,9 @@ class MemoryManager:
         include_deprecated: bool = False,
         workspace_id: str = "default",
     ) -> List[LongTermMemory]:
-        """Spec memory-quality-and-short-term-recovery Task 9：
-        新增 ``include_deprecated`` 参数，默认排除 deprecated 状态的记忆。
-        """
-        # 加载与评估合并在同一个同步函数内，避免跨线程传递 ORM 对象
-        return await asyncio.to_thread(
-            self._get_and_evaluate_long_term_memories_sync,
-            min_importance,
-            limit,
-            offset,
-            user_id,
-            include_archived,
-            include_deprecated,
-            workspace_id,
+        """获取长期记忆列表（委托给读取器）。"""
+        return await self._reader.get_long_term_memories(
+            min_importance, limit, offset, user_id, include_archived, include_deprecated, workspace_id,
         )
 
     def _update_memory_access_sync(self, memory_id: int) -> None:
@@ -1481,7 +1377,8 @@ class MemoryManager:
                 self._sync_runtime_layers(memory)
 
     async def update_memory_access(self, memory_id: int) -> None:
-        await asyncio.to_thread(self._update_memory_access_sync, memory_id)
+        """更新记忆访问记录（委托给写入器）。"""
+        await self._writer.update_memory_access(memory_id)
 
     def _batch_update_memory_access_sync(self, memory_ids: List[int]) -> None:
         """
@@ -1589,18 +1486,8 @@ class MemoryManager:
         user_id: Optional[str] = None,
         workspace_id: str = "default",
     ) -> List[LongTermMemory]:
-        """按输入顺序读取当前用户和工作区内仍可用的长期记忆。"""
-        normalized_ids = list(dict.fromkeys(memory_ids))
-        memories = await asyncio.to_thread(
-            self._get_memories_by_ids_sync,
-            normalized_ids,
-            user_id,
-            False,
-            False,
-            workspace_id,
-        )
-        by_id = {int(memory.id): memory for memory in memories}
-        return [by_id[memory_id] for memory_id in normalized_ids if memory_id in by_id]
+        """按 ID 列表获取记忆（委托给读取器）。"""
+        return await self._reader.get_memories_by_ids(memory_ids, user_id, workspace_id)
 
     async def search_memories(
         self,
@@ -1614,104 +1501,11 @@ class MemoryManager:
         vector_weight: float = 0.65,
         workspace_id: str = "default",
     ) -> List[LongTermMemory]:
-        """Spec memory-quality-and-short-term-recovery Task 9：
-        新增 ``include_deprecated`` 参数控制是否返回 ``state="deprecated"`` 的记忆。
-
-        默认行为：
-        - ``deprecated`` 状态（用户主动遗忘）不返回
-        - ``archived`` 状态（长期未访问或低质量）不返回
-        - ``active`` / ``validated`` 状态始终返回
-
-        ``include_archived=True`` 时返回 archived 状态；``include_deprecated=True``
-        时返回 deprecated 状态（用于审计或恢复场景）。
-        """
-        normalized_query = self._normalize_search_query(query)
-        if not normalized_query:
-            return []
-
-        keyword_matches = await asyncio.to_thread(
-            self._search_memories_sync,
-            normalized_query,
-            limit,
-            user_id,
-            include_archived,
-            include_deprecated,
-            workspace_id,
+        """混合检索长期记忆（委托给读取器，关键词 + 向量 + 重排）。"""
+        return await self._reader.search_memories(
+            query, limit, user_id, include_archived, include_deprecated,
+            use_vector, keyword_weight, vector_weight, workspace_id,
         )
-        keyword_scores = {
-            memory.id: min(1.0, 0.45 + (memory.importance * 0.3) + min(memory.access_count / 20, 0.25))
-            for memory in keyword_matches
-        }
-
-        vector_scores: Dict[int, float] = {}
-        if use_vector:
-            # 短消息跳过向量检索：避免短查询（如"你好"）触发嵌入计算与 Qdrant 查询，只保留关键词检索结果
-            if len(normalized_query) < self._SHORT_QUERY_THRESHOLD:
-                logger.debug(
-                    f"Query too short ({len(normalized_query)} chars), skipping vector search"
-                )
-                vector_hits = []
-            else:
-                # 查询级 LRU 缓存：相同 (query, user_id) 短时间内复用向量检索结果
-                cache_key: Tuple[str, Optional[str]] = (normalized_query, user_id)
-                cached_hits: Optional[List[Any]] = None
-                with self._vector_search_cache_lock:
-                    if cache_key in self._vector_search_cache:
-                        self._vector_search_cache.move_to_end(cache_key)
-                        cached_hits = self._vector_search_cache[cache_key]
-                if cached_hits is not None:
-                    vector_hits = cached_hits
-                else:
-                    vector_hits = await self.vector_store.search(
-                        normalized_query,
-                        user_id=user_id,
-                        limit=limit,
-                        include_archived=include_archived,
-                    )
-                    with self._vector_search_cache_lock:
-                        self._vector_search_cache[cache_key] = vector_hits
-                        if len(self._vector_search_cache) > self._VECTOR_CACHE_MAX:
-                            self._vector_search_cache.popitem(last=False)
-            vector_scores = {hit.memory_id: hit.score for hit in vector_hits}
-
-        candidate_ids = list(dict.fromkeys([*keyword_scores.keys(), *vector_scores.keys()]))
-        if not candidate_ids:
-            return []
-
-        memories = await asyncio.to_thread(
-            self._get_memories_by_ids_sync,
-            candidate_ids,
-            user_id,
-            include_archived,
-            include_deprecated,
-            workspace_id,
-        )
-        combined = []
-        for memory in memories:
-            combined_score = (keyword_scores.get(memory.id, 0.0) * keyword_weight) + (
-                vector_scores.get(memory.id, 0.0) * vector_weight
-            )
-            combined.append((combined_score, memory))
-
-        combined.sort(
-            key=lambda item: (item[0], item[1].quality_score, item[1].importance, item[1].access_count),
-            reverse=True,
-        )
-        # Spec memory-model-config-chain：候选数放宽到 3 倍供重排器二次排序，
-        # 未配置重排器时与旧行为一致（截断到 limit）
-        rerank_candidate_limit = limit * 3
-        ranked_memories = [memory for _, memory in combined[:rerank_candidate_limit]]
-        if len(ranked_memories) > limit:
-            ranked_memories = await self._apply_rerank(
-                normalized_query, ranked_memories, limit
-            )
-        # PERF-10: 批量更新访问记录，将 N 次 DB 调用合并为 1 次批量 UPDATE
-        if ranked_memories:
-            await asyncio.to_thread(
-                self._batch_update_memory_access_sync,
-                [m.id for m in ranked_memories],
-            )
-        return ranked_memories
 
     async def auto_search_memories(
         self,
@@ -1721,46 +1515,10 @@ class MemoryManager:
         min_score: float = 0.6,
         user_id: Optional[str] = None,
     ) -> list[dict]:
-        """
-        自动搜索与当前对话相关的记忆（每次对话自动调用）。
-        返回经过分数筛选的相关记忆条目。
-
-        Args:
-            query: 搜索查询（通常是用户当前消息）
-            workspace_id: 工作区 ID
-            max_results: 最大返回数量
-            min_score: 最低相关性分数阈值
-            user_id: 用户 ID
-
-        Returns:
-            相关记忆列表，每项包含 content 和相关度分数
-        """
-        # 检索失败直接传播：调用方（manager_provider.prefetch 等）已有
-        # PrefetchStatus.FAILED 显式错误通道，不允许静默返回空
-        memories = await self.search_memories(
-            query=query,
-            limit=max_results * 2,  # 多取一些用于筛选
-            user_id=user_id,
-            workspace_id=workspace_id,
-            use_vector=True,
+        """自动搜索相关记忆（委托给读取器）。"""
+        return await self._reader.auto_search_memories(
+            query, workspace_id, max_results, min_score, user_id,
         )
-
-        # 筛选高相关度记忆（仅按 min_score 过滤，取前 max_results）
-        results = []
-        for m in memories:
-            if m.importance >= min_score:
-                results.append({
-                    "id": m.id,
-                    "content": m.content[:500],
-                    "importance": m.importance,
-                    "access_count": m.access_count,
-                    "created_at": str(m.created_at) if m.created_at else "",
-                    "type": m.type or "fact",
-                })
-
-        # 按重要度排序，取前 max_results
-        results.sort(key=lambda x: x["importance"], reverse=True)
-        return results[:max_results]
 
     def _delete_long_term_memory_sync(self, memory_id: int) -> bool:
         with self.session_factory() as db:
@@ -1775,10 +1533,8 @@ class MemoryManager:
         return False
 
     async def delete_long_term_memory(self, memory_id: int) -> bool:
-        result = await asyncio.to_thread(self._delete_long_term_memory_sync, memory_id)
-        if result:
-            logger.info(f"Deleted long-term memory {memory_id}")
-        return result
+        """删除长期记忆（委托给写入器）。"""
+        return await self._writer.delete_long_term_memory(memory_id)
 
     def _archive_long_term_memory_sync(
         self,
@@ -1843,26 +1599,8 @@ class MemoryManager:
             return True
 
     async def validate_long_term_memory(self, memory_id: int) -> bool:
-        """
-        用户确认单条长期记忆准确（Spec memory-experience-redesign）。
-
-        将状态晋升为 ``validated``（四状态机语义：用户确认后不再被定期归档
-        评估降级），confidence 提升至 0.9（与 state 模型注释一致），并同步
-        向量库元数据。对应 OpenBiliClaw 调研中的"准/不准"用户验证闭环。
-
-        Args:
-            memory_id: 长期记忆 ID。
-
-        Returns:
-            ``True`` 表示晋升成功，``False`` 表示记忆不存在。
-        """
-        result = await asyncio.to_thread(
-            self._validate_long_term_memory_sync,
-            memory_id,
-        )
-        if result:
-            logger.info(f"Validated long-term memory {memory_id}")
-        return result
+        """用户确认记忆准确（委托给写入器）。"""
+        return await self._writer.validate_long_term_memory(memory_id)
 
     def _validate_long_term_memory_sync(self, memory_id: int) -> bool:
         """同步晋升单条长期记忆为 validated 状态。"""
@@ -1896,25 +1634,8 @@ class MemoryManager:
         memory_id: int,
         archive_status: str = "deprecated",
     ) -> bool:
-        """归档单条长期记忆（标记为废弃而非删除，保留审计痕迹）。
-
-        Args:
-            memory_id: 长期记忆 ID。
-            archive_status: 目标归档状态，默认 ``deprecated``。
-
-        Returns:
-            ``True`` 表示归档成功，``False`` 表示记忆不存在。
-        """
-        result = await asyncio.to_thread(
-            self._archive_long_term_memory_sync,
-            memory_id,
-            archive_status,
-        )
-        if result:
-            logger.info(
-                f"Archived long-term memory {memory_id} (status={archive_status})"
-            )
-        return result
+        """归档单条长期记忆（委托给写入器）。"""
+        return await self._writer.archive_long_term_memory(memory_id, archive_status)
 
     def _archive_memories_sync(
         self,
@@ -1981,25 +1702,14 @@ class MemoryManager:
         include_low_quality: bool = True,
         workspace_id: str = "default",
     ) -> int:
-        archived_count = await asyncio.to_thread(
-            self._archive_memories_sync,
-            user_id,
-            older_than_days,
-            importance_threshold,
-            include_low_quality,
-            workspace_id,
+        """批量归档长期记忆（委托给写入器）。"""
+        return await self._writer.archive_memories(
+            user_id, older_than_days, importance_threshold, include_low_quality, workspace_id,
         )
-        logger.info(f"Archived {archived_count} long-term memories")
-        return archived_count
 
     async def evaluate_memory_quality(self, memory_id: int) -> Optional[Dict[str, Any]]:
-        def _do() -> Optional[Dict[str, Any]]:
-            with self.session_factory() as db:
-                memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
-                if memory is None:
-                    return None
-                return self._evaluate_memory_in_session(db, memory)
-        return await asyncio.to_thread(_do)
+        """评估记忆质量（委托给读取器）。"""
+        return await self._reader.evaluate_memory_quality(memory_id)
 
     async def get_quality_report(
         self,
@@ -2008,70 +1718,12 @@ class MemoryManager:
         limit: int = 20,
         workspace_id: str = "default",
     ) -> List[Dict[str, Any]]:
-        def _do() -> List[Dict[str, Any]]:
-            with self.session_factory() as db:
-                query = db.query(LongTermMemory)
-                if user_id is not None:
-                    query = query.filter(LongTermMemory.user_id == user_id)
-                query = query.filter(LongTermMemory.workspace_id == workspace_id)
-                if memory_id is not None:
-                    query = query.filter(LongTermMemory.id == memory_id)
-                memories = query.order_by(LongTermMemory.last_access.asc()).limit(limit).all()
-                # 批量评估时禁用单次 commit，循环结束后统一提交一次（原 N 次 commit → 1 次）
-                results = [self._evaluate_memory_in_session(db, m, commit=False) for m in memories]
-                db.commit()
-                return results
-        return await asyncio.to_thread(_do)
+        """获取记忆质量报告（委托给读取器）。"""
+        return await self._reader.get_quality_report(user_id, memory_id, limit, workspace_id)
 
     async def get_memory_stats(self, user_id: Optional[str] = None, workspace_id: str = "default") -> Dict[str, Any]:
-        def _collect_stats() -> Dict[str, Any]:
-            with self.session_factory() as db:
-                query = db.query(LongTermMemory)
-                if user_id is not None:
-                    query = query.filter(LongTermMemory.user_id == user_id)
-                query = query.filter(LongTermMemory.workspace_id == workspace_id)
-                # 使用 SQL 聚合查询替代全量加载 + Python 循环，避免大量数据导致 OOM。
-                # COUNT + CASE WHEN 计算 active/archived 数量，SUM/AVG 计算聚合值。
-                stats_row = (
-                    db.query(
-                        func.count(LongTermMemory.id).label("total"),
-                        func.sum(
-                            case((LongTermMemory.archive_status != "archived", 1), else_=0)
-                        ).label("active"),
-                        func.sum(
-                            case((LongTermMemory.archive_status == "archived", 1), else_=0)
-                        ).label("archived"),
-                        func.coalesce(func.sum(LongTermMemory.access_count), 0).label("total_access"),
-                        func.coalesce(func.avg(LongTermMemory.confidence), 0.0).label("avg_confidence"),
-                        func.coalesce(func.avg(LongTermMemory.quality_score), 0.0).label("avg_quality"),
-                    )
-                    .filter(LongTermMemory.workspace_id == workspace_id)
-                )
-                if user_id is not None:
-                    stats_row = stats_row.filter(LongTermMemory.user_id == user_id)
-                row = stats_row.first()
-                return {
-                    'total_memories': row.total,
-                    'active_memories': row.active or 0,
-                    'archived_memories': row.archived or 0,
-                    'average_confidence': round(row.avg_confidence or 0.0, 4),
-                    'average_quality_score': round(row.avg_quality or 0.0, 4),
-                    'total_access_count': row.total_access or 0,
-                }
-
-        stats = await asyncio.to_thread(_collect_stats)
-        stats.update(
-            {
-                'working_memory_count': self.working_memory.stats(user_id).get('count', 0),
-                'vector_store_count': await asyncio.to_thread(
-                    self.vector_store.count,
-                    user_id=user_id,
-                    include_archived=True,
-                ),
-                'embedding_provider': self.vector_store.provider_name,
-            }
-        )
-        return stats
+        """获取记忆统计信息（委托给读取器）。"""
+        return await self._reader.get_memory_stats(user_id, workspace_id)
 
     def _consolidate_memories_sync(self) -> int:
         """
@@ -2085,12 +1737,9 @@ class MemoryManager:
         )
 
     async def consolidate_memories(self) -> int:
-        return await asyncio.to_thread(self._consolidate_memories_sync)
+        """整理记忆（委托给写入器）。"""
+        return await self._writer.consolidate_memories()
 
     async def get_context_for_session(self, session_id: str, max_memories: int = 10) -> str:
-        short_term = await self.get_short_term_memories(session_id, limit=max_memories)
-        context_parts = []
-        for memory in reversed(short_term):
-            role_marker = "User" if memory.role == "user" else "Assistant"
-            context_parts.append(f"{role_marker}: {memory.content}")
-        return "\n".join(context_parts)
+        """获取会话上下文文本（委托给读取器）。"""
+        return await self._reader.get_context_for_session(session_id, max_memories)

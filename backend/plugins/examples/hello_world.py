@@ -9,27 +9,15 @@ from plugins.base_plugin import BasePlugin
 
 
 class HelloWorldPlugin(BasePlugin):
-    """
-    封装与HelloWorldPlugin相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     name: str = "hello_world"
     version: str = "1.0.0"
     description: str = "Hello World示例插件"
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         super().__init__(config)
         self.greeting = self.config.get('greeting', 'Hello')
 
     async def initialize(self) -> bool:
-        """
-        处理initialize相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         logger.info(f"Initializing {self.name} plugin v{self.version}")
         if not self.validate_config(self.config):
             logger.error("Plugin configuration validation failed")
@@ -38,10 +26,6 @@ class HelloWorldPlugin(BasePlugin):
         return True
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        """
-        处理execute相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         name = kwargs.get('name', 'World')
         logger.info(f"Executing say_hello for: {name}")
         return {
@@ -86,8 +70,4 @@ class HelloWorldPlugin(BasePlugin):
         return True
 
     def validate(self) -> bool:
-        """
-        处理validate相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return self.validate_config(self.config)

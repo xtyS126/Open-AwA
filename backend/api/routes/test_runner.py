@@ -388,7 +388,7 @@ def _run_auth_session_valid(db: Session, current_user: User) -> tuple:
 
 def _run_mcp_status() -> tuple:
     """验证MCP服务状态"""
-    from mcp.manager import MCPManager
+    from mcp_integration.manager import MCPManager
 
     manager = MCPManager()
     servers = manager.get_all_servers()

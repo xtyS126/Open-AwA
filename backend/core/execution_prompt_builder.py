@@ -441,7 +441,7 @@ class ExecutionPromptBuilder:
         context: Dict[str, Any],
         memory_manager: Any = None,
     ) -> list[Dict[str, Any]]:
-        """按稳定优先级拼装模型消息列表。"""
+        """按稳定优先级拼装模型消息列表，为 Anthropic 供应商启用 Prompt Cache。"""
         messages: list[Dict[str, Any]] = []
         self._append_system_message(
             messages,
@@ -474,12 +474,16 @@ class ExecutionPromptBuilder:
                 messages.append({"role": role, "content": content})
 
         multimodal_content = context.get("_multimodal_content")
+        user_content = multimodal_content if multimodal_content else prompt
         messages.append(
             {
                 "role": "user",
-                "content": multimodal_content if multimodal_content else prompt,
+                "content": user_content,
             }
         )
+
+        # 为 Anthropic 供应商启用 Prompt Cache：标记首个 system 块与最后 user 块
+        _apply_prompt_cache(messages, context)
         return messages
 
     @staticmethod
@@ -509,3 +513,52 @@ class ExecutionPromptBuilder:
         )
         if profile_block:
             messages.append({"role": "system", "content": profile_block})
+
+
+def _apply_prompt_cache(
+    messages: list[Dict[str, Any]],
+    context: Dict[str, Any],
+) -> None:
+    """
+    为 Anthropic 供应商的消息列表启用 Prompt Cache。
+
+    标记首个 system 消息块与最后一条 user 消息块为可缓存，
+    使后续请求复用相同前缀时获取缓存命中，降低延迟与成本。
+
+    仅在 Anthropic 供应商时生效；其他供应商的消息保持原样。
+    压缩后 context 中含 _reset_cache_baseline 标记时，在首个 system
+    消息前插入一条空 system 消息作为缓存断点，重置缓存基线。
+
+    Args:
+        messages: 已组装的消息列表（原地修改）
+        context: 请求上下文（含 provider 与 _reset_cache_baseline 标记）
+    """
+    provider = str(context.get("provider", "") or "").lower()
+    if provider != "anthropic":
+        return
+
+    cache_marker = {"type": "ephemeral"}
+
+    # 压缩后重置缓存基线：在首个 system 消息前插入空 system 断点
+    if context.get("_reset_cache_baseline"):
+        for i, msg in enumerate(messages):
+            if msg.get("role") == "system":
+                messages.insert(i, {"role": "system", "content": [{"type": "text", "text": "", "cache_control": cache_marker}]})
+                # 断点消息计入后，实际系统消息索引后移一位
+                break
+
+    # 标记首个 system 消息
+    for msg in messages:
+        if msg.get("role") == "system":
+            content = msg.get("content", "")
+            if isinstance(content, str) and content:
+                msg["content"] = [{"type": "text", "text": content, "cache_control": cache_marker}]
+            break
+
+    # 标记最后一条 user 消息
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "user":
+            content = messages[i].get("content", "")
+            if isinstance(content, str):
+                messages[i]["content"] = [{"type": "text", "text": content, "cache_control": cache_marker}]
+            break

@@ -12,8 +12,13 @@ from .abort_controller import AbortController
 from .rollback import RollbackManager
 from .role_engine import RoleEngine
 from .magic_commands import get_magic_command_registry
-from .compaction_manager import CompactionManager
+from .compaction_manager import get_session_manager
+from .conversation_sessions import (
+    deserialize_messages_with_interrupt_detection,
+    load_conversation_for_resume,
+)
 from .context.token_budget import TokenBudget
+from billing.token_counter import count_from_usage
 from core.agent_capability_builder import (
     summarize_skill_capabilities,
     summarize_plugin_capabilities,
@@ -56,13 +61,10 @@ class _StreamEarlyExit(Exception):
 
 
 class AIAgent:
-    """
-    封装与AIAgent相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
-    # 能力缓存 TTL：30 秒内复用 skills/plugins/mcp 查询结果
+    # 能力缓存 TTL：秒内复用 skills/plugins/mcp 查询结果
     # 过期后下一次 process_stream 重新构建，保证插件/MCP 状态变化最终可见
-    _CAPABILITIES_CACHE_TTL: float = 30.0
+    # 值由 config.thresholds.CAPABILITIES_CACHE_TTL 提供
+    _CAPABILITIES_CACHE_TTL: float = 30.0  # 保持类属性兼容，实际值由 agent_runtime 注入
 
     def __init__(
         self,
@@ -242,20 +244,32 @@ class AIAgent:
         context: Dict[str, Any],
         round_content: str,
         round_reasoning: str,
+        usage: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        估算并记录本轮 LLM 调用的 token 使用量到预算追踪器。
+        记录本轮 LLM 调用的 token 使用量到预算追踪器。
 
-        流式响应不直接返回 usage 信息，因此基于本轮输入和输出文本进行启发式估算：
-        - 输入 token：用户输入 + 对话历史
-        - 输出 token：本轮生成的内容 + 推理内容
+        优先使用流式响应透传的真实 usage 回填四维（input/output/cache_read/cache_write）；
+        usage 缺失时回退到基于文本的启发式估算。
 
         参数:
             user_input: 本轮有效的用户输入
             context: 执行上下文，可能包含 conversation_history
             round_content: 本轮 LLM 生成的回复内容
             round_reasoning: 本轮 LLM 生成的推理内容
+            usage: 流式响应携带的真实 usage（OpenAI/Anthropic 兼容格式）
         """
+        # 真实 usage 优先：直接回填四维，避免估算误差累积到预算判定
+        if isinstance(usage, dict) and usage:
+            breakdown = count_from_usage(usage)
+            self.budget_tracker.record_usage(
+                input_tokens=breakdown.input_tokens,
+                output_tokens=breakdown.output_tokens,
+                cache_read=breakdown.cache_read_tokens,
+                cache_write=breakdown.cache_write_tokens,
+            )
+            return
+
         token_budget = TokenBudget()
 
         # 估算输入 token：用户输入 + 对话历史
@@ -513,33 +527,91 @@ class AIAgent:
     async def _build_conversation_history(self, session_id: str, max_turns: int = 20) -> list:
         """
         从记忆管理器中构建对话历史消息列表，用于注入到 LLM 调用中。
-        返回 [{"role": "user"|"assistant", "content": "..."}] 格式。
+        返回 [{"role": "user"|"assistant"|"system", "content": "..."}] 格式。
         对单条消息内容做字符截断，防止超大消息撑爆上下文窗口。
+
+        真实恢复路径：JSONL 旁路日志存在时优先消费完整消息链（load_conversation_for_resume），
+        并合并短期记忆中的压缩摘要边界（system 消息置顶，避免重复压缩重复计费）；
+        随后统一应用 deserialize_messages_with_interrupt_detection 过滤与中断续接。
         """
         if not self.memory_manager:
             # 记忆管理器未注入属于构造配置错误，必须显式失败，
             # 禁止 LLM 在零历史下继续对话（与构建失败传播原则一致）
             raise RuntimeError("记忆管理器未注入，无法构建对话历史")
         try:
-            memories = await self.memory_manager.get_short_term_memories(
-                session_id=session_id, limit=max_turns
+            # 优先走 JSONL 旁路日志（完整消息链 + 父链），仅消费转录的 user/assistant
+            resumed_messages = load_conversation_for_resume(
+                session_id, transcript_only=True
             )
-            history = []
-            for mem in reversed(memories):
-                if mem.role in ("user", "assistant"):
-                    content = mem.content or ""
-                    original_len = len(content)
-                    if original_len > MAX_HISTORY_MESSAGE_CHARS:
-                        content = content[:MAX_HISTORY_MESSAGE_CHARS] + (
-                            f"\n[消息已截断，原始长度: {original_len} 字符]"
+            if resumed_messages:
+                history = []
+                for msg in resumed_messages:
+                    role = msg.get("role")
+                    if role not in ("user", "assistant"):
+                        continue
+                    content = msg.get("content") or ""
+                    if isinstance(content, list):
+                        content = json.dumps(content, ensure_ascii=False)
+                    history.append(
+                        {"role": role, "content": self._truncate_history_content(content)}
+                    )
+                # 合并压缩摘要边界：短期记忆中的 system 摘要消息置顶消费
+                history = await self._load_compaction_summaries(
+                    session_id, max_turns
+                ) + history
+            else:
+                memories = await self.memory_manager.get_short_term_memories(
+                    session_id=session_id, limit=max_turns
+                )
+                history = []
+                for mem in reversed(memories):
+                    if mem.role in ("user", "assistant", "system"):
+                        history.append(
+                            {
+                                "role": mem.role,
+                                "content": self._truncate_history_content(mem.content or ""),
+                            }
                         )
-                    history.append({"role": mem.role, "content": content})
+                # 压缩摘要等 system 消息置顶，避免打断 user/assistant 交替序列
+                history.sort(key=lambda m: 0 if m["role"] == "system" else 1)
+            # 中断续接 prompt 进入真实恢复路径
+            history, _ = deserialize_messages_with_interrupt_detection(
+                history, session_id
+            )
             return history
         except Exception as e:
             # 对话历史是 LLM 上下文的核心输入，构建失败必须传播，
             # 禁止 LLM 在零历史下继续对话
             logger.warning(f"构建对话历史失败: {e}")
             raise
+
+    @staticmethod
+    def _truncate_history_content(content: str) -> str:
+        """截断超长历史消息，防止超大消息撑爆上下文窗口。"""
+        if len(content) > MAX_HISTORY_MESSAGE_CHARS:
+            return content[:MAX_HISTORY_MESSAGE_CHARS] + (
+                f"\n[消息已截断，原始长度: {len(content)} 字符]"
+            )
+        return content
+
+    async def _load_compaction_summaries(self, session_id: str, max_turns: int) -> list:
+        """
+        从短期记忆加载压缩摘要边界（system 消息），用于 JSONL 优先路径的边界消费。
+
+        摘要由 CompactionManager 落库回调以 system 角色写入，这里按时间正序返回，
+        供调用方置顶注入 LLM 上下文。
+        """
+        summaries = []
+        memories = await self.memory_manager.get_short_term_memories(
+            session_id=session_id, limit=max_turns
+        )
+        for mem in reversed(memories):
+            if mem.role == "system":
+                content = mem.content or ""
+                summaries.append(
+                    {"role": "system", "content": self._truncate_history_content(content)}
+                )
+        return summaries
 
     async def _check_and_handle_magic_command(
         self, user_input: str, context: Dict[str, Any]
@@ -598,9 +670,11 @@ class AIAgent:
         """
         自动检测并压缩对话上下文。
         当 token 使用量超过阈值时触发压缩，返回压缩后的消息列表。
-        使用 CompactionManager 进行结构化摘要压缩，断路器保护避免反复失败。
+        使用会话级 CompactionManager 进行结构化摘要压缩，断路器保护避免反复失败，
+        压缩结果（摘要+边界）通过落库回调写回短期记忆，供后续轮次消费。
         """
         model_name = context.get("model", "default")
+        session_id = context.get("session_id", "default")
         budget = TokenBudget(model_name=model_name)
         current_tokens = budget.count_messages(messages)
         # 更新计数器后检查压缩阈值
@@ -612,8 +686,11 @@ class AIAgent:
         ):
             return messages
 
-        # 使用 CompactionManager 进行压缩，窗口大小取自 TokenBudget
-        compaction = CompactionManager(model_context_window=budget.max_tokens)
+        # 使用会话级 CompactionManager 复用实例，断路器失败计数跨调用点共享
+        compaction = get_session_manager(
+            session_id=session_id,
+            model_context_window=budget.max_tokens,
+        )
 
         # 设置 LLM 调用函数：复用 executor 的 LLM 配置解析与调用能力
         # 构建最小化上下文，仅包含配置解析所需字段，避免注入对话历史
@@ -640,6 +717,11 @@ class AIAgent:
             raise RuntimeError(f"压缩摘要 LLM 调用失败: {error_message}")
 
         compaction.set_llm_call(_compaction_llm_call)
+        compaction.set_persistence_hook(
+            lambda summary_session_id, summary_messages: self._persist_compaction_messages(
+                summary_session_id, summary_messages, context, session_id
+            )
+        )
 
         result = await compaction.compact(messages=messages)
         compressed_messages = result["messages"]
@@ -651,7 +733,8 @@ class AIAgent:
                 original_count=len(messages),
                 error=str(result.get("error")),
             ).error(f"上下文压缩失败，继续使用原始历史: {result.get('error')}")
-
+        if result.get("_reset_cache_baseline"):
+            context["_reset_cache_baseline"] = True  # 压缩后重置 Prompt Cache 基线
         logger.bind(
             event="auto_context_compressed",
             original_count=len(messages),
@@ -661,6 +744,30 @@ class AIAgent:
             compacted=result.get("compacted", False),
         ).info("对话上下文已自动压缩")
         return compressed_messages
+
+    async def _persist_compaction_messages(
+        self,
+        summary_session_id: Optional[str],
+        summary_messages: list,
+        context: Dict[str, Any],
+        fallback_session_id: str,
+    ) -> None:
+        """
+        将压缩摘要与边界写回短期记忆（CompactionManager 落库回调）。
+
+        摘要与边界以 system 角色持久化，后续轮次通过 _build_conversation_history
+        置顶消费，避免同一摘要每轮重复生成导致重复计费。
+        """
+        if not self.memory_manager:
+            logger.warning("记忆管理器未注入，压缩结果未落库（摘要将重复生成）")
+            return
+        for msg in summary_messages:
+            await self.memory_manager.add_short_term_memory(
+                session_id=summary_session_id or fallback_session_id,
+                role=msg["role"],
+                content=str(msg["content"]),
+                user_id=context.get("user_id"),
+            )
 
     async def _handle_magic_command_or_yield(
         self, user_input: str, context: Dict[str, Any]
@@ -735,6 +842,63 @@ class AIAgent:
         build_multimodal_context(user_input, context)
         build_thinking_context(context)
 
+    async def _prepare_agent_context(
+        self,
+        conv_id: str,
+        user_message: str,
+        user_id: int,
+        context: Dict[str, Any],
+        is_stream: bool = False,
+        prebuilt_history: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """准备 Agent 上下文：构建会话历史、压缩、构建有效输入、检索记忆与经验。
+
+        将 process 与 process_stream 共享的上下文准备逻辑提取为单一方法。
+        prebuilt_history 用于流式路径：由调用方先构建历史（以检查是否需要 yield 压缩事件），
+        再传入本方法跳过重复构建。
+
+        返回:
+            effective_user_input: 注入角色/能力/记忆后的有效用户输入
+            relevant_memories: 检索到的长期记忆列表
+            experiences: 检索到的经验列表（仅非流式路径）
+        """
+        if prebuilt_history is not None:
+            conversation_history = prebuilt_history
+        else:
+            conversation_history = await self._build_conversation_history(conv_id)
+
+        context["conversation_history"] = await self._auto_compress_context(
+            context, conversation_history
+        )
+
+        effective_user_input = build_effective_user_input(user_message, context)
+
+        # 检索长期记忆
+        relevant_memories: List[Dict[str, Any]] = []
+        if context.get("retrieve_long_term_memory", True) and self.memory_manager:
+            relevant_memories = await self._retrieve_relevant_memories(
+                user_input=effective_user_input,
+                context=context,
+            )
+            if relevant_memories:
+                context["vector_retrieved_memories"] = relevant_memories
+
+        # 检索经验（仅非流式路径）
+        experiences: List[Dict[str, Any]] = []
+        if not is_stream and context.get("retrieve_experiences", True):
+            experiences = await self._retrieve_relevant_experiences(
+                user_input=effective_user_input,
+                context=context,
+            )
+            if experiences:
+                context["relevant_experiences"] = experiences
+
+        return {
+            "effective_user_input": effective_user_input,
+            "relevant_memories": relevant_memories,
+            "experiences": experiences,
+        }
+
     async def _build_session_history(
         self,
         user_input: str,
@@ -744,35 +908,58 @@ class AIAgent:
         _ttft_t0: float,
         state: Dict[str, Any],
     ) -> AsyncGenerator[Any, None]:
-        """构建对话历史、自动压缩、检索长期记忆。
+        """构建对话历史、自动压缩、检索长期记忆（流式路径）。
 
         yield 压缩状态事件（若历史超过统一阈值）；通过 state["effective_user_input"]
         返回构建后的有效用户输入，供后续意图识别与工具循环使用。
+        核心逻辑委托给 _prepare_agent_context。
         """
         with ttft_stage_logger("build_history", _ttft_session_id, _ttft_t0):
             conversation_history = await self._build_conversation_history(session_id)
         # 与自动压缩共用阈值，避免进度事件和实际压缩条件漂移。
         if len(conversation_history) > COMPACTION_MESSAGE_THRESHOLD:
             yield build_status_event("compressing", "正在压缩对话上下文")
+
+        _memory_extra: Dict[str, Any] = {}
         with ttft_stage_logger("auto_compress", _ttft_session_id, _ttft_t0, min_elapsed_ms=50):
-            context["conversation_history"] = await self._auto_compress_context(
-                context, conversation_history
-            )
-        effective_user_input = build_effective_user_input(user_input, context)
-        # 自动检索相关长期记忆（stream 路径）
-        if context.get("retrieve_long_term_memory", True) and self.memory_manager:
-            _memory_extra: Dict[str, Any] = {}
-            # 记忆检索失败必须传播，禁止 LLM 在缺失记忆的情况下继续对话
             with ttft_stage_logger("retrieve_memories", _ttft_session_id, _ttft_t0, extra_fields=_memory_extra):
-                relevant_memories = await self._retrieve_relevant_memories(
-                    user_input=effective_user_input,
+                ctx_data = await self._prepare_agent_context(
+                    conv_id=session_id,
+                    user_message=user_input,
+                    user_id=context.get("user_id"),
                     context=context,
+                    is_stream=True,
+                    prebuilt_history=conversation_history,
                 )
-                _memory_extra["memory_count"] = len(relevant_memories) if relevant_memories else 0
-                if relevant_memories:
-                    context["vector_retrieved_memories"] = relevant_memories
-                    logger.info(f"Stream: 检索到 {len(relevant_memories)} 条相关长期记忆")
-        state["effective_user_input"] = effective_user_input
+                _memory_extra["memory_count"] = len(ctx_data["relevant_memories"]) if ctx_data["relevant_memories"] else 0
+                if ctx_data["relevant_memories"]:
+                    logger.info(f"Stream: 检索到 {len(ctx_data['relevant_memories'])} 条相关长期记忆")
+
+        state["effective_user_input"] = ctx_data["effective_user_input"]
+
+    async def _finalize_agent_response(
+        self,
+        conv_id: str,
+        user_id: int,
+        response_text: str,
+        context: Dict[str, Any],
+        reasoning_content: Optional[str] = None,
+        tool_events: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """收尾 Agent 响应：更新短期记忆。
+
+        将 process 与 process_stream 共享的响应收尾逻辑提取为单一方法。
+        非流式路径通过 _finalize_process_response 调用；流式路径通过
+        StreamOrchestrator.finalize 的回调调用。
+        """
+        if response_text:
+            await self.feedback.update_memory(
+                user_input=context.get("message", ""),
+                response=response_text,
+                context=context,
+                reasoning_content=reasoning_content,
+                tool_events=tool_events,
+            )
 
     async def process_stream(self, user_input: str, context: Dict[str, Any]):
         """流式处理输入，编排上下文、计划、工具回环与最终清理。"""
@@ -838,6 +1025,10 @@ class AIAgent:
             state["main_completed"] = True
         except _StreamEarlyExit:
             pass
+        except asyncio.CancelledError:
+            # 任务取消时产出显式终态事件，避免前端停留在无响应的加载态
+            yield {"type": "cancelled", "content": "", "reasoning_content": ""}
+            raise
         finally:
             # 7. 流结束清理：TaskCompleted 钩子 + update_memory + 数据收集 + abort 清理
             abort_controller = self.root_abort_controller
@@ -877,22 +1068,21 @@ class AIAgent:
             register_agent_task(task_user_id, session_id, current_task)
 
         try:
-            conversation_history = await self._build_conversation_history(session_id)
-            # 自动检测并压缩上下文
-            context["conversation_history"] = await self._auto_compress_context(
-                context, conversation_history
+            # 准备 Agent 上下文：会话历史、记忆检索、经验加载（委托给 _prepare_agent_context）
+            ctx_data = await self._prepare_agent_context(
+                conv_id=session_id,
+                user_message=user_input,
+                user_id=context.get("user_id"),
+                context=context,
+                is_stream=False,
             )
-            effective_user_input = build_effective_user_input(user_input, context)
 
             intent, entities, plan = await self._prepare_turn(
-                effective_user_input, user_input, context
-            )
-            experiences, relevant_memories = await self._retrieve_experiences_and_memories(
-                effective_user_input, context
+                ctx_data["effective_user_input"], user_input, context
             )
 
             workflow_result, workflow_early = await self._execute_workflow_if_present(
-                context, len(experiences)
+                context, len(ctx_data["experiences"])
             )
             if workflow_early is not None:
                 return workflow_early
@@ -904,7 +1094,8 @@ class AIAgent:
                 return plan_early
 
             return await self._finalize_process_response(
-                user_input, context, results, experiences, relevant_memories, workflow_result
+                user_input, context, results,
+                ctx_data["experiences"], ctx_data["relevant_memories"], workflow_result
             )
         except asyncio.CancelledError:
             logger.info(f"Agent task cancelled for session {session_id}")
@@ -1067,10 +1258,11 @@ class AIAgent:
                 "error": first_error
             }, context)
 
-        await self.feedback.update_memory(
-            user_input=user_input,
-            response=final_response,
-            context=context
+        await self._finalize_agent_response(
+            conv_id=context.get("session_id", "default"),
+            user_id=str(context.get("user_id", "")),
+            response_text=final_response,
+            context=context,
         )
 
         if context.get('extract_experience', False):

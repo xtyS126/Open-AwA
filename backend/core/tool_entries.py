@@ -71,7 +71,11 @@ _TOOL_CONCURRENCY_ATTRS: Dict[str, Dict[str, Any]] = {
     "delete_file": {"is_destructive": True, "is_concurrency_safe": False},
     "create_directory": {"is_destructive": True, "is_concurrency_safe": False},
     # 命令执行：输入驱动判定，仅只读命令并发安全
-    "run_command": {"is_concurrency_safe": is_command_read_only},
+    # is_read_only 同为输入驱动（is_command_read_only），修复只读命令永远串行的问题
+    "run_command": {
+        "is_concurrency_safe": is_command_read_only,
+        "is_read_only": is_command_read_only,
+    },
     # 只读网络操作：无副作用，可安全并发
     "web_search": {"is_read_only": True, "is_concurrency_safe": True},
     "fetch_url": {"is_read_only": True, "is_concurrency_safe": True},

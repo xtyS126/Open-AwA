@@ -147,30 +147,45 @@ def matches_mcp_server(pattern: str, tool_name: str) -> bool:
     return False
 
 
+# effect 优先级：deny(3) > allow(2) > ask(1)，deny 命中即拒绝
+_EFFECT_PRIORITY: Dict[PermissionEffect, int] = {
+    PermissionEffect.DENY: 3,
+    PermissionEffect.ALLOW: 2,
+    PermissionEffect.ASK: 1,
+}
+
+
 def evaluate_permission(
     action: str,
     resource: str,
     *rulesets: List[PermissionRule],
 ) -> PermissionRule:
     """
-    评估权限：按顺序查找最后一条匹配的规则。
+    评估权限：按 effect 优先级（deny > allow > ask）裁决，deny 命中即拒绝。
 
-    优先级（后匹配覆盖前匹配）：
+    优先级：
     1. 遍历所有规则集合（代理规则 → 全局规则 → 已保存规则）
-    2. 找到最后一条同时匹配 action 和 resource 的规则
-    3. 若无匹配规则，返回默认 ASK
+    2. 收集所有同时匹配 action 和 resource 的规则
+    3. 按 effect 优先级取最高者；同 effect 下最后一条匹配生效
+    4. 若无匹配规则，返回默认 ASK
 
-    这遵循 OpenCode 的 "last match wins" 策略，
-    使得更具体的规则（通常添加在后面）可以覆盖更一般的规则。
+    修复说明：原先使用 last-match-wins，导致后置的用户 allow（已保存的
+    "always allow" 规则）可以覆盖前置的代理 deny；现改为 effect 优先级，
+    deny 命中即拒绝，防止用户通过 "always allow" 绕过代理级安全限制。
     """
     matched_rule: Optional[PermissionRule] = None
+    matched_priority = 0
     all_rules: List[PermissionRule] = []
     for ruleset in rulesets:
         all_rules.extend(ruleset)
 
     for rule in all_rules:
         if wildcard_match(rule.action, action) and wildcard_match(rule.resource, resource):
-            matched_rule = rule
+            priority = _EFFECT_PRIORITY[rule.effect]
+            # 高优先级覆盖低优先级；同优先级下后匹配生效（保持同级 last-match-wins）
+            if priority >= matched_priority:
+                matched_rule = rule
+                matched_priority = priority
 
     if matched_rule is None:
         return PermissionRule(action=action, resource=resource, effect=PermissionEffect.ASK)
@@ -309,15 +324,27 @@ class PermissionManager:
         - general-purpose（通用代理）：需要用户确认写操作
         """
         if agent_id == "plan" or agent_id == "Explore":
-            # 只读代理：catch-all deny 在前，具体 allow 规则在后覆盖（last-match-wins）
+            # 只读代理：只读白名单 allow，写操作显式 deny。
+            # 采用 effect 优先级（deny > allow > ask），deny 不可被后置 allow 覆盖，
+            # 因此不能使用"catch-all deny + 具体 allow"（那会让只读也被拒绝），
+            # 而是显式列出写操作 deny 保护边界。
             return [
-                PermissionRule(action="*", resource="*", effect=PermissionEffect.DENY),
                 PermissionRule(action="read", resource="*", effect=PermissionEffect.ALLOW),
                 PermissionRule(action="glob", resource="*", effect=PermissionEffect.ALLOW),
                 PermissionRule(action="grep", resource="*", effect=PermissionEffect.ALLOW),
                 PermissionRule(action="web_search", resource="*", effect=PermissionEffect.ALLOW),
                 PermissionRule(action="web_fetch", resource="*", effect=PermissionEffect.ALLOW),
                 PermissionRule(action="skill", resource="*", effect=PermissionEffect.ALLOW),
+                # 显式拒绝写操作，防止被后置用户 allow（always）覆盖
+                PermissionRule(action="write", resource="*", effect=PermissionEffect.DENY),
+                PermissionRule(action="edit", resource="*", effect=PermissionEffect.DENY),
+                PermissionRule(action="delete", resource="*", effect=PermissionEffect.DENY),
+                PermissionRule(action="bash", resource="*", effect=PermissionEffect.DENY),
+                PermissionRule(action="execute", resource="*", effect=PermissionEffect.DENY),
+                PermissionRule(action="plugin", resource="*", effect=PermissionEffect.DENY),
+                PermissionRule(action="system", resource="*", effect=PermissionEffect.DENY),
+                PermissionRule(action="user", resource="*", effect=PermissionEffect.DENY),
+                PermissionRule(action="network", resource="*", effect=PermissionEffect.DENY),
             ]
         elif agent_id == "build":
             # 全权限代理：允许所有操作
@@ -325,13 +352,18 @@ class PermissionManager:
                 PermissionRule(action="*", resource="*", effect=PermissionEffect.ALLOW),
             ]
         elif agent_id == "general-purpose":
-            # 通用代理：基调是 ALLOW，但对写操作覆写为 ASK 要求用户确认
-            # 使用 last-match-wins：宽规则在前，具体覆写在后面
+            # 通用代理：只读操作自动放行，其余操作默认 ASK 要求用户确认。
+            # 使用 effect 优先级：只读白名单 allow 在前，ASK(*) 兜底在后，
+            # 未被白名单覆盖的写操作（write/edit/bash 等）命中 ASK 需要确认。
             return [
-                PermissionRule(action="*", resource="*", effect=PermissionEffect.ALLOW),
-                PermissionRule(action="edit", resource="*", effect=PermissionEffect.ASK),
-                PermissionRule(action="write", resource="*", effect=PermissionEffect.ASK),
-                PermissionRule(action="bash", resource="*", effect=PermissionEffect.ASK),
+                PermissionRule(action="read", resource="*", effect=PermissionEffect.ALLOW),
+                PermissionRule(action="glob", resource="*", effect=PermissionEffect.ALLOW),
+                PermissionRule(action="grep", resource="*", effect=PermissionEffect.ALLOW),
+                PermissionRule(action="web_search", resource="*", effect=PermissionEffect.ALLOW),
+                PermissionRule(action="web_fetch", resource="*", effect=PermissionEffect.ALLOW),
+                PermissionRule(action="skill", resource="*", effect=PermissionEffect.ALLOW),
+                # 其余操作默认 ASK（写文件、执行命令等需要用户确认）
+                PermissionRule(action="*", resource="*", effect=PermissionEffect.ASK),
             ]
         else:
             # 未知代理类型，回退到空规则（全部 ASK）

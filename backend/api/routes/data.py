@@ -2,6 +2,7 @@
 交互数据查询和导出 API 路由。
 """
 
+import asyncio
 import csv
 import io
 import json
@@ -26,12 +27,16 @@ from db.models import (
 router = APIRouter(prefix="/data", tags=["data"])
 
 
-@router.get("/stats")
-async def get_stats(
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_admin_user),
-) -> Dict[str, Any]:
-    """数据统计概览。"""
+def _get_stats_sync(db: Session) -> Dict[str, Any]:
+    """
+    同步执行数据统计概览查询。
+
+    通过 asyncio.to_thread 在工作线程中调用，避免阻塞 FastAPI 事件循环。
+    包含 6 次串行 DB 聚合查询：4 次 COUNT + 1 次 AVG + 1 次 GROUP BY。
+
+    注意：SQLAlchemy 同步 Session 不是线程安全的，因此 6 次查询必须串行执行，
+    不能使用 asyncio.gather 并发查询同一 Session。
+    """
     conversation_count = db.query(func.count(ConversationData.id)).scalar() or 0
     tool_call_count = db.query(func.count(ToolCallData.id)).scalar() or 0
     trace_count = db.query(func.count(ExecutionTrace.id)).scalar() or 0
@@ -63,6 +68,19 @@ async def get_stats(
             for r in role_usage
         ],
     }
+
+
+@router.get("/stats")
+async def get_stats(
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_admin_user),
+) -> Dict[str, Any]:
+    """数据统计概览。
+
+    DB 查询通过 asyncio.to_thread 在工作线程中执行，
+    避免同步 SQLAlchemy 调用阻塞 FastAPI 事件循环。
+    """
+    return await asyncio.to_thread(_get_stats_sync, db)
 
 
 @router.get("/conversations")

@@ -99,10 +99,6 @@ def load_binding(db, user_id: str) -> Optional["WeixinRuntimeConfig"]:
 
 
 class WeixinAdapterError(Exception):
-    """
-    封装与WeixinAdapterError相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def __init__(
         self,
         code: str,
@@ -110,10 +106,6 @@ class WeixinAdapterError(Exception):
         details: Optional[Dict[str, Any]] = None,
         suggestions: Optional[List[str]] = None
     ):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         super().__init__(message)
         self.code = code
         self.message = message
@@ -122,8 +114,7 @@ class WeixinAdapterError(Exception):
 
     def to_dict(self) -> Dict[str, Any]:
         """
-        处理to、dict相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        将错误信息序列化为字典，包含错误码、消息、详情和建议。
         """
         return {
             "code": self.code,
@@ -136,8 +127,7 @@ class WeixinAdapterError(Exception):
 @dataclass
 class WeixinRuntimeConfig:
     """
-    封装与WeixinRuntimeConfig相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    微信适配器运行时配置，包含账号ID、令牌、基础URL和加密密钥。
     """
     account_id: str
     token: str
@@ -151,23 +141,17 @@ class WeixinRuntimeConfig:
 
 class WeixinSkillAdapter:
     """
-    封装与WeixinSkillAdapter相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    微信技能适配器，将微信相关技能（公众号、小程序）路由到微信API执行。
     """
     def __init__(self, project_root: Optional[str] = None):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化微信适配器，解析项目根目录和微信配置。
         """
         resolved_root = project_root or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         self.project_root = resolved_root
         self.state_root = os.path.join(resolved_root, ".openawa", "weixin")
 
     def is_weixin_skill(self, skill_config: Dict[str, Any]) -> bool:
-        """
-        处理is、weixin、skill相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         adapter = str(skill_config.get("adapter", "")).strip().lower()
         skill_type = str(skill_config.get("type", "")).strip().lower()
         runtime_adapter = str(skill_config.get("runtime", {}).get("adapter", "")).strip().lower()
@@ -175,10 +159,6 @@ class WeixinSkillAdapter:
         return "weixin" in candidates or "openclaw-weixin" in candidates
 
     def map_skill_config(self, skill_config: Dict[str, Any]) -> WeixinRuntimeConfig:
-        """
-        处理map、skill、config相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         section = skill_config.get("weixin")
         if not isinstance(section, dict):
             section = {}
@@ -254,10 +234,6 @@ class WeixinSkillAdapter:
         inputs: Dict[str, Any],
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        处理execute相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         started = time.time()
         runtime = self.map_skill_config(skill_config)
         action = str(inputs.get("action") or inputs.get("operation") or "health_check").strip().lower()
@@ -768,10 +744,6 @@ class WeixinSkillAdapter:
         return await self._get_updates(config, payload, persist_cursor=persist_cursor)
 
     async def _send_message(self, config: WeixinRuntimeConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理send、message相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         to_user_id = str(
             payload.get("to_user_id")
             or payload.get("toUserId")
@@ -830,10 +802,6 @@ class WeixinSkillAdapter:
         payload: Dict[str, Any],
         persist_cursor: bool = True
     ) -> Dict[str, Any]:
-        """
-        处理get、updates相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         incoming_buf = str(
             payload.get("get_updates_buf")
             or payload.get("getUpdatesBuf")
@@ -881,10 +849,6 @@ class WeixinSkillAdapter:
         bot_type: str = DEFAULT_BOT_TYPE,
         timeout_seconds: int = 15
     ) -> Dict[str, Any]:
-        """
-        处理fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return await self._api_get(
             base_url=DEFAULT_QR_BASE_URL,
             endpoint="ilink/bot/get_bot_qrcode",
@@ -898,10 +862,6 @@ class WeixinSkillAdapter:
         qrcode: str,
         timeout_seconds: int = 35
     ) -> Dict[str, Any]:
-        """
-        处理fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         poll_base_url = str(base_url or DEFAULT_QR_BASE_URL).strip().rstrip("/") or DEFAULT_QR_BASE_URL
         return await self._api_get(
             base_url=poll_base_url,
@@ -918,10 +878,6 @@ class WeixinSkillAdapter:
         body: Dict[str, Any],
         timeout_seconds: Optional[int] = None
     ) -> Dict[str, Any]:
-        """
-        处理api、post相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         payload = dict(body)
         payload["base_info"] = {"channel_version": config.channel_version}
         url = f"{config.base_url}/{endpoint.lstrip('/')}"
@@ -991,10 +947,6 @@ class WeixinSkillAdapter:
         timeout_seconds: int = 15,
         extra_headers: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
-        """
-        处理api、get相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         normalized_base_url = str(base_url or DEFAULT_BASE_URL).strip().rstrip("/")
         url = f"{normalized_base_url}/{endpoint.lstrip('/')}"
         headers: Dict[str, str] = {}
@@ -1058,10 +1010,6 @@ class WeixinSkillAdapter:
         runtime: WeixinRuntimeConfig,
         data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        处理success、result相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return {
             "success": True,
             "adapter": "weixin",
@@ -1089,10 +1037,6 @@ class WeixinSkillAdapter:
         runtime: WeixinRuntimeConfig,
         error: WeixinAdapterError
     ) -> Dict[str, Any]:
-        """
-        处理error、result相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return {
             "success": False,
             "adapter": "weixin",
@@ -1114,10 +1058,6 @@ class WeixinSkillAdapter:
         }
 
     def _normalize_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理normalize、payload相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         payload = inputs.get("payload")
         if not isinstance(payload, dict):
             payload = {}
@@ -1129,10 +1069,6 @@ class WeixinSkillAdapter:
         return merged
 
     def _validate_runtime_fields(self, config: WeixinRuntimeConfig, required: List[str]) -> List[str]:
-        """
-        处理validate、runtime、fields相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         missing: List[str] = []
         for field in required:
             value = getattr(config, field, "")
@@ -1141,10 +1077,6 @@ class WeixinSkillAdapter:
         return missing
 
     def _accounts_state_dir(self) -> str:
-        """
-        处理accounts、state、dir相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         path = os.path.join(self.state_root, "accounts")
         os.makedirs(path, exist_ok=True)
         return path
@@ -1152,7 +1084,6 @@ class WeixinSkillAdapter:
     def _sync_buf_file_path(self, account_id: str) -> str:
         """
         处理sync、buf、file、path相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         safe_account_id = self._sanitize_account_id(account_id)
         return os.path.join(self._accounts_state_dir(), f"{safe_account_id}.sync.json")
@@ -1160,7 +1091,6 @@ class WeixinSkillAdapter:
     def _context_tokens_file_path(self, account_id: str) -> str:
         """
         处理context、tokens、file、path相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         safe_account_id = self._sanitize_account_id(account_id)
         return os.path.join(self._accounts_state_dir(), f"{safe_account_id}.context-tokens.json")
@@ -1220,7 +1150,6 @@ class WeixinSkillAdapter:
     def _load_get_updates_buf(self, account_id: str) -> str:
         """
         处理load、get、updates、buf相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         data = self._read_json_file(self._sync_buf_file_path(account_id))
         value = data.get("get_updates_buf")
@@ -1229,41 +1158,24 @@ class WeixinSkillAdapter:
     async def _save_get_updates_buf(self, account_id: str, get_updates_buf: str) -> None:
         """
         处理save、get、updates、buf相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         await self._write_json_file(self._sync_buf_file_path(account_id), {"get_updates_buf": get_updates_buf})
 
     def _get_context_token(self, account_id: str, user_id: str) -> str:
-        """
-        处理get、context、token相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         data = self._read_json_file(self._context_tokens_file_path(account_id))
         value = data.get(user_id)
         return str(value).strip() if isinstance(value, str) else ""
 
     async def _set_context_token(self, account_id: str, user_id: str, token: str) -> None:
-        """
-        处理set、context、token相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         file_path = self._context_tokens_file_path(account_id)
         data = self._read_json_file(file_path)
         data[user_id] = token
         await self._write_json_file(file_path, data)
 
     def _pause_session(self, account_id: str) -> None:
-        """
-        处理pause、session相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         _SESSION_PAUSE_UNTIL[account_id] = time.time() + SESSION_PAUSE_DURATION_SECONDS
 
     def _is_session_paused(self, account_id: str) -> bool:
-        """
-        处理is、session、paused相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if not account_id:
             return False
         until = _SESSION_PAUSE_UNTIL.get(account_id)
@@ -1275,19 +1187,11 @@ class WeixinSkillAdapter:
         return True
 
     def _remaining_pause_seconds(self, account_id: str) -> int:
-        """
-        处理remaining、pause、seconds相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if not self._is_session_paused(account_id):
             return 0
         return max(0, int(_SESSION_PAUSE_UNTIL.get(account_id, 0) - time.time()))
 
     def _assert_session_active(self, account_id: str) -> None:
-        """
-        处理assert、session、active相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         if not self._is_session_paused(account_id):
             return
         remaining_seconds = self._remaining_pause_seconds(account_id)
@@ -1300,10 +1204,6 @@ class WeixinSkillAdapter:
 
     @staticmethod
     def _normalize_binding_status(binding_status: Optional[str], user_id: str = "") -> str:
-        """
-        处理normalize、binding、status相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         normalized = str(binding_status or "").strip().lower()
         if normalized in {"bound", "confirmed", "linked", "success", "succeeded"}:
             return "bound"
@@ -1314,27 +1214,15 @@ class WeixinSkillAdapter:
         return "unbound"
 
     def _is_binding_ready(self, config: WeixinRuntimeConfig) -> bool:
-        """
-        处理is、binding、ready相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return self._normalize_binding_status(config.binding_status, config.user_id) == "bound"
 
     @staticmethod
     def _sanitize_account_id(account_id: str) -> str:
-        """
-        处理sanitize、account、id相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         safe = str(account_id or "default").strip() or "default"
         return safe.replace("/", "-").replace("\\", "-").replace(":", "-").replace("@", "-")
 
     @staticmethod
     def _read_json_file(file_path: str) -> Dict[str, Any]:
-        """
-        处理read、json、file相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         file_lock = _get_state_file_lock(file_path)
         with file_lock:
             try:
@@ -1351,10 +1239,8 @@ class WeixinSkillAdapter:
     @staticmethod
     async def _write_json_file(file_path: str, data: Dict[str, Any]) -> None:
         """
-        处理write、json、file相关逻辑，并为调用方返回对应结果。
         使用 asyncio.sleep 替代 time.sleep，避免在异步调用链中阻塞事件循环。
         每次写尝试前获取锁，完成后释放，避免在 sleep 期间持有 threading 锁阻塞事件循环。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         payload = json.dumps(data, ensure_ascii=False)
@@ -1412,10 +1298,6 @@ class WeixinSkillAdapter:
 
     @staticmethod
     def _pick_value(primary: Dict[str, Any], fallback: Dict[str, Any], *keys: str) -> Any:
-        """
-        处理pick、value相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         for key in keys:
             if key in primary and primary[key] is not None:
                 return primary[key]
@@ -1428,7 +1310,6 @@ class WeixinSkillAdapter:
     def _build_random_wechat_uin() -> str:
         """
         处理build、random、wechat、uin相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         raw = str(int.from_bytes(os.urandom(4), byteorder="big", signed=False))
         return base64.b64encode(raw.encode("utf-8")).decode("utf-8")

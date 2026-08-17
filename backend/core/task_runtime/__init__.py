@@ -6,18 +6,6 @@
 from .facade import TaskRuntimeFacade, task_runtime
 from .registry import AgentDefinitionRegistry, agent_registry
 from .permission_guard import PermissionGuard, PermissionDecision, permission_guard
-from .hook_dispatcher import (
-    HookDispatcher,
-    HookResult,
-    hook_dispatcher,
-    HOOK_PRE_TOOL_USE,
-    HOOK_POST_TOOL_USE,
-    HOOK_TASK_COMPLETED,
-    HOOK_SUBAGENT_START,
-    HOOK_SUBAGENT_STOP,
-    HOOK_TASK_CREATED,
-    HOOK_STOP,
-)
 from .worktree_manager import WorktreeManager, WorktreeInfo, worktree_manager
 from .team_manager import (
     create_team,
@@ -41,16 +29,6 @@ __all__ = [
     "PermissionGuard",
     "PermissionDecision",
     "permission_guard",
-    "HookDispatcher",
-    "HookResult",
-    "hook_dispatcher",
-    "HOOK_PRE_TOOL_USE",
-    "HOOK_POST_TOOL_USE",
-    "HOOK_TASK_COMPLETED",
-    "HOOK_SUBAGENT_START",
-    "HOOK_SUBAGENT_STOP",
-    "HOOK_TASK_CREATED",
-    "HOOK_STOP",
     "WorktreeManager",
     "WorktreeInfo",
     "worktree_manager",

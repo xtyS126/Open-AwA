@@ -102,10 +102,6 @@ def build_default_database_url() -> str:
 
 
 class Settings(BaseSettings):
-    """
-    封装与Settings相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     model_config = SettingsConfigDict(
         env_file=_SETTINGS_ENV_FILES or None,
         case_sensitive=True,
@@ -325,6 +321,13 @@ class Settings(BaseSettings):
     MODELS_DEV_URL: str = "https://models.dev/api.json"
     # openrouter 上游 API 地址
     OPENROUTER_MODELS_URL: str = "https://openrouter.ai/api/v1/models"
+
+    # 技能市场源列表（JSON 数组字符串，留空时不拉取任何远程源，避免命中不存在的默认域名导致 500）
+    # 环境变量配置格式示例：
+    #   SKILL_MARKET_SOURCES='[{"url":"https://example.com/api/skills","name":"example"}]'
+    # 每个源对象字段：url（必填）、name（可选，缺省取 url）
+    # 拉取失败的单源会记录到 source_errors 返回给调用方，不会中断其他源
+    SKILL_MARKET_SOURCES: list = []
 
     def is_ssl_enabled(self) -> bool:
         """

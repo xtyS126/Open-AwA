@@ -282,10 +282,6 @@ def _persist_plugin_config(
 
 
 def _ensure_plugin_discovered(plugin_name: str) -> None:
-    """
-    处理ensure、plugin、discovered相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     if plugin_name in _get_plugin_manager().plugin_metadata:
         return
     _get_plugin_manager().discover_plugins()
@@ -862,10 +858,6 @@ async def execute_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    处理execute、plugin相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -1025,10 +1017,6 @@ async def upload_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_admin_user)
 ) -> Dict[str, Any]:
-    """
-    处理upload、plugin相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     if not file.filename or not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="Only .zip files are supported")
     if file.content_type and file.content_type not in ["application/zip", "application/x-zip-compressed"]:
@@ -1252,10 +1240,6 @@ def hot_update_plugin(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_admin_user),
 ):
-    """
-    处理hot、update、plugin相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -1305,10 +1289,6 @@ def rollback_plugin(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_admin_user),
 ):
-    """
-    处理rollback、plugin相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
