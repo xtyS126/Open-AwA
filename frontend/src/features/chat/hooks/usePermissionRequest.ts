@@ -75,7 +75,6 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
   const [connected, setConnected] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const reconnectAttemptRef = useRef(0)
-  const eventSourceRef = useRef<EventSource | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 处理权限请求事件
@@ -128,19 +127,19 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
 
     let cancelled = false
     let connectTimer: ReturnType<typeof setTimeout> | null = null
-    // AbortController 用于 cleanup 时中断 ticket 请求，避免组件卸载后 EventSource
-    // 仍被创建导致 net::ERR_ABORTED 噪音日志（P1 修复）
+    // AbortController 用于 cleanup 时中断 ticket 请求，避免组件卸载后 fetch SSE
+    // 连接仍被建立导致 net::ERR_ABORTED 噪音日志（P1 修复）
     let ticketAbortController: AbortController | null = null
 
     const connect = async () => {
       if (cancelled) return
 
       const baseUrl = `${API_BASE_URL}/security/permissions/stream`
-      let eventSource: EventSource
+      let sseUrl: string
 
       if (hasCookie) {
         // 优先使用 Cookie 认证，URL 不携带任何凭据
-        eventSource = new EventSource(baseUrl, { withCredentials: true })
+        sseUrl = baseUrl
       } else if (apiKey) {
         // 无 Cookie 时通过一次性 ticket 建立 SSE 连接（SEC-16 修复）
         // ticket 一次性使用、60 秒过期，避免 API Key 泄露到 access log / Referer / 浏览器历史
@@ -149,7 +148,7 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
         try {
           const ticket = await securityAPI.requestSseTicket(ticketAbortController.signal)
           if (cancelled) return
-          eventSource = new EventSource(`${baseUrl}?ticket=${encodeURIComponent(ticket)}`)
+          sseUrl = `${baseUrl}?ticket=${encodeURIComponent(ticket)}`
         } catch (err) {
           // AbortError 是 cleanup 触发的预期行为，不记录警告
           if (cancelled || (err instanceof DOMException && err.name === 'AbortError')) {
@@ -179,15 +178,35 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
         return
       }
 
-      if (cancelled) {
-        eventSource.close()
-        return
-      }
+      // 使用 fetch 替代 EventSource，以便检测 HTTP 401 状态码
+      // 浏览器 EventSource API 的 onerror 无法获取 HTTP 状态码，401 时仍会使用同一过期 ticket 重试
+      try {
+        const response = await fetch(sseUrl, {
+          headers: hasCookie ? {} : undefined,
+          credentials: hasCookie ? 'include' : 'omit',
+          signal: ticketAbortController?.signal,
+        })
 
-      eventSourceRef.current = eventSource
-
-      eventSource.onopen = () => {
         if (cancelled) return
+
+        // 401 认证失败：立即停止，清除过期 ticket，不再重试
+        if (response.status === 401) {
+          clearSseTicketCache()
+          setConnected(false)
+          setConnectionError('权限通知认证失败，请刷新页面重新登录')
+          reconnectAttemptRef.current = MAX_RECONNECT_ATTEMPTS // 阻止后续重试
+          appLogger.warning({
+            event: 'permission_sse_401',
+            module: 'usePermissionRequest',
+            message: 'SSE 连接返回 401，ticket 可能已过期，停止重连',
+          })
+          return
+        }
+
+        if (!response.ok || !response.body) {
+          throw new Error(`SSE fetch failed: ${response.status}`)
+        }
+
         setConnected(true)
         setConnectionError(null)
         reconnectAttemptRef.current = 0
@@ -196,28 +215,64 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
           module: 'usePermissionRequest',
           message: '权限请求 SSE 连接已建立',
         })
-      }
 
-      eventSource.addEventListener('permission_request', (event: MessageEvent) => {
-        if (cancelled) return
-        try {
-          const data = JSON.parse(event.data) as PermissionRequestEvent
-          handlePermissionRequest(data)
-        } catch (err) {
-          appLogger.warning({
-            event: 'permission_sse_parse_error',
-            module: 'usePermissionRequest',
-            message: '解析权限请求事件失败',
-            extra: { error: err instanceof Error ? err.message : String(err) },
-          })
+        // 读取 SSE 流
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        const readLoop = async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done || cancelled) break
+              buffer += decoder.decode(value, { stream: true })
+
+              // 按行分割 SSE 事件
+              const lines = buffer.split('\n')
+              buffer = lines.pop() || '' // 保留不完整的行
+
+              for (const line of lines) {
+                if (line.startsWith('event: permission_request')) {
+                  continue
+                }
+                if (line.startsWith('data: ')) {
+                  try {
+                    const data = JSON.parse(line.slice(6)) as PermissionRequestEvent
+                    handlePermissionRequest(data)
+                  } catch (err) {
+                    appLogger.warning({
+                      event: 'permission_sse_parse_error',
+                      module: 'usePermissionRequest',
+                      message: '解析权限请求事件失败',
+                      extra: { error: err instanceof Error ? err.message : String(err) },
+                    })
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            if (cancelled) return
+            appLogger.warning({
+              event: 'permission_sse_read_error',
+              module: 'usePermissionRequest',
+              message: 'SSE 流读取错误',
+              extra: { error: err instanceof Error ? err.message : String(err) },
+            })
+          }
         }
-      })
 
-      eventSource.onerror = () => {
+        void readLoop()
+      } catch (err) {
         if (cancelled) return
         setConnected(false)
-        eventSource.close()
-        eventSourceRef.current = null
+
+        appLogger.warning({
+          event: 'permission_sse_fetch_failed',
+          module: 'usePermissionRequest',
+          message: 'SSE fetch 连接失败',
+          extra: { error: err instanceof Error ? err.message : String(err) },
+        })
 
         // 最大重连次数限制：超过后停止重连，避免频繁重连占用网络资源
         if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
@@ -266,7 +321,7 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
         clearTimeout(connectTimer)
         connectTimer = null
       }
-      // 中断正在进行的 ticket 请求，避免组件卸载后 EventSource 仍被创建
+      // 中断正在进行的 ticket 请求，避免组件卸载后 fetch SSE 连接仍被创建
       if (ticketAbortController) {
         ticketAbortController.abort()
         ticketAbortController = null
@@ -274,10 +329,6 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
       if (reconnectTimerRef.current !== null) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
-      }
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-        eventSourceRef.current = null
       }
       setConnected(false)
       setPendingRequests([])

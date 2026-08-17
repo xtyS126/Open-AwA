@@ -5,14 +5,15 @@ import IssueFeedbackPanel from '@/shared/components/IssueFeedbackPanel/IssueFeed
 import { useIssueFeedbackStore } from '@/shared/store/issueFeedbackStore'
 
 // mock issueFeedbackAPI，避免真实网络请求
-vi.mock('@/shared/api/api', () => ({
+// （IssueFeedbackPanel 已改为直接从 issueFeedbackApi 导入，不再经由 api.ts barrel）
+vi.mock('@/shared/api/issueFeedbackApi', () => ({
   issueFeedbackAPI: {
     submit: vi.fn(),
   },
 }))
 
 // 动态导入 mock 后的模块以获取 mock 函数引用
-import { issueFeedbackAPI } from '@/shared/api/api'
+import { issueFeedbackAPI } from '@/shared/api/issueFeedbackApi'
 
 describe('IssueFeedbackPanel', () => {
   beforeEach(() => {

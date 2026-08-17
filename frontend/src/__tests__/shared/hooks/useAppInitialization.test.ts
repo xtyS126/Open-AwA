@@ -112,7 +112,7 @@ describe('useAppInitialization - 模型选项预加载', () => {
     expect(apiMocks.getMe).not.toHaveBeenCalled()
   })
 
-  it('认证成功后调用 preloadModelOptions', async () => {
+  it('认证成功后延迟调用 preloadModelOptions（不阻塞首屏）', async () => {
     // 模拟缓存了 API Key
     clientMocks.getCachedApiKey.mockReturnValue('cached-api-key')
     // 模拟 /auth/me 返回成功
@@ -120,20 +120,24 @@ describe('useAppInitialization - 模型选项预加载', () => {
       data: { username: 'admin', nickname: '管理员' },
     })
 
-    const { result } = renderHookWithQueryClient(() => useAppInitialization())
+    // preload 改为延迟动态导入执行（避免挤占首秒关键路径），用假定时器推进
+    vi.useFakeTimers()
+    try {
+      renderHookWithQueryClient(() => useAppInitialization())
 
-    // 等待异步初始化完成
-    await waitFor(() => {
+      // 推进异步初始化（微任务）与延迟定时器（1500ms）
+      await vi.advanceTimersByTimeAsync(2000)
+
+      // 初始化状态应立即发布（不被 preload 阻塞）
       expect(useAuthStore.getState().isInitialized).toBe(true)
-    })
-
-    // 认证成功后应调用 preloadModelOptions
-    expect(preloadMocks.preloadModelOptions).toHaveBeenCalledTimes(1)
-
-    // 应设置认证状态
-    expect(result.current).toBeUndefined() // hook 返回值无意义，仅用于触发 effect
-    expect(useAuthStore.getState().isAuthenticated).toBe(true)
-    expect(useAuthStore.getState().user?.username).toBe('admin')
+      // 延迟后应调用 preloadModelOptions
+      expect(preloadMocks.preloadModelOptions).toHaveBeenCalledTimes(1)
+      // 应设置认证状态
+      expect(useAuthStore.getState().isAuthenticated).toBe(true)
+      expect(useAuthStore.getState().user?.username).toBe('admin')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('恢复缓存认证时等待 CSRF 初始化完成后再发布已认证状态', async () => {
@@ -158,24 +162,24 @@ describe('useAppInitialization - 模型选项预加载', () => {
     apiMocks.getMe.mockResolvedValue({
       data: { username: 'admin' },
     })
-    // 模拟 preloadModelOptions reject 的极端情况（源码内部已 try/catch，
-    // 但若因意外原因抛错，useAppInitialization 的外层 catch 会兜底，
-    // 仍应设置 isInitialized=true 让应用进入可用状态，不卡死在初始化中）
+    // 模拟 preloadModelOptions reject：preload 已改为延迟异步执行且与初始化流程解耦，
+    // 其失败不应影响认证状态与初始化完成标志
     preloadMocks.preloadModelOptions.mockRejectedValueOnce(new Error('network error'))
 
-    renderHookWithQueryClient(() => useAppInitialization())
+    vi.useFakeTimers()
+    try {
+      renderHookWithQueryClient(() => useAppInitialization())
 
-    // 即使 preloadModelOptions 抛错，初始化流程仍应完成（不卡死）
-    await waitFor(() => {
+      // 推进异步初始化（微任务）与延迟定时器（1500ms）
+      await vi.advanceTimersByTimeAsync(2000)
+
+      // isInitialized=true 表示应用初始化流程完成，未被 preloadModelOptions 阻塞
       expect(useAuthStore.getState().isInitialized).toBe(true)
-    }, { timeout: 2000 })
-
-    // isInitialized=true 表示应用初始化流程完成，未被 preloadModelOptions 阻塞
-    expect(useAuthStore.getState().isInitialized).toBe(true)
-    // preloadModelOptions 内部失败会暴露到 modelStore.modelError（不静默）；
-    // 若其意外抛错，外层 catch 保证初始化不卡死：isAuthenticated 为 false，
-    // 用户会看到登录页，可以重新登录（错误在初始化日志中可见）
-    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+      // preload 失败与认证流程解耦：认证状态保持，不会被登出
+      expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('无缓存 apiKey 时不调用 preloadModelOptions', async () => {

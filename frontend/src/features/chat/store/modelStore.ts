@@ -15,6 +15,7 @@
 import { create } from 'zustand'
 import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 import { markSync } from '@/features/chat/store/chatSyncRegistry'
+import { registerLogoutHandler } from '@/shared/store/authStore'
 import type { PreferenceMutationOptions } from '@/features/chat/store/chatStoreEffects'
 
 /** 模型配置项，用于全局模型选择 */
@@ -99,3 +100,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
     set({ selectedModel: '', modelOptions: [], modelLoading: false, modelError: null })
   },
 }))
+
+// 登出清理注册：authStore 不再静态导入本 store（避免首屏加载整条 chat 模块链），
+// 改由本模块加载时注册登出重置逻辑。
+registerLogoutHandler(() => useModelStore.getState().resetForLogout())

@@ -1,5 +1,5 @@
-import api from '@/shared/api/api'
-import { API_BASE_URL } from '@/shared/api/client'
+// 直接从 client 导入 axios 实例，避免经由 api.ts barrel 把全部业务 API 模块拉入首屏关键路径
+import { api, API_BASE_URL } from '@/shared/api/client'
 
 /** 后端 update-check 返回的更新元数据 */
 export interface UpdateInfo {

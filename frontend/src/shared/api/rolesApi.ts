@@ -1,7 +1,8 @@
 /**
  * 角色 API 封装 — 提供角色 CRUD、预设模板获取、角色激活等接口。
  */
-import api from '@/shared/api/api'
+// 直接从 client 导入 axios 实例，避免经由 api.ts barrel 把全部业务 API 模块拉入页面关键路径
+import { api } from '@/shared/api/client'
 import type {
   AgentRole,
   RoleCreateRequest,

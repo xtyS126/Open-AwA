@@ -3,6 +3,7 @@
  */
 // [Fix] 消费方使用 shallow equalityFn，改用 createWithEqualityFn 消除 zustand 弃用警告
 import { createWithEqualityFn } from 'zustand/traditional';
+import { registerLogoutHandler } from '@/shared/store/authStore';
 
 export interface InboxMessage {
   id: string;
@@ -66,3 +67,7 @@ export const useInboxStore = createWithEqualityFn<InboxStore>((set, get) => ({
   },
   resetForLogout: () => set({ messages: [], unreadCount: 0, streamStatus: 'disconnected' }),
 }));
+
+// 登出清理注册：authStore 不再静态导入本 store（避免首屏加载 inbox 模块链），
+// 改由本模块加载时注册登出重置逻辑。
+registerLogoutHandler(() => useInboxStore.getState().resetForLogout());

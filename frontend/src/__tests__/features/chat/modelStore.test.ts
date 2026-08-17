@@ -15,9 +15,13 @@ const preferenceStoreMocks = vi.hoisted(() => ({
 }))
 
 // 屏蔽 safeStorage，避免测试触碰真实 localStorage
+// 注意：modelStore 现经 registerLogoutHandler 传递依赖 authStore -> client，
+// client 模块级代码会调用 safeSessionGetItem，mock 必须补齐全部导出
 vi.mock('@/shared/utils/safeStorage', () => ({
   safeGetItem: safeStorageMocks.safeGetItem,
   safeSetItem: safeStorageMocks.safeSetItem,
+  safeSessionGetItem: vi.fn((_key: string, defaultValue: string = '') => defaultValue),
+  safeSessionSetItem: vi.fn(),
 }))
 
 // 屏蔽 chatStoreEffects，避免触发 localStorage 写入与服务端同步

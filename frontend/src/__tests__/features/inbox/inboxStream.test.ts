@@ -5,6 +5,9 @@ let useInboxStore: typeof import('@/features/inbox/store/inboxStore').useInboxSt
 vi.mock('@/shared/api/client', () => ({
   API_BASE_URL: '/api',
   getCachedApiKey: () => 'test-token',
+  // authStore 依赖 client 的这两个导出（登出清理注册链引入），mock 需补齐
+  setUnauthorizedHandler: vi.fn(),
+  clearCachedApiKey: vi.fn(),
 }))
 
 vi.mock('@/shared/utils/logger', () => ({

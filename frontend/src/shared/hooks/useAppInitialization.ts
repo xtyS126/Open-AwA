@@ -11,7 +11,6 @@ import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { useModelStore } from '@/features/chat/store/modelStore'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
-import { preloadModelOptions } from '@/features/chat/utils/preloadModelOptions'
 import { resetAppInitializationCache } from './appInitializationCache'
 
 /**
@@ -250,12 +249,20 @@ export function useAppInitialization() {
 
         // 模型选项预加载：复用 GeneralTabContainer.loadGlobalModelOptions 的核心逻辑，
         // 确保首次登录用户进入 /chat 时 selectedModel 已就位，避免发送消息时报错。
-        // preloadModelOptions 内部已 try/catch 不抛出，await 不会阻塞登录流程。
-        // await 确保进入 ChatPage 前 modelOptions 已就绪，避免 ChatPage 渲染时 selectedModel 为空。
-        await preloadModelOptions()
-        if (!isActive) return
-
+        // 性能优化（HAR 抓包证实）：此前在 setInitialized 之前 await 预加载，
+        // 导致 modelsApi/billingApi 模块与 3 个 billing XHR 挤占首秒关键路径。
+        // 现改为先发布初始化状态（首屏立即渲染），再延迟动态导入并执行预加载；
+        // 老用户的 selectedModel 已由 rehydrateStores 从 localStorage 回填，
+        // 预加载仅用于校准与补齐首次登录用户的默认模型。
         setInitialized(true)
+        window.setTimeout(() => {
+          if (!isActive) return
+          void import('@/features/chat/utils/preloadModelOptions')
+            .then(({ preloadModelOptions }) => preloadModelOptions())
+            .catch(() => {
+              // preloadModelOptions 内部已 try/catch，此处仅兜底动态导入失败
+            })
+        }, 1500)
       } catch (error) {
         if (!isActive) return
         appLogger.warning({

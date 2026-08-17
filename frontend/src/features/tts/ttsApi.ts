@@ -2,8 +2,8 @@
  * 豆包 TTS API 封装。
  * 提供语音合成、声音复刻、音色库等功能的前端 API 调用。
  */
-import api from '@/shared/api/api'
-import { getCachedApiKey } from '@/shared/api/client'
+// 直接从 client 导入 axios 实例，避免经由 api.ts barrel 把全部业务 API 模块拉入页面关键路径
+import { api, getCachedApiKey } from '@/shared/api/client'
 
 export interface TTSRequest {
   text: string

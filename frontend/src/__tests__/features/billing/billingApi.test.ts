@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { billingAPI, syncModelCatalog } from '@/features/billing/billingApi'
 
-// mock api 模块，避免发起真实 HTTP 请求
+// mock client 模块，避免发起真实 HTTP 请求
+// （billingApi 已改为直接从 client 导入 axios 实例，不再经由 api.ts barrel）
 const apiMocks = vi.hoisted(() => ({
   post: vi.fn(),
   get: vi.fn(),
@@ -9,8 +10,8 @@ const apiMocks = vi.hoisted(() => ({
   delete: vi.fn(),
 }))
 
-vi.mock('@/shared/api/api', () => ({
-  default: apiMocks,
+vi.mock('@/shared/api/client', () => ({
+  api: apiMocks,
 }))
 
 describe('billingApi', () => {

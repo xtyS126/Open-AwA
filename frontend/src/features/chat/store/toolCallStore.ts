@@ -4,6 +4,7 @@
  * 负责 activeToolCalls 状态管理，追踪当前进行中的工具调用 ID 列表。
  */
 import { create } from 'zustand'
+import { registerLogoutHandler } from '@/shared/store/authStore'
 
 interface ToolCallState {
   /** 当前进行中的工具调用 ID 列表 */
@@ -33,3 +34,7 @@ export const useToolCallStore = create<ToolCallState>((set) => ({
 
   resetActiveToolCalls: () => set({ activeToolCalls: [] }),
 }))
+
+// 登出清理注册：authStore 不再静态导入本 store（避免首屏加载整条 chat 模块链），
+// 改由本模块加载时注册登出重置逻辑。
+registerLogoutHandler(() => useToolCallStore.getState().resetActiveToolCalls())

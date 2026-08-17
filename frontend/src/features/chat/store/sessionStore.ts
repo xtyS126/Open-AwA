@@ -11,12 +11,16 @@ import { safeGetItem } from '@/shared/utils/safeStorage'
 import { getThinkingEnabled } from '@/features/chat/store/chatSyncRegistry'
 import {
   getActiveSessionId,
+  setActiveSessionId,
   getConversationSummaries,
+  setConversationSummaries,
   loadMessages,
   saveMessages,
   removeMessages,
   isChatPersistenceAvailable,
 } from '@/features/chat/storage/chatPersistence'
+import { persistPinnedConversations } from '@/features/chat/store/chatStoreEffects'
+import { registerLogoutHandler } from '@/shared/store/authStore'
 import type { ChatMessage, ConversationSessionSummary } from '@/features/chat/types'
 
 interface SessionState {
@@ -405,3 +409,7 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
     }))
   },
 }))
+
+// 登出清理注册：authStore 不再静态导入本 store（避免首屏加载整条 chat 模块链），
+// 改由本模块加载时注册登出重置逻辑。
+registerLogoutHandler(() => useSessionStore.getState().resetForLogout())

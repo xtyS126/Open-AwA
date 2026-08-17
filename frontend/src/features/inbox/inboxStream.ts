@@ -22,6 +22,7 @@
 import { API_BASE_URL, getCachedApiKey } from '@/shared/api/client'
 import { appLogger } from '@/shared/utils/logger'
 import { asRecord } from '@/shared/types/api'
+import { registerLogoutHandler } from '@/shared/store/authStore'
 import { useInboxStore, type InboxMessage } from './store/inboxStore'
 
 /** 消息回调类型 */
@@ -389,6 +390,9 @@ function connectInternal(): void {
   setStreamStatus('connecting', true)
   const url = deriveWebSocketUrl()
 
+  // 连接超时检测：10 秒内未建立连接则关闭并重试
+  let connectTimeout: ReturnType<typeof setTimeout> | null = null
+
   try {
     // 鉴权策略：
     // - 有 token：通过 Sec-WebSocket-Protocol 子协议传递（避免 URL 暴露）
@@ -397,7 +401,24 @@ function connectInternal(): void {
     const socket = new WebSocket(url, subprotocols)
     ws = socket
 
+    // 连接超时检测：10 秒内未建立连接则关闭并重试
+    connectTimeout = setTimeout(() => {
+      if (ws && ws.readyState !== WebSocket.OPEN) {
+        appLogger.warning({
+          event: 'inbox_stream_connect_timeout',
+          module: 'inbox',
+          message: 'inbox 流连接超时（10 秒未建立），关闭并重试',
+        })
+        ws.close()
+        // ws = null 和 scheduleReconnect 在 onclose 中处理
+      }
+    }, 10000)
+
     socket.onopen = () => {
+      if (connectTimeout !== null) {
+        clearTimeout(connectTimeout)
+        connectTimeout = null
+      }
       reconnectAttempts = 0
       setStreamStatus('connected', true)
       appLogger.info({
@@ -417,14 +438,22 @@ function connectInternal(): void {
 
     socket.onerror = () => {
       lastConnectFailAt = Date.now()
+      // 清理 ws 引用，允许后续重连（连接建立前失败时 onclose 可能不触发）
+      ws = null
       appLogger.warning({
         event: 'inbox_stream_error',
         module: 'inbox',
         message: 'inbox 流连接异常',
       })
+      // 触发重连流程（连接建立前失败时 onclose 可能不会触发）
+      scheduleReconnect()
     }
 
     socket.onclose = (event) => {
+      if (connectTimeout !== null) {
+        clearTimeout(connectTimeout)
+        connectTimeout = null
+      }
       ws = null
       lastConnectFailAt = Date.now()
       if (manualClose) return
@@ -443,6 +472,10 @@ function connectInternal(): void {
       scheduleReconnect()
     }
   } catch (err) {
+    if (connectTimeout !== null) {
+      clearTimeout(connectTimeout)
+      connectTimeout = null
+    }
     appLogger.error({
       event: 'inbox_stream_connect_failed',
       module: 'inbox',
@@ -513,6 +546,10 @@ export function resetInboxStreamForLogout(): void {
   ensureCoordination()
   resetInboxStream(true)
 }
+
+// 登出清理注册：authStore 不再静态导入本模块（避免首屏加载 inbox WebSocket 模块链），
+// 改由本模块加载时注册登出重置逻辑。仅当本模块已被加载（用户访问过 inbox/定时任务页）时生效。
+registerLogoutHandler(() => resetInboxStreamForLogout())
 
 /**
  * 订阅 inbox 实时消息。

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() }))
-vi.mock('@/shared/api/api', () => ({ default: apiMocks }))
+// modelsApi 已改为直接从 client 导入 axios 实例，不再经由 api.ts barrel
+vi.mock('@/shared/api/client', () => ({ api: apiMocks }))
 
 import { modelsAPI } from '@/features/settings/modelsApi'
 

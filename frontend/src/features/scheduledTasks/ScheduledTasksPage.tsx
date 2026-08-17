@@ -2,7 +2,7 @@
  * 定时任务管理页面组件。
  * 支持AI智能任务和插件命令任务两种类型，提供可视化的任务调度管理。
  */
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Clock,
   RefreshCw,
@@ -139,7 +139,14 @@ export default function ScheduledTasksPage() {
 
   /* --- 数据加载 --- */
 
+  // 防止并发重复请求：marker ref 确保同一时刻只有一个 loadData 在执行
+  const loadingRef = useRef(false)
+
   const loadData = useCallback(async () => {
+    // 防止重复请求：如果正在加载中则跳过
+    if (loadingRef.current) return
+    loadingRef.current = true
+
     setLoading(true)
     setLoadError(null)
     try {
@@ -163,6 +170,7 @@ export default function ScheduledTasksPage() {
       setLoadError(getErrorMessage(error, '加载定时任务数据失败，请稍后重试'))
     } finally {
       setLoading(false)
+      loadingRef.current = false
     }
   }, [])
 
@@ -182,15 +190,28 @@ export default function ScheduledTasksPage() {
     }
   }, [])
 
+  // 防抖定时器：避免多个 task_result 通知快速到达时触发多次 loadData
+  const loadDataDebouncedRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     const unsubscribe = subscribeInboxMessages((msg) => {
       if (msg.category !== 'task_result') return
       const toastType = msg.title.startsWith('任务失败') ? 'error' : 'success'
       addToast(`${msg.title}：${msg.content}`, toastType)
-      // 任务完成后自动刷新列表，反映最新状态与执行历史
-      void loadData()
+      // 防抖：500ms 内多次通知只触发一次 loadData，避免重复请求
+      if (loadDataDebouncedRef.current) {
+        clearTimeout(loadDataDebouncedRef.current)
+      }
+      loadDataDebouncedRef.current = setTimeout(() => {
+        void loadData()
+      }, 500)
     })
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      if (loadDataDebouncedRef.current) {
+        clearTimeout(loadDataDebouncedRef.current)
+      }
+    }
   }, [addToast, loadData])
 
   /* --- 表单重置 --- */

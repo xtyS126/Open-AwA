@@ -23,12 +23,17 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-    <!-- 字体加载优化：preconnect 提前建立 TLS 连接，preload 优先获取样式，print+onload 实现异步加载避免阻塞首屏 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'" />
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" /></noscript>
+    <!-- 字体声明：使用本地 Inter 字体（若已安装）+ 系统字体栈回退，零外部 CDN 依赖，零加载延迟 -->
+    <style>
+      @font-face {
+        font-family: 'Inter';
+        src: local('Inter'),
+             local('Inter Variable'),
+             local('Inter-Variable');
+        font-weight: 100 900;
+        font-display: swap;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

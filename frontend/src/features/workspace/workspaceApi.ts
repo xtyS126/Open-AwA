@@ -2,7 +2,8 @@
  * 工作区 API 调用模块。
  * 类型与 backend/api/routes/workspace.py 中的响应结构保持一致。
  */
-import api from '@/shared/api/api';
+// 直接从 client 导入 axios 实例，避免经由 api.ts barrel 把全部业务 API 模块拉入页面关键路径
+import { api } from '@/shared/api/client';
 
 /** 工作区列表项：与 backend list_workspaces 返回字段一致。 */
 export interface WorkspaceItem {

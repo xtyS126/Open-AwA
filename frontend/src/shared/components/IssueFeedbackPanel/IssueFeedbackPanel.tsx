@@ -9,7 +9,7 @@ import { X } from 'lucide-react'
 import { useIssueFeedbackStore } from '@/shared/store/issueFeedbackStore'
 import { useI18nStore } from '@/i18n'
 import { useToast } from '@/shared/components/Toast'
-import { issueFeedbackAPI } from '@/shared/api/api'
+import { issueFeedbackAPI } from '@/shared/api/issueFeedbackApi'
 import type { IssueFeedbackType } from '@/shared/api/types'
 import styles from './IssueFeedbackPanel.module.css'
 
