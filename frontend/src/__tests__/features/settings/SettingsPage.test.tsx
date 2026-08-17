@@ -1,10 +1,12 @@
 import '@testing-library/jest-dom/vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SettingsPage from '@/features/settings/SettingsPage'
 import { useModelStore } from '@/features/chat/store/modelStore'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 import { useSharedSettingsStore } from '@/features/settings/hooks/useSharedSettingsStore'
+import { queryClient as globalQueryClient } from '@/shared/api/queryClient'
 import { renderWithRouter } from '@/shared/routing/testing'
 
 const modelApiMocks = vi.hoisted(() => ({
@@ -75,12 +77,36 @@ vi.mock('@/features/settings/modelsApi', () => ({
 }))
 
 describe('SettingsPage', () => {
-  const renderSettingsApiTab = () => renderWithRouter(<SettingsPage />, {
+  /** 创建测试用 QueryClient：关闭重试与 staleTime，确保每次 mount 都重新发起查询 */
+  function createTestQueryClient() {
+    return new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: 0,
+          gcTime: 0,
+        },
+      },
+    })
+  }
+
+  /** 包裹 QueryClientProvider 的渲染辅助函数 */
+  function renderSettingsPage(options: { initialEntry: string; routePath: string }) {
+    const testQueryClient = createTestQueryClient()
+    return renderWithRouter(
+      <QueryClientProvider client={testQueryClient}>
+        <SettingsPage />
+      </QueryClientProvider>,
+      options,
+    )
+  }
+
+  const renderSettingsApiTab = () => renderSettingsPage({
     initialEntry: '/settings/models',
     routePath: '/settings/models',
   })
 
-  const renderSettingsGeneralTab = () => renderWithRouter(<SettingsPage />, {
+  const renderSettingsGeneralTab = () => renderSettingsPage({
     initialEntry: '/settings/general',
     routePath: '/settings/general',
   })
@@ -99,6 +125,8 @@ describe('SettingsPage', () => {
     })
     // 重置设置页共享 store，避免前一个用例填充的 lastLoadedAt 缓存导致后续用例跳过 getConfigurations
     useSharedSettingsStore.getState().reset()
+    // 清除全局 React Query 缓存（useSharedSettingsStore.loadModelsData 通过全局 queryClient.fetchQuery 复用缓存）
+    globalQueryClient.clear()
 
     modelApiMocks.getConfigurations.mockResolvedValue({
       data: {
@@ -517,9 +545,15 @@ describe('SettingsPage', () => {
   })
 
   it('离开设置页时不再用通用设置规范路径覆盖目标路由', async () => {
-    const { router } = renderWithRouter(<SettingsPage />, {
-      initialEntry: '/settings/general',
-    })
+    const testQueryClient = createTestQueryClient()
+    const { router } = renderWithRouter(
+      <QueryClientProvider client={testQueryClient}>
+        <SettingsPage />
+      </QueryClientProvider>,
+      {
+        initialEntry: '/settings/general',
+      },
+    )
 
     await screen.findByRole('heading', { name: '设置' })
     await act(async () => {

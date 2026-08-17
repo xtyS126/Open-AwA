@@ -16,14 +16,18 @@ PTY 持久化终端会话单元测试。
 from __future__ import annotations
 
 import asyncio
+import inspect
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import api.routes.terminal as terminal_route
-from api.dependencies import get_current_user
+import core.terminal.pty_session as pty_session_module
+from api.dependencies import get_current_user, get_db
 from api.routes.terminal import (
     MAX_PTY_SESSIONS,
     PTYTerminalSession,
@@ -31,7 +35,11 @@ from api.routes.terminal import (
     _is_command_safe,
     _pty_sessions,
 )
-from main import app
+from core.terminal.pty_session import PTYSession as CorePTYSession
+
+
+app = FastAPI()
+app.include_router(terminal_route.router, prefix="/api")
 
 
 class TestTerminalSessionTimeoutCleanup:
@@ -93,6 +101,7 @@ class FakePTY:
         cols: int = 80,
         rows: int = 24,
         on_output: Optional[Any] = None,
+        output_filter: Optional[Any] = None,
         **kwargs: Any,
     ) -> None:
         self.command: List[str] = list(command)
@@ -100,6 +109,7 @@ class FakePTY:
         self.cols: int = cols
         self.rows: int = rows
         self._on_output = on_output
+        self._output_filter = output_filter
         self._closed: bool = False
         self._started: bool = False
         # 复用 pyte.HistoryScreen + pyte.Stream 模拟 PTY 输出解析
@@ -145,6 +155,8 @@ class FakePTY:
 
     def feed_output(self, data: str) -> None:
         """测试辅助：模拟 PTY 子进程输出数据。"""
+        if self._output_filter is not None:
+            data = self._output_filter(data)
         self._stream.feed(data)
         if self._on_output is not None:
             self._on_output(data)
@@ -167,6 +179,23 @@ def _override_pty(monkeypatch):
 def _override_auth(monkeypatch):
     """覆盖认证、WebSocket 用户加载与 Origin 校验，避免访问真实数据库。"""
     fake_user = SimpleNamespace(id="user-1", username="tester", role="user")
+
+    class FakeProjectService:
+        def __init__(self, db, path_policy):
+            self.db = db
+            self.path_policy = path_policy
+
+        def resolve_project_root(self, *, user_id, user_role, project_id):
+            return Path(".")
+
+    class FakeRegistry:
+        async def acquire(self, **kwargs):
+            result = kwargs["verify_project"]()
+            if inspect.isawaitable(result):
+                await result
+
+        async def release(self, **kwargs):
+            return None
 
     class FakeQuery:
         def filter(self, *args, **kwargs):
@@ -200,14 +229,18 @@ def _override_auth(monkeypatch):
     # 测试环境跳过 Origin 校验（Origin 检查由独立的 Origin 校验测试覆盖）
     # 终端路由已改为从 api.security.ws_auth 导入 validate_ws_origin，patch 模块内的引用即可生效
     monkeypatch.setattr(terminal_route, "validate_ws_origin", lambda origin: True)
+    monkeypatch.setattr(terminal_route, "WorkbenchProjectService", FakeProjectService)
 
     # 覆盖 HTTP 依赖（WebSocket 用自己的鉴权）
     def _override_user():
         return fake_user
 
     app.dependency_overrides[get_current_user] = _override_user
+    app.dependency_overrides[get_db] = lambda: object()
+    app.dependency_overrides[terminal_route.get_terminal_workbench_path_policy] = lambda: object()
+    app.dependency_overrides[terminal_route.get_terminal_runtime_registry] = FakeRegistry
     yield
-    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.clear()
 
 
 # ----------------------------------------------------------------------
@@ -233,6 +266,49 @@ class TestPTYTerminalSessionInstantiation:
         assert session.pty.cols == 80
         assert session.pty.rows == 24
 
+    @pytest.mark.asyncio
+    async def test_core_pty_filters_output_before_vt_screen(self, monkeypatch) -> None:
+        """底层 PTY 必须在 VT 解析前过滤输出，不能只净化回调消息。"""
+        project_root = str(Path(".").resolve())
+        callback_output: list[str] = []
+        chunks = iter([f"{project_root}\r\n".encode("utf-8"), b""])
+        session = CorePTYSession(
+            command=["fake-shell"],
+            cwd=project_root,
+            cols=120,
+            rows=4,
+            on_output=callback_output.append,
+            output_filter=lambda text: text.replace(project_root, "."),
+        )
+
+        async def _fake_read_once(_loop) -> bytes:
+            return next(chunks)
+
+        monkeypatch.setattr(session, "_read_once", _fake_read_once)
+        await session._reader_loop()
+
+        snapshot_text = "\n".join("".join(row) for row in session.get_snapshot())
+        assert project_root not in snapshot_text
+        assert all(project_root not in item for item in callback_output)
+
+    @pytest.mark.parametrize(
+        ("is_windows", "expected_pid"),
+        [(False, 4100), (True, 4200)],
+    )
+    def test_core_pty_returns_platform_root_process_pid(
+        self,
+        monkeypatch,
+        is_windows: bool,
+        expected_pid: int,
+    ) -> None:
+        """POSIX asyncio process 与 Windows pywinpty 都应暴露真实根 PID。"""
+        session = CorePTYSession(command=["fake-shell"], cwd=".")
+        session.process = SimpleNamespace(pid=4100)
+        session._winpty_proc = SimpleNamespace(pid=4200)
+        monkeypatch.setattr(pty_session_module, "_is_windows", is_windows)
+
+        assert session.get_root_pid() == expected_pid
+
     def test_instantiate_with_custom_command(self) -> None:
         """指定 command 时使用自定义命令。"""
         session = PTYTerminalSession(
@@ -245,6 +321,32 @@ class TestPTYTerminalSessionInstantiation:
         assert session.command == ["/bin/zsh"]
         assert session.pty.cols == 120
         assert session.pty.rows == 40
+
+    def test_pty_output_redactor_handles_bound_root_split_across_chunks(self) -> None:
+        """绑定根跨两个 PTY 读取块时也不能在屏幕或广播中重组。"""
+        project_root = str(Path(".").resolve())
+        split_at = max(1, len(project_root) // 2)
+        session = PTYTerminalSession(
+            session_id="split-root-output",
+            cwd=project_root,
+            command=["fake-shell"],
+            cols=120,
+            rows=4,
+        )
+        subscriber = session.subscribe()
+
+        session.pty.feed_output(project_root[:split_at])
+        session.pty.feed_output(project_root[split_at:])
+
+        snapshot_text = "\n".join(
+            "".join(row) for row in session.get_snapshot()["grid"]
+        )
+        broadcast_text = "".join(
+            subscriber.get_nowait()["data"]
+            for _ in range(subscriber.qsize())
+        )
+        assert project_root not in snapshot_text
+        assert project_root not in broadcast_text
 
     def test_subscribe_returns_queue(self) -> None:
         """subscribe 应返回 asyncio.Queue。"""
@@ -278,13 +380,15 @@ class TestPTYWebSocketProtocol:
             cols=80,
             rows=24,
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         _pty_sessions["ws-test-1"] = session
 
         with TestClient(app) as client:
             with client.websocket_connect(
-                "/api/terminal/ws/pty/ws-test-1?token=fake-token"
+                "/api/terminal/ws/pty/ws-test-1",
+                subprotocols=["bearer.fake-token"],
             ) as websocket:
                 # 第一条消息：shell_info
                 shell_info = websocket.receive_json()
@@ -310,13 +414,15 @@ class TestPTYWebSocketProtocol:
             cwd=".",
             command=["/bin/bash"],
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         _pty_sessions["ws-test-2"] = session
 
         with TestClient(app) as client:
             with client.websocket_connect(
-                "/api/terminal/ws/pty/ws-test-2?token=fake-token"
+                "/api/terminal/ws/pty/ws-test-2",
+                subprotocols=["bearer.fake-token"],
             ) as websocket:
                 # 消费前三条初始消息
                 for _ in range(3):
@@ -340,13 +446,15 @@ class TestPTYWebSocketProtocol:
             cols=80,
             rows=24,
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         _pty_sessions["ws-test-3"] = session
 
         with TestClient(app) as client:
             with client.websocket_connect(
-                "/api/terminal/ws/pty/ws-test-3?token=fake-token"
+                "/api/terminal/ws/pty/ws-test-3",
+                subprotocols=["bearer.fake-token"],
             ) as websocket:
                 # 消费前三条初始消息
                 for _ in range(3):
@@ -376,13 +484,15 @@ class TestPTYWebSocketProtocol:
             cwd=".",
             command=["/bin/bash"],
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         _pty_sessions["ws-test-4"] = session
 
         with TestClient(app) as client:
             with client.websocket_connect(
-                "/api/terminal/ws/pty/ws-test-4?token=fake-token"
+                "/api/terminal/ws/pty/ws-test-4",
+                subprotocols=["bearer.fake-token"],
             ) as websocket:
                 # 消费前三条初始消息
                 for _ in range(3):
@@ -407,13 +517,15 @@ class TestPTYWebSocketProtocol:
             cwd=".",
             command=["/bin/bash"],
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         _pty_sessions["ws-test-5"] = session
 
         with TestClient(app) as client:
             with client.websocket_connect(
-                "/api/terminal/ws/pty/ws-test-5?token=fake-token"
+                "/api/terminal/ws/pty/ws-test-5",
+                subprotocols=["bearer.fake-token"],
             ) as websocket:
                 # 消费前三条初始消息
                 for _ in range(3):
@@ -434,6 +546,61 @@ class TestPTYWebSocketProtocol:
         # PTY 不应收到任何写入
         assert session.pty.written_data == []
 
+    def test_websocket_redacts_bound_root_from_all_pty_projections(self, monkeypatch) -> None:
+        """PTY 的 shell、输出、历史、快照和拦截事件都不得投影绑定项目绝对根。"""
+        project_root = Path(".").resolve()
+        root_text = str(project_root)
+
+        class AbsoluteProjectService:
+            def __init__(self, db, path_policy) -> None:
+                pass
+
+            def resolve_project_root(self, *, user_id, user_role, project_id):
+                return project_root
+
+        monkeypatch.setattr(terminal_route, "WorkbenchProjectService", AbsoluteProjectService)
+        session = PTYTerminalSession(
+            session_id="ws-redacted-root",
+            cwd=root_text,
+            command=[str(project_root / "bin" / "fake-shell")],
+            cols=120,
+            rows=2,
+            owner_user_id="user-1",
+            project_id="project-1",
+        )
+        asyncio.run(session.start())
+        session.pty.feed_output(f"{root_text}\nline-1\nline-2\n{root_text}")
+        _pty_sessions[session.session_id] = session
+
+        with TestClient(app) as client:
+            with client.websocket_connect(
+                f"/api/terminal/ws/pty/{session.session_id}",
+                subprotocols=["bearer.fake-token"],
+            ) as websocket:
+                shell_info = websocket.receive_json()
+                scrollback = websocket.receive_json()
+                snapshot = websocket.receive_json()
+                assert root_text not in shell_info["shell"]
+                assert root_text not in "\n".join(scrollback["lines"])
+                snapshot_text = "\n".join(
+                    "".join(row) for row in snapshot["grid"]
+                )
+                assert root_text not in snapshot_text
+
+                session.pty.feed_output(f"output={root_text}\\src\n")
+                output = websocket.receive_json()
+                assert output["type"] == "output"
+                assert root_text not in output["data"]
+
+                websocket.send_json({
+                    "type": "input",
+                    "data": f"rm -rf / {root_text}\\src\n",
+                })
+                blocked = websocket.receive_json()
+                assert blocked["type"] == "command_blocked"
+                assert root_text not in blocked["command"]
+                assert root_text not in blocked["message"]
+
 
 # ----------------------------------------------------------------------
 # 测试：断线重连
@@ -451,6 +618,7 @@ class TestPTYReconnect:
             cols=80,
             rows=24,
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         # 在没有 WebSocket 客户端时模拟 PTY 输出
@@ -463,7 +631,8 @@ class TestPTYReconnect:
         # 第一次连接
         with TestClient(app) as client:
             with client.websocket_connect(
-                "/api/terminal/ws/pty/reconnect-1?token=fake-token"
+                "/api/terminal/ws/pty/reconnect-1",
+                subprotocols=["bearer.fake-token"],
             ) as websocket:
                 # 消费初始消息
                 shell_info = websocket.receive_json()
@@ -490,7 +659,8 @@ class TestPTYReconnect:
         # 第二次连接（断线重连）
         with TestClient(app) as client:
             with client.websocket_connect(
-                "/api/terminal/ws/pty/reconnect-1?token=fake-token"
+                "/api/terminal/ws/pty/reconnect-1",
+                subprotocols=["bearer.fake-token"],
             ) as websocket:
                 shell_info = websocket.receive_json()
                 assert shell_info["type"] == "shell_info"
@@ -522,6 +692,7 @@ class TestPTYSnapshotEndpoint:
             cols=10,
             rows=3,
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         # 写入一些内容到屏幕
@@ -549,6 +720,7 @@ class TestPTYSnapshotEndpoint:
             cols=20,
             rows=4,
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         _pty_sessions["snap-2"] = session
@@ -581,7 +753,7 @@ class TestPTYSessionManagement:
         with TestClient(app) as client:
             response = client.post(
                 "/api/terminal/sessions/pty",
-                json={"cwd": None, "cols": 80, "rows": 24, "command": ["/bin/bash"]},
+                json={"project_id": "project-1", "cols": 80, "rows": 24, "command": ["/bin/bash"]},
             )
         assert response.status_code == 200
         data = response.json()
@@ -601,6 +773,7 @@ class TestPTYSessionManagement:
             cwd=".",
             command=["/bin/bash"],
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         _pty_sessions["list-1"] = session
@@ -621,6 +794,7 @@ class TestPTYSessionManagement:
             cwd=".",
             command=["/bin/bash"],
             owner_user_id="user-1",
+            project_id="project-1",
         )
         asyncio.run(session.start())
         _pty_sessions["close-1"] = session
@@ -643,6 +817,7 @@ class TestPTYSessionManagement:
                 cwd=".",
                 command=["/bin/bash"],
                 owner_user_id="user-1",
+                project_id="project-1",
             )
             asyncio.run(session.start())
             session.subscribe()
@@ -652,7 +827,7 @@ class TestPTYSessionManagement:
             with TestClient(app) as client:
                 response = client.post(
                     "/api/terminal/sessions/pty",
-                    json={"cwd": None, "cols": 80, "rows": 24, "command": ["/bin/bash"]},
+                    json={"project_id": "project-1", "cols": 80, "rows": 24, "command": ["/bin/bash"]},
                 )
             data = response.json()
             assert data["ok"] is False
@@ -669,6 +844,7 @@ class TestPTYSessionManagement:
                 cwd=".",
                 command=["/bin/bash"],
                 owner_user_id="user-1",
+                project_id="project-1",
             )
             asyncio.run(session.start())
             if i < MAX_PTY_SESSIONS - 1:
@@ -680,7 +856,7 @@ class TestPTYSessionManagement:
             with TestClient(app) as client:
                 response = client.post(
                     "/api/terminal/sessions/pty",
-                    json={"cwd": None, "cols": 80, "rows": 24, "command": ["/bin/bash"]},
+                    json={"project_id": "project-1", "cols": 80, "rows": 24, "command": ["/bin/bash"]},
                 )
             data = response.json()
             # 空闲会话被淘汰 → 创建成功；被淘汰的是无订阅者的最后一个

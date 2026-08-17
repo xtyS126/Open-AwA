@@ -257,7 +257,7 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
         return []
 
     async def fake_recognize_intent(user_input):
-        return "chat"
+        return {"type": "chat", "action": "respond"}
 
     async def fake_extract_entities(user_input):
         return {}
@@ -370,7 +370,7 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
     async def fake_generate_response(results, context):
         return "能力注入成功"
 
-    async def fake_update_memory(user_input, response, context):
+    async def fake_update_memory(user_input, response, context, reasoning_content=None, tool_events=None):
         return None
 
     monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
@@ -392,7 +392,7 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
         "collect_configured_models",
         fake_collect_configured_model_capabilities,
     )
-    monkeypatch.setattr("mcp.manager.MCPManager", lambda: FakeMCPManager())
+    monkeypatch.setattr("mcp_integration.manager.MCPManager", lambda: FakeMCPManager())
     monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step)
     monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
     monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
@@ -455,7 +455,7 @@ async def test_ai_agent_collect_mcp_capabilities_handles_unavailable_manager(mon
     MCP 管理器不可用时，能力采集应返回稳定降级结构，而不是直接抛异常。
     """
 
-    monkeypatch.setattr("mcp.manager.MCPManager", lambda: None)
+    monkeypatch.setattr("mcp_integration.manager.MCPManager", lambda: None)
 
     result = await collect_mcp_capabilities({})
 

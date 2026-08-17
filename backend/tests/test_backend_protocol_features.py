@@ -256,7 +256,7 @@ async def test_ai_agent_process_strips_reasoning_content_when_final_only(monkeyp
     agent = AIAgent()
 
     async def fake_recognize_intent(user_input):
-        return "chat"
+        return {"type": "chat", "action": "respond"}
 
     async def fake_extract_entities(user_input):
         return {}
@@ -292,7 +292,7 @@ async def test_ai_agent_process_strips_reasoning_content_when_final_only(monkeyp
     async def fake_generate_response(results, context):
         return "最终回复"
 
-    async def fake_update_memory(user_input, response, context):
+    async def fake_update_memory(user_input, response, context, reasoning_content=None, tool_events=None):
         return None
 
     async def fake_retrieve_relevant_experiences(user_input, context):
@@ -352,7 +352,7 @@ async def test_ai_agent_process_injects_db_into_context(monkeypatch):
     agent = AIAgent(db_session=dummy_db)
 
     async def fake_recognize_intent(user_input):
-        return "chat"
+        return {"type": "chat", "action": "respond"}
 
     async def fake_extract_entities(user_input):
         return {}
@@ -385,7 +385,7 @@ async def test_ai_agent_process_injects_db_into_context(monkeypatch):
     async def fake_generate_response(results, context):
         return "透传成功"
 
-    async def fake_update_memory(user_input, response, context):
+    async def fake_update_memory(user_input, response, context, reasoning_content=None, tool_events=None):
         return None
 
     async def fake_build_conversation_history(session_id, max_turns=20):

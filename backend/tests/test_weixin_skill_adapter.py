@@ -24,7 +24,6 @@ from skills.weixin_skill_adapter import (
 def _build_weixin_skill_config(token: str = "test-token"):
     """
     处理build、weixin、skill、config相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     return {
         "name": "weixin_dispatch",
@@ -42,10 +41,6 @@ def _build_weixin_skill_config(token: str = "test-token"):
 
 
 def _create_db_session():
-    """
-    处理create、db、session相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     session_local = sessionmaker(bind=engine)
@@ -62,10 +57,6 @@ async def test_weixin_adapter_fetch_login_qrcode_uses_fixed_qr_base_url(monkeypa
     captured = {}
 
     async def fake_api_get(self, base_url, endpoint, params=None, timeout_seconds=15, extra_headers=None):
-        """
-        处理fake、api、get相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         captured["base_url"] = base_url
         captured["endpoint"] = endpoint
         captured["params"] = params
@@ -99,10 +90,6 @@ async def test_weixin_adapter_fetch_qrcode_status_uses_provided_poll_base_url(mo
     captured = {}
 
     async def fake_api_get(self, base_url, endpoint, params=None, timeout_seconds=15, extra_headers=None):
-        """
-        处理fake、api、get相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         captured["base_url"] = base_url
         captured["endpoint"] = endpoint
         captured["params"] = params
@@ -211,10 +198,6 @@ async def test_skill_engine_routes_weixin_skill_and_records_adapter_logs(monkeyp
         db_session.commit()
 
         async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
-            """
-            处理fake、api、post相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             return {"ret": 0, "endpoint": endpoint, "echo": body}
 
         monkeypatch.setattr(
@@ -316,10 +299,6 @@ async def test_weixin_adapter_get_updates_persists_sync_buf_and_context_token(mo
     adapter = WeixinSkillAdapter(project_root=str(tmp_path))
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
-        """
-        处理fake、api、post相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         assert endpoint == "ilink/bot/getupdates"
         assert body["get_updates_buf"] == ""
         return {
@@ -356,10 +335,6 @@ async def test_weixin_adapter_send_message_uses_cached_context_token(monkeypatch
     captured = {}
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
-        """
-        处理fake、api、post相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         captured["endpoint"] = endpoint
         captured["body"] = body
         return {"ret": 0}
@@ -383,10 +358,6 @@ async def test_weixin_adapter_session_expired_pauses_followup_requests(monkeypat
     adapter = WeixinSkillAdapter(project_root=str(tmp_path))
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
-        """
-        处理fake、api、post相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         return {
             "ret": SESSION_EXPIRED_ERRCODE,
             "errcode": SESSION_EXPIRED_ERRCODE,
@@ -441,10 +412,6 @@ async def test_weixin_adapter_send_message_generates_ilink_client_id_format(monk
     captured = {}
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
-        """
-        处理fake、api、post相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         captured["client_id"] = body["msg"]["client_id"]
         return {"ret": 0}
 

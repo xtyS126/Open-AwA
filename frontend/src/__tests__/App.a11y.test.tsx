@@ -5,6 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import React, { StrictMode } from 'react'
 import { render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import axe from 'axe-core'
 import App from '@/App'
 import { resetAppInitializationStateForTests } from '@/shared/hooks/useAppInitialization'
@@ -24,10 +25,8 @@ const preferenceMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/shared/api/api', () => ({
-  systemAPI: { getInitStatus: vi.fn().mockResolvedValue({ data: { data: { initialized: true } } }) },
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
   weixinAPI: { getConfig: vi.fn().mockResolvedValue({ data: {} }) },
-  authAPI: { getMe: authApiMocks.getMe },
   billingAPI: { getSummary: vi.fn().mockResolvedValue({ data: {} }) },
   chatAPI: { getHistory: vi.fn().mockResolvedValue({ data: [] }) },
   modelsAPI: { getConfigurations: vi.fn().mockResolvedValue({ data: { configurations: [] } }) },
@@ -39,6 +38,14 @@ vi.mock('@/shared/api/api', () => ({
   logsAPI: { query: vi.fn().mockResolvedValue({ data: { records: [], total: 0 } }) },
   behaviorAPI: { getStats: vi.fn().mockResolvedValue({ data: {} }) },
   conversationAPI: { getRecordsPreview: vi.fn().mockResolvedValue({ data: { records: [], count: 0 } }) }
+}))
+
+vi.mock('@/shared/api/authApi', () => ({
+  authAPI: { getMe: authApiMocks.getMe },
+}))
+
+vi.mock('@/shared/api/opsApi', () => ({
+  systemAPI: { getInitStatus: vi.fn().mockResolvedValue({ data: { data: { initialized: true } } }) },
 }))
 
 vi.mock('@/shared/utils/preferenceSync', () => ({
@@ -54,10 +61,22 @@ vi.mock('@/features/settings/modelsApi', () => ({
 }))
 
 describe('App 全局无障碍 (axe-core)', () => {
+  let queryClient: QueryClient
+
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
     resetAppInitializationStateForTests()
+    // 每个测试独立的 QueryClient，避免 useAppInitialization 中 useQuery 缓存污染
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: 0,
+          staleTime: 0,
+        },
+      },
+    })
     useAuthStore.setState({
       user: null,
       token: null,
@@ -88,9 +107,11 @@ describe('App 全局无障碍 (axe-core)', () => {
 
   it('未登录状态下渲染无 WCAG 违规', async () => {
     const { container } = render(
-      <StrictMode>
-        <App />
-      </StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <StrictMode>
+          <App />
+        </StrictMode>
+      </QueryClientProvider>
     )
 
     await waitFor(() => {

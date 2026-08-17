@@ -460,3 +460,113 @@ class TestStreamingToolExecutor:
         assert str(tracked.error) == "工具执行失败"
         assert tracked.result is None
         assert tracked.state == ToolExecutionState.YIELDED
+
+
+class TestAbortPropagation:
+    """级联中止与 abort_controller 贯通测试（activate-agent-runtime-dead-code Task 3）"""
+
+    @pytest.fixture(autouse=True)
+    def cleanup_registry(self):
+        """每个测试前后清理全局注册中心中的测试工具"""
+        yield
+        for name in ("test_abort_probe", "test_bash_tool", "test_read_tool"):
+            global_tool_registry.unregister(name)
+
+    @pytest.mark.asyncio
+    async def test_execute_fn_receives_abort_controller(self):
+        """验证 3 参数签名执行函数可收到非 None 的 abort_controller"""
+        tool_def = ToolDefinition(
+            name="test_abort_probe",
+            description="abort probe tool",
+            is_read_only=True,
+            is_concurrency_safe=True,
+        )
+        global_tool_registry.register(tool_def)
+
+        executor = StreamingToolExecutor(
+            tool_registry=global_tool_registry,
+            max_concurrent=5,
+        )
+
+        received_aborts: list = []
+
+        async def execute_fn(tool_name: str, input_params: dict, abort_controller=None) -> dict:
+            received_aborts.append(abort_controller)
+            return {"ok": True, "tool_name": tool_name}
+
+        executor.submit("call_1", "test_abort_probe", {})
+        schedule_task = asyncio.create_task(executor.process_queue(execute_fn))
+        results: list[TrackedTool] = []
+        async for tracked in executor.yield_completed():
+            results.append(tracked)
+        await schedule_task
+
+        assert len(results) == 1
+        # 3 参数签名下 abort_controller 应被注入（非 None）
+        assert len(received_aborts) == 1
+        assert received_aborts[0] is not None
+        # 工具级 abort_controller 与 sibling 级联中止树关联
+        assert received_aborts[0].is_aborted() is False
+
+    @pytest.mark.asyncio
+    async def test_bash_tool_error_cascades_abort(self):
+        """验证 Bash 类工具（run_command）出错时触发级联中止"""
+        tool_def = ToolDefinition(
+            name="builtin_run_command",
+            description="bash tool",
+        )
+        global_tool_registry.register(tool_def)
+
+        executor = StreamingToolExecutor(
+            tool_registry=global_tool_registry,
+            max_concurrent=5,
+        )
+
+        async def execute_fn(tool_name: str, input_params: dict, abort_controller=None) -> dict:
+            raise RuntimeError("bash command failed")
+
+        executor.submit("call_1", "builtin_run_command", {})
+        schedule_task = asyncio.create_task(executor.process_queue(execute_fn))
+        results: list[TrackedTool] = []
+        async for tracked in executor.yield_completed():
+            results.append(tracked)
+        await schedule_task
+
+        assert len(results) == 1
+        assert results[0].error is not None
+        # Bash 工具出错应中止 sibling controller（process_queue 内部创建）
+        assert executor._sibling_abort_controller is not None
+        assert executor._sibling_abort_controller.is_aborted() is True
+
+    @pytest.mark.asyncio
+    async def test_non_bash_tool_error_no_cascade(self):
+        """验证非 Bash 类只读工具失败不中止兄弟工具"""
+        tool_def = ToolDefinition(
+            name="test_read_tool",
+            description="read tool",
+            is_read_only=True,
+            is_concurrency_safe=True,
+        )
+        global_tool_registry.register(tool_def)
+
+        executor = StreamingToolExecutor(
+            tool_registry=global_tool_registry,
+            max_concurrent=5,
+        )
+
+        async def execute_fn(tool_name: str, input_params: dict, abort_controller=None) -> dict:
+            raise RuntimeError("read tool failed")
+
+        executor.submit("call_1", "test_read_tool", {})
+        schedule_task = asyncio.create_task(executor.process_queue(execute_fn))
+        results: list[TrackedTool] = []
+        async for tracked in executor.yield_completed():
+            results.append(tracked)
+        await schedule_task
+
+        assert len(results) == 1
+        assert results[0].error is not None
+        # 非 Bash 工具失败不应中止 sibling controller（参考 ch09 §9.2.2）
+        assert executor._sibling_abort_controller is not None
+        assert executor._sibling_abort_controller.is_aborted() is False
+

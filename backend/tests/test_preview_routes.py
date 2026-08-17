@@ -5,7 +5,7 @@
 覆盖：
 - /api/coding/preview/file 端点：Markdown 渲染、图片/音视频 Content-Type、Range 请求、
   Office 降级、路径遍历防护、未知类型回退
-- /api/preview/{port}/{path:path} 反向代理：成功透传、port 范围校验、SSRF 防护
+- /api/preview/{port}/{path:path} 旧裸端口入口：固定退役响应且绝不访问上游
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api.dependencies import get_current_user
+from api.routes import coding as coding_routes
 from api.routes.coding import router as coding_router
 from api.routes.preview_proxy import router as preview_proxy_router
 
@@ -51,6 +52,18 @@ def _override_user(user: _DummyUser):
         return user
 
     return _override
+
+
+class _CodingTestClient:
+    """为旧预览用例统一补充工作台项目 ID。"""
+
+    def __init__(self, client: TestClient) -> None:
+        self._client = client
+
+    def get(self, url: str, *, params=None, **kwargs):
+        request_params = dict(params or {})
+        request_params.setdefault("project_id", "project-a")
+        return self._client.get(url, params=request_params, **kwargs)
 
 
 # ==================== 公共 fixture ====================
@@ -95,19 +108,26 @@ def project_root(tmp_path: Path) -> Path:
 
 @contextmanager
 def _coding_client(project_root: Path, user: Optional[_DummyUser] = _ADMIN_USER):
-    """构造 coding 路由的 TestClient，将默认项目目录指向临时目录。
+    """构造 coding 路由的 TestClient，将项目 ID 解析到临时目录。
 
     使用 contextmanager + patch 形式，避免装饰器注入 mock 时的位置参数混乱。
     默认使用管理员身份：preview 端点已启用 RBAC fail-closed（coding:read），
     渲染类测试不关心权限分支，统一走管理员放行路径。
     """
-    with patch("api.routes.coding.DEFAULT_PROJECT_DIR", str(project_root)):
+    with patch.object(
+        coding_routes.WorkbenchProjectService,
+        "resolve_project_root",
+        return_value=project_root,
+    ):
         app = FastAPI()
         app.include_router(coding_router)
+        app.dependency_overrides[
+            coding_routes.get_coding_workbench_path_policy
+        ] = lambda: object()
         if user is not None:
             app.dependency_overrides[get_current_user] = _override_user(user)
         with TestClient(app) as client:
-            yield client
+            yield _CodingTestClient(client)
 
 
 @contextmanager
@@ -247,24 +267,169 @@ class TestRangeRequest:
         assert len(response.content) == 512
 
 
+# ==================== 校验后调包防护测试 ====================
+
+
+class TestPreviewSwapAfterValidation:
+    """预览只能消费打开后完成复核的项目内文件句柄。"""
+
+    @pytest.mark.parametrize(
+        ("relative_path", "safe_content", "secret_content", "headers"),
+        [
+            ("media/swap.mp4", b"safe-video", b"outside-video-secret", None),
+            (
+                "media/swap.mp4",
+                b"safe-video-range",
+                b"outside-range-secret",
+                {"Range": "bytes=0-6"},
+            ),
+            (
+                "docs/swap.md",
+                b"# safe-markdown",
+                b"# outside-markdown-secret",
+                None,
+            ),
+            (
+                "docs/swap.txt",
+                b"safe-text",
+                b"outside-text-secret",
+                None,
+            ),
+        ],
+    )
+    def test_preview_rejects_file_swapped_after_path_validation(
+        self,
+        project_root: Path,
+        tmp_path_factory: pytest.TempPathFactory,
+        monkeypatch: pytest.MonkeyPatch,
+        relative_path: str,
+        safe_content: bytes,
+        secret_content: bytes,
+        headers: Optional[dict[str, str]],
+    ) -> None:
+        """校验后换成项目外链接时不得返回外部文件内容。"""
+        target = project_root / relative_path
+        target.write_bytes(safe_content)
+        outside = tmp_path_factory.mktemp("preview-swap-outside")
+        outside_file = outside / target.name
+        outside_file.write_bytes(secret_content)
+        original_validate = coding_routes._validate_file_path
+        swapped = False
+
+        def _validate_then_swap(
+            file_path: str,
+            project_dir: str,
+            *,
+            is_write: bool = False,
+        ) -> str:
+            nonlocal swapped
+            validated = original_validate(file_path, project_dir, is_write=is_write)
+            if not swapped:
+                target.unlink()
+                try:
+                    target.symlink_to(outside_file)
+                except OSError as exc:
+                    pytest.skip(f"当前环境无法创建文件符号链接: {exc}")
+                swapped = True
+            return validated
+
+        monkeypatch.setattr(coding_routes, "_validate_file_path", _validate_then_swap)
+
+        with _coding_client(project_root) as client:
+            response = client.get(
+                "/api/coding/preview/file",
+                params={"path": relative_path},
+                headers=headers or {},
+            )
+
+        assert response.status_code == 403
+        assert secret_content not in response.content
+
+
+class TestPreviewVerifiedHandleLifecycle:
+    """预览响应的所有出口都必须关闭已验证句柄。"""
+
+    @pytest.mark.parametrize(
+        ("relative_path", "content", "headers", "expected_status"),
+        [
+            ("media/handle.mp4", b"0123456789", None, 200),
+            ("media/handle.mp4", b"0123456789", {"Range": "bytes=2-5"}, 206),
+            ("media/handle.mp4", b"0123456789", {"Range": "bytes=99-100"}, 416),
+            ("docs/handle.md", b"# handle", None, 200),
+            ("docs/handle.txt", b"handle text", None, 200),
+            ("docs/handle.bin", b"handle binary", None, 200),
+        ],
+    )
+    def test_preview_closes_verified_handle_for_every_response_path(
+        self,
+        project_root: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        relative_path: str,
+        content: bytes,
+        headers: Optional[dict[str, str]],
+        expected_status: int,
+    ) -> None:
+        """完整流、Range、416、文本与下载降级都不得遗留句柄。"""
+        target = project_root / relative_path
+        target.write_bytes(content)
+        opened_handles = []
+
+        def _open_tracked_file(file_path: str, project_dir: str):
+            handle = (Path(project_dir) / file_path).open("rb")
+            opened_handles.append(handle)
+            return handle
+
+        monkeypatch.setattr(
+            coding_routes,
+            "_open_project_binary_file",
+            _open_tracked_file,
+        )
+
+        with _coding_client(project_root) as client:
+            response = client.get(
+                "/api/coding/preview/file",
+                params={"path": relative_path},
+                headers=headers or {},
+            )
+
+        assert response.status_code == expected_status
+        assert len(opened_handles) == 1
+        assert opened_handles[0].closed
+
+
 # ==================== Office 文件降级测试 ====================
 
 
 class TestOfficeFallback:
     """Office 文件降级为下载链接。"""
 
-    def test_docx_returns_download_link_when_no_extractor(self, project_root: Path) -> None:
+    def test_docx_returns_download_link_when_no_extractor(
+        self,
+        project_root: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """docx 文件无 mammoth 时应返回下载链接。"""
         # 强制 mammoth 不可导入
         import builtins
 
         real_import = builtins.__import__
+        opened_handles = []
+
+        def _open_tracked_file(file_path: str, project_dir: str):
+            handle = (Path(project_dir) / file_path).open("rb")
+            opened_handles.append(handle)
+            return handle
 
         def _fake_import(name, *args, **kwargs):
             if name == "mammoth":
                 raise ImportError("no mammoth")
             return real_import(name, *args, **kwargs)
 
+        monkeypatch.setattr(
+            coding_routes,
+            "_open_project_binary_file",
+            _open_tracked_file,
+        )
         with patch("builtins.__import__", side_effect=_fake_import):
             with _coding_client(project_root) as client:
                 response = client.get(
@@ -277,6 +442,8 @@ class TestOfficeFallback:
         assert body["type"] == "download"
         assert "url" in body
         assert "/api/coding/download" in body["url"]
+        assert len(opened_handles) == 1
+        assert opened_handles[0].closed
 
 
 # ==================== 路径遍历防护测试 ====================
@@ -347,108 +514,40 @@ class TestRbacFailClosed:
 # ==================== 反向代理测试 ====================
 
 
-class _FakeStreamResponse:
-    """模拟 httpx.AsyncClient.stream 上下文。"""
-
-    def __init__(self, status_code: int, content: bytes, headers: dict) -> None:
-        self.status_code = status_code
-        self._content = content
-        self.headers = headers
-
-    async def aiter_bytes(self):
-        # 简单按块返回
-        yield self._content
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-
 class TestPreviewProxy:
-    """反向代理到本地开发服务器。"""
+    """旧裸端口预览入口。"""
 
-    def test_proxy_passes_through_response(self) -> None:
-        """成功代理响应，透传状态码、headers、body。"""
-        fake_response = _FakeStreamResponse(
-            status_code=200,
-            content=b"hello-from-dev-server",
-            headers={"content-type": "text/html; charset=utf-8", "x-custom": "yes"},
-        )
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/preview/80/index.html",
+            "/api/preview/1023/foo",
+            "/api/preview/3000/",
+            "/api/preview/5173/index.html",
+            "/api/preview/70000/index.html",
+        ],
+    )
+    def test_raw_port_routes_are_retired_without_upstream_access(self, path: str) -> None:
+        """所有历史端口值都只返回结构化退役响应。"""
+        client_factory = MagicMock()
 
-        fake_client = MagicMock()
-        fake_client.stream = MagicMock(return_value=fake_response)
-        fake_client.aclose = AsyncMock()
-
-        with patch("api.routes.preview_proxy.httpx.AsyncClient", return_value=fake_client):
+        with patch("api.routes.preview_proxy.httpx.AsyncClient", client_factory):
             with _proxy_client() as client:
-                response = client.get("/api/preview/5173/index.html")
+                response = client.get(path)
 
-        assert response.status_code == 200
-        assert response.content == b"hello-from-dev-server"
-        assert response.headers.get("x-custom") == "yes"
-        # 应代理到 127.0.0.1:5173
-        # client.stream(method, url, headers=...) 形式：第一个是 method，第二个是 url
-        call_args = fake_client.stream.call_args
-        if len(call_args.args) >= 2:
-            url = call_args.args[1]
-        else:
-            url = call_args.kwargs.get("url", "")
-        assert "127.0.0.1:5173" in str(url)
-        assert "/index.html" in str(url)
+        assert response.status_code == 410
+        assert response.json()["detail"]["code"] == "preview_proxy_retired"
+        assert response.headers["deprecation"] == "true"
+        client_factory.assert_not_called()
 
-    def test_rejects_port_below_1024(self) -> None:
-        """port < 1024 应返回 400。"""
-        with _proxy_client() as client:
-            response = client.get("/api/preview/80/index.html")
+    def test_raw_port_query_is_not_forwarded(self) -> None:
+        """退役入口不得因查询参数恢复任何上游转发行为。"""
+        client_factory = MagicMock()
 
-        assert response.status_code == 400
-        assert "port" in response.json()["detail"].lower()
-
-    def test_rejects_port_above_65535(self) -> None:
-        """port > 65535 应返回 400。"""
-        with _proxy_client() as client:
-            response = client.get("/api/preview/70000/index.html")
-
-        assert response.status_code == 400
-        assert "port" in response.json()["detail"].lower()
-
-    def test_rejects_port_at_boundary_1023(self) -> None:
-        """边界值 1023 应拒绝（< 1024）。"""
-        with _proxy_client() as client:
-            response = client.get("/api/preview/1023/foo")
-
-        assert response.status_code == 400
-
-    def test_accepts_allowed_preview_port(self) -> None:
-        """边界值 1024 应被接受（>= 1024）。"""
-        fake_response = _FakeStreamResponse(
-            status_code=200, content=b"ok", headers={"content-type": "text/plain"}
-        )
-        fake_client = MagicMock()
-        fake_client.stream = MagicMock(return_value=fake_response)
-        fake_client.aclose = AsyncMock()
-
-        with patch("api.routes.preview_proxy.httpx.AsyncClient", return_value=fake_client):
-            with _proxy_client() as client:
-                response = client.get("/api/preview/3000/")
-
-        assert response.status_code == 200
-
-    def test_passes_query_params(self) -> None:
-        """查询参数应透传到目标。"""
-        fake_response = _FakeStreamResponse(
-            status_code=200, content=b"ok", headers={"content-type": "text/plain"}
-        )
-        fake_client = MagicMock()
-        fake_client.stream = MagicMock(return_value=fake_response)
-        fake_client.aclose = AsyncMock()
-
-        with patch("api.routes.preview_proxy.httpx.AsyncClient", return_value=fake_client):
+        with patch("api.routes.preview_proxy.httpx.AsyncClient", client_factory):
             with _proxy_client() as client:
                 response = client.get("/api/preview/5173/api", params={"q": "1"})
 
-        assert response.status_code == 200
-        # 验证 stream 被调用过
-        fake_client.stream.assert_called_once()
+        assert response.status_code == 410
+        assert response.json()["detail"]["code"] == "preview_proxy_retired"
+        client_factory.assert_not_called()

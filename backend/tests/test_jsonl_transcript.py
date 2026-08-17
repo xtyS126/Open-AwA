@@ -7,8 +7,15 @@ import json
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from core.conversation_recorder import JsonlTranscriptWriter, replay_transcript
+from core.conversation_recorder import (
+    ConversationRecorder,
+    JsonlTranscriptWriter,
+    replay_transcript,
+)
+from db.models import Base, ConversationRecord
 
 
 def test_append_writes_jsonl_line(tmp_path: Path) -> None:
@@ -336,3 +343,150 @@ def test_append_preserves_non_ascii_content(tmp_path: Path) -> None:
 
     messages = replay_transcript("session-9", base_dir=base_dir)
     assert messages[0]["content"] == chinese_content
+
+
+# ---------------------------------------------------------------------------
+# ConversationRecorder 运行时转录接线测试（Task 7.2）
+# user 消息预写、assistant 消息 fire-and-forget 写入
+# ---------------------------------------------------------------------------
+
+
+def _make_recorder(base_dir: str) -> ConversationRecorder:
+    """创建使用独立 JSONL 目录的 ConversationRecorder。"""
+    return ConversationRecorder(transcript_base_dir=base_dir)
+
+
+class TestConversationRecorderTranscript:
+    """ConversationRecorder 运行时 JSONL 转录接线。"""
+
+    @pytest.mark.asyncio
+    async def test_record_transcribes_user_and_assistant_messages(
+        self, monkeypatch, tmp_path
+    ):
+        """
+        验证 record() 接线转录：intent_recognition 预写 user 消息，
+        feedback_generation 以 fire-and-forget 写入 assistant 消息（父链指向 user）。
+        """
+        import asyncio
+
+        base_dir = str(tmp_path / "transcripts")
+        recorder = _make_recorder(base_dir)
+        recorder.set_collection_enabled(True, user_id="user-1")
+
+        # user 消息预写（非流式轮次入口）
+        await recorder.record(
+            node_type="intent_recognition",
+            session_id="transcribe-session",
+            user_message="你好",
+            user_id="user-1",
+        )
+        # assistant 消息 fire-and-forget（最终反馈生成）
+        await recorder.record(
+            node_type="feedback_generation",
+            session_id="transcribe-session",
+            user_message="你好",
+            llm_output="你好，我是助手",
+            user_id="user-1",
+        )
+        # 等待 fire-and-forget 转录任务完成
+        await asyncio.sleep(0.05)
+
+        records = replay_transcript("transcribe-session", base_dir=base_dir)
+        assert len(records) == 2
+        assert records[0]["type"] == "user"
+        assert records[0]["content"] == "你好"
+        assert records[1]["type"] == "assistant"
+        assert records[1]["content"] == "你好，我是助手"
+        # 父链：assistant 消息的 parent_uuid 指向 user 消息
+        assert records[1]["parent_uuid"] == records[0]["uuid"]
+
+    @pytest.mark.asyncio
+    async def test_record_dedupes_repeated_user_content(self, tmp_path):
+        """
+        验证工具循环内多次 llm_call 携带相同 user 内容时只转录一次，
+        避免 resume 回放出现重复消息。
+        """
+        import asyncio
+
+        base_dir = str(tmp_path / "transcripts")
+        recorder = _make_recorder(base_dir)
+        recorder.set_collection_enabled(True, user_id="user-1")
+
+        for _ in range(3):
+            await recorder.record(
+                node_type="llm_call",
+                session_id="dedupe-session",
+                user_message="同一输入",
+                user_id="user-1",
+            )
+        await asyncio.sleep(0.05)
+
+        records = replay_transcript("dedupe-session", base_dir=base_dir)
+        assert len(records) == 1
+        assert records[0]["type"] == "user"
+        assert records[0]["content"] == "同一输入"
+
+    @pytest.mark.asyncio
+    async def test_record_skips_transcript_when_collection_disabled(self, tmp_path):
+        """未启用用户采集时 record() 直接返回，不写 JSONL 转录。"""
+        base_dir = str(tmp_path / "transcripts")
+        recorder = _make_recorder(base_dir)
+
+        result = await recorder.record(
+            node_type="intent_recognition",
+            session_id="no-collect-session",
+            user_message="不会写入",
+            user_id="user-1",
+        )
+        assert result is False
+        assert replay_transcript("no-collect-session", base_dir=base_dir) == []
+
+    @pytest.mark.asyncio
+    async def test_record_skips_transcript_when_transcript_disabled(self, tmp_path):
+        """关闭转录开关后，即使启用采集也不再写 JSONL。"""
+        import asyncio
+
+        base_dir = str(tmp_path / "transcripts")
+        recorder = _make_recorder(base_dir)
+        recorder.set_transcript_enabled(False)
+        recorder.set_collection_enabled(True, user_id="user-1")
+
+        await recorder.record(
+            node_type="intent_recognition",
+            session_id="transcript-off-session",
+            user_message="不会写入",
+            user_id="user-1",
+        )
+        await asyncio.sleep(0.05)
+
+        assert replay_transcript("transcript-off-session", base_dir=base_dir) == []
+
+    @pytest.mark.asyncio
+    async def test_assistant_transcript_extracts_content_from_dict(
+        self, monkeypatch, tmp_path
+    ):
+        """llm_output 为 dict 时提取 content 字段写入转录。"""
+        import asyncio
+
+        base_dir = str(tmp_path / "transcripts")
+        recorder = _make_recorder(base_dir)
+        recorder.set_collection_enabled(True, user_id="user-1")
+
+        await recorder.record(
+            node_type="intent_recognition",
+            session_id="dict-output-session",
+            user_message="问题",
+            user_id="user-1",
+        )
+        await recorder.record(
+            node_type="feedback_generation",
+            session_id="dict-output-session",
+            user_message="问题",
+            llm_output={"content": "字典形式回复"},
+            user_id="user-1",
+        )
+        await asyncio.sleep(0.05)
+
+        records = replay_transcript("dict-output-session", base_dir=base_dir)
+        assert len(records) == 2
+        assert records[1]["content"] == "字典形式回复"

@@ -7,7 +7,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from api.routes.chat import cancel_agent_task
 from core.agent import AIAgent
@@ -363,7 +363,7 @@ class TestProcessFlow:
             return []
 
         async def fake_recognize_intent(user_input):
-            return "chat"
+            return {"type": "chat"}
 
         async def fake_extract_entities(user_input):
             return {}
@@ -428,7 +428,7 @@ class TestProcessFlow:
             return []
 
         async def fake_recognize_intent(user_input):
-            return "query"
+            return {"type": "query"}
 
         async def fake_extract_entities(user_input):
             return {}
@@ -491,7 +491,7 @@ class TestProcessFlow:
             return []
 
         async def fake_recognize_intent(user_input):
-            return "execute"
+            return {"type": "execute"}
 
         async def fake_extract_entities(user_input):
             return {}
@@ -808,3 +808,264 @@ class TestMapFinishReasonToState:
             map_finish_reason_to_state(
                 finish_reason="", current_round=1, max_rounds=10
             )
+
+
+# ==================== 预算 usage 回填测试 ====================
+
+
+class TestRecordRoundBudgetUsage:
+    """验证 _record_round_budget_usage 的真实 usage 回填与估算回退。"""
+
+    def test_record_round_budget_usage_backfills_real_usage(self):
+        """提供真实 usage 时应回填 input/output/cache_read/cache_write 四维。"""
+        agent = AIAgent()
+        agent.budget_tracker = MagicMock()
+
+        agent._record_round_budget_usage(
+            user_input="你好",
+            context={},
+            round_content="回复内容",
+            round_reasoning="",
+            usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "prompt_tokens_details": {"cached_tokens": 20},
+            },
+        )
+
+        agent.budget_tracker.record_usage.assert_called_once_with(
+            input_tokens=100,
+            output_tokens=50,
+            cache_read=20,
+            cache_write=0,
+        )
+
+    def test_record_round_budget_usage_skips_empty_usage(self):
+        """空 usage 字典不应进入回填分支，应回退到估算。"""
+        agent = AIAgent()
+        agent.budget_tracker = MagicMock()
+
+        agent._record_round_budget_usage(
+            user_input="你好",
+            context={},
+            round_content="这是一段较长的回复内容",
+            round_reasoning="",
+            usage={},
+        )
+
+        assert agent.budget_tracker.record_usage.called
+        kwargs = agent.budget_tracker.record_usage.call_args.kwargs
+        # 估算分支只回填 input/output 两维，cache 维度为 0
+        assert kwargs.get("cache_read", 0) == 0
+        assert kwargs.get("cache_write", 0) == 0
+        assert kwargs["output_tokens"] >= 1
+
+    def test_record_round_budget_usage_estimates_without_usage(self):
+        """usage 完全缺失时应基于文本启发式估算。"""
+        agent = AIAgent()
+        agent.budget_tracker = MagicMock()
+
+        agent._record_round_budget_usage(
+            user_input="你好",
+            context={},
+            round_content="回复内容",
+            round_reasoning="",
+        )
+
+        agent.budget_tracker.record_usage.assert_called_once()
+        kwargs = agent.budget_tracker.record_usage.call_args.kwargs
+        assert kwargs["input_tokens"] >= 1
+        assert kwargs["output_tokens"] >= 1
+
+
+# ==================== process_stream 取消处理测试 ====================
+
+
+class TestProcessStreamCancellation:
+    """验证 process_stream 对 CancelledError 的显式终态事件转换。"""
+
+    @pytest.mark.asyncio
+    async def test_process_stream_cancelled_yields_cancelled_event(self):
+        """process_stream 捕获 CancelledError 时应产出 cancelled 终态事件并保持取消语义。"""
+        agent = AIAgent()
+
+        async def noop(*args, **kwargs):
+            return None
+
+        async def noop_gen(*args, **kwargs):
+            if False:
+                yield
+
+        async def fake_build_session_history(user_input, context, session_id, _ttft_session_id, _ttft_t0, state):
+            state["effective_user_input"] = user_input
+            if False:
+                yield
+
+        async def raise_cancelled(*args, **kwargs):
+            if False:
+                yield
+            raise asyncio.CancelledError()
+
+        agent._handle_magic_command_or_yield = noop_gen
+        agent._prepare_role_and_capabilities = noop
+        agent._build_session_history = fake_build_session_history
+        agent.turn_coordinator.prepare_turn = AsyncMock(return_value=(None, None, None))
+        fake_orchestrator = MagicMock()
+        fake_orchestrator.run_tool_calls_loop = raise_cancelled
+        fake_orchestrator.finalize = AsyncMock()
+        agent._stream_orchestrator = fake_orchestrator
+
+        events = []
+        with pytest.raises(asyncio.CancelledError):
+            async for event in agent.process_stream("你好", {"session_id": "session-cancel-test"}):
+                events.append(event)
+
+        assert any(event.get("type") == "cancelled" for event in events)
+        # 取消后仍应完成清理流程
+        fake_orchestrator.finalize.assert_awaited_once()
+
+
+# ==================== 流式 max_output_tokens 恢复链测试 ====================
+
+
+class TestStreamOutputLimitRecovery:
+    """验证 _call_llm_api_stream 的 length 截断恢复链（升级 max_tokens + 注入恢复消息）。"""
+
+    @pytest.mark.asyncio
+    async def test_call_llm_api_stream_recovers_from_length_finish_reason(self, monkeypatch):
+        """finish_reason=length 时应升级 max_tokens 到 64k 并注入恢复消息重试。"""
+        import core.execution_model_runtime as runtime_module
+        from core.execution_model_runtime import ExecutionModelRuntimeMixin
+
+        runtime = ExecutionModelRuntimeMixin()
+
+        def fake_resolve(context):
+            # 经 asyncio.to_thread 调用，必须是同步函数
+            return {
+                "ok": True,
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_endpoint": "https://api.openai.com",
+                "api_key": "test-key",
+                "max_tokens": 8192,
+                "request_id": "req-1",
+            }
+
+        runtime._resolve_llm_configuration = fake_resolve
+        runtime._build_messages_with_history = lambda prompt, context: [{"role": "user", "content": prompt}]
+        runtime._resolve_max_tokens = lambda resolved: resolved.get("max_tokens") or 8192
+
+        calls = []
+
+        async def fake_stream_callable(**kwargs):
+            calls.append({"max_tokens": kwargs.get("max_tokens"), "messages": list(kwargs.get("messages", []))})
+            if len(calls) == 1:
+                yield {"content": "前半段", "reasoning_content": ""}
+                yield {"content": "", "reasoning_content": "", "finish_reason": "length"}
+                return
+            yield {"content": "后半段", "reasoning_content": ""}
+            yield {"content": "", "reasoning_content": "", "finish_reason": "stop"}
+
+        runtime._get_llm_stream_callable = lambda: fake_stream_callable
+
+        class FakeBreaker:
+            async def acquire(self):
+                return None
+
+            async def record_success(self):
+                return None
+
+            async def record_failure(self, exc):
+                return None
+
+        monkeypatch.setattr(
+            runtime_module,
+            "get_circuit_breaker",
+            AsyncMock(return_value=FakeBreaker()),
+        )
+        monkeypatch.setattr(
+            runtime_module,
+            "record_model_service_metric",
+            lambda *args, **kwargs: None,
+        )
+
+        chunks = []
+        async for chunk in runtime._call_llm_api_stream("你好", {}):
+            chunks.append(chunk)
+
+        # 第一次调用使用默认 8k，length 截断后升级到 64k 重试
+        assert calls[0]["max_tokens"] == 8192
+        assert calls[1]["max_tokens"] == 64_000
+        # 恢复消息已注入第二次请求
+        assert any(
+            "Output token limit hit" in str(m.get("content", ""))
+            for m in calls[1]["messages"]
+        )
+        # 两次调用的内容被完整拼接透传
+        full_content = "".join(c.get("content", "") for c in chunks)
+        assert "前半段" in full_content
+        assert "后半段" in full_content
+
+    @pytest.mark.asyncio
+    async def test_call_llm_api_stream_gives_up_after_three_length_retries(self, monkeypatch):
+        """length 截断连续发生 3 次后应放弃恢复，透传最终 finish_reason=length。"""
+        import core.execution_model_runtime as runtime_module
+        from core.execution_model_runtime import ExecutionModelRuntimeMixin
+
+        runtime = ExecutionModelRuntimeMixin()
+
+        def fake_resolve(context):
+            # 经 asyncio.to_thread 调用，必须是同步函数
+            return {
+                "ok": True,
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_endpoint": "https://api.openai.com",
+                "api_key": "test-key",
+                "max_tokens": 8192,
+                "request_id": "req-2",
+            }
+
+        runtime._resolve_llm_configuration = fake_resolve
+        runtime._build_messages_with_history = lambda prompt, context: [{"role": "user", "content": prompt}]
+        runtime._resolve_max_tokens = lambda resolved: resolved.get("max_tokens") or 8192
+        call_count = 0
+
+        async def fake_stream_callable(**kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            yield {"content": f"第{call_count}段", "reasoning_content": ""}
+            yield {"content": "", "reasoning_content": "", "finish_reason": "length"}
+
+        runtime._get_llm_stream_callable = lambda: fake_stream_callable
+
+        class FakeBreaker:
+            async def acquire(self):
+                return None
+
+            async def record_success(self):
+                return None
+
+            async def record_failure(self, exc):
+                return None
+
+        monkeypatch.setattr(
+            runtime_module,
+            "get_circuit_breaker",
+            AsyncMock(return_value=FakeBreaker()),
+        )
+        monkeypatch.setattr(
+            runtime_module,
+            "record_model_service_metric",
+            lambda *args, **kwargs: None,
+        )
+
+        chunks = []
+        async for chunk in runtime._call_llm_api_stream("你好", {}):
+            chunks.append(chunk)
+
+        # 1 次原始请求 + 3 次升级重试 = 4 次调用
+        assert call_count == 4
+        # 最后一次仍为 length，透传真实 finish_reason 供上层状态机决策
+        assert any(c.get("finish_reason") == "length" for c in chunks)

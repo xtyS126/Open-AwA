@@ -515,3 +515,63 @@ class TestBuiltinToolsConcurrencyAttributes:
         assert web_tool is not None
         assert web_tool.is_read_only is True
         assert web_tool.is_concurrency_safe is True
+
+
+class TestStartupToolRegistration:
+    """启动时工具注册接线测试（activate-agent-runtime-dead-code Task 1）"""
+
+    def test_startup_register_builtin_tools_fills_registry(self):
+        """验证启动注册函数调用后 ToolRegistry 非空"""
+        from core.tool_registry import ToolRegistry
+        from core.tool_entries import register_builtin_tools
+
+        registry = ToolRegistry()
+        register_builtin_tools(registry)
+        registered = registry.list_all()
+        # 内置工具注册后应包含 builtin_ 前缀的工具
+        assert len(registered) > 0
+        assert any(t.name == "builtin_read_file" for t in registered)
+        assert any(t.name == "builtin_run_command" for t in registered)
+
+    def test_startup_register_is_idempotent(self):
+        """验证重复注册幂等：不产生重复工具定义"""
+        from core.tool_registry import ToolRegistry
+        from core.tool_entries import register_builtin_tools
+
+        registry = ToolRegistry()
+        register_builtin_tools(registry)
+        first_count = len(registry.list_all())
+        register_builtin_tools(registry)
+        second_count = len(registry.list_all())
+        assert first_count == second_count
+        # 同优先级定义被替换而非追加
+        assert registry.get("builtin_read_file") is not None
+
+    async def test_builtin_registry_executes_through_tool_registry(self):
+        """验证旧式调用收敛到 ToolRegistry 后仍可执行"""
+        from core.tool_registry import ToolRegistry
+        from core.tool_entries import register_builtin_tools
+
+        registry = ToolRegistry()
+        register_builtin_tools(registry)
+        registered_tool = registry.get("builtin_get_system_status")
+        assert registered_tool is not None
+
+        # 通过兼容层执行旧式调用：terminal_executor + get_status
+        from tools.registry import BuiltInToolRegistry
+
+        compat = BuiltInToolRegistry()
+        # 注册表为空时回退旧式直连（不抛异常）
+        empty_registry = ToolRegistry()
+        from core.tool_registry import tool_registry as global_registry
+        saved = global_registry._tools
+        global_registry._tools = empty_registry._tools
+        try:
+            result = await compat.execute_tool(
+                "terminal_executor", action="get_status", params={}
+            )
+            # 无论走注册表还是旧式，都应返回结构化结果
+            assert isinstance(result, dict)
+        finally:
+            global_registry._tools = saved
+

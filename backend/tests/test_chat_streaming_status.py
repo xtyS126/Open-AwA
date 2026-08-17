@@ -570,7 +570,7 @@ async def test_ai_agent_process_stream_persists_pending_background_subagent_exch
         return []
 
     async def fake_recognize_intent(user_input):
-        return "chat"
+        return {"type": "chat", "action": "respond"}
 
     async def fake_extract_entities(user_input):
         return {}

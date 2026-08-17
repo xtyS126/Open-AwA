@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mcp.manager import (
+from mcp_integration.manager import (
     MCPClient,
     MCPClientError,
     MCPManager,
@@ -18,19 +18,24 @@ from mcp.manager import (
     MCPTool,
     MCPTransportError,
     SSETransport,
+    StdioServerParameters,
     TransportType,
+    _sandboxed_stdio_client,
     build_mcp_tool_name,
 )
 # 官方 mcp SDK 类型，用于构造 session mock 返回值
-from mcp.types import (
+from mcp_integration.manager import (
     BlobResourceContents,
     ReadResourceResult,
     TextResourceContents,
 )
+from mcp_integration.sandbox import SandboxError, SandboxLimits
+from core.execution_tool_runtime import ExecutionToolRuntimeMixin
 from core.permission_manager import (
     PermissionEffect,
     PermissionRule,
     evaluate_effect,
+    get_permission_manager,
     matches_mcp_server,
     wildcard_match,
 )
@@ -523,3 +528,336 @@ def test_permission_manager_mcp_server_rule():
     assert evaluate_effect(
         "mcp_tool", "mcp__github__dangerous", combined_rules
     ) == PermissionEffect.DENY
+
+
+# ==================== MCP 服务级权限门禁测试（Task 13） ====================
+
+
+@pytest.fixture
+def reset_global_permission_rules():
+    """每个用例前后重置全局权限规则，保持测试隔离。"""
+    pm = get_permission_manager()
+    pm.set_global_rules([])
+    yield
+    pm.set_global_rules([])
+
+
+@pytest.mark.asyncio
+async def test_execution_tool_mcp_permission_service_rule_allowed(reset_global_permission_rules):
+    """服务级 ALLOW 规则 mcp__server1 应放行该服务下所有工具。"""
+    pm = get_permission_manager()
+    pm.set_global_rules([
+        PermissionRule(action="mcp__server1", resource="*", effect=PermissionEffect.ALLOW),
+    ])
+    runtime = ExecutionToolRuntimeMixin()
+    context = {"user_id": "u1"}
+    # patch 权限管理器获取函数，返回测试配置的规则实例
+    with patch("core.permission_manager.get_permission_manager", return_value=pm):
+        # 服务下任意工具均放行（返回 None 表示通过门禁）
+        for tool in ("tool1", "tool2", "any_tool"):
+            result = await runtime._check_mcp_permission(
+                full_tool_name=f"mcp__server1__{tool}",
+                server_id="server1",
+                context=context,
+            )
+            assert result is None
+
+
+@pytest.mark.asyncio
+async def test_execution_tool_mcp_permission_service_rule_denied(reset_global_permission_rules):
+    """服务级 DENY 规则 mcp__server1 应拒绝该服务下所有工具。"""
+    pm = get_permission_manager()
+    pm.set_global_rules([
+        PermissionRule(action="mcp__server1", resource="*", effect=PermissionEffect.DENY),
+    ])
+    runtime = ExecutionToolRuntimeMixin()
+    context = {"user_id": "u1"}
+    with patch("core.permission_manager.get_permission_manager", return_value=pm):
+        result = await runtime._check_mcp_permission(
+            full_tool_name="mcp__server1__tool1",
+            server_id="server1",
+            context=context,
+        )
+        assert result is not None
+        assert result["ok"] is False
+        assert result["denied_by"] == "permission"
+        # 其他服务的工具不受该服务级规则影响
+        result_other = await runtime._check_mcp_permission(
+            full_tool_name="mcp__server2__tool1",
+            server_id="server2",
+            context=context,
+        )
+        assert result_other is None
+
+
+@pytest.mark.asyncio
+async def test_execution_tool_mcp_permission_default_allow(reset_global_permission_rules):
+    """无任何权限规则时应默认放行（向后兼容，不破坏既有 MCP 调用）。"""
+    runtime = ExecutionToolRuntimeMixin()
+    context = {"user_id": "u1"}
+    result = await runtime._check_mcp_permission(
+        full_tool_name="mcp__server1__tool1",
+        server_id="server1",
+        context=context,
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_execution_tool_mcp_permission_tool_level_rule(reset_global_permission_rules):
+    """工具级 DENY 规则 mcp__server1__dangerous 仅拒绝该工具，不影响同服务其他工具。"""
+    pm = get_permission_manager()
+    pm.set_global_rules([
+        PermissionRule(
+            action="mcp__server1__dangerous",
+            resource="*",
+            effect=PermissionEffect.DENY,
+        ),
+    ])
+    runtime = ExecutionToolRuntimeMixin()
+    context = {"user_id": "u1"}
+    with patch("core.permission_manager.get_permission_manager", return_value=pm):
+        result = await runtime._check_mcp_permission(
+            full_tool_name="mcp__server1__dangerous",
+            server_id="server1",
+            context=context,
+        )
+        assert result is not None
+        assert result["denied_by"] == "permission"
+        # 同服务其他工具不受影响
+        result_ok = await runtime._check_mcp_permission(
+            full_tool_name="mcp__server1__safe",
+            server_id="server1",
+            context=context,
+        )
+        assert result_ok is None
+
+
+@pytest.mark.asyncio
+async def test_execution_tool_mcp_permission_deny_overrides_service_allow(
+    reset_global_permission_rules,
+):
+    """服务级 ALLOW 与工具级 DENY 并存时，后匹配的 DENY 应生效（last-match-wins）。"""
+    pm = get_permission_manager()
+    pm.set_global_rules([
+        PermissionRule(action="mcp__server1", resource="*", effect=PermissionEffect.ALLOW),
+        PermissionRule(
+            action="mcp__server1__dangerous",
+            resource="*",
+            effect=PermissionEffect.DENY,
+        ),
+    ])
+    runtime = ExecutionToolRuntimeMixin()
+    context = {"user_id": "u1"}
+    with patch("core.permission_manager.get_permission_manager", return_value=pm):
+        # 普通工具放行
+        assert await runtime._check_mcp_permission(
+            full_tool_name="mcp__server1__safe",
+            server_id="server1",
+            context=context,
+        ) is None
+        # 危险工具被后匹配的 DENY 拒绝
+        denied = await runtime._check_mcp_permission(
+            full_tool_name="mcp__server1__dangerous",
+            server_id="server1",
+            context=context,
+        )
+        assert denied is not None
+        assert denied["denied_by"] == "permission"
+
+
+# ==================== MCP SSE 认证头传递测试（Task 13） ====================
+
+
+def _make_transport_mock() -> MagicMock:
+    """构造可手动进入/退出的 transport 上下文 mock。"""
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=(MagicMock(), MagicMock()))
+    mock_ctx.__aexit__ = AsyncMock(return_value=None)
+    return mock_ctx
+
+
+@pytest.mark.asyncio
+async def test_mcp_sse_auth_headers_passed():
+    """SSE 连接应携带自定义 headers 与 auth_token 生成的 Bearer 认证头。"""
+    SSETransport.set_allowed_origins([])
+    config = MCPServerConfig(
+        name="test",
+        transport_type=TransportType.SSE,
+        url="https://allowed.example.com/sse",
+        headers={"X-Custom": "v1"},
+        auth_token="secret-token",
+    )
+    client = MCPClient(config)
+    mock_ctx = _make_transport_mock()
+
+    with patch("mcp_integration.manager._mcp_sse_client", return_value=mock_ctx) as mock_sse:
+        with patch("mcp_integration.manager.ClientSession") as mock_session_cls:
+            mock_session = MagicMock()
+            mock_session.initialize = AsyncMock()
+            mock_session_cls.return_value = mock_session
+            await client.connect()
+
+    # 验证 sse_client 收到合并后的请求头
+    mock_sse.assert_called_once()
+    args, kwargs = mock_sse.call_args
+    assert args[0] == "https://allowed.example.com/sse"
+    assert kwargs["headers"]["X-Custom"] == "v1"
+    assert kwargs["headers"]["Authorization"] == "Bearer secret-token"
+
+
+@pytest.mark.asyncio
+async def test_mcp_sse_auth_token_not_override_explicit_authorization():
+    """用户显式提供 Authorization 头时，auth_token 不应覆盖。"""
+    SSETransport.set_allowed_origins([])
+    config = MCPServerConfig(
+        name="test",
+        transport_type=TransportType.SSE,
+        url="https://allowed.example.com/sse",
+        headers={"Authorization": "Bearer explicit"},
+        auth_token="fallback-token",
+    )
+    client = MCPClient(config)
+    mock_ctx = _make_transport_mock()
+
+    with patch("mcp_integration.manager._mcp_sse_client", return_value=mock_ctx) as mock_sse:
+        with patch("mcp_integration.manager.ClientSession") as mock_session_cls:
+            mock_session = MagicMock()
+            mock_session.initialize = AsyncMock()
+            mock_session_cls.return_value = mock_session
+            await client.connect()
+
+    _, kwargs = mock_sse.call_args
+    assert kwargs["headers"]["Authorization"] == "Bearer explicit"
+
+
+@pytest.mark.asyncio
+async def test_mcp_sse_no_headers_when_not_configured():
+    """未配置 headers/auth_token 时不应附加 Authorization 头。"""
+    SSETransport.set_allowed_origins([])
+    config = MCPServerConfig(
+        name="test",
+        transport_type=TransportType.SSE,
+        url="https://allowed.example.com/sse",
+    )
+    client = MCPClient(config)
+    mock_ctx = _make_transport_mock()
+
+    with patch("mcp_integration.manager._mcp_sse_client", return_value=mock_ctx) as mock_sse:
+        with patch("mcp_integration.manager.ClientSession") as mock_session_cls:
+            mock_session = MagicMock()
+            mock_session.initialize = AsyncMock()
+            mock_session_cls.return_value = mock_session
+            await client.connect()
+
+    _, kwargs = mock_sse.call_args
+    assert kwargs["headers"] == {}
+    assert "Authorization" not in kwargs["headers"]
+
+
+# ==================== MCP 子进程沙箱接入测试（Task 14） ====================
+
+
+@pytest.mark.asyncio
+async def test_connect_stdio_uses_sandbox_transport():
+    """stdio 连接应通过沙箱传输启动子进程（而非裸 stdio_client）。"""
+    config = MCPServerConfig(
+        name="test",
+        transport_type=TransportType.STDIO,
+        command="echo",
+    )
+    client = MCPClient(config)
+    mock_ctx = _make_transport_mock()
+
+    with patch("mcp_integration.manager._sandboxed_stdio_client", return_value=mock_ctx) as mock_sandbox:
+        with patch("mcp_integration.manager._mcp_stdio_client") as mock_bare:
+            with patch("mcp_integration.manager.ClientSession") as mock_session_cls:
+                mock_session = MagicMock()
+                mock_session.initialize = AsyncMock()
+                mock_session_cls.return_value = mock_session
+                await client.connect()
+
+    # 沙箱传输被使用，裸 stdio_client 未被使用
+    mock_sandbox.assert_called_once()
+    mock_bare.assert_not_called()
+    # 沙箱传输携带资源限制配置
+    _, kwargs = mock_sandbox.call_args
+    assert kwargs.get("limits") is not None
+    assert kwargs["limits"].max_cpu_time_seconds == 60.0
+    assert kwargs["limits"].max_memory_mb == 1024
+    assert kwargs["limits"].max_output_size_bytes == 10 * 1024 * 1024
+
+
+class _FakeStreamReader:
+    """模拟 asyncio StreamReader（立即 EOF，避免阻塞 reader task）。"""
+
+    async def readline(self) -> bytes:
+        return b""
+
+    async def read(self, n: int = 4096) -> bytes:
+        return b""
+
+
+class _FakeStreamWriter:
+    """模拟 asyncio StreamWriter（记录关闭状态）。"""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def write(self, data: bytes) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
+
+    async def drain(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_sandboxed_stdio_client_passes_limits_to_subprocess():
+    """沙箱 stdio 传输应通过 create_sandboxed_subprocess 启动进程并传递资源限制。"""
+    mock_process = MagicMock()
+    mock_process.pid = 1234
+    mock_process.stdout = _FakeStreamReader()
+    mock_process.stderr = _FakeStreamReader()
+    mock_process.stdin = _FakeStreamWriter()
+    mock_process.wait = AsyncMock(return_value=0)
+
+    limits = SandboxLimits(max_cpu_time_seconds=10.0)
+    params = StdioServerParameters(command="echo", args=["hi"], env={"K": "V"})
+
+    with patch(
+        "mcp_integration.manager.create_sandboxed_subprocess",
+        new=AsyncMock(return_value=mock_process),
+    ) as mock_create:
+        ctx = _sandboxed_stdio_client(params, limits=limits)
+        read_stream, write_stream = await ctx.__aenter__()
+        try:
+            # 验证沙箱启动参数传递（命令 / 参数 / 环境变量 / 资源限制）
+            mock_create.assert_awaited_once()
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["command"] == "echo"
+            assert call_kwargs["args"] == ["hi"]
+            assert call_kwargs["env"] == {"K": "V"}
+            assert call_kwargs["limits"] is limits
+        finally:
+            await ctx.__aexit__(None, None, None)
+
+    # 退出时先关闭 stdin，再等待进程退出（优雅关闭顺序）
+    assert mock_process.stdin.closed is True
+    mock_process.wait.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sandboxed_stdio_client_launch_failure_raises():
+    """沙箱启动子进程失败时应抛出 MCPClientError 并清理流。"""
+    params = StdioServerParameters(command="bad_command")
+
+    with patch(
+        "mcp_integration.manager.create_sandboxed_subprocess",
+        new=AsyncMock(side_effect=SandboxError("命令路径包含非法字符: bad..command")),
+    ):
+        ctx = _sandboxed_stdio_client(params)
+        with pytest.raises(MCPClientError, match="沙箱启动 MCP Server 失败"):
+            await ctx.__aenter__()

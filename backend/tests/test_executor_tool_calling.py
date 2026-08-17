@@ -173,6 +173,7 @@ async def test_execute_tool_call_spawn_agent_supports_qualified_model(monkeypatc
         "provider": "anthropic",
         "model": "claude-3-5-sonnet",
         "background": True,
+        "fork_mode": False,
         "root_chat_session_id": "sess_1",
         "context": {"session_id": "sess_1", "agent_id": "agt_1", "provider": "openai"},
     }
@@ -343,6 +344,7 @@ async def test_execute_tool_call_spawn_agent_inherits_current_model_when_missing
         "provider": "openai",
         "model": "gpt-4o-mini",
         "background": True,
+        "fork_mode": False,
         "root_chat_session_id": "sess_inherit_1",
         "context": {
             "session_id": "sess_inherit_1",
@@ -618,3 +620,193 @@ async def test_call_llm_api_stream_handles_pseudo_json_tool_call(monkeypatch):
 
     assert len(tool_chunks) == 1
     assert len(content_chunks) == 0
+
+
+# ── 权限检查链接线（Task 10）─────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_plan_mode_denies_write_before_dispatch():
+    """配置 plan 权限模式时，写操作在分发前被权限模式拦截。"""
+
+    execution_layer = ExecutionLayer()
+    result = await execution_layer._execute_tool_call(
+        {
+            "id": "call_perm_plan_1",
+            "type": "function",
+            "function": {
+                "name": "builtin_write_file",
+                "arguments": '{"path": "/tmp/test.txt", "content": "x"}',
+            },
+        },
+        {"session_id": "sess_perm_plan_1", "agent_id": "agt_perm_plan_1", "permission_mode": "plan"},
+    )
+
+    assert result["ok"] is False
+    assert result["denied_by"] == "permission_mode"
+    assert "plan" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_permission_rule_denies_task_tool(monkeypatch):
+    """plan 代理的权限规则（deny 优先）在分发前拦截写类工具。"""
+
+    execution_layer = ExecutionLayer()
+    initialized = {"value": False}
+
+    class FakeTaskRuntime:
+        async def initialize(self):
+            initialized["value"] = True
+
+        async def create_task_item(self, **kwargs):
+            return {"ok": True, "task_id": "t1"}
+
+    monkeypatch.setattr(task_runtime_module, "task_runtime", FakeTaskRuntime())
+
+    result = await execution_layer._execute_tool_call(
+        {
+            "id": "call_perm_rule_1",
+            "type": "function",
+            "function": {
+                "name": "task_create_task",
+                "arguments": '{"subject": "x"}',
+            },
+        },
+        {"session_id": "sess_perm_rule_1", "agent_id": "plan"},
+    )
+
+    assert result["ok"] is False
+    assert result["denied_by"] == "permission"
+    assert initialized["value"] is False  # 未进入 task runtime 分发
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_ask_confirm_reject_blocks_tool(monkeypatch):
+    """权限规则命中 ASK 且用户拒绝（reject）时，工具被阻止执行。"""
+
+    execution_layer = ExecutionLayer()
+
+    async def fake_request_permission(tool_name, tool_args, context):
+        return "reject"
+
+    monkeypatch.setattr(execution_layer, "_request_user_permission", fake_request_permission)
+
+    result = await execution_layer._execute_tool_call(
+        {
+            "id": "call_perm_ask_1",
+            "type": "function",
+            "function": {
+                "name": "builtin_write_file",
+                "arguments": '{"path": "/tmp/x.txt", "content": "x"}',
+            },
+        },
+        {"session_id": "sess_perm_ask_1", "agent_id": "general-purpose", "user_id": "u1"},
+    )
+
+    assert result["ok"] is False
+    assert result["denied_by"] == "user"
+    assert "拒绝" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_ask_confirm_approve_continues(monkeypatch):
+    """权限规则命中 ASK 且用户批准（once）后，工具继续正常执行。"""
+
+    execution_layer = ExecutionLayer()
+    fake_manager = FakePluginManager()
+
+    from plugins import plugin_instance
+    monkeypatch.setattr(plugin_instance, "get", lambda: fake_manager)
+
+    async def fake_request_permission(tool_name, tool_args, context):
+        return "once"
+
+    monkeypatch.setattr(execution_layer, "_request_user_permission", fake_request_permission)
+
+    result = await execution_layer._execute_tool_call(
+        {
+            "id": "call_perm_ask_2",
+            "type": "function",
+            "function": {
+                "name": "plugin_twitter-monitor__get_twitter_user_info",
+                "arguments": '{"user_name": "openai"}',
+            },
+        },
+        {"session_id": "sess_perm_ask_2", "agent_id": "general-purpose", "user_id": "u1"},
+    )
+
+    assert result["ok"] is True
+    assert len(fake_manager.executions) == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_without_permission_config_bypasses_checks(monkeypatch):
+    """未配置 permission_mode 且无权限规则时，权限检查链默认放行（保持既有行为）。"""
+
+    execution_layer = ExecutionLayer()
+    fake_manager = FakePluginManager()
+
+    from plugins import plugin_instance
+    monkeypatch.setattr(plugin_instance, "get", lambda: fake_manager)
+
+    result = await execution_layer._execute_tool_call(
+        {
+            "id": "call_perm_default_1",
+            "type": "function",
+            "function": {
+                "name": "plugin_twitter-monitor__get_twitter_user_info",
+                "arguments": '{"user_name": "openai"}',
+            },
+        },
+        {"session_id": "sess_perm_default_1", "agent_id": "agt_perm_default_1"},
+    )
+
+    assert result["ok"] is True
+    assert len(fake_manager.executions) == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_bypass_permissions_allows_write(monkeypatch):
+    """bypass_permissions 模式跳过权限检查链，写操作正常分发。"""
+
+    execution_layer = ExecutionLayer()
+    called = {"value": False}
+
+    class FakeToolRegistry:
+        """最小 ToolRegistry 桩：记录 execute 调用。"""
+
+        def get(self, name):
+            if name == "builtin_write_file":
+                return self
+            return None
+
+        async def execute(self, name, args, ctx):
+            called["value"] = True
+            return _FakeExecResult()
+
+    import core.tool_registry as tool_registry_module
+    from core.tool_registry import ToolStatus
+
+    class _FakeExecResult:
+        status = ToolStatus.COMPLETED
+        result = {"ok": True}
+        error = None
+        truncated = False
+        output_path = None
+        execution_time_ms = 1
+
+    monkeypatch.setattr(tool_registry_module, "tool_registry", FakeToolRegistry())
+
+    result = await execution_layer._execute_tool_call(
+        {
+            "id": "call_perm_bypass_1",
+            "type": "function",
+            "function": {
+                "name": "builtin_write_file",
+                "arguments": '{"path": "/etc/passwd", "content": "x"}',
+            },
+        },
+        {"session_id": "sess_perm_bypass_1", "agent_id": "agt_perm_bypass_1", "permission_mode": "bypass_permissions"},
+    )
+
+    assert called["value"] is True
+    assert result["ok"] is True

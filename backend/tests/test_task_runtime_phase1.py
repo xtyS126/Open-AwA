@@ -374,6 +374,9 @@ class TestSubagentRunnerContext:
     """子代理运行上下文测试。"""
 
     def test_create_subagent_execution_bundle_uses_dedicated_db_session(self, monkeypatch):
+        """验证子代理执行 bundle 使用独立数据库会话。"""
+        import asyncio
+
         class FakeSession:
             def __init__(self):
                 self.closed = False
@@ -392,26 +395,29 @@ class TestSubagentRunnerContext:
         monkeypatch.setattr(runners_module, "SessionLocal", lambda: fake_session)
         monkeypatch.setattr(agent_module, "AIAgent", FakeAgent)
 
-        sub_agent, subagent_db, sub_context = runners_module._create_subagent_execution_bundle(
-            agent_id="agt_runner_1",
-            agent_type="Explore",
-            provider=None,
-            model=None,
-            context={
-                "user_id": "user-1",
-                "username": "tester",
-                "provider": "deepseek",
-                "model": "deepseek-chat",
-                "configured_model_catalog": {
-                    "providers": [
-                        {"provider": "deepseek", "models": ["deepseek-chat"]},
-                    ],
-                    "entries": [
-                        {"provider": "deepseek", "model": "deepseek-chat", "label": "deepseek:deepseek-chat"},
-                    ],
+        async def _run() -> tuple[object, object, dict[str, object]]:
+            return await runners_module._create_subagent_execution_bundle(
+                agent_id="agt_runner_1",
+                agent_type="Explore",
+                provider=None,
+                model=None,
+                context={
+                    "user_id": "user-1",
+                    "username": "tester",
+                    "provider": "deepseek",
+                    "model": "deepseek-chat",
+                    "configured_model_catalog": {
+                        "providers": [
+                            {"provider": "deepseek", "models": ["deepseek-chat"]},
+                        ],
+                        "entries": [
+                            {"provider": "deepseek", "model": "deepseek-chat", "label": "deepseek:deepseek-chat"},
+                        ],
+                    },
                 },
-            },
-        )
+            )
+
+        sub_agent, subagent_db, sub_context = asyncio.run(_run())
 
         assert isinstance(sub_agent, FakeAgent)
         assert subagent_db is fake_session
@@ -437,12 +443,12 @@ class TestSubagentRunnerContext:
                 yield {"type": "chunk", "reasoning_content": "", "content": "最终答复"}
                 yield {"type": "status", "message": "准备执行工具"}
 
-        async def fake_dispatch(_hook_name, _payload):
+        async def fake_trigger(_hook_name, data=None, context=None, default_timeout=30.0):
             return []
 
         monkeypatch.setattr(runners_module, "SessionLocal", testing_session_local)
         monkeypatch.setattr(runners_module, "save_transcript_entry", lambda agent_id, entry: transcript_entries.append(entry))
-        monkeypatch.setattr(runners_module.hook_dispatcher, "dispatch", fake_dispatch)
+        monkeypatch.setattr(runners_module.hook_manager, "trigger", fake_trigger)
         monkeypatch.setattr(agent_module, "AIAgent", FakeAgent)
 
         events = []

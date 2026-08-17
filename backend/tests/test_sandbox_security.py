@@ -22,6 +22,8 @@ from security.sandbox import (
     _ALLOWED_COMMANDS,
     _DANGEROUS_COMMANDS,
     _DANGEROUS_ARG_PATTERNS,
+    is_path_allowed,
+    validate_command_safety,
 )
 
 
@@ -486,3 +488,148 @@ class TestPermissionCheckEnforced:
             call_args = mock_check.call_args
             assert call_args[0][0] == "delete"
             assert ".env" in call_args[0][1]
+
+
+class TestTask12DenyEnvVariants:
+    """Task 12：.env 及常见变体路径拒绝（含大小写变体）。"""
+
+    def test_env_variants_rejected_by_is_path_allowed(self):
+        """验证 .env 及常见变体均被 is_path_allowed 拒绝。"""
+        assert is_path_allowed('.env') is False
+        assert is_path_allowed('.env.local') is False
+        assert is_path_allowed('.env.production') is False
+        assert is_path_allowed('.env.dev') is False
+        assert is_path_allowed('.env.test') is False
+        # 大小写变体（IGNORECASE）
+        assert is_path_allowed('.ENV') is False
+        assert is_path_allowed('.Env.Local') is False
+        assert is_path_allowed('/tmp/.env.production') is False
+        assert is_path_allowed('/home/user/.ENV') is False
+
+    @pytest.mark.asyncio
+    async def test_env_variants_rejected_by_file_operation(self, tmp_path):
+        """验证 execute_file_operation 读取 .env 变体被拒绝。"""
+        sandbox = Sandbox(work_dir=str(tmp_path))
+        env_file = tmp_path / '.env.production'
+        env_file.write_text("SECRET=value")
+        result = await sandbox.execute_file_operation("read", str(env_file))
+        assert result["status"] == "error"
+
+
+class TestTask12DenySecretFiles:
+    """Task 12：常见密钥文件名 deny（私钥、云厂商凭据、.ssh 目录）。"""
+
+    def test_private_key_files_rejected(self):
+        """验证私钥文件名被拒绝。"""
+        assert is_path_allowed('id_rsa') is False
+        assert is_path_allowed('/home/user/id_rsa') is False
+        assert is_path_allowed('id_ed25519') is False
+        assert is_path_allowed('/home/user/.ssh/id_ed25519') is False
+        assert is_path_allowed('C:\\Users\\user\\.ssh\\id_ecdsa') is False
+
+    def test_aws_credentials_rejected(self):
+        """验证 AWS 凭据文件被拒绝。"""
+        assert is_path_allowed('/home/user/.aws/credentials') is False
+        assert is_path_allowed('C:\\Users\\user\\.aws\\credentials') is False
+
+    def test_ssh_directory_rejected(self):
+        """验证 .ssh 目录整体被拒绝。"""
+        assert is_path_allowed('/home/user/.ssh/known_hosts') is False
+        assert is_path_allowed('/home/user/.ssh/config') is False
+
+    @pytest.mark.asyncio
+    async def test_secret_files_rejected_by_file_operation(self, tmp_path):
+        """验证 execute_file_operation 读取密钥文件被拒绝。"""
+        sandbox = Sandbox(work_dir=str(tmp_path))
+        key_file = tmp_path / 'id_rsa'
+        key_file.write_text("PRIVATE KEY")
+        result = await sandbox.execute_file_operation("read", str(key_file))
+        assert result["status"] == "error"
+
+
+class TestTask12CommandSubcommandPolicy:
+    """Task 12：命令子命令/标志安全策略（git 只读、tar --to-command、解压路径）。"""
+
+    @pytest.fixture
+    def sandbox(self, tmp_path):
+        """创建沙箱实例。"""
+        return Sandbox(work_dir=str(tmp_path))
+
+    def test_git_status_allowed(self):
+        """验证 git 只读子命令放行。"""
+        is_safe, err = validate_command_safety("git", ["status"])
+        assert is_safe, err
+        is_safe, err = validate_command_safety("git", ["log", "--oneline"])
+        assert is_safe, err
+        is_safe, err = validate_command_safety("git", ["diff", "--stat"])
+        assert is_safe, err
+        is_safe, err = validate_command_safety("git", ["show", "HEAD"])
+        assert is_safe, err
+
+    def test_git_write_subcommands_blocked(self):
+        """验证 git 写操作子命令被拦截。"""
+        for sub, args in [
+            ("commit", ["-m", "msg"]),
+            ("push", ["origin", "main"]),
+            ("checkout", ["main"]),
+            ("merge", ["feature"]),
+            ("rebase", ["main"]),
+            ("reset", ["--hard", "HEAD"]),
+            ("add", ["file.txt"]),
+            ("pull", []),
+        ]:
+            is_safe, err = validate_command_safety("git", [sub] + args)
+            assert not is_safe, f"git {sub} 应被拦截: {err}"
+
+    def test_git_global_option_then_write_blocked(self):
+        """验证全局选项后的写操作子命令仍被拦截。"""
+        is_safe, err = validate_command_safety("git", ["-C", "/tmp", "commit", "-m", "x"])
+        assert not is_safe
+
+    def test_tar_to_command_blocked(self):
+        """验证 tar --to-command 被拦截（远程命令执行）。"""
+        is_safe, err = validate_command_safety("tar", ["-x", "--to-command", "sh", "-c", "id"])
+        assert not is_safe
+        is_safe, err = validate_command_safety("tar", ["-xf", "a.tar", "--to-command=/bin/sh"])
+        assert not is_safe
+
+    def test_extract_path_traversal_blocked(self):
+        """验证解压目标路径穿越被拦截（zip-slip）。"""
+        # tar 解压
+        is_safe, err = validate_command_safety("tar", ["-x", "-C", "../../etc"])
+        assert not is_safe
+        is_safe, err = validate_command_safety("tar", ["-xf", "a.tar", "-C", ".."])
+        assert not is_safe
+        # unzip 解压
+        is_safe, err = validate_command_safety("unzip", ["-d", "../../etc", "a.zip"])
+        assert not is_safe
+        is_safe, err = validate_command_safety("unzip", ["a.zip", "-d", ".."])
+        assert not is_safe
+
+    def test_extract_absolute_system_dir_blocked(self):
+        """验证解压到系统绝对目录被拦截。"""
+        is_safe, err = validate_command_safety("tar", ["-x", "-C", "/etc"])
+        assert not is_safe
+        is_safe, err = validate_command_safety("unzip", ["-d", "/root", "a.zip"])
+        assert not is_safe
+
+    def test_extract_safe_destination_allowed(self):
+        """验证解压到允许目录放行。"""
+        is_safe, err = validate_command_safety("tar", ["-x", "-C", "/tmp"])
+        assert is_safe, err
+        is_safe, err = validate_command_safety("tar", ["-x", "-C", "/var/tmp/out"])
+        assert is_safe, err
+        is_safe, err = validate_command_safety("unzip", ["-d", "output", "a.zip"])
+        assert is_safe, err
+        is_safe, err = validate_command_safety("unzip", ["-d", "/tmp/out", "a.zip"])
+        assert is_safe, err
+        # 创建归档（-c）不检查解压目标目录
+        is_safe, err = validate_command_safety("tar", ["-cf", "archive.tar", "src/"])
+        assert is_safe, err
+
+    @pytest.mark.asyncio
+    async def test_execute_command_git_commit_blocked(self, sandbox):
+        """验证 execute_command 拦截 git 写操作子命令。"""
+        result = await sandbox.execute_command("git commit -m 'msg'")
+        assert result["status"] == "error"
+        assert "commit" in result["message"]

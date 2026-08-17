@@ -71,6 +71,11 @@ describe('i18n 语言切换', () => {
     }
   })
 
+  it('工作台智能体入口使用自然的中文和日文标签', () => {
+    expect(zhCN['nav.workbench.agents']).toBe('智能体')
+    expect(jaJP['nav.workbench.agents']).toBe('エージェント')
+  })
+
   it('默认语言为 zh-CN', () => {
     expect(useI18nStore.getState().locale).toBe('zh-CN')
     expect(useI18nStore.getState().isLocaleLoaded).toBe(true)

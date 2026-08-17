@@ -9,7 +9,7 @@ from collections import deque
 
 import pytest
 
-from mcp.manager import MCPManager
+from mcp_integration.manager import MCPManager
 from security.rate_limit_store import MemoryRateLimitStore
 
 

@@ -1,6 +1,8 @@
 import '@testing-library/jest-dom/vitest'
+import { StrictMode } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import AssistantContextPage from '@/features/assistant/AssistantContextPage'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { conversationAPI } from '@/shared/api/conversationApi'
@@ -127,16 +129,72 @@ describe('conversationAPI 助手上下文契约', () => {
 })
 
 describe('AssistantContextPage', () => {
+  /** 创建测试用 QueryClient：关闭重试与 staleTime，确保每次 mount 都重新发起查询 */
+  function createTestQueryClient() {
+    return new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: 0,
+          gcTime: 0,
+        },
+      },
+    })
+  }
+
+  /** 包裹 QueryClientProvider 的渲染辅助函数 */
+  function renderWithQueryClient(ui: React.ReactNode) {
+    const testQueryClient = createTestQueryClient()
+    return {
+      ...render(
+        <QueryClientProvider client={testQueryClient}>
+          {ui}
+        </QueryClientProvider>,
+      ),
+      queryClient: testQueryClient,
+    }
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     useSessionStore.setState({ sessionId: 'session-42' })
     arrangeSuccessfulLoads()
   })
 
+  it('StrictMode 重放时每类首载请求只发送一次', async () => {
+    const testQueryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: 60 * 1000,
+        },
+      },
+    })
+
+    render(
+      <QueryClientProvider client={testQueryClient}>
+        <StrictMode>
+          <AssistantContextPage />
+        </StrictMode>
+      </QueryClientProvider>,
+    )
+
+    await screen.findByRole('group', { name: '角色上下文' })
+    await waitFor(() => {
+      expect([
+        mocks.apiGet.mock.calls.length,
+        mocks.getRoles.mock.calls.length,
+        mocks.listWorkspaces.mock.calls.length,
+        mocks.getLongTerm.mock.calls.length,
+        mocks.listSpeakers.mock.calls.length,
+      ]).toEqual([1, 1, 1, 1, 1])
+    })
+  })
+
   it('没有活动会话时显示提示，且不加载资源或创建会话', () => {
     useSessionStore.setState({ sessionId: 'default' })
 
-    render(<AssistantContextPage />)
+    renderWithQueryClient(<AssistantContextPage />)
 
     expect(screen.getByText('请先选择或创建一个会话')).toBeInTheDocument()
     expect(mocks.apiGet).not.toHaveBeenCalled()
@@ -155,17 +213,17 @@ describe('AssistantContextPage', () => {
       speaker_id: 'speaker-2',
     }))
 
-    render(<AssistantContextPage />)
+    renderWithQueryClient(<AssistantContextPage />)
 
     const roleGroup = await screen.findByRole('group', { name: '角色上下文' })
     const workspaceGroup = screen.getByRole('group', { name: '项目上下文' })
     const memoryGroup = screen.getByRole('group', { name: '知识上下文' })
     const speakerGroup = screen.getByRole('group', { name: '声音偏好' })
 
-    expect(within(roleGroup).getByRole('radio', { name: /代码搭档/ })).toBeChecked()
-    expect(within(workspaceGroup).getByRole('radio', { name: /研究项目/ })).toBeChecked()
-    expect(within(memoryGroup).getByRole('checkbox', { name: '知识条目 2' })).toBeChecked()
-    expect(within(speakerGroup).getByRole('radio', { name: /温暖声线/ })).toBeChecked()
+    expect(await within(roleGroup).findByRole('radio', { name: /代码搭档/ })).toBeChecked()
+    expect(await within(workspaceGroup).findByRole('radio', { name: /研究项目/ })).toBeChecked()
+    expect(await within(memoryGroup).findByRole('checkbox', { name: '知识条目 2' })).toBeChecked()
+    expect(await within(speakerGroup).findByRole('radio', { name: /温暖声线/ })).toBeChecked()
     expect(mocks.apiGet).toHaveBeenCalledWith('/conversations/session-42/assistant-context')
     expect(mocks.getRoles).toHaveBeenCalledTimes(1)
     expect(mocks.listWorkspaces).toHaveBeenCalledTimes(1)
@@ -178,19 +236,20 @@ describe('AssistantContextPage', () => {
   it('单个分区加载失败时保留其余分区', async () => {
     mocks.getRoles.mockRejectedValue(new Error('角色服务不可用'))
 
-    render(<AssistantContextPage />)
+    renderWithQueryClient(<AssistantContextPage />)
 
     const roleGroup = await screen.findByRole('group', { name: '角色上下文' })
-    expect(within(roleGroup).getByRole('alert')).toHaveTextContent('角色加载失败')
-    expect(screen.getByRole('radio', { name: /研究项目/ })).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: '知识条目 1' })).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /清朗声线/ })).toBeInTheDocument()
+    expect(await within(roleGroup).findByRole('alert')).toHaveTextContent('角色加载失败')
+    expect(await screen.findByRole('radio', { name: /研究项目/ })).toBeInTheDocument()
+    expect(await screen.findByRole('checkbox', { name: '知识条目 1' })).toBeInTheDocument()
+    expect(await screen.findByRole('radio', { name: /清朗声线/ })).toBeInTheDocument()
   })
 
   it('知识选择最多允许二十条', async () => {
-    render(<AssistantContextPage />)
+    renderWithQueryClient(<AssistantContextPage />)
 
     const memoryGroup = await screen.findByRole('group', { name: '知识上下文' })
+    await within(memoryGroup).findByRole('checkbox', { name: '知识条目 1' })
     for (let index = 1; index <= 20; index += 1) {
       fireEvent.click(within(memoryGroup).getByRole('checkbox', { name: `知识条目 ${index}` }))
     }
@@ -202,7 +261,7 @@ describe('AssistantContextPage', () => {
   })
 
   it('保存当前四类选择并发送完整上下文载荷', async () => {
-    render(<AssistantContextPage />)
+    const { queryClient } = renderWithQueryClient(<AssistantContextPage />)
 
     fireEvent.click(await screen.findByRole('radio', { name: /代码搭档/ }))
     fireEvent.click(screen.getByRole('radio', { name: /研究项目/ }))
@@ -222,11 +281,21 @@ describe('AssistantContextPage', () => {
       )
     })
     expect(await screen.findByText('上下文已保存')).toBeInTheDocument()
+    expect(queryClient.getQueryData([
+      'conversations',
+      'session-42',
+      'assistant-context',
+    ])).toEqual(makeContext({
+      role_id: 'role-2',
+      workspace_id: 'workspace-2',
+      selected_memory_ids: [2],
+      speaker_id: 'speaker-2',
+    }))
   })
 
   it('保存失败时保留选择并显示可访问错误', async () => {
     mocks.apiPatch.mockRejectedValue(new Error('保存服务不可用'))
-    render(<AssistantContextPage />)
+    renderWithQueryClient(<AssistantContextPage />)
 
     const roleOption = await screen.findByRole('radio', { name: /代码搭档/ })
     fireEvent.click(roleOption)

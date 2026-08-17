@@ -180,50 +180,118 @@ class TestIsNearCompletion:
         assert tracker.is_near_completion() is True
 
 
-# ==================== is_diminishing 阈值测试 ====================
+# ==================== set_model_context_window 测试 ====================
+
+
+class TestSetModelContextWindow:
+    """验证按模型注入上下文窗口后预算分母与模型一致。"""
+
+    def test_set_model_context_window_updates_budget(self):
+        """set_model_context_window 应更新输入/输出预算上限（分母）。"""
+        tracker = BudgetTracker()
+
+        tracker.set_model_context_window(max_input_tokens=200_000, max_output_tokens=8_192)
+
+        assert tracker.max_input_tokens == 200_000
+        assert tracker.max_output_tokens == 8_192
+        assert tracker.remaining() == 200_000 + 8_192
+
+    def test_set_model_context_window_negative_clamped_to_zero(self):
+        """负数上下文窗口应被钳制为 0，避免预算出现负分母。"""
+        tracker = BudgetTracker()
+
+        tracker.set_model_context_window(max_input_tokens=-100, max_output_tokens=-50)
+
+        assert tracker.max_input_tokens == 0
+        assert tracker.max_output_tokens == 0
+        assert tracker.remaining() == 0
+
+    def test_set_model_context_window_preserves_usage(self):
+        """重设上下文窗口不应清空已记录的 usage。"""
+        tracker = BudgetTracker(max_input_tokens=1000, max_output_tokens=500)
+        tracker.record_usage(input_tokens=100, output_tokens=50)
+
+        tracker.set_model_context_window(max_input_tokens=2000, max_output_tokens=1000)
+
+        assert tracker.total_used() == 150
+        assert tracker.remaining() == 3000 - 150
+
+
+# ==================== is_diminishing 收益递减测试 ====================
 
 
 class TestIsDiminishing:
-    """验证 is_diminishing 方法的阈值判断。"""
+    """验证 is_diminishing 的收益递减语义：
 
-    def test_is_diminishing_above_threshold(self):
-        """剩余预算 >= 500 时应返回 False。"""
-        tracker = BudgetTracker(max_input_tokens=1000, max_output_tokens=0)
+    continuationCount >= 3 且最近两轮增量均 < 500 token 时判定收益递减。
+    """
 
-        # 使用 400，剩余 600 >= 500
-        tracker.record_usage(input_tokens=400)
+    def test_is_diminishing_false_when_insufficient_rounds(self):
+        """续写轮数不足 3 轮时应返回 False。"""
+        tracker = BudgetTracker(max_input_tokens=100_000, max_output_tokens=16_384)
 
-        assert tracker.remaining() >= 500
+        tracker.record_usage(input_tokens=100, output_tokens=50)
+        tracker.record_usage(input_tokens=100, output_tokens=50)
+
         assert tracker.is_diminishing() is False
 
-    def test_is_diminishing_below_threshold(self):
-        """剩余预算 < 500 时应返回 True。"""
-        tracker = BudgetTracker(max_input_tokens=1000, max_output_tokens=0)
+    def test_is_diminishing_false_when_recent_increments_large(self):
+        """最近两轮增量 >= 500 时应返回 False。"""
+        tracker = BudgetTracker(max_input_tokens=100_000, max_output_tokens=16_384)
 
-        # 使用 600，剩余 400 < 500
-        tracker.record_usage(input_tokens=600)
+        tracker.record_usage(input_tokens=1000, output_tokens=1000)
+        tracker.record_usage(input_tokens=1000, output_tokens=1000)
+        tracker.record_usage(input_tokens=1000, output_tokens=1000)
 
-        assert tracker.remaining() < 500
-        assert tracker.is_diminishing() is True
-
-    def test_is_diminishing_at_boundary(self):
-        """剩余预算恰好等于 500 时应返回 False（边界值）。"""
-        tracker = BudgetTracker(max_input_tokens=1000, max_output_tokens=0)
-
-        # 使用 500，剩余 500，不满足 < 500
-        tracker.record_usage(input_tokens=500)
-
-        assert tracker.remaining() == 500
         assert tracker.is_diminishing() is False
 
-    def test_is_diminishing_zero_remaining(self):
-        """剩余预算为 0 时应返回 True。"""
-        tracker = BudgetTracker(max_input_tokens=1000, max_output_tokens=0)
+    def test_is_diminishing_true_when_recent_increments_small(self):
+        """连续 3 轮且最近两轮增量 < 500 时应返回 True。"""
+        tracker = BudgetTracker(max_input_tokens=100_000, max_output_tokens=16_384)
 
-        tracker.record_usage(input_tokens=1000)
+        tracker.record_usage(input_tokens=1000, output_tokens=1000)
+        tracker.record_usage(input_tokens=100, output_tokens=100)
+        tracker.record_usage(input_tokens=100, output_tokens=100)
 
-        assert tracker.remaining() == 0
         assert tracker.is_diminishing() is True
+
+    def test_is_diminishing_boundary_increment_equal_500(self):
+        """增量恰好等于 500 时不满足 < 500，应返回 False（边界值）。"""
+        tracker = BudgetTracker(max_input_tokens=100_000, max_output_tokens=16_384)
+
+        tracker.record_usage(input_tokens=1000, output_tokens=0)
+        tracker.record_usage(input_tokens=500, output_tokens=0)
+        tracker.record_usage(input_tokens=500, output_tokens=0)
+
+        assert tracker.is_diminishing() is False
+
+    def test_is_diminishing_reset_clears_history(self):
+        """reset 应清空增量历史，is_diminishing 回到 False。"""
+        tracker = BudgetTracker(max_input_tokens=100_000, max_output_tokens=16_384)
+
+        tracker.record_usage(input_tokens=1000, output_tokens=1000)
+        tracker.record_usage(input_tokens=100, output_tokens=100)
+        tracker.record_usage(input_tokens=100, output_tokens=100)
+        assert tracker.is_diminishing() is True
+
+        tracker.reset()
+
+        assert tracker.is_diminishing() is False
+
+    def test_mark_progress_clears_diminishing_window(self):
+        """工具调用等有进展的轮次调用 mark_progress 后应清除递减窗口。"""
+        tracker = BudgetTracker(max_input_tokens=100_000, max_output_tokens=16_384)
+
+        tracker.record_usage(input_tokens=1000, output_tokens=1000)
+        tracker.record_usage(input_tokens=100, output_tokens=100)
+        tracker.record_usage(input_tokens=100, output_tokens=100)
+        assert tracker.is_diminishing() is True
+
+        tracker.mark_progress()
+
+        assert tracker.is_diminishing() is False
+        # 累计用量应保留（mark_progress 只清窗口不清计数器）
+        assert tracker.total_used() == 1000 + 1000 + 100 + 100 + 100 + 100
 
 
 # ==================== 使用率计算测试 ====================

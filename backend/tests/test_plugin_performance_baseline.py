@@ -14,10 +14,6 @@ from plugins.plugin_manager import PluginManager
 
 
 def _make_plugin_source(plugin_name: str) -> str:
-    """
-    处理make、plugin、source相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     class_name = ''.join(part.capitalize() for part in plugin_name.split('_')) + 'Plugin'
     return f'''from plugins.base_plugin import BasePlugin
 

@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import React from 'react'
 import { describe, expect, it } from 'vitest'
 import { Navigate } from '@/shared/routing'
-import { routeDefinitions, router } from '@/router'
+import { routeDefinitions, router, workbenchRoute } from '@/router'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 
 const REACT_ELEMENT_TYPE = Symbol.for('react.element')
@@ -168,6 +168,11 @@ describe('应用路由树', () => {
       if (isLazyElement(lazyChild)) {
         uniqueLazyTypes.add(lazyChild.type)
       }
+    }
+
+    const workbenchComponent = workbenchRoute.options.component as { $$typeof?: symbol }
+    if (workbenchComponent?.$$typeof === REACT_LAZY_TYPE) {
+      uniqueLazyTypes.add(workbenchComponent)
     }
 
     expect(uniqueLazyTypes.size).toBe(lazyMatchCount)

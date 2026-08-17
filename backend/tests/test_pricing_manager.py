@@ -52,10 +52,6 @@ def _create_pricing_session_with_schema(include_capability_columns: bool):
 
 @pytest.fixture
 def db_session():
-    """
-    处理db、session相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     engine = create_engine('sqlite:///:memory:', echo=False)
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine)
@@ -66,18 +62,10 @@ def db_session():
 
 @pytest.fixture
 def pricing_manager(db_session):
-    """
-    处理pricing、manager相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     return PricingManager(db_session)
 
 
 class TestInitializeDefaultConfigurations:
-    """
-    封装与TestInitializeDefaultConfigurations相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
 
     def test_initialize_creates_configurations_when_empty(self, pricing_manager, db_session):
         """
@@ -314,10 +302,6 @@ class TestInitializeDefaultConfigurations:
 
 
 class TestInitializeDefaultPricing:
-    """
-    封装与TestInitializeDefaultPricing相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
 
     def test_initialize_handles_non_nullable_capability_columns(self):
         """
@@ -361,10 +345,6 @@ class TestInitializeDefaultPricing:
 
 
 class TestGetActiveConfigurations:
-    """
-    封装与TestGetActiveConfigurations相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
 
     def test_get_active_only_returns_active(self, pricing_manager, db_session):
         """
@@ -413,10 +393,6 @@ class TestGetActiveConfigurations:
 
 
 class TestDefaultConfiguration:
-    """
-    封装与TestDefaultConfiguration相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
 
     def test_get_default_returns_default_config(self, pricing_manager, db_session):
         """
@@ -451,10 +427,6 @@ class TestDefaultConfiguration:
 
 
 class TestConfigurationUniquenessValidation:
-    """
-    封装与TestConfigurationUniquenessValidation相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
 
     def test_validate_configurations_uniqueness_with_unique_data(self):
         """
@@ -583,10 +555,6 @@ class TestConfigurationUniquenessValidation:
 
 
 class TestDeleteProviderConfigurations:
-    """
-    封装与TestDeleteProviderConfigurations相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def test_delete_provider_configurations_hard_deletes_all_provider_rows(self, pricing_manager, db_session):
         """
         验证delete、provider、configurations、soft、deletes、active、rows相关场景的行为是否符合预期。

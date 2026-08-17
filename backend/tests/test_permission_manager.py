@@ -12,6 +12,7 @@ from core.permission_manager import (
     PermissionEffect,
     PermissionDeniedError,
     evaluate_effect,
+    evaluate_permission,
     wildcard_match,
 )
 
@@ -228,3 +229,82 @@ class TestPermissionManager:
         import pytest
         with pytest.raises(ValueError, match="不存在或已过期"):
             await manager.reply("non_existent_request_id", "once")
+
+
+class TestEffectPriority:
+    """effect 优先级（deny > allow > ask）修复测试"""
+
+    def test_deny_cannot_be_overridden_by_later_allow(self):
+        """deny 不可被后置 allow 覆盖（用户 always allow 无法绕过代理 deny）"""
+        rules = [
+            PermissionRule(action="write", resource="*", effect=PermissionEffect.DENY),
+            PermissionRule(action="write", resource="*", effect=PermissionEffect.ALLOW),
+        ]
+        effect = evaluate_effect("write", "file.txt", rules)
+        assert effect == PermissionEffect.DENY
+
+    def test_deny_overrides_allow_in_different_rulesets(self):
+        """跨规则集合（代理 deny + 已保存 allow）deny 仍优先"""
+        agent_rules = [PermissionRule(action="bash", resource="*", effect=PermissionEffect.DENY)]
+        saved_rules = [PermissionRule(action="bash", resource="*", effect=PermissionEffect.ALLOW)]
+        effect = evaluate_effect("bash", "rm -rf /", agent_rules, saved_rules)
+        assert effect == PermissionEffect.DENY
+
+    def test_deny_overrides_ask(self):
+        """deny 优先级高于 ask"""
+        rules = [
+            PermissionRule(action="*", resource="*", effect=PermissionEffect.ASK),
+            PermissionRule(action="bash", resource="*", effect=PermissionEffect.DENY),
+        ]
+        effect = evaluate_effect("bash", "ls", rules)
+        assert effect == PermissionEffect.DENY
+
+    def test_allow_overrides_ask(self):
+        """allow 优先级高于 ask"""
+        rules = [
+            PermissionRule(action="*", resource="*", effect=PermissionEffect.ASK),
+            PermissionRule(action="read", resource="*", effect=PermissionEffect.ALLOW),
+        ]
+        assert evaluate_effect("read", "file", rules) == PermissionEffect.ALLOW
+
+    def test_same_effect_last_match_wins(self):
+        """同 effect 下最后一条匹配生效（保持同级 last-match-wins）"""
+        rules = [
+            PermissionRule(action="*", resource="*", effect=PermissionEffect.ALLOW),
+            PermissionRule(action="read", resource="*", effect=PermissionEffect.ALLOW),
+        ]
+        rule = evaluate_permission("read", "file", rules)
+        assert rule.effect == PermissionEffect.ALLOW
+        assert rule.action == "read"
+
+    @pytest.mark.asyncio
+    async def test_plan_agent_rules_keep_read_allow_write_deny(self):
+        """plan 代理在 effect 优先级语义下：只读放行、写操作拒绝"""
+        manager = PermissionManager()
+        assert await manager.evaluate("read", "file", "plan") == PermissionEffect.ALLOW
+        assert await manager.evaluate("glob", "src", "plan") == PermissionEffect.ALLOW
+        assert await manager.evaluate("edit", "file", "plan") == PermissionEffect.DENY
+        assert await manager.evaluate("write", "file", "plan") == PermissionEffect.DENY
+        assert await manager.evaluate("bash", "ls", "plan") == PermissionEffect.DENY
+        assert await manager.evaluate("delete", "file", "plan") == PermissionEffect.DENY
+
+    @pytest.mark.asyncio
+    async def test_general_purpose_rules_read_allow_write_ask(self):
+        """general-purpose 代理：只读放行、写操作 ASK 确认"""
+        manager = PermissionManager()
+        assert await manager.evaluate("read", "file", "general-purpose") == PermissionEffect.ALLOW
+        assert await manager.evaluate("edit", "file", "general-purpose") == PermissionEffect.ASK
+        assert await manager.evaluate("write", "file", "general-purpose") == PermissionEffect.ASK
+        assert await manager.evaluate("bash", "ls", "general-purpose") == PermissionEffect.ASK
+
+    @pytest.mark.asyncio
+    async def test_plan_agent_deny_not_overridden_by_saved_allow(self):
+        """plan 代理 deny 不可被用户已保存的 allow 规则覆盖"""
+        manager = PermissionManager()
+        saved_rules = [
+            PermissionRule(action="write", resource="*", effect=PermissionEffect.ALLOW),
+            PermissionRule(action="edit", resource="*", effect=PermissionEffect.ALLOW),
+        ]
+        # 模拟已保存规则作为最后一个规则集合参与评估
+        effect = evaluate_effect("edit", "file", manager._get_agent_rules("plan"), saved_rules)
+        assert effect == PermissionEffect.DENY

@@ -698,3 +698,234 @@ class TestCompactWithMicroCompact:
         assert result["compacted"] is True
         assert call_count == 1
         assert result["summary"] is not None
+
+
+class TestSessionLevelCircuitBreaker:
+    """会话级 CompactionManager 注册表（Task 6）：断路器失败计数跨实例共享。"""
+
+    @pytest.fixture
+    def breaker_messages(self):
+        """创建足够大的消息列表以触发压缩。"""
+        msg_text = "A" * 1000  # 约 250 tokens
+        return [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": msg_text}
+            for i in range(20)
+        ]
+
+    def test_get_session_manager_reuses_instance(self):
+        """同一 session_id 复用同一实例，不同会话隔离，无 session_id 不缓存。"""
+        from core.compaction_manager import clear_session_managers, get_session_manager
+
+        clear_session_managers()
+        try:
+            first = get_session_manager(session_id="session-level-test")
+            second = get_session_manager(session_id="session-level-test")
+            assert first is second
+
+            other = get_session_manager(session_id="session-level-test-other")
+            assert other is not first
+
+            # 无 session_id 时每次返回全新实例（不注册不共享）
+            bare1 = get_session_manager()
+            bare2 = get_session_manager()
+            assert bare1 is not bare2
+        finally:
+            clear_session_managers()
+
+    async def test_circuit_breaker_shares_failure_count_across_session_manager(
+        self, breaker_messages
+    ):
+        """
+        连续失败达上限后断路器触发，且通过 get_session_manager 重新获取的
+        实例（模拟调用点各自获取"新实例"）共享失败计数，不再归零。
+        """
+        from core.compaction_manager import clear_session_managers, get_session_manager
+
+        clear_session_managers()
+        try:
+            manager = get_session_manager(
+                session_id="session-breaker-test",
+                model_context_window=5000,
+                config=CompactionConfig(
+                    auto=True,
+                    buffer_tokens=500,
+                    keep_tokens=3500,
+                    summary_output_tokens=500,
+                ),
+            )
+            call_count = 0
+
+            async def failing_llm_call(prompt, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                raise RuntimeError("LLM 服务不可用")
+
+            manager.set_llm_call(failing_llm_call)
+
+            for i in range(MAX_CONSECUTIVE_FAILURES):
+                result = await manager.compact(messages=breaker_messages)
+                assert result["compacted"] is False
+                assert manager._consecutive_failures == i + 1
+
+            # 通过注册表再次获取同一会话实例，断路器计数应保持（不会因 new 而归零）
+            reused = get_session_manager(session_id="session-breaker-test")
+            assert reused is manager
+
+            result = await reused.compact(messages=breaker_messages)
+            assert result["compacted"] is False
+            assert result["messages"] == breaker_messages
+            # 断路器跳过时不再调用 LLM
+            assert call_count == MAX_CONSECUTIVE_FAILURES
+            assert result.get("error") is not None
+            assert "断路器" in result["error"]
+        finally:
+            clear_session_managers()
+
+    async def test_circuit_breaker_resets_after_success_via_session_manager(
+        self, breaker_messages
+    ):
+        """会话级实例成功后断路器计数应重置（与实例级行为一致）。"""
+        from core.compaction_manager import clear_session_managers, get_session_manager
+
+        clear_session_managers()
+        try:
+            manager = get_session_manager(
+                session_id="session-breaker-reset-test",
+                model_context_window=5000,
+                config=CompactionConfig(
+                    auto=True,
+                    buffer_tokens=500,
+                    keep_tokens=3500,
+                    summary_output_tokens=500,
+                ),
+            )
+
+            async def flaky_llm_call(prompt, **kwargs):
+                raise RuntimeError("LLM 服务不可用")
+
+            manager.set_llm_call(flaky_llm_call)
+            await manager.compact(messages=breaker_messages)
+            assert manager._consecutive_failures == 1
+
+            # 成功后计数归零
+            async def ok_llm_call(prompt, **kwargs):
+                return "## 目标\n- 测试摘要"
+
+            manager.set_llm_call(ok_llm_call)
+            result = await manager.compact(messages=breaker_messages)
+            assert result["compacted"] is True
+            assert manager._consecutive_failures == 0
+        finally:
+            clear_session_managers()
+
+
+class TestCompactionPersistence:
+    """Task 7：压缩输出携带 CompactBoundary 标记并写回持久层。"""
+
+    @pytest.fixture
+    def small_compaction(self):
+        """创建小窗口 CompactionManager 用于触发压缩。"""
+        return CompactionManager(
+            model_context_window=5000,
+            config=CompactionConfig(
+                auto=True,
+                buffer_tokens=500,
+                keep_tokens=3500,
+                summary_output_tokens=500,
+            ),
+        )
+
+    @pytest.fixture
+    def large_messages(self):
+        """创建足够大的消息列表以触发压缩。"""
+        msg_text = "A" * 1000  # 约 250 tokens
+        return [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": msg_text}
+            for i in range(20)
+        ]
+
+    async def test_compact_output_contains_boundary_and_persists_via_hook(
+        self, small_compaction, large_messages
+    ):
+        """
+        压缩成功时输出携带 CompactBoundary 标记（boundary_message/boundary），
+        且通过落库回调将摘要与边界消息写回持久层。
+        """
+        persisted = []
+
+        async def ok_llm_call(prompt, **kwargs):
+            return "## 目标\n- 完成压缩落库\n\n## 下一步\n- 继续开发"
+
+        async def persistence_hook(summary_session_id, summary_messages):
+            persisted.append((summary_session_id, list(summary_messages)))
+
+        small_compaction.set_llm_call(ok_llm_call)
+        small_compaction.set_persistence_hook(persistence_hook)
+
+        result = await small_compaction.compact(messages=large_messages)
+
+        assert result["compacted"] is True
+        # 输出携带 CompactBoundary 标记
+        assert result.get("boundary_message") is not None
+        assert result["boundary_message"]["role"] == "system"
+        assert "[CompactBoundary]" in result["boundary_message"]["content"]
+        assert result.get("boundary") is not None
+        assert result["boundary"].is_compact_boundary is True
+        assert result["boundary"].preserved_segment is not None
+        # 压缩后的消息列表包含边界消息
+        assert result["boundary_message"] in result["messages"]
+
+        # 落库回调收到摘要与边界两条 system 消息
+        assert len(persisted) == 1
+        summary_session_id, summary_messages = persisted[0]
+        assert summary_session_id is None  # 未提供 session_id 时传 None
+        assert len(summary_messages) == 2
+        assert summary_messages[0]["role"] == "system"
+        assert "对话上下文摘要" in summary_messages[0]["content"]
+        assert "[CompactBoundary]" in summary_messages[1]["content"]
+
+    async def test_compact_persists_with_session_id_via_hook(
+        self, large_messages
+    ):
+        """提供 session_id 时落库回调收到对应会话 ID。"""
+        persisted = []
+
+        async def ok_llm_call(prompt, **kwargs):
+            return "## 目标\n- 测试"
+
+        async def persistence_hook(summary_session_id, summary_messages):
+            persisted.append(summary_session_id)
+
+        compaction = CompactionManager(
+            model_context_window=5000,
+            config=CompactionConfig(
+                auto=True,
+                buffer_tokens=500,
+                keep_tokens=3500,
+                summary_output_tokens=500,
+            ),
+            session_id="compact-persist-session",
+        )
+        compaction.set_llm_call(ok_llm_call)
+        compaction.set_persistence_hook(persistence_hook)
+
+        result = await compaction.compact(messages=large_messages)
+        assert result["compacted"] is True
+        assert persisted == ["compact-persist-session"]
+
+    async def test_compact_hook_failure_does_not_block_result(
+        self, small_compaction, large_messages
+    ):
+        """落库回调失败不阻断压缩结果，返回仍为压缩成功。"""
+        async def ok_llm_call(prompt, **kwargs):
+            return "## 目标\n- 测试"
+
+        async def failing_persistence_hook(summary_session_id, summary_messages):
+            raise RuntimeError("落库失败")
+
+        small_compaction.set_llm_call(ok_llm_call)
+        small_compaction.set_persistence_hook(failing_persistence_hook)
+
+        result = await small_compaction.compact(messages=large_messages)
+        assert result["compacted"] is True
+        assert result["summary"] is not None

@@ -2,7 +2,7 @@
 """
 ACP API 路由单元测试。
 
-用 mock ACPService 验证 /api/acp/* 端点的契约与安全性。
+用 mock ACPService 验证 /acp/* 端点的契约与安全性。
 不依赖 main.py 的 lifespan，通过独立 FastAPI 实例只挂载 acp_router。
 """
 
@@ -22,12 +22,13 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api.dependencies import get_current_user
+from api.routes import acp as acp_routes
 from api.routes.acp import (
     OpenCodeStatusResponse,
-    _resolve_allowed_workdirs,
     _acp_user_sessions,
     router as acp_router,
 )
+from db.models import get_db
 
 
 # ==================== 测试用户与依赖覆盖 ====================
@@ -45,6 +46,18 @@ class _DummyUser:
 _USER_A = _DummyUser("user-a", "alice")
 _USER_B = _DummyUser("user-b", "bob")
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _session_meta(agent: str = "claude_code") -> Dict[str, Any]:
+    """构造绑定测试工作台项目的 ACP 会话元数据。"""
+    return {
+        "user_id": "user-a",
+        "project_id": "project-a",
+        "agent": agent,
+        "resolved_root": str(_BACKEND_ROOT.resolve()),
+        "cwd": str(_BACKEND_ROOT.resolve()),
+        "created_at": "2025-01-01T00:00:00+00:00",
+    }
 
 
 def _override_user(user: _DummyUser):
@@ -138,7 +151,11 @@ def _reset_acp_sessions() -> Any:
 
 
 @contextmanager
-def _test_client(user: Optional[_DummyUser] = None, fake_service: Optional[_FakeACPService] = None):
+def _test_client(
+    user: Optional[_DummyUser] = None,
+    fake_service: Optional[_FakeACPService] = None,
+    project_root: Path = _BACKEND_ROOT,
+):
     """构造测试用 TestClient，注入用户依赖与 mock service。
 
     Args:
@@ -155,15 +172,28 @@ def _test_client(user: Optional[_DummyUser] = None, fake_service: Optional[_Fake
         app.dependency_overrides[get_current_user] = _override_user(user)
     else:
         app.dependency_overrides[get_current_user] = _deny_user()
+    app.dependency_overrides[get_db] = lambda: object()
+    app.dependency_overrides[acp_routes.get_acp_workbench_path_policy] = lambda: object()
+
+    class _ProjectService:
+        def __init__(self, db: Any, path_policy: Any) -> None:
+            del db, path_policy
+
+        def resolve_project_root(self, **kwargs: Any) -> Path:
+            del kwargs
+            return project_root
 
     # patch acp_host.get_acp_service 让路由使用 fake_service
     patcher = patch("api.routes.acp.get_acp_service", return_value=fake_service)
+    project_patcher = patch("api.routes.acp.WorkbenchProjectService", _ProjectService)
     patcher.start()
+    project_patcher.start()
     try:
         with TestClient(app) as client:
             yield client
     finally:
         patcher.stop()
+        project_patcher.stop()
         app.dependency_overrides.clear()
 
 
@@ -171,12 +201,12 @@ def _test_client(user: Optional[_DummyUser] = None, fake_service: Optional[_Fake
 
 
 class TestListAgents:
-    """GET /api/acp/agents 测试。"""
+    """GET /acp/agents 测试。"""
 
     def test_returns_four_agents(self) -> None:
         """验证返回 4 个 agent。"""
         with _test_client(user=_USER_A) as client:
-            response = client.get("/api/acp/agents")
+            response = client.get("/acp/agents")
 
         assert response.status_code == 200
         body = response.json()
@@ -186,34 +216,21 @@ class TestListAgents:
     def test_includes_all_four_expected_agent_ids(self) -> None:
         """验证包含 claude_code/codex/openclaw/opencode 4 个 agent。"""
         with _test_client(user=_USER_A) as client:
-            response = client.get("/api/acp/agents")
+            response = client.get("/acp/agents")
 
         assert response.status_code == 200
         agent_ids = {agent["id"] for agent in response.json()["agents"]}
         assert agent_ids == {"claude_code", "codex", "openclaw", "opencode"}
 
 
-class TestAllowedWorkdirs:
-    """ACP 默认工作目录白名单测试。"""
-
-    def test_default_roots_include_project_for_local_node_install(self) -> None:
-        """验证未配置时可以在当前 Open-AwA 项目内安装本地 Node.js Agent。"""
-        with patch("api.routes.acp.settings.ACP_ALLOWED_WORKDIRS", ""):
-            roots = _resolve_allowed_workdirs()
-
-        project_root = Path(__file__).resolve().parents[2]
-        assert str((project_root / "var" / "workspace").resolve()) in roots
-        assert str(project_root.resolve()) in roots
-
-
 class TestCreateSession:
-    """POST /api/acp/sessions 测试。"""
+    """POST /acp/sessions 测试。"""
 
     def test_create_returns_session_id(self) -> None:
         """验证创建会话返回 session_id 与空 config_options。"""
-        body = {"agent": "claude_code", "cwd": str(_BACKEND_ROOT)}
+        body = {"agent": "claude_code", "project_id": "project-a"}
         with _test_client(user=_USER_A) as client:
-            response = client.post("/api/acp/sessions", json=body)
+            response = client.post("/acp/sessions", json=body)
 
         assert response.status_code == 200, response.text
         data = response.json()
@@ -224,44 +241,45 @@ class TestCreateSession:
 
     def test_create_returns_validated_cwd(self) -> None:
         """验证创建会话会返回后端校验后的工作目录。"""
-        body = {"agent": "claude_code", "cwd": str(_BACKEND_ROOT)}
+        body = {"agent": "claude_code", "project_id": "project-a"}
         with _test_client(user=_USER_A) as client:
-            response = client.post("/api/acp/sessions", json=body)
+            response = client.post("/acp/sessions", json=body)
 
         assert response.status_code == 200, response.text
-        assert response.json()["cwd"] == str(_BACKEND_ROOT.resolve())
+        assert response.json()["project_id"] == "project-a"
 
     def test_unknown_agent_returns_404(self) -> None:
         """验证未知 agent 返回 404。"""
-        body = {"agent": "nonexistent-agent", "cwd": os.getcwd()}
+        body = {"agent": "nonexistent-agent", "project_id": "project-a"}
         with _test_client(user=_USER_A) as client:
-            response = client.post("/api/acp/sessions", json=body)
+            response = client.post("/acp/sessions", json=body)
 
         assert response.status_code == 404, response.text
 
     def test_cwd_outside_workspace_returns_400(self) -> None:
-        """验证 cwd 越权时返回 400。"""
-        # /etc 是典型的不允许路径（Windows 上 C:\Windows 也越权）
-        body = {"agent": "claude_code", "cwd": "/etc/nonexistent/path"}
+        """验证旧 cwd 输入不再作为项目权威路径执行。"""
+        body = {"agent": "claude_code", "project_id": "project-a", "cwd": "/etc/nonexistent/path"}
         with _test_client(user=_USER_A) as client:
-            response = client.post("/api/acp/sessions", json=body)
+            response = client.post("/acp/sessions", json=body)
 
-        assert response.status_code == 400, response.text
+        assert response.status_code == 422, response.text
 
 
 class TestListSessions:
-    """GET /api/acp/sessions 测试。"""
+    """GET /acp/sessions 测试。"""
 
     def test_lists_current_user_sessions(self) -> None:
         """验证列出当前用户的活动会话。"""
         # 为用户 A 创建一个会话
         _acp_user_sessions[("user-a", "sess-a-1")] = {
             "agent": "claude_code",
+            "project_id": "project-a",
+            "resolved_root": str(_BACKEND_ROOT.resolve()),
             "cwd": os.getcwd(),
             "created_at": "2025-01-01T00:00:00+00:00",
         }
         with _test_client(user=_USER_A) as client:
-            response = client.get("/api/acp/sessions")
+            response = client.get("/acp/sessions", params={"project_id": "project-a"})
 
         assert response.status_code == 200
         data = response.json()
@@ -274,17 +292,21 @@ class TestListSessions:
         # 用户 A 与 B 各创建一个会话
         _acp_user_sessions[("user-a", "sess-a-1")] = {
             "agent": "claude_code",
+            "project_id": "project-a",
+            "resolved_root": str(_BACKEND_ROOT.resolve()),
             "cwd": os.getcwd(),
             "created_at": "2025-01-01T00:00:00+00:00",
         }
         _acp_user_sessions[("user-b", "sess-b-1")] = {
             "agent": "codex",
+            "project_id": "project-a",
+            "resolved_root": str(_BACKEND_ROOT.resolve()),
             "cwd": os.getcwd(),
             "created_at": "2025-01-01T00:00:00+00:00",
         }
         # 用户 A 查询应只看到 sess-a-1
         with _test_client(user=_USER_A) as client:
-            response = client.get("/api/acp/sessions")
+            response = client.get("/acp/sessions", params={"project_id": "project-a"})
 
         assert response.status_code == 200
         data = response.json()
@@ -294,21 +316,17 @@ class TestListSessions:
 
 
 class TestPromptSession:
-    """POST /api/acp/sessions/{session_id}/prompt 测试。"""
+    """POST /acp/sessions/{session_id}/prompt 测试。"""
 
     def test_returns_text_event_stream_content_type(self) -> None:
         """验证 prompt 端点返回 text/event-stream Content-Type。"""
         # 预创建会话
-        _acp_user_sessions[("user-a", "sess-a-1")] = {
-            "agent": "claude_code",
-            "cwd": os.getcwd(),
-            "created_at": "2025-01-01T00:00:00+00:00",
-        }
+        _acp_user_sessions[("user-a", "sess-a-1")] = _session_meta()
         fake_service = _FakeACPService()
         # run_turn 默认返回 {"status": "completed"}
-        body = {"prompt": "hello", "restart": False}
+        body = {"prompt": "hello", "restart": False, "project_id": "project-a"}
         with _test_client(user=_USER_A, fake_service=fake_service) as client:
-            response = client.post("/api/acp/sessions/sess-a-1/prompt", json=body)
+            response = client.post("/acp/sessions/sess-a-1/prompt", json=body)
 
         assert response.status_code == 200, response.text
         assert "text/event-stream" in response.headers.get("content-type", "")
@@ -322,24 +340,20 @@ class TestPromptSession:
     def test_unknown_session_returns_404(self) -> None:
         """验证未知 session_id 返回 404。"""
         fake_service = _FakeACPService()
-        body = {"prompt": "hello"}
+        body = {"prompt": "hello", "project_id": "project-a"}
         with _test_client(user=_USER_A, fake_service=fake_service) as client:
-            response = client.post("/api/acp/sessions/unknown/prompt", json=body)
+            response = client.post("/acp/sessions/unknown/prompt", json=body)
 
         assert response.status_code == 404, response.text
 
 
 class TestRespondPermission:
-    """POST /api/acp/sessions/{session_id}/permission 测试。"""
+    """POST /acp/sessions/{session_id}/permission 测试。"""
 
     def test_returns_status(self) -> None:
         """验证响应权限请求返回 status 字段。"""
         # 预创建会话
-        _acp_user_sessions[("user-a", "sess-a-1")] = {
-            "agent": "claude_code",
-            "cwd": os.getcwd(),
-            "created_at": "2025-01-01T00:00:00+00:00",
-        }
+        _acp_user_sessions[("user-a", "sess-a-1")] = _session_meta()
         fake_service = _FakeACPService()
         # get_session 返回 _Conversation 替身（含 acp_session_id）
         fake_service.get_session = AsyncMock(return_value=_FakeConversation(acp_session_id="acp-sess-1"))
@@ -348,9 +362,9 @@ class TestRespondPermission:
         # resume_permission 返回 completed
         fake_service.resume_permission = AsyncMock(return_value={"status": "completed"})
 
-        body = {"option_id": "allow_once"}
+        body = {"option_id": "allow_once", "project_id": "project-a"}
         with _test_client(user=_USER_A, fake_service=fake_service) as client:
-            response = client.post("/api/acp/sessions/sess-a-1/permission", json=body)
+            response = client.post("/acp/sessions/sess-a-1/permission", json=body)
 
         assert response.status_code == 200, response.text
         data = response.json()
@@ -358,37 +372,32 @@ class TestRespondPermission:
 
     def test_no_pending_permission_returns_400(self) -> None:
         """验证无挂起权限请求时返回 400。"""
-        _acp_user_sessions[("user-a", "sess-a-1")] = {
-            "agent": "claude_code",
-            "cwd": os.getcwd(),
-            "created_at": "2025-01-01T00:00:00+00:00",
-        }
+        _acp_user_sessions[("user-a", "sess-a-1")] = _session_meta()
         fake_service = _FakeACPService()
         # get_session 返回会话但 pending_permission 为 None
         fake_service.get_session = AsyncMock(return_value=_FakeConversation(acp_session_id="acp-sess-1"))
         fake_service.get_pending_permission = AsyncMock(return_value=None)
 
-        body = {"option_id": "allow_once"}
+        body = {"option_id": "allow_once", "project_id": "project-a"}
         with _test_client(user=_USER_A, fake_service=fake_service) as client:
-            response = client.post("/api/acp/sessions/sess-a-1/permission", json=body)
+            response = client.post("/acp/sessions/sess-a-1/permission", json=body)
 
         assert response.status_code == 400, response.text
 
 
 class TestCancelSession:
-    """POST /api/acp/sessions/{session_id}/cancel 测试。"""
+    """POST /acp/sessions/{session_id}/cancel 测试。"""
 
     def test_returns_cancelled(self) -> None:
         """验证取消端点返回 cancelled 字段。"""
-        _acp_user_sessions[("user-a", "sess-a-1")] = {
-            "agent": "claude_code",
-            "cwd": os.getcwd(),
-            "created_at": "2025-01-01T00:00:00+00:00",
-        }
+        _acp_user_sessions[("user-a", "sess-a-1")] = _session_meta()
         fake_service = _FakeACPService()
         # cancel_turn 默认返回 True
         with _test_client(user=_USER_A, fake_service=fake_service) as client:
-            response = client.post("/api/acp/sessions/sess-a-1/cancel")
+            response = client.post(
+                "/acp/sessions/sess-a-1/cancel",
+                params={"project_id": "project-a"},
+            )
 
         assert response.status_code == 200, response.text
         data = response.json()
@@ -401,18 +410,17 @@ class TestCancelSession:
 
 
 class TestCloseSession:
-    """DELETE /api/acp/sessions/{session_id} 测试。"""
+    """DELETE /acp/sessions/{session_id} 测试。"""
 
     def test_returns_closed(self) -> None:
         """验证关闭端点返回 closed 字段并清理会话元数据。"""
-        _acp_user_sessions[("user-a", "sess-a-1")] = {
-            "agent": "claude_code",
-            "cwd": os.getcwd(),
-            "created_at": "2025-01-01T00:00:00+00:00",
-        }
+        _acp_user_sessions[("user-a", "sess-a-1")] = _session_meta()
         fake_service = _FakeACPService()
         with _test_client(user=_USER_A, fake_service=fake_service) as client:
-            response = client.delete("/api/acp/sessions/sess-a-1")
+            response = client.delete(
+                "/acp/sessions/sess-a-1",
+                params={"project_id": "project-a"},
+            )
 
         assert response.status_code == 200, response.text
         data = response.json()
@@ -431,24 +439,22 @@ class TestOpenCodeInstall:
 
     def test_rejects_install_without_explicit_confirmation(self, tmp_path: Path) -> None:
         """验证安装接口必须携带显式确认标记。"""
-        with patch("api.routes.acp._ALLOWED_WORKSPACE_ROOTS", [str(tmp_path)]):
-            with _test_client(user=_USER_A) as client:
-                response = client.post(
-                    "/api/acp/opencode/install",
-                    json={"cwd": str(tmp_path), "confirm_install": False},
-                )
+        with _test_client(user=_USER_A) as client:
+            response = client.post(
+                "/acp/opencode/install",
+                json={"project_id": "project-a", "confirm_install": False},
+            )
 
         assert response.status_code == 400
         assert "明确确认" in response.json()["detail"]
 
     def test_rejects_directory_without_package_json(self, tmp_path: Path) -> None:
         """验证安装目标必须是白名单内的 Node.js 项目。"""
-        with patch("api.routes.acp._ALLOWED_WORKSPACE_ROOTS", [str(tmp_path)]):
-            with _test_client(user=_USER_A) as client:
-                response = client.post(
-                    "/api/acp/opencode/install",
-                    json={"cwd": str(tmp_path), "confirm_install": True},
-                )
+        with _test_client(user=_USER_A) as client:
+            response = client.post(
+                "/acp/opencode/install",
+                json={"project_id": "project-a", "confirm_install": True},
+            )
 
         assert response.status_code == 400
         assert "package.json" in response.json()["detail"]
@@ -457,14 +463,13 @@ class TestOpenCodeInstall:
         """验证接口不接收任意命令，只安装固定包并执行审计。"""
         (tmp_path / "package.json").write_text("{}", encoding="utf-8")
         status_result = OpenCodeStatusResponse(
-            cwd=str(tmp_path),
+            project_id="project-a",
             package_json_exists=True,
             project_installed=True,
             available=True,
             command=str(tmp_path / "node_modules" / ".bin" / "opencode.cmd"),
         )
-        with patch("api.routes.acp._ALLOWED_WORKSPACE_ROOTS", [str(tmp_path)]), \
-             patch(
+        with patch(
                  "api.routes.acp._run_npm_command",
                  new=AsyncMock(side_effect=[(0, "installed"), (0, "audit ok")]),
              ) as run_npm, \
@@ -472,10 +477,10 @@ class TestOpenCodeInstall:
                  "api.routes.acp._get_opencode_status",
                  new=AsyncMock(return_value=status_result),
              ):
-            with _test_client(user=_USER_A) as client:
+            with _test_client(user=_USER_A, project_root=tmp_path) as client:
                 response = client.post(
-                    "/api/acp/opencode/install",
-                    json={"cwd": str(tmp_path), "confirm_install": True},
+                    "/acp/opencode/install",
+                    json={"project_id": "project-a", "confirm_install": True},
                 )
 
         assert response.status_code == 200, response.text
@@ -494,14 +499,14 @@ class TestAuthentication:
     def test_unauthenticated_agents_returns_401(self) -> None:
         """验证未认证访问 GET /agents 返回 401。"""
         with _test_client(user=None) as client:
-            response = client.get("/api/acp/agents")
+            response = client.get("/acp/agents")
 
         assert response.status_code == 401, response.text
 
     def test_unauthenticated_create_session_returns_401(self) -> None:
         """验证未认证访问 POST /sessions 返回 401。"""
-        body = {"agent": "claude_code", "cwd": os.getcwd()}
+        body = {"agent": "claude_code", "project_id": "project-a"}
         with _test_client(user=None) as client:
-            response = client.post("/api/acp/sessions", json=body)
+            response = client.post("/acp/sessions", json=body)
 
         assert response.status_code == 401, response.text

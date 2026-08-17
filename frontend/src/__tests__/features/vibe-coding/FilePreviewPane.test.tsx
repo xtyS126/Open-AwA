@@ -1,28 +1,15 @@
-/**
- * FilePreviewPane 文件预览面板单元测试。
- *
- * 覆盖点：
- *   - 空状态展示
- *   - 路径输入框渲染
- *   - 按扩展名分发：.md 走 markdown HTML 渲染
- *   - 按扩展名分发：.png 走 blob 图片渲染
- *   - 未知扩展名走 download 类型，显示下载链接
- *   - 加载失败时错误提示
- *
- * Mock：@/shared/api/client 的 api.get 方法。
- */
 import '@testing-library/jest-dom/vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FilePreviewPane from '@/features/vibe-coding/components/FilePreviewPane'
 
-// 通过 vi.hoisted 提升的 mock 定义，确保在 vi.mock 调用前可用
+const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
 }))
 
 vi.mock('@/shared/api/client', () => ({
-  // 复用 API_BASE_URL 默认值，避免破坏 URL 解析
   API_BASE_URL: '/api',
   api: {
     get: apiMocks.get,
@@ -32,7 +19,7 @@ vi.mock('@/shared/api/client', () => ({
 describe('FilePreviewPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // jsdom 未实现 URL.createObjectURL / revokeObjectURL，图片预览测试需要
+    apiMocks.get.mockReset()
     if (typeof URL.createObjectURL !== 'function') {
       URL.createObjectURL = vi.fn(() => 'blob:mock-url')
     }
@@ -41,100 +28,145 @@ describe('FilePreviewPane', () => {
     }
   })
 
-  it('renders empty state when no file path', () => {
-    render(<FilePreviewPane filePath={null} />)
+  it('none 意图只显示空状态且不提供路径或端口输入', () => {
+    render(<FilePreviewPane projectId={PROJECT_ID} intent={{ kind: 'none' }} />)
 
-    // 空状态文案来自 i18n: vibeCoding.filePreview.empty
-    expect(screen.getByText('请输入文件路径预览')).toBeInTheDocument()
+    expect(screen.getByText('请选择文件或创建网页预览')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
-  it('renders path input', () => {
-    render(<FilePreviewPane filePath={null} />)
-
-    // 路径输入框 placeholder 来自 i18n: vibeCoding.filePreview.pathPlaceholder
-    expect(screen.getByPlaceholderText('输入文件绝对路径')).toBeInTheDocument()
-  })
-
-  it('loads markdown preview for .md files', async () => {
+  it('文件预览通过工作台项目别名只提交相对路径', async () => {
     apiMocks.get.mockResolvedValue({
       data: {
         type: 'markdown',
-        html: '<h1 id="title">标题内容</h1>',
+        html: '<h1>项目说明</h1>',
       },
     })
 
-    render(<FilePreviewPane filePath="/tmp/readme.md" />)
+    render(
+      <FilePreviewPane
+        projectId={PROJECT_ID}
+        intent={{ kind: 'file', relativePath: 'docs/README.md' }}
+      />,
+    )
 
-    // markdown HTML 通过 dangerouslySetInnerHTML 注入，等待渲染完成
-    await waitFor(() => {
-      const heading = screen.getByText('标题内容')
-      expect(heading).toBeInTheDocument()
-      expect(heading.tagName).toBe('H1')
-    })
-
-    // 验证 api.get 以 markdown 路径调用
+    expect(await screen.findByText('项目说明')).toBeInTheDocument()
     expect(apiMocks.get).toHaveBeenCalledWith(
-      '/coding/preview/file',
+      `/workbench/projects/${PROJECT_ID}/files/preview`,
       expect.objectContaining({
-        params: { path: '/tmp/readme.md' },
-      })
+        params: {
+          path: 'docs/README.md',
+        },
+      }),
     )
   })
 
-  it('loads image preview for .png files', async () => {
-    // 构造一个 Blob 模拟二进制图片响应
-    const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' })
+  it('二进制文件也使用认证 API 与项目标识', async () => {
+    const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], {
+      type: 'image/png',
+    })
     apiMocks.get.mockResolvedValue({ data: blob })
 
-    render(<FilePreviewPane filePath="/tmp/screenshot.png" />)
+    render(
+      <FilePreviewPane
+        projectId={PROJECT_ID}
+        intent={{ kind: 'file', relativePath: 'assets/screenshot.png' }}
+      />,
+    )
 
-    // 验证图片标签渲染并指向 blob URL
-    const img = await screen.findByAltText('/tmp/screenshot.png')
-    expect(img).toBeInTheDocument()
-    expect(img.tagName).toBe('IMG')
-    expect(img.getAttribute('src')).toMatch(/^blob:/)
-
-    // 二进制路径应使用 responseType: 'blob'
+    expect(await screen.findByAltText('assets/screenshot.png')).toHaveAttribute(
+      'src',
+      expect.stringMatching(/^blob:/),
+    )
     expect(apiMocks.get).toHaveBeenCalledWith(
-      '/coding/preview/file',
+      `/workbench/projects/${PROJECT_ID}/files/preview`,
       expect.objectContaining({
-        params: { path: '/tmp/screenshot.png' },
+        params: {
+          path: 'assets/screenshot.png',
+        },
         responseType: 'blob',
-      })
+      }),
     )
   })
 
-  it('shows unsupported message for unknown extensions', async () => {
-    // 未知扩展名 .xyz 后端返回 download 类型，应展示不支持提示与下载链接
-    apiMocks.get.mockResolvedValue({
-      data: {
-        type: 'download',
-        url: '/coding/download/test.xyz',
-      },
-    })
+  it('下载降级通过认证 API 获取 Blob，不渲染裸链接', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    apiMocks.get
+      .mockResolvedValueOnce({
+        data: {
+          type: 'download',
+          url: '/api/coding/download?path=archive.bin&project_id=project-a',
+        },
+      })
+      .mockResolvedValueOnce({ data: new Blob(['download']) })
 
-    render(<FilePreviewPane filePath="/tmp/archive.xyz" />)
+    render(
+      <FilePreviewPane
+        projectId={PROJECT_ID}
+        intent={{ kind: 'file', relativePath: 'archive.bin' }}
+      />,
+    )
 
-    // 等待加载完成，验证不支持提示文案与下载链接
+    const downloadButton = await screen.findByRole('button', { name: /下载/ })
+    expect(screen.queryByRole('link', { name: /下载/ })).not.toBeInTheDocument()
+    fireEvent.click(downloadButton)
+
     await waitFor(() => {
-      expect(screen.getByText('不支持预览此文件类型')).toBeInTheDocument()
+      expect(apiMocks.get).toHaveBeenLastCalledWith(
+        '/coding/download?path=archive.bin&project_id=project-a',
+        { responseType: 'blob' },
+      )
+      expect(clickSpy).toHaveBeenCalledTimes(1)
     })
-    const downloadLink = screen.getByText('下载文件').closest('a')
-    expect(downloadLink).not.toBeNull()
-    // URL 应被解析为完整地址（基于 /api 前缀）
-    expect(downloadLink?.getAttribute('href')).toContain('/coding/download/test.xyz')
+    clickSpy.mockRestore()
   })
 
-  it('handles load error gracefully', async () => {
-    // 模拟 api.get 抛出错误
-    apiMocks.get.mockRejectedValue(new Error('网络错误：503'))
+  it('网页预览只使用租约 URL 且 sandbox 不含 allow-same-origin', () => {
+    render(
+      <FilePreviewPane
+        projectId={PROJECT_ID}
+        intent={{ kind: 'web', previewId: 'preview-a' }}
+      />,
+    )
 
-    render(<FilePreviewPane filePath="/tmp/broken.md" />)
+    const frame = screen.getByTitle('网页预览')
+    expect(frame).toHaveAttribute(
+      'src',
+      `/api/workbench/projects/${PROJECT_ID}/previews/preview-a/`,
+    )
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts allow-forms')
+    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin')
+    expect(frame.getAttribute('src')).not.toMatch(/:\d+|\/preview\/\d+/)
+  })
 
-    // 验证错误提示显示，文案来自 i18n: vibeCoding.filePreview.error
+  it('项目或文件意图变化后丢弃旧请求结果', async () => {
+    let resolveOld: ((value: { data: { type: string; html: string } }) => void) | undefined
+    const oldRequest = new Promise<{ data: { type: string; html: string } }>((resolve) => {
+      resolveOld = resolve
+    })
+    apiMocks.get
+      .mockReturnValueOnce(oldRequest)
+      .mockResolvedValueOnce({ data: { type: 'markdown', html: '<h1>项目 B</h1>' } })
+
+    const view = render(
+      <FilePreviewPane
+        projectId={PROJECT_ID}
+        intent={{ kind: 'file', relativePath: 'README.md' }}
+      />,
+    )
+    view.rerender(
+      <FilePreviewPane
+        projectId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        intent={{ kind: 'file', relativePath: 'README.md' }}
+      />,
+    )
+
+    expect(await screen.findByText('项目 B')).toBeInTheDocument()
+    resolveOld?.({ data: { type: 'markdown', html: '<h1>项目 A</h1>' } })
+    await oldRequest
+
     await waitFor(() => {
-      const errorTexts = screen.getAllByText(/加载失败/)
-      expect(errorTexts.length).toBeGreaterThan(0)
+      expect(screen.queryByText('项目 A')).not.toBeInTheDocument()
     })
   })
 })

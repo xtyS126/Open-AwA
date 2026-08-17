@@ -11,7 +11,7 @@ from __future__ import annotations
 import atexit
 import asyncio
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -26,6 +26,7 @@ from acp_host.service import (
     get_acp_service,
     init_acp_service,
 )
+from workbench.preview_lease import PreviewSessionKind
 
 
 def _make_agent_config(
@@ -69,6 +70,13 @@ def _make_config(
     if agents is None:
         agents = {"test-agent": _make_agent_config()}
     return ACPConfig(agents=agents)
+
+
+_PROJECT_IDENTITY = {
+    "user_id": "user-a",
+    "project_id": "project-a",
+    "resolved_root": "C:\\project-a",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -178,6 +186,7 @@ class TestRunTurnRequiresAcpSdk:
                     prompt_blocks=[{"type": "text", "text": "hi"}],
                     cwd=".",
                     on_message=on_message,
+                    **_PROJECT_IDENTITY,
                 )
 
 
@@ -224,20 +233,32 @@ class TestSessionLookupsWithoutSessions:
         """验证关闭不存在的会话静默返回。"""
         service = ACPService(config=_make_config())
         # 不应抛任何异常
-        await service.close_chat_session(chat_id="missing", agent="test-agent")
+        await service.close_chat_session(
+            chat_id="missing",
+            agent="test-agent",
+            **_PROJECT_IDENTITY,
+        )
         assert service._session_locks == {}
         assert service._session_lock_refs == {}
 
     async def test_cancel_turn_no_session_returns_false(self) -> None:
         """验证对不存在的会话调用 cancel_turn 返回 False。"""
         service = ACPService(config=_make_config())
-        result = await service.cancel_turn(chat_id="missing", agent="test-agent")
+        result = await service.cancel_turn(
+            chat_id="missing",
+            agent="test-agent",
+            **_PROJECT_IDENTITY,
+        )
         assert result is False
 
     async def test_get_session_returns_none_when_absent(self) -> None:
         """验证 get_session 对不存在的键返回 None。"""
         service = ACPService(config=_make_config())
-        result = await service.get_session("missing", "test-agent")
+        result = await service.get_session(
+            "missing",
+            "test-agent",
+            **_PROJECT_IDENTITY,
+        )
         assert result is None
 
     async def test_get_pending_permission_returns_none_when_no_session(self) -> None:
@@ -246,6 +267,7 @@ class TestSessionLookupsWithoutSessions:
         result = await service.get_pending_permission(
             chat_id="missing",
             agent="test-agent",
+            **_PROJECT_IDENTITY,
         )
         assert result is None
 
@@ -327,12 +349,12 @@ class TestAtexitRegistration:
 
 
 class TestCloseAllSessions:
-    """close_all_sessions 边界条件测试。"""
+    """特权全量关闭入口边界条件测试。"""
 
     async def test_close_all_sessions_with_empty_registry_does_not_raise(self) -> None:
-        """验证空会话注册表时调用 close_all_sessions 静默返回。"""
+        """验证空会话注册表时调用内部全量关闭入口静默返回。"""
         service = ACPService(config=_make_config())
-        await service.close_all_sessions()  # 不应抛任何异常
+        await service.close_all_sessions_internal()  # 不应抛任何异常
 
 
 class TestRequireExistingSession:
@@ -347,6 +369,7 @@ class TestRequireExistingSession:
                 agent="test-agent",
                 cwd=".",
                 require_existing=True,
+                **_PROJECT_IDENTITY,
             )
 
 
@@ -361,6 +384,10 @@ class TestConcurrentSessionCreation:
         allow_open = asyncio.Event()
         conversation = MagicMock()
         conversation.process.returncode = None
+        conversation.user_id = _PROJECT_IDENTITY["user_id"]
+        conversation.project_id = _PROJECT_IDENTITY["project_id"]
+        conversation.resolved_root = _PROJECT_IDENTITY["resolved_root"]
+        conversation.cwd = _PROJECT_IDENTITY["resolved_root"]
 
         async def fake_open(**kwargs: Any) -> Any:
             open_started.set()
@@ -374,6 +401,7 @@ class TestConcurrentSessionCreation:
                     agent="test-agent",
                     cwd=".",
                     require_existing=False,
+                    **_PROJECT_IDENTITY,
                 )
             )
             await open_started.wait()
@@ -383,6 +411,7 @@ class TestConcurrentSessionCreation:
                     agent="test-agent",
                     cwd=".",
                     require_existing=False,
+                    **_PROJECT_IDENTITY,
                 )
             )
             await asyncio.sleep(0)
@@ -419,6 +448,7 @@ class TestConcurrentSessionCreation:
                     agent="test-agent",
                     cwd=".",
                     require_existing=False,
+                    **_PROJECT_IDENTITY,
                 )
             )
             second = asyncio.create_task(
@@ -427,6 +457,9 @@ class TestConcurrentSessionCreation:
                     agent="test-agent",
                     cwd=".",
                     require_existing=False,
+                    user_id="user-b",
+                    project_id="project-a",
+                    resolved_root="C:\\project-a",
                 )
             )
             await asyncio.wait_for(both_started.wait(), timeout=1.0)
@@ -436,3 +469,356 @@ class TestConcurrentSessionCreation:
         assert first_result is not second_result
         assert first_result.chat_id == "user-a:shared-session"
         assert second_result.chat_id == "user-b:shared-session"
+
+
+class TestWorkbenchProjectBinding:
+    """ACPService 会话必须绑定工作台用户、项目和根快照。"""
+
+    @pytest.mark.asyncio
+    async def test_new_conversation_receives_project_identity(self) -> None:
+        """首次创建子进程会话时必须保存工作台项目身份。"""
+        service = ACPService(config=_make_config())
+        conversation = MagicMock()
+        conversation.process.returncode = None
+
+        with patch.object(service, "_open_conversation", return_value=conversation) as open_mock:
+            result = await service._get_or_create_session(
+                chat_id="user-a:session-1",
+                agent="test-agent",
+                cwd="C:\\project-a",
+                require_existing=False,
+                user_id="user-a",
+                project_id="project-a",
+                resolved_root="C:\\project-a",
+            )
+
+        assert result is conversation
+        assert open_mock.await_args.kwargs["user_id"] == "user-a"
+        assert open_mock.await_args.kwargs["project_id"] == "project-a"
+        assert open_mock.await_args.kwargs["resolved_root"] == "C:\\project-a"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        (
+            ("user_id", "user-b"),
+            ("project_id", "project-b"),
+            ("resolved_root", "C:\\moved-project"),
+        ),
+    )
+    async def test_existing_conversation_rejects_project_identity_mismatch(
+        self,
+        field: str,
+        value: str,
+    ) -> None:
+        """复用运行中会话时任一项目身份不一致都必须 fail-closed。"""
+        service = ACPService(config=_make_config())
+        conversation = MagicMock()
+        conversation.process.returncode = None
+        conversation.user_id = "user-a"
+        conversation.project_id = "project-a"
+        conversation.resolved_root = "C:\\project-a"
+        service._sessions[("user-a:session-1", "test-agent")] = conversation
+        arguments = {
+            "user_id": "user-a",
+            "project_id": "project-a",
+            "resolved_root": "C:\\project-a",
+        }
+        arguments[field] = value
+
+        with pytest.raises(ACPSessionError, match="workbench project binding"):
+            await service._get_or_create_session(
+                chat_id="user-a:session-1",
+                agent="test-agent",
+                cwd="C:\\project-a",
+                require_existing=False,
+                **arguments,
+            )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("operation", ("get", "cancel", "close", "resume"))
+    async def test_runtime_operations_reject_project_binding_mismatch(
+        self,
+        operation: str,
+    ) -> None:
+        """权限、取消、关闭和读取都不能绕过运行时项目身份。"""
+        service = ACPService(config=_make_config())
+        conversation = MagicMock()
+        conversation.process.returncode = None
+        conversation.user_id = "user-a"
+        conversation.project_id = "project-a"
+        conversation.resolved_root = "C:\\project-a"
+        conversation.acp_session_id = "acp-session-1"
+        service._sessions[("user-a:session-1", "test-agent")] = conversation
+
+        with pytest.raises(ACPSessionError, match="workbench project binding"):
+            if operation == "get":
+                await service.get_session(
+                    "user-a:session-1",
+                    "test-agent",
+                    user_id="user-a",
+                    project_id="project-b",
+                    resolved_root="C:\\project-a",
+                )
+            elif operation == "cancel":
+                await service.cancel_turn(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                    user_id="user-a",
+                    project_id="project-b",
+                    resolved_root="C:\\project-a",
+                )
+            elif operation == "close":
+                await service.close_chat_session(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                    user_id="user-a",
+                    project_id="project-b",
+                    resolved_root="C:\\project-a",
+                )
+            else:
+                await service.resume_permission(
+                    acp_session_id="acp-session-1",
+                    option_id="allow_once",
+                    on_message=AsyncMock(),
+                    user_id="user-a",
+                    project_id="project-b",
+                    resolved_root="C:\\project-a",
+                )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "operation",
+        ("run", "get", "pending", "cancel", "close", "resume"),
+    )
+    async def test_runtime_operations_require_complete_project_identity(
+        self,
+        operation: str,
+    ) -> None:
+        """普通运行时消费缺少绑定身份时必须在查找会话前 fail-closed。"""
+        service = ACPService(config=_make_config())
+
+        with pytest.raises(ACPSessionError, match="project identity is required"):
+            if operation == "run":
+                await service.run_turn(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                    prompt_blocks=[{"type": "text", "text": "hi"}],
+                    cwd="C:\\project-a",
+                    on_message=AsyncMock(),
+                )
+            elif operation == "get":
+                await service.get_session("user-a:session-1", "test-agent")
+            elif operation == "pending":
+                await service.get_pending_permission(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                )
+            elif operation == "cancel":
+                await service.cancel_turn(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                )
+            elif operation == "close":
+                await service.close_chat_session(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                )
+            else:
+                await service.resume_permission(
+                    acp_session_id="acp-session-1",
+                    option_id="allow_once",
+                    on_message=AsyncMock(),
+                )
+
+    @pytest.mark.asyncio
+    async def test_restart_forwards_complete_identity_to_close(self) -> None:
+        """restart 关闭旧会话时不得使用无身份的特权绕过路径。"""
+        service = ACPService(config=_make_config())
+        close_mock = AsyncMock(return_value=None)
+        with patch.object(service, "close_chat_session", close_mock), patch.object(
+            service,
+            "_get_or_create_session",
+            side_effect=ACPSessionError("stop after close"),
+        ):
+            with pytest.raises(ACPSessionError, match="stop after close"):
+                await service.run_turn(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                    prompt_blocks=[{"type": "text", "text": "hi"}],
+                    cwd="C:\\project-a",
+                    user_id="user-a",
+                    project_id="project-a",
+                    resolved_root="C:\\project-a",
+                    on_message=AsyncMock(),
+                    restart=True,
+                )
+
+        close_mock.assert_awaited_once_with(
+            chat_id="user-a:session-1",
+            agent="test-agent",
+            user_id="user-a",
+            project_id="project-a",
+            resolved_root="C:\\project-a",
+        )
+
+    @pytest.mark.asyncio
+    async def test_restart_revokes_preview_before_opening_replacement(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """restart 必须先关闭旧进程、撤销旧 lease，最后才允许打开替代进程。"""
+        service = ACPService(config=_make_config())
+        lifecycle_events: list[str] = []
+
+        async def _close(**kwargs: Any) -> None:
+            del kwargs
+            lifecycle_events.append("close")
+
+        async def _revoke(**kwargs: Any) -> None:
+            del kwargs
+            lifecycle_events.append("revoke")
+
+        async def _open(**kwargs: Any) -> None:
+            del kwargs
+            lifecycle_events.append("open")
+            raise ACPSessionError("stop after open")
+
+        preview_registry = MagicMock()
+        preview_registry.revoke_session = AsyncMock(side_effect=_revoke)
+        monkeypatch.setattr(
+            acp_service_module,
+            "preview_lease_registry",
+            preview_registry,
+            raising=False,
+        )
+        with patch.object(service, "close_chat_session", side_effect=_close), patch.object(
+            service,
+            "_get_or_create_session",
+            side_effect=_open,
+        ):
+            with pytest.raises(ACPSessionError, match="stop after open"):
+                await service.run_turn(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                    prompt_blocks=[{"type": "text", "text": "hi"}],
+                    cwd="C:\\project-a",
+                    user_id="user-a",
+                    project_id="project-a",
+                    resolved_root="C:\\project-a",
+                    on_message=AsyncMock(),
+                    restart=True,
+                )
+
+        assert lifecycle_events == ["close", "revoke", "open"]
+        preview_registry.revoke_session.assert_awaited_once_with(
+            user_id="user-a",
+            project_id="project-a",
+            session_kind=PreviewSessionKind.ACP,
+            session_id="session-1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_restart_close_failure_preserves_preview_lease(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """restart 关闭旧进程失败时不得撤销 lease 或打开替代进程。"""
+        service = ACPService(config=_make_config())
+        preview_registry = MagicMock()
+        preview_registry.revoke_session = AsyncMock(return_value=None)
+        monkeypatch.setattr(
+            acp_service_module,
+            "preview_lease_registry",
+            preview_registry,
+            raising=False,
+        )
+        open_mock = AsyncMock()
+        with patch.object(
+            service,
+            "close_chat_session",
+            side_effect=ACPSessionError("close failed"),
+        ), patch.object(service, "_get_or_create_session", open_mock):
+            with pytest.raises(ACPSessionError, match="close failed"):
+                await service.run_turn(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                    prompt_blocks=[{"type": "text", "text": "hi"}],
+                    cwd="C:\\project-a",
+                    user_id="user-a",
+                    project_id="project-a",
+                    resolved_root="C:\\project-a",
+                    on_message=AsyncMock(),
+                    restart=True,
+                )
+
+        preview_registry.revoke_session.assert_not_awaited()
+        open_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_restart_revoke_failure_blocks_replacement_process(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """旧进程关闭后若 lease 撤销失败，不得继续打开替代 ACP 进程。"""
+        service = ACPService(config=_make_config())
+        preview_registry = MagicMock()
+        preview_registry.revoke_session = AsyncMock(
+            side_effect=RuntimeError("revoke failed"),
+        )
+        monkeypatch.setattr(
+            acp_service_module,
+            "preview_lease_registry",
+            preview_registry,
+        )
+        close_mock = AsyncMock(return_value=None)
+        open_mock = AsyncMock()
+        with patch.object(service, "close_chat_session", close_mock), patch.object(
+            service,
+            "_get_or_create_session",
+            open_mock,
+        ):
+            with pytest.raises(RuntimeError, match="revoke failed"):
+                await service.run_turn(
+                    chat_id="user-a:session-1",
+                    agent="test-agent",
+                    prompt_blocks=[{"type": "text", "text": "hi"}],
+                    cwd="C:\\project-a",
+                    user_id="user-a",
+                    project_id="project-a",
+                    resolved_root="C:\\project-a",
+                    on_message=AsyncMock(),
+                    restart=True,
+                )
+
+        close_mock.assert_awaited_once()
+        preview_registry.revoke_session.assert_awaited_once()
+        open_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_close_failure_keeps_conversation_for_retry(self) -> None:
+        """底层关闭失败时 service 注册表必须保留原会话供再次清理。"""
+        service = ACPService(config=_make_config())
+        session_key = ("user-a:session-1", "test-agent")
+        conversation = MagicMock()
+        conversation.user_id = "user-a"
+        conversation.project_id = "project-a"
+        conversation.resolved_root = "C:\\project-a"
+        conversation.cwd = "C:\\project-a"
+        service._sessions[session_key] = conversation
+
+        with patch.object(
+            service,
+            "_close_conversation",
+            new=AsyncMock(side_effect=RuntimeError("close failed")),
+        ):
+            with pytest.raises(RuntimeError, match="close failed"):
+                await service.close_chat_session(
+                    chat_id=session_key[0],
+                    agent=session_key[1],
+                    user_id="user-a",
+                    project_id="project-a",
+                    resolved_root="C:\\project-a",
+                )
+
+        assert service._sessions[session_key] is conversation

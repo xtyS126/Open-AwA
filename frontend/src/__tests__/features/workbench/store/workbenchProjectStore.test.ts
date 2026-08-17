@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { asWorkbenchProjectId } from '@/features/workbench/workbenchTypes'
 import { useWorkbenchProjectStore } from '@/features/workbench/store/workbenchProjectStore'
 import { useWorkbenchRuntimeStore } from '@/features/workbench/store/workbenchRuntimeStore'
+import { useCodingStore } from '@/features/coding/store/codingStore'
+import { registerWorkbenchProjectSwitchParticipant } from '@/features/workbench/workbenchProjectSwitchCoordinator'
 
 const apiMocks = vi.hoisted(() => ({
   listProjects: vi.fn(),
   getContext: vi.fn(),
   patchContext: vi.fn(),
+  writeFile: vi.fn(),
 }))
 
 vi.mock('@/features/workbench/workbenchApi', () => ({
@@ -17,6 +20,12 @@ vi.mock('@/features/workbench/workbenchApi', () => ({
   },
   getWorkbenchErrorMessage: () => '请求失败',
   isWorkbenchContextConflict: () => false,
+}))
+
+vi.mock('@/features/coding/codingApi', () => ({
+  codingApi: {
+    writeFile: apiMocks.writeFile,
+  },
 }))
 
 const PROJECT_A = asWorkbenchProjectId('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
@@ -45,6 +54,19 @@ describe('workbenchProjectStore', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useWorkbenchProjectStore.getState().resetForServerChange()
+    useCodingStore.setState({
+      projectId: PROJECT_A,
+      projectGeneration: 1,
+      switchingToProjectId: null,
+      projectSnapshots: {},
+      openFiles: [],
+      activeFilePath: null,
+      fileTree: null,
+      gitChanges: [],
+      gitBranch: '',
+      diffMode: false,
+    })
+    apiMocks.writeFile.mockResolvedValue({ path: 'src/app.ts', written: true, size: 7 })
   })
 
   it('并行加载 projects 与 context 且 StrictMode 重放复用同一在途请求', async () => {
@@ -124,6 +146,291 @@ describe('workbenchProjectStore', () => {
       contextEtag: '"v2"',
       switchGeneration: 4,
       phase: 'ready',
+    })
+    expect(useWorkbenchRuntimeStore.getState().projects[PROJECT_B]).toMatchObject({
+      generation: 4,
+    })
+  })
+
+  it('Coding 存在 dirty buffer 时从共享入口切换不会提前 PATCH 服务端 context', async () => {
+    useWorkbenchProjectStore.setState({
+      projects: [projectA, projectB],
+      currentProjectId: PROJECT_A,
+      contextEtag: '"v1"',
+      phase: 'ready',
+      activeScopeKey: 'server-a|user-a',
+    })
+    useCodingStore.setState({
+      projectId: PROJECT_A,
+      openFiles: [{
+        path: 'src/app.ts',
+        name: 'app.ts',
+        content: 'changed',
+        isDirty: true,
+        language: 'typescript',
+      }],
+      activeFilePath: 'src/app.ts',
+    })
+    apiMocks.patchContext.mockResolvedValue({
+      project: projectB,
+      updatedAt: '2026-08-12T00:00:01Z',
+      etag: '"v2"',
+    })
+
+    await useWorkbenchProjectStore.getState().selectProject(PROJECT_B)
+
+    expect(apiMocks.patchContext).not.toHaveBeenCalled()
+    expect(useWorkbenchProjectStore.getState()).toMatchObject({
+      currentProjectId: PROJECT_A,
+      phase: 'ready',
+      pendingSwitch: {
+        fromProjectId: PROJECT_A,
+        toProjectId: PROJECT_B,
+        blockers: [{ kind: 'dirty-files', relativePaths: ['src/app.ts'] }],
+      },
+    })
+  })
+
+  it('确认保存时先写入 dirty 文件，服务端 PATCH 成功后才提交本地项目', async () => {
+    useWorkbenchProjectStore.setState({
+      projects: [projectA, projectB],
+      currentProjectId: PROJECT_A,
+      contextEtag: '"v1"',
+      phase: 'ready',
+      activeScopeKey: 'server-a|user-a',
+    })
+    useCodingStore.setState({
+      projectId: PROJECT_A,
+      projectGeneration: 4,
+      openFiles: [{
+        path: 'src/app.ts',
+        name: 'app.ts',
+        content: 'changed',
+        isDirty: true,
+        language: 'typescript',
+      }],
+      activeFilePath: 'src/app.ts',
+    })
+    apiMocks.patchContext.mockResolvedValue({
+      project: projectB,
+      updatedAt: '2026-08-12T00:00:01Z',
+      etag: '"v2"',
+    })
+
+    await useWorkbenchProjectStore.getState().selectProject(PROJECT_B)
+    const confirmSwitch = useWorkbenchProjectStore.getState().confirmSwitch as unknown as (
+      decision: 'save' | 'discard',
+    ) => Promise<void>
+    await confirmSwitch('save')
+
+    expect(apiMocks.writeFile).toHaveBeenCalledWith(PROJECT_A, 'src/app.ts', 'changed')
+    expect(apiMocks.patchContext).toHaveBeenCalledWith(PROJECT_B, '"v1"')
+    expect(useWorkbenchProjectStore.getState()).toMatchObject({
+      currentProjectId: PROJECT_B,
+      pendingSwitch: null,
+      phase: 'ready',
+    })
+    expect(useCodingStore.getState()).toMatchObject({
+      projectId: PROJECT_B,
+      openFiles: [],
+    })
+    expect(useCodingStore.getState().projectSnapshots[PROJECT_A].openFiles[0]).toMatchObject({
+      content: 'changed',
+      isDirty: false,
+    })
+  })
+
+  it('确认放弃时不写盘但保留旧项目 dirty 内存快照', async () => {
+    useWorkbenchProjectStore.setState({
+      projects: [projectA, projectB],
+      currentProjectId: PROJECT_A,
+      contextEtag: '"v1"',
+      phase: 'ready',
+      activeScopeKey: 'server-a|user-a',
+    })
+    useCodingStore.setState({
+      projectId: PROJECT_A,
+      projectGeneration: 4,
+      openFiles: [{
+        path: 'src/app.ts',
+        name: 'app.ts',
+        content: 'changed',
+        isDirty: true,
+        language: 'typescript',
+      }],
+      activeFilePath: 'src/app.ts',
+    })
+    apiMocks.patchContext.mockResolvedValue({
+      project: projectB,
+      updatedAt: '2026-08-12T00:00:01Z',
+      etag: '"v2"',
+    })
+
+    await useWorkbenchProjectStore.getState().selectProject(PROJECT_B)
+    const confirmSwitch = useWorkbenchProjectStore.getState().confirmSwitch as unknown as (
+      decision: 'save' | 'discard',
+    ) => Promise<void>
+    await confirmSwitch('discard')
+
+    expect(apiMocks.writeFile).not.toHaveBeenCalled()
+    expect(useWorkbenchProjectStore.getState().currentProjectId).toBe(PROJECT_B)
+    expect(useCodingStore.getState().projectSnapshots[PROJECT_A].openFiles[0]).toMatchObject({
+      content: 'changed',
+      isDirty: true,
+    })
+  })
+
+  it('保存成功但 context PATCH 失败时保留旧项目和 dirty buffer', async () => {
+    useWorkbenchProjectStore.setState({
+      projects: [projectA, projectB],
+      currentProjectId: PROJECT_A,
+      contextEtag: '"v1"',
+      phase: 'ready',
+      activeScopeKey: 'server-a|user-a',
+    })
+    useCodingStore.setState({
+      projectId: PROJECT_A,
+      projectGeneration: 4,
+      openFiles: [{
+        path: 'src/app.ts',
+        name: 'app.ts',
+        content: 'changed',
+        isDirty: true,
+        language: 'typescript',
+      }],
+      activeFilePath: 'src/app.ts',
+    })
+    apiMocks.patchContext.mockRejectedValue(new Error('context failed'))
+
+    await useWorkbenchProjectStore.getState().selectProject(PROJECT_B)
+    const confirmSwitch = useWorkbenchProjectStore.getState().confirmSwitch as unknown as (
+      decision: 'save' | 'discard',
+    ) => Promise<void>
+    await expect(confirmSwitch('save')).rejects.toThrow('context failed')
+
+    expect(apiMocks.writeFile).toHaveBeenCalledOnce()
+    expect(useWorkbenchProjectStore.getState()).toMatchObject({
+      currentProjectId: PROJECT_A,
+      pendingSwitch: expect.objectContaining({ toProjectId: PROJECT_B }),
+      phase: 'ready',
+    })
+    expect(useCodingStore.getState().openFiles[0]).toMatchObject({
+      content: 'changed',
+      isDirty: true,
+    })
+  })
+
+  it('服务端 PATCH 成功但本地 commit 失败时补偿回旧项目', async () => {
+    useWorkbenchProjectStore.setState({
+      projects: [projectA, projectB],
+      currentProjectId: PROJECT_A,
+      contextEtag: '"v1"',
+      phase: 'ready',
+      activeScopeKey: 'server-a|user-a',
+    })
+    useCodingStore.setState({
+      projectId: PROJECT_A,
+      openFiles: [],
+      activeFilePath: null,
+    })
+    apiMocks.patchContext
+      .mockResolvedValueOnce({
+        project: projectB,
+        updatedAt: '2026-08-12T00:00:01Z',
+        etag: '"v2"',
+      })
+      .mockResolvedValueOnce({
+        project: projectA,
+        updatedAt: '2026-08-12T00:00:02Z',
+        etag: '"v3"',
+      })
+    const unregister = registerWorkbenchProjectSwitchParticipant({
+      id: 'failing-local-commit-test',
+      preflight: () => [],
+      prepareSwitch: async () => ({
+        commit: () => {
+          throw new Error('local commit failed')
+        },
+      }),
+    })
+
+    try {
+      await expect(useWorkbenchProjectStore.getState().selectProject(PROJECT_B))
+        .rejects.toThrow('local commit failed')
+    } finally {
+      unregister()
+    }
+
+    expect(apiMocks.patchContext).toHaveBeenNthCalledWith(1, PROJECT_B, '"v1"')
+    expect(apiMocks.patchContext).toHaveBeenNthCalledWith(2, PROJECT_A, '"v2"')
+    expect(useWorkbenchProjectStore.getState()).toMatchObject({
+      currentProjectId: PROJECT_A,
+      contextEtag: '"v3"',
+      phase: 'ready',
+    })
+  })
+
+  it('补偿 PATCH 失败时以服务端 context 强制收敛所有本地参与者', async () => {
+    useWorkbenchProjectStore.setState({
+      projects: [projectA, projectB],
+      currentProjectId: PROJECT_A,
+      contextEtag: '"v1"',
+      phase: 'ready',
+      activeScopeKey: 'server-a|user-a',
+      switchGeneration: 4,
+    })
+    useCodingStore.setState({
+      projectId: PROJECT_A,
+      projectGeneration: 4,
+      openFiles: [],
+      activeFilePath: null,
+    })
+    apiMocks.patchContext
+      .mockResolvedValueOnce({
+        project: projectB,
+        updatedAt: '2026-08-12T00:00:01Z',
+        etag: '"v2"',
+      })
+      .mockRejectedValueOnce(new Error('compensation failed'))
+    apiMocks.listProjects.mockResolvedValue({ items: [projectA, projectB] })
+    apiMocks.getContext.mockResolvedValue({
+      project: projectB,
+      updatedAt: '2026-08-12T00:00:02Z',
+      etag: '"v2"',
+    })
+    const unregister = registerWorkbenchProjectSwitchParticipant({
+      id: 'failing-local-commit-and-compensation-test',
+      preflight: () => [],
+      prepareSwitch: async () => ({
+        commit: () => {
+          throw new Error('local commit failed')
+        },
+      }),
+    })
+
+    try {
+      await expect(useWorkbenchProjectStore.getState().selectProject(PROJECT_B))
+        .rejects.toThrow('local commit failed')
+    } finally {
+      unregister()
+    }
+
+    expect(apiMocks.patchContext).toHaveBeenNthCalledWith(1, PROJECT_B, '"v1"')
+    expect(apiMocks.patchContext).toHaveBeenNthCalledWith(2, PROJECT_A, '"v2"')
+    expect(apiMocks.getContext).toHaveBeenCalledOnce()
+    expect(useWorkbenchProjectStore.getState()).toMatchObject({
+      currentProjectId: PROJECT_B,
+      contextEtag: '"v2"',
+      phase: 'ready',
+      error: null,
+      switchGeneration: 5,
+    })
+    expect(useCodingStore.getState()).toMatchObject({
+      projectId: PROJECT_B,
+      projectGeneration: 5,
+    })
+    expect(useWorkbenchRuntimeStore.getState().projects[PROJECT_B]).toMatchObject({
+      generation: 5,
     })
   })
 

@@ -240,3 +240,44 @@ def test_invalid_display_name_and_forbidden_root_are_rejected(workbench_api, tmp
     assert forbidden.status_code == 403
     assert forbidden.json()["detail"]["code"] == "workbench_project_root_forbidden"
 
+
+def test_project_file_preview_alias_uses_authenticated_project_context(
+    workbench_api,
+    tmp_path: Path,
+) -> None:
+    """工作台文件预览别名只接收项目 ID 与相对路径。"""
+    client, _session, _users, _registry = workbench_api
+    root = tmp_path / "allowed" / "project-preview"
+    root.mkdir()
+    (root / "README.md").write_text("# Workbench preview", encoding="utf-8")
+    project = _create_project(client, root, name="Preview Project")
+
+    response = client.get(
+        f"/api/workbench/projects/{project['id']}/files/preview",
+        params={"path": "README.md"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["type"] == "markdown"
+    assert "Workbench preview" in response.json()["html"]
+    assert str(root).lower() not in response.text.lower()
+
+
+def test_project_file_preview_alias_rejects_legacy_absolute_root_fields(
+    workbench_api,
+    tmp_path: Path,
+) -> None:
+    """工作台文件预览别名不得接受旧绝对根字段。"""
+    client, _session, _users, _registry = workbench_api
+    root = tmp_path / "allowed" / "project-preview-legacy"
+    root.mkdir()
+    (root / "README.md").write_text("# safe", encoding="utf-8")
+    project = _create_project(client, root, name="Legacy Preview")
+
+    response = client.get(
+        f"/api/workbench/projects/{project['id']}/files/preview",
+        params={"path": "README.md", "project_dir": str(root)},
+    )
+
+    assert response.status_code == 422
+    assert str(root).lower() not in response.text.lower()

@@ -233,9 +233,10 @@ class TestHookResultType:
     """HookResultType 枚举测试"""
 
     def test_hook_result_type_enum(self):
-        """验证 7 种 HookResultType 枚举值"""
+        """验证 8 种 HookResultType 枚举值"""
         assert HookResultType.APPROVE == "approve"
         assert HookResultType.DENY == "deny"
+        assert HookResultType.ASK == "ask"
         assert HookResultType.MODIFY_INPUT == "modify_input"
         assert HookResultType.MODIFY_OUTPUT == "modify_output"
         assert HookResultType.PREVENT_CONTINUATION == "prevent_continuation"
@@ -243,9 +244,9 @@ class TestHookResultType:
         assert HookResultType.ERROR == "error"
 
     def test_hook_result_type_count(self):
-        """验证枚举成员数量为 7"""
+        """验证枚举成员数量为 8"""
         members = list(HookResultType)
-        assert len(members) == 7
+        assert len(members) == 8
 
 
 class TestHookResultDataclass:
@@ -451,6 +452,21 @@ class TestHookResultTypes:
         assert results[0].result_type == HookResultType.ERROR
         assert results[0].error_message == "钩子内部校验失败"
 
+    @pytest.mark.asyncio
+    async def test_hook_ask(self, manager):
+        """验证 ASK 结果类型（需要用户确认）"""
+        async def ask_hook(ctx, data):
+            return HookResult(
+                result_type=HookResultType.ASK,
+                reason="需要用户确认此操作",
+            )
+
+        manager.register("p1", "test.ask", ask_hook)
+        results = await manager.trigger("test.ask", "data")
+        assert len(results) == 1
+        assert results[0].result_type == HookResultType.ASK
+        assert results[0].reason == "需要用户确认此操作"
+
 
 class TestHookUpdatedInput:
     """验证 hook_updated_input 合并函数"""
@@ -623,3 +639,74 @@ class TestHookTimingThreshold:
     def test_threshold_constant_value(self):
         """验证 HOOK_TIMING_DISPLAY_THRESHOLD_MS 常量值为 500"""
         assert HOOK_TIMING_DISPLAY_THRESHOLD_MS == 500
+
+
+class TestCoerceToHookResult:
+    """验证 _coerce_to_hook_result 向后兼容转换逻辑"""
+
+    def test_ask_decision_not_downgraded_to_deny(self):
+        """验证 ask 决策不再被降级为 DENY，而是保持 ASK 语义"""
+        from core.hook_manager import _coerce_to_hook_result
+
+        # hook_dispatcher 风格的 ask 决策 dict
+        raw = {"decision": "ask", "reason": "需要用户确认", "updated_input": {"key": "val"}}
+        result = _coerce_to_hook_result(raw)
+        assert result.result_type == HookResultType.ASK
+        assert result.reason == "需要用户确认"
+        assert result.modified_input == {"key": "val"}
+
+    def test_deny_decision_remains_deny(self):
+        """验证 deny 决策保持 DENY"""
+        from core.hook_manager import _coerce_to_hook_result
+
+        raw = {"decision": "deny", "reason": "权限不足"}
+        result = _coerce_to_hook_result(raw)
+        assert result.result_type == HookResultType.DENY
+        assert result.reason == "权限不足"
+
+    def test_allow_decision_remains_approve(self):
+        """验证 allow 决策转为 APPROVE"""
+        from core.hook_manager import _coerce_to_hook_result
+
+        raw = {"decision": "allow", "updated_input": {"extra": "data"}}
+        result = _coerce_to_hook_result(raw)
+        assert result.result_type == HookResultType.APPROVE
+        assert result.modified_input == {"extra": "data"}
+
+    def test_defer_decision_remains_approve(self):
+        """验证 defer 决策转为 APPROVE"""
+        from core.hook_manager import _coerce_to_hook_result
+
+        raw = {"decision": "defer"}
+        result = _coerce_to_hook_result(raw)
+        assert result.result_type == HookResultType.APPROVE
+
+    def test_bool_true_returns_approve(self):
+        """验证 True 转为 APPROVE"""
+        from core.hook_manager import _coerce_to_hook_result
+
+        result = _coerce_to_hook_result(True)
+        assert result.result_type == HookResultType.APPROVE
+
+    def test_bool_false_returns_deny(self):
+        """验证 False 转为 DENY"""
+        from core.hook_manager import _coerce_to_hook_result
+
+        result = _coerce_to_hook_result(False)
+        assert result.result_type == HookResultType.DENY
+
+    def test_none_returns_approve(self):
+        """验证 None 转为 APPROVE"""
+        from core.hook_manager import _coerce_to_hook_result
+
+        result = _coerce_to_hook_result(None)
+        assert result.result_type == HookResultType.APPROVE
+
+    def test_hook_result_passthrough(self):
+        """验证 HookResult 实例原样返回"""
+        from core.hook_manager import _coerce_to_hook_result
+
+        original = HookResult(result_type=HookResultType.ASK, reason="确认")
+        result = _coerce_to_hook_result(original)
+        assert result is original
+        assert result.result_type == HookResultType.ASK

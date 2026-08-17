@@ -12,10 +12,6 @@ from plugin_logger import LogManager, PluginLogger
 
 
 class TestPluginLogger:
-    """
-    封装与TestPluginLogger相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def test_default_level_is_debug(self):
         """
         验证default、level、is、debug相关场景的行为是否符合预期。
@@ -180,15 +176,7 @@ class TestPluginLogger:
 
 
 class TestLogManager:
-    """
-    封装与TestLogManager相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def setup_method(self):
-        """
-        处理setup、method相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         manager = LogManager()
         for pid in list(manager._loggers.keys()):
             manager.remove_logger(pid)

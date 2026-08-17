@@ -19,6 +19,9 @@ import { render, screen, waitFor, act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import TerminalPane from '@/features/vibe-coding/components/TerminalPane'
 
+const PROJECT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const PROJECT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+
 // 提升 mock 句柄，便于在 vi.mock 工厂内引用
 const terminalMocks = vi.hoisted(() => ({
   // 跟踪每次 new Terminal() 创建的实例
@@ -122,7 +125,7 @@ describe('TerminalPane', () => {
     apiMocks.createPtySession.mockResolvedValue({
       ok: true,
       session_id: 'pty-test-session',
-      cwd: '.',
+      project_id: PROJECT_A,
       cols: 80,
       rows: 24,
       shell: 'bash',
@@ -137,7 +140,7 @@ describe('TerminalPane', () => {
 
   it('renders without crashing', async () => {
     await act(async () => {
-      render(<TerminalPane cwd="." />)
+      render(<TerminalPane projectId={PROJECT_A} generation={1} onBindingChange={vi.fn()} />)
     })
 
     // 组件渲染后应出现状态栏文案（任意一种状态文字都可证明渲染成功）
@@ -148,15 +151,15 @@ describe('TerminalPane', () => {
 
   it('creates pty session on mount', async () => {
     await act(async () => {
-      render(<TerminalPane cwd="." />)
+      render(<TerminalPane projectId={PROJECT_A} generation={1} onBindingChange={vi.fn()} />)
     })
 
     await waitFor(() => {
       expect(apiMocks.createPtySession).toHaveBeenCalledTimes(1)
     })
-    // 验证传入的 cwd 与默认列数
+    // 终端只能提交服务端权威项目标识，不能提交 cwd 或 root。
     expect(apiMocks.createPtySession).toHaveBeenCalledWith({
-      cwd: '.',
+      projectId: PROJECT_A,
       cols: 80,
       rows: 24,
     })
@@ -164,7 +167,7 @@ describe('TerminalPane', () => {
 
   it('shows connecting status initially', async () => {
     await act(async () => {
-      render(<TerminalPane cwd="." />)
+      render(<TerminalPane projectId={PROJECT_A} generation={1} onBindingChange={vi.fn()} />)
     })
 
     // 初始状态为 "连接中..."（i18n: vibeCoding.terminal.connecting）
@@ -176,7 +179,7 @@ describe('TerminalPane', () => {
   it('attempts reconnection on websocket close', async () => {
     // 使用真实 timers，但给足超时让重连（1s 退避）触发
     await act(async () => {
-      render(<TerminalPane cwd="." />)
+      render(<TerminalPane projectId={PROJECT_A} generation={1} onBindingChange={vi.fn()} />)
     })
 
     // 等待首次 WebSocket 创建完成
@@ -209,4 +212,62 @@ describe('TerminalPane', () => {
       { timeout: 3000 }
     )
   }, 10000) // 给整个 test 10s 超时
+
+  it('项目代次变化时关闭旧资源且清理迟到的旧创建响应', async () => {
+    let resolveProjectA: ((value: {
+      ok: boolean
+      session_id: string
+      project_id: string
+    }) => void) | undefined
+    const projectACreate = new Promise<{
+      ok: boolean
+      session_id: string
+      project_id: string
+    }>((resolve) => {
+      resolveProjectA = resolve
+    })
+    apiMocks.createPtySession.mockImplementation(({ projectId }: { projectId: string }) => {
+      if (projectId === PROJECT_A) return projectACreate
+      return Promise.resolve({
+        ok: true,
+        session_id: 'pty-project-b',
+        project_id: PROJECT_B,
+      })
+    })
+    const onBindingChange = vi.fn()
+    const view = render(
+      <TerminalPane
+        projectId={PROJECT_A}
+        generation={1}
+        onBindingChange={onBindingChange}
+      />,
+    )
+
+    view.rerender(
+      <TerminalPane
+        projectId={PROJECT_B}
+        generation={2}
+        onBindingChange={onBindingChange}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onBindingChange).toHaveBeenCalledWith('pty-project-b')
+    })
+
+    await act(async () => {
+      resolveProjectA?.({
+        ok: true,
+        session_id: 'pty-project-a-stale',
+        project_id: PROJECT_A,
+      })
+      await projectACreate
+    })
+
+    await waitFor(() => {
+      expect(apiMocks.closePtySession).toHaveBeenCalledWith('pty-project-a-stale')
+    })
+    expect(onBindingChange).not.toHaveBeenCalledWith('pty-project-a-stale')
+    expect(wsInstances).toHaveLength(1)
+  })
 })

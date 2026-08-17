@@ -43,4 +43,31 @@ describe('workbenchRuntimeStore', () => {
       previewIntent: { kind: 'none' },
     })
   })
+
+  it('预览 runtime 只保存受限 previewId，不保存端口', () => {
+    const store = useWorkbenchRuntimeStore.getState()
+    store.activateProject(PROJECT_A, 1)
+    store.setPreviewIntent(PROJECT_A, 1, { kind: 'web', previewId: 'preview-a' })
+
+    const serialized = JSON.stringify(useWorkbenchRuntimeStore.getState().projects[PROJECT_A])
+    expect(serialized).toContain('preview-a')
+    expect(serialized).not.toMatch(/port|5173/i)
+  })
+
+  it('进入更高 generation 时保留项目偏好但清空旧代资源绑定', () => {
+    const store = useWorkbenchRuntimeStore.getState()
+    store.activateProject(PROJECT_A, 1)
+    store.setSelectedAgent(PROJECT_A, 1, 'codex')
+    store.setTerminalBinding(PROJECT_A, 1, { kind: 'attached', sessionId: 'terminal-old' })
+    store.setPreviewIntent(PROJECT_A, 1, { kind: 'web', previewId: 'preview-old' })
+
+    store.activateProject(PROJECT_A, 2)
+
+    expect(useWorkbenchRuntimeStore.getState().projects[PROJECT_A]).toMatchObject({
+      generation: 2,
+      selectedAgentId: 'codex',
+      terminalBinding: { kind: 'none' },
+      previewIntent: { kind: 'none' },
+    })
+  })
 })

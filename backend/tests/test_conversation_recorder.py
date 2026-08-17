@@ -20,15 +20,7 @@ from db.models import Base, ConversationRecord
 
 
 class _User:
-    """
-    封装与User相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def __init__(self, user_id: str):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self.id = user_id
 
 

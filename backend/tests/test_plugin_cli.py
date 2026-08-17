@@ -16,18 +16,10 @@ from plugins.cli.plugin_cli import cli
 
 @pytest.fixture
 def runner() -> CliRunner:
-    """
-    处理runner相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     return CliRunner()
 
 
 class TestCmdInit:
-    """
-    封装与TestCmdInit相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def test_creates_expected_files(self, runner: CliRunner, tmp_path: Path) -> None:
         """
         验证creates、expected、files相关场景的行为是否符合预期。
@@ -85,15 +77,7 @@ class TestCmdInit:
 
 
 class TestCmdBuild:
-    """
-    封装与TestCmdBuild相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def _make_plugin_dir(self, base: Path, name: str = "@scope/plug", version: str = "1.0.0") -> Path:
-        """
-        处理make、plugin、dir相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         d = base / "plugin"
         d.mkdir()
         manifest = {
@@ -170,15 +154,7 @@ class TestCmdBuild:
 
 
 class TestCmdValidate:
-    """
-    封装与TestCmdValidate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def _make_valid_zip(self, tmp_path: Path, name: str = "test-plugin@1.0.0.zip") -> Path:
-        """
-        处理make、valid、zip相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         manifest = {
             "name": "@test/plugin",
             "version": "1.0.0",
@@ -241,15 +217,7 @@ class TestCmdValidate:
 
 
 class TestCmdSign:
-    """
-    封装与TestCmdSign相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def _make_zip(self, tmp_path: Path) -> Path:
-        """
-        处理make、zip相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         zip_path = tmp_path / "plugin@1.0.0.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("manifest.json", "{\"hello\": \"world\"}")

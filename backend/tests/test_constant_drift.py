@@ -155,12 +155,12 @@ class TestMaxConsecutiveFailuresDrift:
         )
 
     def test_max_consecutive_failures_only_defined_in_compaction_manager(self) -> None:
-        """验证 MAX_CONSECUTIVE_FAILURES 仅在 compaction_manager.py 定义"""
+        """验证 MAX_CONSECUTIVE_FAILURES 定义位置已迁移到统一阈值配置"""
         matched = _find_constant_definitions("MAX_CONSECUTIVE_FAILURES")
-        expected_file = BACKEND_ROOT / "core" / "compaction_manager.py"
+        expected_file = BACKEND_ROOT / "config" / "thresholds.py"
         matched_names = [str(p.relative_to(BACKEND_ROOT)) for p in matched]
         assert len(matched) == 1, (
-            f"MAX_CONSECUTIVE_FAILURES 应仅在 compaction_manager.py 中定义，"
+            f"MAX_CONSECUTIVE_FAILURES 应仅在 config/thresholds.py 中定义，"
             f"实际定义文件: {matched_names}"
         )
         assert matched[0].resolve() == expected_file.resolve()

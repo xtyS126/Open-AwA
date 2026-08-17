@@ -19,10 +19,6 @@ from plugins.plugin_manager import PluginManager
 # ---------------------------------------------------------------------------
 
 class TestRolloutConfig:
-    """
-    封装与TestRolloutConfig相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def test_default_disabled(self):
         """
         验证default、disabled相关场景的行为是否符合预期。
@@ -130,10 +126,6 @@ class TestRolloutConfig:
 # ---------------------------------------------------------------------------
 
 class TestRollbackManager:
-    """
-    封装与TestRollbackManager相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def test_save_and_restore_latest(self):
         """
         验证save、and、restore、latest相关场景的行为是否符合预期。
@@ -229,20 +221,8 @@ class TestRollbackManager:
 # ---------------------------------------------------------------------------
 
 class TestHotUpdateManager:
-    """
-    封装与TestHotUpdateManager相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
     def _make_instance(self, name: str = "plugin_a") -> object:
-        """
-        处理make、instance相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         class _FakePlugin:
-            """
-            封装与FakePlugin相关的核心逻辑与运行状态。
-            该类通常是当前文件中组织数据与调度行为的主要封装单元。
-            """
             plugin_name = name
         return _FakePlugin()
 
@@ -313,10 +293,6 @@ class TestHotUpdateManager:
         mgr.register_initial("plug", "1.0.0", {"path": "/a"}, self._make_instance())
 
         def _bad_loader():
-            """
-            处理bad、loader相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             raise RuntimeError("load failed")
 
         with pytest.raises(RuntimeError):
@@ -478,10 +454,6 @@ class HotV1Plugin(BasePlugin):
 
 @pytest.fixture
 def hot_workspace(tmp_path: Path) -> Path:
-    """
-    处理hot、workspace相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     (tmp_path / "hot_v1.py").write_text(PLUGIN_V1, encoding="utf-8")
     return tmp_path
 

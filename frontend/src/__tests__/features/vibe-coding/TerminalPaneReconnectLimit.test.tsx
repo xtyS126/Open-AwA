@@ -19,6 +19,8 @@ import { render, screen, act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import TerminalPane from '@/features/vibe-coding/components/TerminalPane'
 
+const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+
 const terminalMocks = vi.hoisted(() => ({
   instances: [] as Array<{
     open: ReturnType<typeof vi.fn>
@@ -111,7 +113,7 @@ describe('TerminalPane 重连上限', () => {
     apiMocks.createPtySession.mockResolvedValue({
       ok: true,
       session_id: 'pty-reconnect-test',
-      cwd: '.',
+      project_id: PROJECT_ID,
       cols: 80,
       rows: 24,
       shell: 'bash',
@@ -128,7 +130,7 @@ describe('TerminalPane 重连上限', () => {
 
   it('连续失败超过 10 次后停止重连并切换为 error 状态', async () => {
     await act(async () => {
-      render(<TerminalPane cwd="." />)
+      render(<TerminalPane projectId={PROJECT_ID} generation={1} onBindingChange={vi.fn()} />)
       // 推进 microtask 让 createPtySession 异步解析 + connectWebSocket 执行
       await vi.advanceTimersByTimeAsync(0)
     })
@@ -184,7 +186,7 @@ describe('TerminalPane 重连上限', () => {
 
   it('重连过程中任意一次连接成功应重置重连计数', async () => {
     await act(async () => {
-      render(<TerminalPane cwd="." />)
+      render(<TerminalPane projectId={PROJECT_ID} generation={1} onBindingChange={vi.fn()} />)
       await vi.advanceTimersByTimeAsync(0)
     })
 

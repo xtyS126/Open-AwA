@@ -66,9 +66,8 @@ class TestSkillPermissionFilter:
             PermissionRule(action=action, resource=allowed_resources, effect=PermissionEffect.ALLOW)
             for action in allowed_actions
         ]
-        # 添加默认 deny 规则
-        rules.append(PermissionRule(action="*", resource="*", effect=PermissionEffect.DENY))
-
+        # effect 优先级语义（deny > allow > ask）下不再追加 catch-all deny：
+        # 未匹配白名单的技能默认 ASK，不会被加入 ALLOW 结果，等价于拒绝
         filtered = []
         for skill in skills:
             if not skill.get("enabled", False):
@@ -104,9 +103,8 @@ class TestSkillPermissionFilter:
         assert len(filtered) == 0
 
     def test_filter_allow_specific(self, mock_skills):
-        """只允许特定技能（last-match-wins：后匹配的规则覆盖前面的）"""
+        """只允许特定技能（白名单 allow，未匹配技能默认不可用）"""
         rules = [
-            PermissionRule(action="*", resource="*", effect=PermissionEffect.DENY),
             PermissionRule(action="skill:file-reader", resource="*", effect=PermissionEffect.ALLOW),
         ]
         filtered = []
@@ -119,9 +117,9 @@ class TestSkillPermissionFilter:
         assert len(filtered) == 1
         assert filtered[0]["name"] == "file-reader"
 
-    def test_last_match_wins(self, mock_skills):
-        """后匹配的规则覆盖前面的规则（last-match-wins）"""
-        # 先 deny 所有，再 allow 特定技能
+    def test_deny_not_overridden_by_allow(self, mock_skills):
+        """deny 命中即拒绝：后置 allow 无法覆盖 deny（effect 优先级）"""
+        # catch-all deny 在前，特定 allow 在后，新语义下 deny 仍生效
         rules = [
             PermissionRule(action="*", resource="*", effect=PermissionEffect.DENY),
             PermissionRule(action="skill:web-scraper", resource="*", effect=PermissionEffect.ALLOW),
@@ -133,8 +131,8 @@ class TestSkillPermissionFilter:
             effect = evaluate_effect(f"skill:{skill['name']}", "*", rules)
             if effect == PermissionEffect.ALLOW:
                 filtered.append(skill)
-        assert len(filtered) == 1
-        assert filtered[0]["name"] == "web-scraper"
+        # deny 优先级高于 allow，所有技能均被拒绝
+        assert len(filtered) == 0
 
     def test_disabled_skills_always_filtered(self, mock_skills):
         """已禁用技能始终被过滤"""
@@ -154,21 +152,21 @@ class TestSkillPermissionFilter:
 class TestPermissionEvaluation:
     """权限评估优先级测试"""
 
-    def test_global_rules_override_agent_rules(self):
-        """全局规则因 last-match-wins 覆盖先匹配的代理规则"""
+    def test_agent_deny_not_overridden_by_global_allow(self):
+        """代理 deny 不可被后置全局 allow 覆盖（deny 优先）"""
         agent_rules = [
             PermissionRule(action="write", resource="*", effect=PermissionEffect.DENY),
         ]
         global_rules = [
             PermissionRule(action="*", resource="*", effect=PermissionEffect.ALLOW),
         ]
-        # agent_rules 先匹配到 DENY，但后面 global_rules 的 ALLOW 通过 last-match-wins 覆盖
-        # 所以最终应该是 ALLOW
+        # 修复前 last-match-wins 会让全局 ALLOW 覆盖代理 DENY；
+        # 修复后 effect 优先级（deny > allow）保证代理 deny 生效
         effect = evaluate_effect("write", "file:test", agent_rules, global_rules)
-        assert effect == PermissionEffect.ALLOW
+        assert effect == PermissionEffect.DENY
 
-    def test_saved_rules_override_all(self):
-        """已保存规则覆盖代理和全局规则"""
+    def test_saved_allow_cannot_override_deny(self):
+        """已保存 allow 不能覆盖代理/全局 deny（deny 优先）"""
         agent_rules = [
             PermissionRule(action="*", resource="*", effect=PermissionEffect.DENY),
         ]
@@ -178,5 +176,7 @@ class TestPermissionEvaluation:
         saved_rules = [
             PermissionRule(action="write", resource="*", effect=PermissionEffect.ALLOW),
         ]
+        # 修复前已保存规则（always allow）可覆盖所有 deny，是权限绕过漏洞；
+        # 修复后 deny 命中即拒绝
         effect = evaluate_effect("write", "file:test", agent_rules, global_rules, saved_rules)
-        assert effect == PermissionEffect.ALLOW
+        assert effect == PermissionEffect.DENY

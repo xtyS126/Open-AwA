@@ -1,34 +1,23 @@
 /**
- * AcpSessionPanel ACP 会话面板单元测试。
- *
- * 覆盖点：
- *   - sessionId=null 时空状态展示
- *   - 选中会话后输入区渲染
- *   - text 事件累积到输出区
- *   - permission 事件弹出 PermissionDialog
- *   - error 事件展示错误框
- *
- * Mock：
- *   - @/shared/api/client：API_BASE_URL、getCachedApiKey
- *   - @/shared/api/acpApi：respondPermission、cancelTurn
- *   - 全局 fetch：返回 ReadableStream 模拟 SSE 数据流
+ * ACP 会话面板的项目隔离与流式交互测试。
  */
 import '@testing-library/jest-dom/vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AcpSessionPanel from '@/features/vibe-coding/components/AcpSessionPanel'
 
-// 提升的 mock 句柄
 const acpApiMocks = vi.hoisted(() => ({
+  createPromptRequest: vi.fn((projectId: string, prompt: string) => ({
+    project_id: projectId,
+    prompt,
+  })),
   respondPermission: vi.fn(),
   cancelTurn: vi.fn(),
 }))
 
-// 使用 importActual 保留 api（axios 实例）导出，仅覆盖测试需要的字段
-// 否则 acpApi.ts 经由 api.ts 间接引用 ./client 的 api 时会因缺失导出而报错
 vi.mock('@/shared/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/shared/api/client')>(
-    '@/shared/api/client'
+    '@/shared/api/client',
   )
   return {
     ...actual,
@@ -41,37 +30,34 @@ vi.mock('@/shared/api/acpApi', async () => {
   const actual = await vi.importActual<typeof import('@/shared/api/acpApi')>('@/shared/api/acpApi')
   return {
     ...actual,
+    createPromptRequest: acpApiMocks.createPromptRequest,
     respondPermission: acpApiMocks.respondPermission,
     cancelTurn: acpApiMocks.cancelTurn,
   }
 })
 
-/** 将字符串数组编码为 SSE 帧字节流 */
 function encodeSseFrames(frames: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
   return new ReadableStream({
     start(controller) {
-      for (const frame of frames) {
-        controller.enqueue(encoder.encode(frame))
-      }
+      for (const frame of frames) controller.enqueue(encoder.encode(frame))
       controller.close()
     },
   })
 }
 
-/** 构造一个 SSE 帧 */
 function sseFrame(eventType: string, data: unknown): string {
   return `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`
 }
 
+const defaultProps = {
+  projectId: 'project-a',
+  generation: 1,
+  sessionId: 'sess-1',
+}
+
 describe('AcpSessionPanel', () => {
   const originalFetch = globalThis.fetch
-
-  afterEach(() => {
-    // 恢复 fetch，避免污染其他测试套件
-    globalThis.fetch = originalFetch
-    vi.unstubAllGlobals()
-  })
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -79,31 +65,27 @@ describe('AcpSessionPanel', () => {
     acpApiMocks.cancelTurn.mockResolvedValue({ cancelled: true })
   })
 
-  it('renders empty state when no session selected', () => {
-    render(<AcpSessionPanel sessionId={null} cwd="." />)
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.unstubAllGlobals()
+  })
 
-    // 空状态文案来自 i18n: vibeCoding.acp.noSession
+  it('没有会话时显示空状态', () => {
+    render(<AcpSessionPanel {...defaultProps} sessionId={null} />)
+
     expect(screen.getByText('请先选择或创建会话')).toBeInTheDocument()
-    // 不应渲染输入区 textarea
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
-  it('renders input area when session selected', () => {
-    render(<AcpSessionPanel sessionId="sess-1" cwd="/tmp/work" />)
+  it('选中会话时不显示工作目录或项目根路径', () => {
+    render(<AcpSessionPanel {...defaultProps} />)
 
-    // textarea 应渲染，placeholder 来自 i18n
-    const textarea = screen.getByPlaceholderText(
-      '输入 prompt，回车发送（Shift+Enter 换行）'
-    )
-    expect(textarea).toBeInTheDocument()
-    // 发送按钮应渲染，文案 "发送"
-    expect(screen.getByText('发送')).toBeInTheDocument()
-    // 工作目录顶栏应展示 cwd
-    expect(screen.getByText('/tmp/work')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('输入 prompt，回车发送（Shift+Enter 换行）')).toBeInTheDocument()
+    expect(screen.queryByText('/tmp/work')).not.toBeInTheDocument()
+    expect(screen.queryByText('工作目录')).not.toBeInTheDocument()
   })
 
-  it('handles text events and accumulates output', async () => {
-    // mock fetch 返回 text 事件流
+  it('通过 createPromptRequest 发送包含 project_id 的 prompt', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       body: encodeSseFrames([
@@ -114,103 +96,82 @@ describe('AcpSessionPanel', () => {
     })
     globalThis.fetch = mockFetch as unknown as typeof fetch
 
-    render(<AcpSessionPanel sessionId="sess-1" cwd="." />)
+    render(<AcpSessionPanel {...defaultProps} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } })
+    fireEvent.click(screen.getByText('发送').closest('button') as HTMLElement)
 
-    // 输入 prompt 并点击发送
-    const textarea = screen.getByPlaceholderText(
-      '输入 prompt，回车发送（Shift+Enter 换行）'
-    ) as HTMLTextAreaElement
-    fireEvent.change(textarea, { target: { value: 'hello' } })
-
-    const sendButton = screen.getByText('发送').closest('button') as HTMLElement
-    await act(async () => {
-      fireEvent.click(sendButton)
-    })
-
-    // 验证 fetch 被以正确的 URL 与 body 调用
     await waitFor(() => {
+      expect(acpApiMocks.createPromptRequest).toHaveBeenCalledWith('project-a', 'hello')
       expect(mockFetch).toHaveBeenCalledWith(
         '/api/acp/sessions/sess-1/prompt',
         expect.objectContaining({
           method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream',
-            Authorization: 'Bearer test-token',
-          }),
-          body: JSON.stringify({ prompt: 'hello' }),
-        })
+          body: JSON.stringify({ project_id: 'project-a', prompt: 'hello' }),
+        }),
       )
     })
+    expect(await screen.findByText('world')).toBeInTheDocument()
+  })
 
-    // 输出区应同时显示用户输入与 agent 文本输出
+  it('权限响应携带 projectId 和 sessionId', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: encodeSseFrames([sseFrame('permission', {
+        tool_name: 'bash',
+        options: [{ id: 'allow', label: '允许', kind: 'allow' }],
+      })]),
+      json: async () => ({}),
+    }) as unknown as typeof fetch
+
+    render(<AcpSessionPanel {...defaultProps} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'run cmd' } })
+    fireEvent.click(screen.getByText('发送').closest('button') as HTMLElement)
+    fireEvent.click(await screen.findByText('允许'))
+
     await waitFor(() => {
-      expect(screen.getByText('hello')).toBeInTheDocument()
-      expect(screen.getByText('world')).toBeInTheDocument()
+      expect(acpApiMocks.respondPermission).toHaveBeenCalledWith('project-a', 'sess-1', 'allow')
     })
   })
 
-  it('shows permission dialog on permission event', async () => {
-    // mock fetch 返回 permission 事件
-    const permissionData = {
-      tool_name: 'bash',
-      tool_kind: 'execute',
-      target: '/tmp',
-      action: 'run',
-      command: 'ls /tmp',
-      options: [
-        { id: 'allow', label: '允许', kind: 'allow' },
-        { id: 'deny', label: '拒绝', kind: 'deny' },
-      ],
-    }
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      body: encodeSseFrames([sseFrame('permission', permissionData)]),
-      json: async () => ({}),
-    })
-    globalThis.fetch = mockFetch as unknown as typeof fetch
+  it('取消当前轮携带 projectId 和 sessionId 并中止 fetch', async () => {
+    let signal: AbortSignal | undefined
+    globalThis.fetch = vi.fn((_url, init) => {
+      signal = init?.signal as AbortSignal
+      return new Promise(() => undefined)
+    }) as unknown as typeof fetch
 
-    render(<AcpSessionPanel sessionId="sess-1" cwd="." />)
+    render(<AcpSessionPanel {...defaultProps} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'long task' } })
+    fireEvent.click(screen.getByText('发送').closest('button') as HTMLElement)
+    fireEvent.click(await screen.findByText('取消'))
 
-    const textarea = screen.getByPlaceholderText(
-      '输入 prompt，回车发送（Shift+Enter 换行）'
-    )
-    fireEvent.change(textarea, { target: { value: 'run cmd' } })
-    await act(async () => {
-      fireEvent.click(screen.getByText('发送').closest('button') as HTMLElement)
-    })
-
-    // PermissionDialog 应弹出，显示工具名与目标
     await waitFor(() => {
-      expect(screen.getByText('bash')).toBeInTheDocument()
-      expect(screen.getByText('/tmp')).toBeInTheDocument()
-      // 选项按钮渲染
-      expect(screen.getByText('允许')).toBeInTheDocument()
+      expect(acpApiMocks.cancelTurn).toHaveBeenCalledWith('project-a', 'sess-1')
     })
+    expect(signal?.aborted).toBe(true)
   })
 
-  it('handles error event gracefully', async () => {
-    // mock fetch 返回 error 事件
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      body: encodeSseFrames([sseFrame('error', { message: 'agent 异常退出' })]),
-      json: async () => ({}),
-    })
-    globalThis.fetch = mockFetch as unknown as typeof fetch
+  it('generation 变化后旧流响应不得回写', async () => {
+    let resolveFetch: ((value: unknown) => void) | undefined
+    globalThis.fetch = vi.fn(() => new Promise((resolve) => {
+      resolveFetch = resolve
+    })) as unknown as typeof fetch
 
-    render(<AcpSessionPanel sessionId="sess-1" cwd="." />)
+    const { rerender } = render(<AcpSessionPanel {...defaultProps} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'old request' } })
+    fireEvent.click(screen.getByText('发送').closest('button') as HTMLElement)
+    await waitFor(() => expect(resolveFetch).toBeDefined())
 
-    const textarea = screen.getByPlaceholderText(
-      '输入 prompt，回车发送（Shift+Enter 换行）'
-    )
-    fireEvent.change(textarea, { target: { value: 'go' } })
+    rerender(<AcpSessionPanel {...defaultProps} generation={2} />)
     await act(async () => {
-      fireEvent.click(screen.getByText('发送').closest('button') as HTMLElement)
+      resolveFetch?.({
+        ok: true,
+        body: encodeSseFrames([sseFrame('text', { text: 'stale output' })]),
+        json: async () => ({}),
+      })
+      await Promise.resolve()
     })
 
-    // 错误事件应在输出区展示
-    await waitFor(() => {
-      expect(screen.getByText('agent 异常退出')).toBeInTheDocument()
-    })
+    expect(screen.queryByText('stale output')).not.toBeInTheDocument()
   })
 })

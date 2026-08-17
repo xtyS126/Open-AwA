@@ -125,7 +125,7 @@ describe('Sidebar 五域投影', () => {
 
     expect(screen.getByRole('link', { name: '工作台' }))
       .toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: 'Agents' }))
+    expect(screen.getByRole('link', { name: '智能体' }))
       .toHaveAttribute('aria-current', 'page')
   })
 

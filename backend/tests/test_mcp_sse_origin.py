@@ -21,7 +21,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.startup.profiler import StartupProfiler
-from mcp.manager import SSETransport
+from mcp_integration.manager import SSETransport
 import main
 
 
@@ -109,7 +109,7 @@ class TestStartupMcpSseOrigin:
 
 # ==================== MCP 会话过期检测与自动重连测试（Task 20） ====================
 
-from mcp.manager import (
+from mcp_integration.manager import (
     MCPClient,
     MCPClientError,
     MCPManager,
@@ -125,7 +125,7 @@ from mcp.manager import (
     is_mcp_session_expired_error,
 )
 # 官方 mcp SDK 类型，用于构造 session mock 返回值
-from mcp.types import (
+from mcp_integration.manager import (
     ListResourcesResult,
     ListToolsResult,
     Resource,

@@ -442,6 +442,172 @@ async def test_litellm_list_models_ollama(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_litellm_stream_completion_propagates_finish_reason(monkeypatch):
+    """流尾 chunk 携带的 finish_reason 应原样透传，保证上层状态可达。"""
+
+    class MockDelta:
+        content = "内容"
+        reasoning_content = ""
+
+    class MockChoice:
+        delta = MockDelta()
+        finish_reason = "length"
+
+    class MockChunk:
+        choices = [MockChoice()]
+
+    async def mock_acompletion(**kwargs):
+        async def gen():
+            yield MockChunk()
+        return gen()
+
+    import litellm
+    monkeypatch.setattr(litellm, "acompletion", mock_acompletion)
+
+    chunks = []
+    async for chunk in litellm_chat_completion_stream(
+        provider="openai",
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "你好"}],
+        api_key="test-key",
+    ):
+        chunks.append(chunk)
+
+    assert chunks[-1]["finish_reason"] == "length"
+
+
+@pytest.mark.asyncio
+async def test_litellm_stream_completion_propagates_usage(monkeypatch):
+    """流尾 chunk 携带的 usage 应原样透传，供上层回填真实 token 用量。"""
+
+    class MockDelta:
+        content = ""
+        reasoning_content = ""
+
+    class MockChoice:
+        delta = MockDelta()
+        finish_reason = "stop"
+
+    class MockChunk:
+        choices = [MockChoice()]
+        usage = {"prompt_tokens": 100, "completion_tokens": 50}
+
+    async def mock_acompletion(**kwargs):
+        async def gen():
+            yield MockChunk()
+        return gen()
+
+    import litellm
+    monkeypatch.setattr(litellm, "acompletion", mock_acompletion)
+
+    chunks = []
+    async for chunk in litellm_chat_completion_stream(
+        provider="openai",
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "你好"}],
+        api_key="test-key",
+    ):
+        chunks.append(chunk)
+
+    assert chunks[-1]["usage"] == {"prompt_tokens": 100, "completion_tokens": 50}
+
+
+@pytest.mark.asyncio
+async def test_litellm_stream_response_closed_after_completion(monkeypatch):
+    """流式正常结束后 response 必须被显式关闭，防止连接泄漏。"""
+
+    class MockDelta:
+        content = "完成"
+        reasoning_content = ""
+
+    class MockChoice:
+        delta = MockDelta()
+
+    class MockChunk:
+        choices = [MockChoice()]
+
+    class MockStream:
+        def __init__(self):
+            self.closed = False
+            self._chunks = [MockChunk()]
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if self._chunks:
+                return self._chunks.pop(0)
+            raise StopAsyncIteration
+
+        async def aclose(self):
+            self.closed = True
+
+    stream = MockStream()
+
+    async def mock_acompletion(**kwargs):
+        return stream
+
+    import litellm
+    monkeypatch.setattr(litellm, "acompletion", mock_acompletion)
+
+    chunks = []
+    async for chunk in litellm_chat_completion_stream(
+        provider="openai",
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "你好"}],
+        api_key="test-key",
+    ):
+        chunks.append(chunk)
+
+    assert len(chunks) == 1
+    assert stream.closed is True
+
+
+@pytest.mark.asyncio
+async def test_litellm_stream_response_closed_on_error(monkeypatch):
+    """流式中途抛异常时 response 也必须被关闭（finally 保证）。"""
+
+    class MockStream:
+        def __init__(self):
+            self.closed = False
+            self._raised = False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._raised:
+                self._raised = True
+                raise RuntimeError("stream broken mid-way")
+            raise StopAsyncIteration
+
+        async def aclose(self):
+            self.closed = True
+
+    stream = MockStream()
+
+    async def mock_acompletion(**kwargs):
+        return stream
+
+    import litellm
+    monkeypatch.setattr(litellm, "acompletion", mock_acompletion)
+
+    chunks = []
+    async for chunk in litellm_chat_completion_stream(
+        provider="openai",
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "你好"}],
+        api_key="test-key",
+    ):
+        chunks.append(chunk)
+
+    # 非可重试错误应直接 yield error 并返回
+    assert len(chunks) == 1
+    assert "error" in chunks[0]
+    assert stream.closed is True
+
+
+@pytest.mark.asyncio
 async def test_litellm_check_provider_connection_success(monkeypatch):
     """提供商连接检测正常路径。"""
     import core.litellm_adapter as adapter_module

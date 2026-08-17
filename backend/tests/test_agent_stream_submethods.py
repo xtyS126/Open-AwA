@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.agent import AIAgent, _StreamEarlyExit
 from core.agent_execution_context import StreamFinalizationContext
-from core.task_runtime.hook_dispatcher import HOOK_POST_TOOL_USE
+from core.hook_manager import HookName
 from core.tool_event_emitter import ToolEventEmitter
 from core.tool_dispatcher import ToolCallContext, ToolDispatcher
 from core.stream_orchestrator import StreamOrchestrator
@@ -37,6 +37,7 @@ def make_agent() -> AIAgent:
     agent.skill_engine = AsyncMock()
     agent.budget_tracker = MagicMock()
     agent.budget_tracker.is_near_completion.return_value = False
+    agent.budget_tracker.is_diminishing.return_value = False
     agent.budget_tracker.max_input_tokens = 8000
     agent.budget_tracker.usage_ratio.return_value = 0.5
     agent.budget_tracker.total_used.return_value = 4000
@@ -467,8 +468,8 @@ async def test_emit_tool_post_events_triggers_hooks_and_dispatches_events():
     }
     accumulated: list = []
 
-    with patch("core.task_runtime.hook_dispatcher.hook_dispatcher") as mock_dispatcher:
-        mock_dispatcher.dispatch = AsyncMock()
+    with patch("core.hook_manager.hook_manager") as mock_mgr:
+        mock_mgr.trigger = AsyncMock()
 
         events: list = []
         async for event in agent._tool_event_emitter.emit(
@@ -476,13 +477,13 @@ async def test_emit_tool_post_events_triggers_hooks_and_dispatches_events():
         ):
             events.append(event)
 
-        # 断言：PostToolUse 钩子被派发
-        mock_dispatcher.dispatch.assert_awaited_once()
-        dispatch_args = mock_dispatcher.dispatch.call_args
-        # 第一个位置参数是事件类型常量
-        assert dispatch_args.args[0] == HOOK_POST_TOOL_USE
-        # 第二个位置参数是 payload
-        payload = dispatch_args.args[1]
+        # 断言：PostToolUse 钩子被派发（通过统一的 hook_manager）
+        mock_mgr.trigger.assert_awaited_once()
+        dispatch_args = mock_mgr.trigger.call_args
+        # 第一个位置参数是 HookName.TOOL_AFTER_EXECUTE
+        assert dispatch_args.args[0] == HookName.TOOL_AFTER_EXECUTE
+        # data 关键字参数包含 payload
+        payload = dispatch_args.kwargs["data"]
         assert payload["tool_name"] == "builtin_notify"
         assert payload["result"] == tc_state.result
         # tool_args 应从 JSON 字符串解析得到

@@ -1,6 +1,8 @@
 import '@testing-library/jest-dom/vitest'
 import { renderHook, waitFor } from '@testing-library/react'
+import { createElement, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // 使用 vi.hoisted 提前建立 mock 引用，避免循环依赖
 const apiMocks = vi.hoisted(() => ({
@@ -21,10 +23,13 @@ const preloadMocks = vi.hoisted(() => ({
   preloadModelOptions: vi.fn(() => Promise.resolve()),
 }))
 
-vi.mock('@/shared/api/api', () => ({
+vi.mock('@/shared/api/authApi', () => ({
   authAPI: {
     getMe: apiMocks.getMe,
   },
+}))
+
+vi.mock('@/shared/api/opsApi', () => ({
   systemAPI: {
     getInitStatus: apiMocks.getInitStatus,
   },
@@ -58,6 +63,27 @@ vi.mock('@/shared/utils/logger', () => ({
 import { useAppInitialization, resetAppInitializationStateForTests } from '@/shared/hooks/useAppInitialization'
 import { useAuthStore } from '@/shared/store/authStore'
 
+/* 每个测试独立的 QueryClient 实例，避免缓存污染（useAppInitialization 已改用 useQuery） */
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+        staleTime: 0,
+      },
+    },
+  })
+}
+
+function renderHookWithQueryClient<T>(hook: () => T) {
+  const queryClient = createTestQueryClient()
+  // 使用 createElement 避免 .ts 文件中 JSX 解析错误
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client: queryClient }, children)
+  return renderHook(hook, { wrapper })
+}
+
 describe('useAppInitialization - 模型选项预加载', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -76,7 +102,7 @@ describe('useAppInitialization - 模型选项预加载', () => {
     clientMocks.getCachedApiKey.mockReturnValue('cached-api-key')
     apiMocks.getInitStatus.mockRejectedValueOnce(new Error('服务不可达'))
 
-    renderHook(() => useAppInitialization())
+    renderHookWithQueryClient(() => useAppInitialization())
 
     await waitFor(() => {
       expect(useAuthStore.getState().isInitialized).toBe(true)
@@ -94,7 +120,7 @@ describe('useAppInitialization - 模型选项预加载', () => {
       data: { username: 'admin', nickname: '管理员' },
     })
 
-    const { result } = renderHook(() => useAppInitialization())
+    const { result } = renderHookWithQueryClient(() => useAppInitialization())
 
     // 等待异步初始化完成
     await waitFor(() => {
@@ -118,7 +144,7 @@ describe('useAppInitialization - 模型选项预加载', () => {
       resolveCsrf = resolve
     }))
 
-    renderHook(() => useAppInitialization())
+    renderHookWithQueryClient(() => useAppInitialization())
 
     await waitFor(() => expect(clientMocks.refreshCsrfToken).toHaveBeenCalledTimes(1))
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
@@ -137,7 +163,7 @@ describe('useAppInitialization - 模型选项预加载', () => {
     // 仍应设置 isInitialized=true 让应用进入可用状态，不卡死在初始化中）
     preloadMocks.preloadModelOptions.mockRejectedValueOnce(new Error('network error'))
 
-    renderHook(() => useAppInitialization())
+    renderHookWithQueryClient(() => useAppInitialization())
 
     // 即使 preloadModelOptions 抛错，初始化流程仍应完成（不卡死）
     await waitFor(() => {
@@ -159,7 +185,7 @@ describe('useAppInitialization - 模型选项预加载', () => {
       data: { username: 'admin' },
     })
 
-    renderHook(() => useAppInitialization())
+    renderHookWithQueryClient(() => useAppInitialization())
 
     await waitFor(() => {
       expect(useAuthStore.getState().isInitialized).toBe(true)

@@ -33,10 +33,6 @@ Base.metadata.create_all(bind=engine)
 
 
 def override_get_db():
-    """
-    处理override、get、db相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     try:
         db = TestingSessionLocal()
         yield db
@@ -47,13 +43,8 @@ def override_get_db():
 def override_get_current_user():
     """
     处理override、get、current、user相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     class DummyUser:
-        """
-        封装与DummyUser相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
         id = 1
         username = "testuser"
     return DummyUser()
@@ -75,10 +66,6 @@ def isolate_dependency_overrides():
 
 @pytest.fixture(autouse=True)
 def reset_skills_table():
-    """
-    处理reset、skills、table相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     db = TestingSessionLocal()
     try:
         db.query(Skill).delete()
@@ -143,10 +130,6 @@ def test_weixin_health_check(monkeypatch):
     """
     with TestClient(app) as client:
         def mock_check_health(self, config):
-            """
-            处理mock、check、health相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             return {
                 "ok": True,
                 "issues": [],
@@ -190,7 +173,6 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             call_log.append(("start", base_url, bot_type, timeout_seconds))
             return {
@@ -201,7 +183,6 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             call_log.append(("wait", base_url, qrcode, timeout_seconds))
             return {
@@ -285,7 +266,6 @@ def test_weixin_qr_start_extracts_qrcode_from_qrcode_url_query(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode_img_content": "https://liteapp.weixin.qq.com/q/7GiQu1?qrcode=5bd615dc3e27eb837ca2db2f30ee7b7b&bot_type=3"
@@ -314,7 +294,6 @@ def test_weixin_qr_wait_updates_poll_base_url_on_redirect(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-redirect",
@@ -324,7 +303,6 @@ def test_weixin_qr_wait_updates_poll_base_url_on_redirect(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             call_log.append(base_url)
             if len(call_log) == 1:
@@ -385,7 +363,6 @@ def test_weixin_qr_wait_returns_wait_on_upstream_timeout(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-timeout",
@@ -395,7 +372,6 @@ def test_weixin_qr_wait_returns_wait_on_upstream_timeout(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {"status": "wait"}
 
@@ -443,7 +419,6 @@ def test_weixin_qr_exit_clears_session_and_config(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-exit",
@@ -500,7 +475,6 @@ def test_weixin_qr_exit_only_clears_session_when_clear_config_false(monkeypatch)
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-exit-keep-config",
@@ -555,7 +529,6 @@ def test_weixin_qr_wait_returns_uniform_fields_for_half_success(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-half-success",
@@ -565,7 +538,6 @@ def test_weixin_qr_wait_returns_uniform_fields_for_half_success(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "status": "scaned",
@@ -614,7 +586,6 @@ def test_weixin_qr_wait_maps_pending_with_auth_id_to_scanned(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-pending",
@@ -624,7 +595,6 @@ def test_weixin_qr_wait_maps_pending_with_auth_id_to_scanned(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "status": "pending",
@@ -665,7 +635,6 @@ def test_weixin_qr_wait_downgrades_confirmed_without_account_or_token_to_half_su
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-invalid-confirmed",
@@ -675,7 +644,6 @@ def test_weixin_qr_wait_downgrades_confirmed_without_account_or_token_to_half_su
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "status": "confirmed",
@@ -813,10 +781,6 @@ def test_weixin_health_check_accepts_form_string_payload(monkeypatch):
     """
     with TestClient(app) as client:
         def mock_check_health(self, config):
-            """
-            处理mock、check、health相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             return {
                 "ok": True,
                 "account_id": config.account_id,
@@ -854,7 +818,6 @@ def test_weixin_qr_wait_accepts_json_string_payload_without_session(monkeypatch)
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "status": "scaned",
@@ -892,7 +855,6 @@ def test_weixin_qr_exit_accepts_form_string_payload(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-exit-string",
@@ -928,7 +890,6 @@ def test_weixin_qr_start_accepts_json_string_upstream_payload(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return '{"qrcode":"qr-json-payload","qrcode_img_content":"https://example.com/qr-json.png"}'
 
@@ -954,7 +915,6 @@ def test_weixin_qr_start_extracts_qrcode_from_key_value_string_payload(monkeypat
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return "qrcode=qr-kv-payload&qrcode_img_content=https%3A%2F%2Fexample.com%2Fqr-kv.png"
 
@@ -980,7 +940,6 @@ def test_weixin_qr_wait_parses_json_string_status_payload(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-json-status",
@@ -990,7 +949,6 @@ def test_weixin_qr_wait_parses_json_string_status_payload(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return '{"status":"confirmed","bot_token":"json-token","ilink_bot_id":"json-account","ilink_user_id":"json-user","binding_status":"bound","baseurl":"https://ilinkai.weixin.qq.com"}'
 
@@ -1027,7 +985,6 @@ def test_weixin_qr_wait_parses_key_value_string_status_payload(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-kv-status",
@@ -1037,7 +994,6 @@ def test_weixin_qr_wait_parses_key_value_string_status_payload(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return "status=scaned&auth_id=auth-kv&ticket=ticket-kv&hint=confirm-in-wechat"
 
@@ -1073,7 +1029,6 @@ def test_weixin_qr_wait_preserves_plain_string_status_message(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-plain-status",
@@ -1083,7 +1038,6 @@ def test_weixin_qr_wait_preserves_plain_string_status_message(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return "waiting for confirm"
 
@@ -1119,7 +1073,6 @@ def test_weixin_qr_wait_replays_confirmed_result_idempotently(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-idempotent-confirmed",
@@ -1129,7 +1082,6 @@ def test_weixin_qr_wait_replays_confirmed_result_idempotently(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             call_count["wait"] += 1
             return {
@@ -1185,7 +1137,6 @@ def test_weixin_qr_wait_handles_refreshing_status(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-refreshing",
@@ -1195,7 +1146,6 @@ def test_weixin_qr_wait_handles_refreshing_status(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "status": "refreshing",
@@ -1234,7 +1184,6 @@ def test_weixin_qr_wait_handles_expired_status(monkeypatch):
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
             """
             处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "qrcode": "qr-expired",
@@ -1244,7 +1193,6 @@ def test_weixin_qr_wait_handles_expired_status(monkeypatch):
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
             """
             处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
             """
             return {
                 "status": "expired",

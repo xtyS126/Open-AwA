@@ -104,9 +104,18 @@ describe('导航清单', () => {
       expect(domain.requiresProjectContext, domain.id).toBe(false)
       for (const entry of domain.children) {
         expect(entry.selectedStateRule, entry.id).toBe('longestPrefix')
-        expect(entry.requiresProjectContext, entry.id).toBe(false)
       }
     }
+
+    const workbench = navigationManifest.domains.find((domain) => domain.id === 'workbench')!
+    expect(Object.fromEntries(
+      [workbench, ...workbench.children].map((entry) => [entry.id, entry.requiresProjectContext]),
+    )).toEqual({
+      workbench: false,
+      'workbench.projects': false,
+      'workbench.editor': true,
+      'workbench.agents': true,
+    })
   })
 
   it('拒绝清单、领域或二级视图中的未知字段', () => {

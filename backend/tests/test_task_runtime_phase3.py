@@ -14,13 +14,13 @@ from core.task_runtime.permission_guard import (
     PermissionDecision,
     permission_guard,
 )
-from core.task_runtime.hook_dispatcher import (
-    HookDispatcher,
+from core.hook_manager import (
+    HookManager,
+    HookName,
+    HookContext,
     HookResult,
-    HOOK_PRE_TOOL_USE,
-    HOOK_POST_TOOL_USE,
-    HOOK_TASK_COMPLETED,
-    HOOK_SUBAGENT_STOP,
+    HookResultType,
+    hook_manager,
 )
 from core.task_runtime.worktree_manager import WorktreeManager
 
@@ -112,117 +112,125 @@ class TestPermissionGuard:
 # ── 钩子调度器 ──────────────────────────────────────────────
 
 class TestHookDispatcher:
-    """钩子调度器注册与分发测试。"""
+    """钩子管理器注册与分发测试（统一 hook_manager 后从 HookDispatcher 迁移）。"""
 
     @pytest.mark.asyncio
     async def test_register_and_dispatch(self):
         """注册钩子并验证分发。"""
-        dispatcher = HookDispatcher()
+        mgr = HookManager()
         received = []
 
-        async def my_hook(payload):
-            received.append(payload)
-            return HookResult(decision="allow", reason="ok")
+        async def my_hook(ctx, data):
+            received.append(data)
+            return HookResult(result_type=HookResultType.APPROVE, reason="ok")
 
-        dispatcher.register(HOOK_PRE_TOOL_USE, my_hook)
-        results = await dispatcher.dispatch(HOOK_PRE_TOOL_USE, {
+        mgr.register("test-plugin", HookName.TOOL_BEFORE_EXECUTE, my_hook)
+        results = await mgr.trigger(HookName.TOOL_BEFORE_EXECUTE, data={
             "tool_name": "read_file",
             "tool_args": {},
         })
         assert len(received) == 1
         assert len(results) == 1
-        assert results[0].decision == "allow"
+        assert results[0].result_type == HookResultType.APPROVE
 
     @pytest.mark.asyncio
     async def test_deny_blocks_tool(self):
         """deny 决策可阻止工具调用。"""
-        dispatcher = HookDispatcher()
+        mgr = HookManager()
 
-        async def block_writes(payload):
-            if payload.get("tool_name") == "write_file":
-                return HookResult(decision="deny", reason="写操作被阻止")
-            return HookResult(decision="allow")
+        async def block_writes(ctx, data):
+            if data.get("tool_name") == "write_file":
+                return HookResult(result_type=HookResultType.DENY, reason="写操作被阻止")
+            return HookResult(result_type=HookResultType.APPROVE)
 
-        dispatcher.register(HOOK_PRE_TOOL_USE, block_writes)
-        results = await dispatcher.dispatch(HOOK_PRE_TOOL_USE, {
+        mgr.register("test-plugin", HookName.TOOL_BEFORE_EXECUTE, block_writes)
+        results = await mgr.trigger(HookName.TOOL_BEFORE_EXECUTE, data={
             "tool_name": "write_file",
         })
-        deny = dispatcher.has_deny(results)
-        assert deny is not None
-        assert deny.decision == "deny"
-        assert "写操作被阻止" in deny.reason
+        # 检查结果中是否存在 DENY
+        deny_result = None
+        for r in results:
+            if r.result_type == HookResultType.DENY:
+                deny_result = r
+                break
+        assert deny_result is not None
+        assert deny_result.result_type == HookResultType.DENY
+        assert "写操作被阻止" in (deny_result.reason or "")
 
     @pytest.mark.asyncio
     async def test_has_deny_returns_none_when_all_allowed(self):
-        """全部通过时 has_deny 返回 None。"""
-        dispatcher = HookDispatcher()
+        """全部通过时没有 DENY 结果。"""
+        mgr = HookManager()
 
-        async def allow_all(payload):
-            return HookResult(decision="allow")
+        async def allow_all(ctx, data):
+            return HookResult(result_type=HookResultType.APPROVE)
 
-        dispatcher.register(HOOK_PRE_TOOL_USE, allow_all)
-        results = await dispatcher.dispatch(HOOK_PRE_TOOL_USE, {"tool_name": "read_file"})
-        assert dispatcher.has_deny(results) is None
+        mgr.register("test-plugin", HookName.TOOL_BEFORE_EXECUTE, allow_all)
+        results = await mgr.trigger(HookName.TOOL_BEFORE_EXECUTE, data={"tool_name": "read_file"})
+        # 检查无 DENY
+        has_deny = any(r.result_type == HookResultType.DENY for r in results)
+        assert not has_deny
 
     @pytest.mark.asyncio
     async def test_input_override(self):
         """钩子可覆写工具输入参数。"""
-        dispatcher = HookDispatcher()
+        mgr = HookManager()
 
-        async def sanitize_path(payload):
+        async def sanitize_path(ctx, data):
             return HookResult(
-                decision="allow",
-                updated_input={"file_path": "/safe/path/file.txt"},
+                result_type=HookResultType.MODIFY_INPUT,
+                modified_input={"file_path": "/safe/path/file.txt"},
             )
 
-        dispatcher.register(HOOK_PRE_TOOL_USE, sanitize_path)
-        results = await dispatcher.dispatch(HOOK_PRE_TOOL_USE, {
+        mgr.register("test-plugin", HookName.TOOL_BEFORE_EXECUTE, sanitize_path)
+        results = await mgr.trigger(HookName.TOOL_BEFORE_EXECUTE, data={
             "tool_name": "read_file",
             "tool_args": {"file_path": "/unsafe/path/file.txt"},
         })
-        merged = dispatcher.get_updated_input(results)
+        from core.hook_manager import hook_updated_input
+        merged = hook_updated_input(results, {"tool_name": "read_file", "tool_args": {"file_path": "/unsafe/path/file.txt"}})
         assert merged.get("file_path") == "/safe/path/file.txt"
 
     @pytest.mark.asyncio
     async def test_hook_exception_is_handled(self):
         """钩子异常不会中断分发。"""
-        dispatcher = HookDispatcher()
+        mgr = HookManager()
 
-        async def bad_hook(payload):
+        async def bad_hook(ctx, data):
             raise RuntimeError("test error")
 
-        dispatcher.register(HOOK_PRE_TOOL_USE, bad_hook)
-        results = await dispatcher.dispatch(HOOK_PRE_TOOL_USE, {"tool_name": "test"})
-        assert len(results) == 1
-        assert results[0].decision == "allow"  # 异常时默认放行
+        mgr.register("test-plugin", HookName.TOOL_BEFORE_EXECUTE, bad_hook)
+        results = await mgr.trigger(HookName.TOOL_BEFORE_EXECUTE, data={"tool_name": "test"})
+        # 异常时不会产生结果（被 hook_manager 捕获并记录日志）
+        assert len(results) == 0
 
     @pytest.mark.asyncio
     async def test_unregister(self):
         """注销钩子后不再分发。"""
-        dispatcher = HookDispatcher()
+        mgr = HookManager()
         received = []
 
-        async def my_hook(payload):
-            received.append(payload)
-            return HookResult(decision="allow")
+        async def my_hook(ctx, data):
+            received.append(data)
+            return HookResult(result_type=HookResultType.APPROVE)
 
-        dispatcher.register(HOOK_POST_TOOL_USE, my_hook)
-        dispatcher.unregister(HOOK_POST_TOOL_USE, my_hook)
-        await dispatcher.dispatch(HOOK_POST_TOOL_USE, {"tool_name": "test"})
+        mgr.register("test-plugin", HookName.TOOL_AFTER_EXECUTE, my_hook)
+        mgr.unregister(HookName.TOOL_AFTER_EXECUTE, "test-plugin")
+        await mgr.trigger(HookName.TOOL_AFTER_EXECUTE, data={"tool_name": "test"})
         assert len(received) == 0
 
     @pytest.mark.asyncio
     async def test_task_completed_hook(self):
         """TaskCompleted 钩子分发性。"""
-        dispatcher = HookDispatcher()
+        mgr = HookManager()
         completed = []
 
-        async def on_complete(payload):
-            completed.append(payload)
-            return HookResult(decision="allow")
+        async def on_complete(ctx, data):
+            completed.append(data)
+            return HookResult(result_type=HookResultType.APPROVE)
 
-        dispatcher.register(HOOK_TASK_COMPLETED, on_complete)
-        await dispatcher.dispatch(HOOK_TASK_COMPLETED, {
+        mgr.register("test-plugin", HookName.TASK_COMPLETED, on_complete)
+        await mgr.trigger(HookName.TASK_COMPLETED, data={
             "response": "task done",
             "round_count": 3,
         })
@@ -231,20 +239,21 @@ class TestHookDispatcher:
     @pytest.mark.asyncio
     async def test_additional_context_collection(self):
         """收集所有钩子的附加上下文。"""
-        dispatcher = HookDispatcher()
+        mgr = HookManager()
 
-        async def add_note_a(payload):
-            return HookResult(decision="allow", additional_context="Note A")
+        async def add_note_a(ctx, data):
+            return HookResult(result_type=HookResultType.APPROVE, modified_output="Note A")
 
-        async def add_note_b(payload):
-            return HookResult(decision="allow", additional_context="Note B")
+        async def add_note_b(ctx, data):
+            return HookResult(result_type=HookResultType.APPROVE, modified_output="Note B")
 
-        dispatcher.register(HOOK_SUBAGENT_STOP, add_note_a)
-        dispatcher.register(HOOK_SUBAGENT_STOP, add_note_b)
-        results = await dispatcher.dispatch(HOOK_SUBAGENT_STOP, {})
-        context = dispatcher.get_additional_context(results)
-        assert "Note A" in context
-        assert "Note B" in context
+        mgr.register("test-plugin-a", HookName.SUBAGENT_STOP, add_note_a)
+        mgr.register("test-plugin-b", HookName.SUBAGENT_STOP, add_note_b)
+        results = await mgr.trigger(HookName.SUBAGENT_STOP, data={})
+        # 收集所有 MODIFY_OUTPUT 结果中的 modified_output
+        contexts = [r.modified_output for r in results if r.modified_output is not None]
+        assert "Note A" in contexts
+        assert "Note B" in contexts
 
 
 # ── Worktree 管理器 ─────────────────────────────────────────
@@ -316,3 +325,78 @@ branch feature-x
         wm = WorktreeManager()
         result = await wm.list_worktrees()
         assert isinstance(result, list)
+
+
+# ── accept_edits 工作目录路径安全 ────────────────────────────
+
+class TestPermissionGuardAcceptEditsPathSafety:
+    """accept_edits 模式工作目录判定（resolve + relative_to）测试。"""
+
+    def test_within_workdir_auto_allows(self, tmp_path):
+        """工作目录内的编辑自动放行。"""
+        target = tmp_path / "src" / "file.txt"
+        decision = permission_guard.evaluate(
+            "write_file", {"file_path": str(target)},
+            permission_mode="accept_edits",
+            work_dir=str(tmp_path),
+        )
+        assert decision.allowed is True
+        assert decision.mode == "auto"
+        assert decision.require_user_confirm is False
+
+    def test_parent_traversal_not_auto_allowed(self, tmp_path):
+        """../ 路径穿越不得自动放行，应退回确认流程。"""
+        outside = tmp_path.parent / "outside.txt"
+        decision = permission_guard.evaluate(
+            "write_file", {"file_path": str(outside)},
+            permission_mode="accept_edits",
+            work_dir=str(tmp_path),
+        )
+        assert decision.allowed is True
+        assert decision.require_user_confirm is True
+        assert decision.mode == "confirm"
+
+    def test_path_prefix_spoofing_not_auto_allowed(self, tmp_path):
+        """目录名前缀欺骗（workdir_evil 前缀相似）不得自动放行。
+
+        旧的 str.startswith 判断会把 work_dir 同名前缀的兄弟目录误判为
+        工作目录内路径，从而绕过确认直接放行。
+        """
+        evil_dir = str(tmp_path) + "_evil"
+        target = str(Path(evil_dir) / "secret.txt")
+        decision = permission_guard.evaluate(
+            "write_file", {"file_path": target},
+            permission_mode="accept_edits",
+            work_dir=str(tmp_path),
+        )
+        assert decision.allowed is True
+        assert decision.require_user_confirm is True
+        assert decision.mode == "confirm"
+
+    def test_symlink_escape_not_auto_allowed(self, tmp_path):
+        """符号链接指向工作目录外时不得自动放行。"""
+        outside_dir = tmp_path.parent / "outside_symlink_target"
+        outside_dir.mkdir(exist_ok=True)
+        link_path = tmp_path / "link"
+        try:
+            os.symlink(outside_dir, link_path)
+        except (OSError, NotImplementedError):
+            pytest.skip("当前环境不支持创建符号链接")
+        decision = permission_guard.evaluate(
+            "write_file", {"file_path": str(link_path / "secret.txt")},
+            permission_mode="accept_edits",
+            work_dir=str(tmp_path),
+        )
+        assert decision.allowed is True
+        assert decision.require_user_confirm is True
+        assert decision.mode == "confirm"
+
+    def test_within_workdir_read_operation_unaffected(self, tmp_path):
+        """accept_edits 下只读操作不受工作目录判定影响。"""
+        target = tmp_path / "a.txt"
+        decision = permission_guard.evaluate(
+            "read_file", {"file_path": str(target)},
+            permission_mode="accept_edits",
+            work_dir=str(tmp_path),
+        )
+        assert decision.allowed is True

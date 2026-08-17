@@ -21,10 +21,6 @@ from plugins.plugin_manager import PluginManager
 
 @pytest.fixture
 def plugin_workspace(tmp_path: Path) -> Path:
-    """
-    处理plugin、workspace相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     success_plugin = '''from typing import Optional, Any
 from plugins.base_plugin import BasePlugin
 
@@ -99,7 +95,6 @@ class PermissionPlugin(BasePlugin):
 def _create_plugin_zip_bytes(plugin_name: str = "zip_plugin") -> bytes:
     """
     处理create、plugin、zip、bytes相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     plugin_content = f'''from plugins.base_plugin import BasePlugin
 
@@ -381,33 +376,17 @@ def test_register_plugin_from_url(monkeypatch, tmp_path: Path):
     zip_bytes = _create_plugin_zip_bytes("url_plugin")
 
     class FakeResponse:
-        """
-        封装与FakeResponse相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
         is_redirect = False
         status_code = 200
         headers = {"content-type": "application/zip"}
 
         def __init__(self, content: bytes):
-            """
-            处理init相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             self.content = content
 
         def raise_for_status(self):
-            """
-            处理raise、for、status相关逻辑，并为调用方返回对应结果。
-            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-            """
             return None
 
     def fake_get(url: str, timeout: int, follow_redirects: bool, headers=None):
-        """
-        处理fake、get相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         assert url == "https://github.com/plugin.zip"
         assert timeout == 30
         assert follow_redirects is False
@@ -447,10 +426,6 @@ def test_parse_npm_source_and_validate():
 
 @pytest.fixture
 def dependency_workspace(tmp_path: Path) -> Path:
-    """
-    处理dependency、workspace相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     plugin_a = '''from plugins.base_plugin import BasePlugin
 
 

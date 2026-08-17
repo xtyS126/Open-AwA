@@ -10,10 +10,6 @@ from plugins.schema_validator import ManifestExtensionSchemaValidator
 
 
 def _build_manifest(plugin_name: str = "demo_plugin"):
-    """
-    处理build、manifest相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
     return {
         "name": plugin_name,
         "version": "1.0.0",

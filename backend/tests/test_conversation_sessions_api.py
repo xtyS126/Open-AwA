@@ -660,3 +660,193 @@ def test_deserialize_no_interrupt() -> None:
     assert len(filtered) == 2
     assert filtered[-1]["role"] == "assistant"
     assert filtered[-1]["content"] == "你好，有什么可以帮你的？"
+
+
+# ---------------------------------------------------------------------------
+# Task 7：压缩落库 / resume 消费边界 / 中断续接（真实恢复路径）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_compaction_persists_summary_to_short_term_memory() -> None:
+    """
+    验证压缩落库：compact() 通过落库回调将摘要与边界写入 ShortTermMemory
+    （system 角色），供后续轮次消费，避免摘要重复生成重复计费。
+    """
+    from core.compaction_manager import CompactionConfig, CompactionManager
+
+    session_id = "compact-persist-session"
+    # 预置会话历史消息，确保触发压缩
+    db = TestingSessionLocal()
+    try:
+        for i in range(20):
+            db.add(
+                ShortTermMemory(
+                    session_id=session_id,
+                    role="user" if i % 2 == 0 else "assistant",
+                    content="A" * 1000,
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    manager = CompactionManager(
+        model_context_window=5000,
+        config=CompactionConfig(
+            auto=True,
+            buffer_tokens=500,
+            keep_tokens=3500,
+            summary_output_tokens=500,
+        ),
+        session_id=session_id,
+    )
+
+    async def ok_llm_call(prompt: str, **kwargs) -> str:
+        return "## 目标\n- 完成压缩落库\n\n## 下一步\n- 继续开发"
+
+    async def persist_hook(summary_session_id, summary_messages) -> None:
+        persist_db = TestingSessionLocal()
+        try:
+            for msg in summary_messages:
+                persist_db.add(
+                    ShortTermMemory(
+                        session_id=summary_session_id or session_id,
+                        role=msg["role"],
+                        content=str(msg["content"]),
+                    )
+                )
+            persist_db.commit()
+        finally:
+            persist_db.close()
+
+    manager.set_llm_call(ok_llm_call)
+    manager.set_persistence_hook(persist_hook)
+
+    history = [{"role": "user" if i % 2 == 0 else "assistant", "content": "A" * 1000} for i in range(20)]
+    result = await manager.compact(messages=history)
+    assert result["compacted"] is True
+    # 输出携带压缩边界
+    assert result.get("boundary_message") is not None
+    assert "[CompactBoundary]" in result["boundary_message"]["content"]
+
+    # 验证摘要与边界已落库为 system 角色
+    db = TestingSessionLocal()
+    try:
+        summaries = (
+            db.query(ShortTermMemory)
+            .filter(
+                ShortTermMemory.session_id == session_id,
+                ShortTermMemory.role == "system",
+            )
+            .all()
+        )
+        assert len(summaries) >= 2
+        contents = " ".join(s.content for s in summaries)
+        assert "对话上下文摘要" in contents
+        assert "[CompactBoundary]" in contents
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_build_conversation_history_consumes_compaction_boundary(
+    monkeypatch, tmp_path
+) -> None:
+    """
+    验证 resume 消费边界：JSONL 旁路日志存在时，_build_conversation_history
+    优先消费完整消息链（load_conversation_for_resume），并合并短期记忆中的
+    压缩摘要边界（system 消息置顶），避免摘要丢失导致重复压缩。
+    """
+    from types import SimpleNamespace
+
+    from core import conversation_sessions as cs_module
+    from core.agent import AIAgent
+    from core.conversation_recorder import replay_transcript as real_replay
+
+    session_id = "resume-boundary-session"
+    base_dir = str(tmp_path / "transcripts")
+    # 模拟运行时转录产物：user/assistant 消息链
+    _write_transcript(
+        base_dir,
+        session_id,
+        [
+            {"uuid": "u-1", "parent_uuid": None, "type": "user", "content": "问题一"},
+            {"uuid": "a-1", "parent_uuid": "u-1", "type": "assistant", "content": "回答一"},
+        ],
+    )
+
+    # 将 JSONL 目录指向 tmp_path，避免读写 var/data/transcripts
+    def fake_replay(sid: str, base_dir: str | None = None):
+        return real_replay(sid, base_dir=base_dir or str(tmp_path / "transcripts"))
+
+    monkeypatch.setattr(cs_module, "replay_transcript", fake_replay)
+
+    agent = AIAgent()
+
+    class FakeMemoryManager:
+        """返回包含压缩摘要（system）的短期记忆，模拟压缩落库后的会话状态。"""
+
+        async def get_short_term_memories(self, session_id, limit=50, workspace_id="default"):
+            # 返回倒序（新→旧）：system 摘要最后写入，排在列表最前
+            return [
+                SimpleNamespace(role="system", content="## 对话上下文摘要\n\n历史摘要内容"),
+                SimpleNamespace(role="assistant", content="回答一"),
+                SimpleNamespace(role="user", content="问题一"),
+            ]
+
+    agent.memory_manager = FakeMemoryManager()
+
+    history = await agent._build_conversation_history(session_id)
+
+    # 压缩摘要边界置顶消费
+    assert history[0]["role"] == "system"
+    assert "对话上下文摘要" in history[0]["content"]
+    # JSONL 消息链完整保留
+    assert [m["role"] for m in history[1:]] == ["user", "assistant"]
+    assert history[1]["content"] == "问题一"
+    assert history[2]["content"] == "回答一"
+
+
+@pytest.mark.asyncio
+async def test_build_conversation_history_injects_resume_prompt_on_interruption(
+    monkeypatch, tmp_path
+) -> None:
+    """
+    验证中断续接 prompt 进入真实恢复路径：会话历史最后一条为 user 消息
+    （上一轮中断未回复）时，_build_conversation_history 注入续接 prompt。
+    """
+    from types import SimpleNamespace
+
+    from core import conversation_sessions as cs_module
+    from core.agent import AIAgent
+    from core.conversation_recorder import replay_transcript as real_replay
+
+    # JSONL 目录指向空目录，确保走短期记忆恢复路径
+    def fake_replay(sid: str, base_dir: str | None = None):
+        return real_replay(sid, base_dir=base_dir or str(tmp_path / "empty_transcripts"))
+
+    monkeypatch.setattr(cs_module, "replay_transcript", fake_replay)
+
+    agent = AIAgent()
+
+    class FakeMemoryManager:
+        """返回最后一条为 user 的消息（模拟会话中断）。"""
+
+        async def get_short_term_memories(self, session_id, limit=50, workspace_id="default"):
+            # 返回倒序（新→旧）
+            return [
+                SimpleNamespace(role="user", content="问题二（未回复，中断）"),
+                SimpleNamespace(role="assistant", content="回答一"),
+                SimpleNamespace(role="user", content="问题一"),
+            ]
+
+    agent.memory_manager = FakeMemoryManager()
+
+    history = await agent._build_conversation_history("interrupt-session-test")
+
+    # 中断续接 prompt 注入到历史末尾
+    assert history[-1]["role"] == "user"
+    assert history[-1]["content"] == "Continue from where you left off."
+    # 续接 prompt 前一条为原始最后一条 user 消息
+    assert history[-2]["content"] == "问题二（未回复，中断）"

@@ -565,11 +565,14 @@ class TestGetPromptForCommand:
 
 
 class TestExecuteForkedSkill:
-    """测试 execute_forked_skill 函数（SubTask 16.4）。"""
+    """测试 execute_forked_skill 函数（SubTask 16.4 + Task 18 真实调度）。"""
 
-    def test_execute_forked_skill_returns_task_id(self):
-        """验证返回 task_id 字符串。"""
+    @pytest.mark.asyncio
+    async def test_execute_forked_skill_returns_task_id(self):
+        """验证真实调度 Fork 子 Agent 后返回结果字典（含非空 task_id）。"""
+        from unittest.mock import AsyncMock, patch
         from skills.skill_fork_executor import execute_forked_skill
+        from core.task_runtime import task_runtime
 
         skill = {
             "name": "fork-skill",
@@ -581,11 +584,22 @@ class TestExecuteForkedSkill:
             ],
             "user_id": "u_001",
         }
-        task_id = execute_forked_skill(skill, parent_context)
 
-        # 返回值应为非空字符串
-        assert isinstance(task_id, str)
-        assert len(task_id) > 0
+        async def fake_stream():
+            yield {"type": "fork_started", "agent_id": "ag_fork_1", "task_id": "ag_fork_1", "result": ""}
+
+        with patch.object(task_runtime, "spawn_agent", new=AsyncMock(return_value=fake_stream())) as mock_spawn, \
+             patch.object(task_runtime, "get_agent", new=AsyncMock(return_value={"state": "completed", "summary": "完成"})), \
+             patch.object(task_runtime, "get_transcript", new=AsyncMock(return_value=[])):
+            result = await execute_forked_skill(skill, parent_context)
+
+        # 返回值应为结果字典
+        assert isinstance(result, dict)
+        assert isinstance(result["task_id"], str)
+        assert len(result["task_id"]) > 0
+        assert result["success"] is True
+        # fork_mode 参数必须透传给 task_runtime.spawn_agent
+        assert mock_spawn.call_args.kwargs["fork_mode"] is True
 
 
 class TestPrepareForkedCommandContext:
@@ -693,7 +707,9 @@ class TestSkillEngineDualModeExecution:
 
     @pytest.mark.asyncio
     async def test_execute_skill_fork_mode(self, skill_engine, db_session):
-        """验证 fork 模式执行：返回 task_id。"""
+        """验证 fork 模式执行：桥接真实调度并返回 task_id 与结果文本。"""
+        from unittest.mock import AsyncMock, patch
+
         config = {
             "name": "fork-skill",
             "version": "1.0.0",
@@ -702,17 +718,292 @@ class TestSkillEngineDualModeExecution:
         }
         _create_skill_record(db_session, "fork-skill", config)
 
-        result = await skill_engine.execute_skill(
-            skill_name="fork-skill",
-            inputs={},
-            context={"messages": []},
-        )
+        with patch(
+            "skills.skill_engine.execute_forked_skill",
+            new=AsyncMock(return_value={
+                "success": True,
+                "task_id": "task_fork_1",
+                "agent_type": "general-purpose",
+                "result": "子代理完成",
+            }),
+        ) as mock_fork:
+            result = await skill_engine.execute_skill(
+                skill_name="fork-skill",
+                inputs={},
+                context={"messages": []},
+            )
 
+        # execute_forked_skill 必须被真实 await 调用（Task 18 真实调度）
+        mock_fork.assert_awaited_once()
         assert result["success"] is True
         assert result["skill_name"] == "fork-skill"
-        # fork 模式应返回 task_id 字段
-        assert "task_id" in result
+        # fork 模式应返回 task_id 字段与结果文本
+        assert result["task_id"] == "task_fork_1"
+        assert result["result"] == "子代理完成"
         assert isinstance(result["task_id"], str)
         assert len(result["task_id"]) > 0
         # execution_mode 标记
         assert result.get("execution_mode") == "fork"
+
+
+# ---------------------------------------------------------------------------
+# Task 17: 内置 Agent 工具过滤生效测试
+# （permission_guard 真正 gate 子代理工具调用 + bundle 注入工具约束）
+# ---------------------------------------------------------------------------
+
+class TestPermissionGuardReadonlyAgents:
+    """验证 plan 模式的只读 Agent（verification/Explore）无法调用写入工具。"""
+
+    def test_plan_mode_rejects_write_file(self):
+        """验证 plan 模式拒绝 builtin_write_file 写入工具。"""
+        from core.task_runtime.permission_guard import permission_guard
+
+        decision = permission_guard.evaluate("builtin_write_file", {}, permission_mode="plan")
+        assert decision.allowed is False
+        assert decision.mode == "deny"
+
+    def test_plan_mode_rejects_run_command(self):
+        """验证 plan 模式拒绝 builtin_run_command 命令执行工具。"""
+        from core.task_runtime.permission_guard import permission_guard
+
+        decision = permission_guard.evaluate("builtin_run_command", {}, permission_mode="plan")
+        assert decision.allowed is False
+        assert decision.mode == "deny"
+
+    def test_plan_mode_rejects_delete_file(self):
+        """验证 plan 模式拒绝 builtin_delete_file 删除工具。"""
+        from core.task_runtime.permission_guard import permission_guard
+
+        decision = permission_guard.evaluate("builtin_delete_file", {}, permission_mode="plan")
+        assert decision.allowed is False
+
+    def test_plan_mode_allows_read_tools(self):
+        """验证 plan 模式放行只读工具（读文件/搜索），保证内置 Agent 主要工具可用。"""
+        from core.task_runtime.permission_guard import permission_guard
+
+        for tool_name in (
+            "builtin_read_file",
+            "builtin_list_files",
+            "builtin_file_exists",
+            "builtin_web_search",
+            "builtin_local_search",
+        ):
+            decision = permission_guard.evaluate(tool_name, {}, permission_mode="plan")
+            assert decision.allowed is True, f"{tool_name} 应被 plan 模式放行"
+
+    def test_allowed_tools_whitelist_rejects_undeclared_tool(self):
+        """验证显式 allowed_tools 白名单下，白名单之外的写入工具被拒绝（default 模式 tools 声明生效）。"""
+        from core.task_runtime.permission_guard import permission_guard
+
+        decision = permission_guard.evaluate(
+            "write_file",
+            {},
+            permission_mode="default",
+            allowed_tools=["read_file", "list_files", "web_search"],
+        )
+        assert decision.allowed is False
+        assert "允许列表" in decision.reason
+
+    def test_allowed_tools_whitelist_allows_declared_tool(self):
+        """验证显式 allowed_tools 白名单内的工具放行（含 builtin_ 归一化匹配）。"""
+        from core.task_runtime.permission_guard import permission_guard
+
+        decision = permission_guard.evaluate(
+            "builtin_read_file",
+            {},
+            permission_mode="default",
+            allowed_tools=["read_file", "list_files", "web_search"],
+        )
+        assert decision.allowed is True
+
+
+class TestSubagentBundleToolFilter:
+    """验证 _create_subagent_execution_bundle 按 AgentDefinition 注入工具约束。"""
+
+    @pytest.mark.asyncio
+    async def test_explore_bundle_rejects_write_tools(self):
+        """验证 Explore（plan 模式）bundle 注入 plan 权限模式，白名单不含写入工具。"""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from core.task_runtime.definitions import get_agent_definition
+        from core.task_runtime.runners import _create_subagent_execution_bundle
+
+        with patch("core.task_runtime.runners.SessionLocal") as mock_session_local, \
+             patch("core.task_runtime.runners._load_project_context", return_value=""), \
+             patch("core.task_runtime.runners.load_agent_memory_prompt", new=AsyncMock(return_value="")), \
+             patch("core.agent.AIAgent") as mock_agent_cls:
+            mock_agent_cls.return_value = MagicMock()
+            mock_db = MagicMock()
+            mock_session_local.return_value = mock_db
+
+            _, _, sub_context = await _create_subagent_execution_bundle(
+                agent_id="ag_explore_1",
+                agent_type="Explore",
+                provider=None,
+                model=None,
+                context={"user_id": "u1"},
+                agent_def=get_agent_definition("Explore"),
+            )
+
+        # plan 权限模式必须注入（执行时 PermissionGuard 真正 gate 写工具）
+        assert sub_context["permission_mode"] == "plan"
+        allowed = set(sub_context["allowed_tools"])
+        assert "write_file" not in allowed and "builtin_write_file" not in allowed
+        assert "run_command" not in allowed and "builtin_run_command" not in allowed
+        # 主要只读工具必须可用
+        assert "read_file" in allowed or "builtin_read_file" in allowed
+        assert "list_files" in allowed or "builtin_list_files" in allowed
+
+    @pytest.mark.asyncio
+    async def test_verification_bundle_keeps_readonly_tools(self):
+        """验证 verification（plan 模式）bundle 白名单保留其声明的只读工具。"""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from core.task_runtime.definitions import get_agent_definition
+        from core.task_runtime.runners import _create_subagent_execution_bundle
+
+        with patch("core.task_runtime.runners.SessionLocal") as mock_session_local, \
+             patch("core.task_runtime.runners._load_project_context", return_value=""), \
+             patch("core.task_runtime.runners.load_agent_memory_prompt", new=AsyncMock(return_value="")), \
+             patch("core.agent.AIAgent") as mock_agent_cls:
+            mock_agent_cls.return_value = MagicMock()
+            mock_db = MagicMock()
+            mock_session_local.return_value = mock_db
+
+            _, _, sub_context = await _create_subagent_execution_bundle(
+                agent_id="ag_verify_1",
+                agent_type="verification",
+                provider=None,
+                model=None,
+                context={"user_id": "u1"},
+                agent_def=get_agent_definition("verification"),
+            )
+
+        assert sub_context["permission_mode"] == "plan"
+        allowed = set(sub_context["allowed_tools"])
+        assert "write_file" not in allowed and "builtin_write_file" not in allowed
+        assert "run_command" not in allowed and "builtin_run_command" not in allowed
+        # 只读工具保留
+        assert "read_file" in allowed or "builtin_read_file" in allowed
+        assert "list_files" in allowed or "builtin_list_files" in allowed
+
+
+# ---------------------------------------------------------------------------
+# Task 18: Skill fork 真实调度与 prompt 注入测试
+# ---------------------------------------------------------------------------
+
+class TestForkSkillRealDispatch:
+    """验证 execute_forked_skill 真实调度子 Agent 并提取结果。"""
+
+    @pytest.mark.asyncio
+    async def test_execute_forked_skill_spawns_agent_and_extracts_result(self):
+        """验证 spawn_agent 以 fork_mode=True 被真实调用，且结果文本被提取返回。"""
+        from unittest.mock import AsyncMock, patch
+        from skills.skill_fork_executor import execute_forked_skill
+        from core.task_runtime import task_runtime
+
+        skill = {
+            "name": "fork-skill",
+            "description": "请分析代码库结构",
+            "agent_type": "Explore",
+        }
+        parent_context = {
+            "messages": [{"role": "user", "content": "父任务"}],
+            "user_id": "u_001",
+        }
+
+        async def fake_stream():
+            yield {"type": "fork_started", "agent_id": "ag_fork_9", "task_id": "ag_fork_9", "result": ""}
+
+        with patch.object(task_runtime, "spawn_agent", new=AsyncMock(return_value=fake_stream())) as mock_spawn, \
+             patch.object(task_runtime, "get_agent", new=AsyncMock(return_value={"state": "completed", "summary": "完成"})), \
+             patch.object(task_runtime, "get_transcript", new=AsyncMock(return_value=[
+                 {"event": "agent_message", "message": "分析结果：模块 A 位于 src/a.py"},
+             ])):
+            result = await execute_forked_skill(skill, parent_context)
+
+        mock_spawn.assert_awaited_once()
+        call_kwargs = mock_spawn.call_args.kwargs
+        # 必须桥接 Task 15 新增的 fork_mode=True 参数
+        assert call_kwargs["fork_mode"] is True
+        assert call_kwargs["agent_type"] == "Explore"
+        # 子 Agent 上下文必须设置防递归标志
+        assert call_kwargs["context"]["is_fork_child"] is True
+        assert result["success"] is True
+        assert result["task_id"] == "ag_fork_9"
+        # 等待完成后提取的结果文本
+        assert "分析结果" in result["result"]
+
+
+class TestPromptSkillInjection:
+    """验证 prompt 模式技能结果回注入主对话（Task 18）。"""
+
+    @pytest.mark.asyncio
+    async def test_execute_skill_prompt_mode_injects_user_message(self):
+        """验证 prompt 模式以 user 消息回注入 conversation_history 并标记 inject_as_user。"""
+        from skills.skill_engine import SkillEngine
+
+        db_session = _create_test_db_session()
+        try:
+            config = {
+                "name": "prompt-inject-skill",
+                "version": "1.0.0",
+                "description": "prompt 注入技能",
+                "execution_mode": "prompt",
+                "prompt": "请执行 {task}",
+            }
+            _create_skill_record(db_session, "prompt-inject-skill", config)
+
+            engine = SkillEngine(db_session)
+            context = {"task": "代码审查", "conversation_history": []}
+            result = await engine.execute_skill(
+                skill_name="prompt-inject-skill",
+                inputs={},
+                context=context,
+            )
+        finally:
+            db_session.close()
+
+        assert result["success"] is True
+        # 返回值必须标记 inject_as_user，供 plan_executor 消费
+        assert result.get("inject_as_user") is True
+        # 结果以 user 消息回注入主对话
+        assert context["conversation_history"][-1] == {"role": "user", "content": "请执行 代码审查"}
+
+    @pytest.mark.asyncio
+    async def test_plan_executor_injects_prompt_result(self):
+        """验证 plan_executor 消费 inject_as_user 标记并把 prompt 注入对话历史。"""
+        from unittest.mock import AsyncMock, MagicMock
+        from core.plan_executor import PlanExecutor
+
+        executor = MagicMock()
+        executor.execute_step = AsyncMock()
+        executor.retry_step = AsyncMock()
+        feedback = MagicMock()
+        feedback.evaluate_result = AsyncMock(return_value={})
+        execute_skill = AsyncMock(return_value={
+            "status": "success",
+            "skill_name": "prompt-skill",
+            "outputs": {"prompt": "请执行 代码审查"},
+            "inject_as_user": True,
+        })
+        plan_executor = PlanExecutor(
+            executor,
+            feedback,
+            execute_skill,
+            AsyncMock(),
+            AsyncMock(return_value=[]),
+            AsyncMock(return_value=[]),
+            MagicMock(),
+            MagicMock(side_effect=lambda output, _: output),
+        )
+        context = {"enable_skill_plugin": True, "conversation_history": []}
+        results: list = []
+
+        await plan_executor.execute_single_step(
+            {"use_skill": True, "skill_name": "prompt-skill", "inputs": {}},
+            "用户输入",
+            context,
+            results,
+        )
+
+        # prompt 已作为 user 消息注入对话历史
+        assert context["conversation_history"][-1] == {"role": "user", "content": "请执行 代码审查"}
