@@ -4,7 +4,7 @@
 > 与 [CLAUDE.md](CLAUDE.md) 的差异：本文件聚焦"规则与约束"，CLAUDE.md 聚焦"Claude Code 的具体操作流程与命令细节"。
 > AI Agent 在每次进入项目前必须完整阅读本文件，并严格遵守其中的自主权边界、记忆协议、迭代闭环与反模式。
 
-Open-AwA 是一个 AI Agent 实验性平台（FastAPI + React）。详细说明见 [README.md](README.md) 和 [PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md)。
+Open-AwA 是一个 AI Agent 平台（FastAPI + React），定位为 **OpenClaw 级别的 AI Agent 能力 + 二次元 AI 陪伴的情感体验**。详细说明见 [README.md](README.md) 和 [PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md)。二次元陪伴方向路线图见 [docs/二次元陪伴发展方向路线图.md](docs/二次元陪伴发展方向路线图.md)。
 
 ---
 
@@ -175,6 +175,7 @@ backend/                    # FastAPI 后端工作区
   api/schemas.py   # Pydantic 请求/响应模型
   api/dependencies.py  # OAuth2 + DB session 注入
   core/            # Agent 核心（agent, planner, executor, comprehension, feedback）
+  companion/       # 陪伴系统（规划中，情感状态/陪伴记忆/羁绊等级）
   db/models.py     # SQLAlchemy ORM 模型
   billing/         # 计费模块（定价、预算、用量）
   memory/          # 记忆与经验管理
@@ -579,6 +580,7 @@ git commit -m "[Type] 变更描述"
 
 - [CLAUDE.md](CLAUDE.md) — Claude Code 操作流程契约（构建命令、6 步验证闭环、自愈循环、架构速查、Known Pitfalls 完整版）
 - [README.md](README.md) — Project overview, capabilities, quick start
+- [二次元陪伴发展方向路线图](docs/二次元陪伴发展方向路线图.md) — 二次元 AI 陪伴方向四阶段路线图
 - [CODE_WIKI.md](docs/CODE_WIKI.md) — Comprehensive code wiki (1500+ lines): six-layer architecture, full module deep-dives
 - [PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md) — Detailed technical documentation
 - [docs/架构/后端架构说明.md](docs/架构/后端架构说明.md) — Backend architecture details
