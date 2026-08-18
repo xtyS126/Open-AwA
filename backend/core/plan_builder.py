@@ -29,7 +29,11 @@ class ExecutionPlan:
 
 
 class PlanBuilder:
-    """计划生成器：根据意图类型生成差异化计划"""
+    """计划生成器：根据意图类型生成差异化计划。
+
+    注意：当前流式路径由模型原生工具循环（StreamOrchestrator）驱动执行，
+    本计划仅作为前端计划展示与意图分类结果，不驱动真实工具执行步骤。
+    """
 
     def build(
         self,

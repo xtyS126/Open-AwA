@@ -624,6 +624,16 @@ def _migrate_user_feedback_add_columns(inspector, conn) -> None:
         conn.execute(text("ALTER TABLE user_feedback ADD COLUMN feedback_type VARCHAR(20) DEFAULT ''"))
 
 
+def _migrate_agent_role_is_companion(inspector, conn) -> None:
+    """迁移：为 agent_roles 表补齐 is_companion 列（陪伴角色标记）。"""
+    if "agent_roles" not in inspector.get_table_names():
+        return
+    columns = [col["name"] for col in inspector.get_columns("agent_roles")]
+    if "is_companion" not in columns:
+        conn.execute(text("ALTER TABLE agent_roles ADD COLUMN is_companion BOOLEAN DEFAULT 0"))
+        logger.info("Migrated agent_roles: added is_companion column")
+
+
 def _migrate_user_role_fk(use_engine=None):
     """
     清理 user_roles 中引用不存在角色的孤立记录，并确保新数据库包含外键约束。

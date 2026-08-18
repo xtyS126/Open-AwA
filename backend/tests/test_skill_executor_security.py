@@ -262,9 +262,8 @@ class TestSkillExecutorShellAction:
         """验证 rm 命令被拒绝。"""
         with pytest.raises(RuntimeError) as exc_info:
             await executor._execute_shell_action("test", {"command": "rm -rf /"})
-        # rm 在 DANGEROUS_COMMANDS 黑名单中，返回"被明确禁止执行"，
-        # 与 sandbox.py 行为一致（命令白名单单一真相源）
-        assert "禁止" in str(exc_info.value)
+        # rm -rf / 命中系统级硬阻断（最高优先级），统一入口直接拒绝
+        assert "硬阻断" in str(exc_info.value) or "禁止" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_dangerous_command_sudo_rejected(self, executor):
@@ -280,21 +279,21 @@ class TestSkillExecutorShellAction:
         """验证分号注入被拒绝。"""
         with pytest.raises(RuntimeError) as exc_info:
             await executor._execute_shell_action("test", {"command": "ls; rm -rf /"})
-        assert "不在允许列表" in str(exc_info.value)
+        assert "硬阻断" in str(exc_info.value) or "拒绝" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_shell_injection_pipe_rejected(self, executor):
         """验证管道注入被拒绝。"""
         with pytest.raises(RuntimeError) as exc_info:
             await executor._execute_shell_action("test", {"command": "ls | rm"})
-        assert "不允许" in str(exc_info.value)
+        assert "拒绝" in str(exc_info.value) or "不允许" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_shell_injection_backtick_rejected(self, executor):
         """验证反引号注入被拒绝。"""
         with pytest.raises(RuntimeError) as exc_info:
             await executor._execute_shell_action("test", {"command": "ls `rm`"})
-        assert "不允许" in str(exc_info.value)
+        assert "拒绝" in str(exc_info.value) or "不允许" in str(exc_info.value)
 
     @pytest.mark.asyncio
     @pytest.mark.skipif(

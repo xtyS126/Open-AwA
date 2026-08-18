@@ -39,16 +39,23 @@ class MemoryManagerProvider(MemoryProvider):
     使 Agent 循环可以通过统一接口调用记忆系统。
     """
 
-    def __init__(self, memory_manager: MemoryManager, workspace_id: str = "default"):
+    def __init__(
+        self,
+        memory_manager: MemoryManager,
+        workspace_id: str = "default",
+        user_id: Optional[str] = None,
+    ):
         """
         初始化适配器。
-        
+
         Args:
             memory_manager: 现有的 MemoryManager 实例
             workspace_id: 工作区 ID
+            user_id: 绑定用户 ID，用于用户级隔离；为空时记忆检索级降级拒绝
         """
         self.memory_manager = memory_manager
         self.workspace_id = workspace_id
+        self.user_id = user_id
         self._session_ended: set[str] = set()  # 记录已结束的会话，用于幂等性
         logger.info(f"MemoryManagerProvider initialized for workspace {workspace_id}")
 
@@ -65,11 +72,18 @@ class MemoryManagerProvider(MemoryProvider):
         Returns:
             SystemPromptResponse: 包含记忆块的响应
         """
+        # 用户隔离硬防线：未绑定 user_id 时不得检索长期记忆，避免跨用户泄露
+        if not self.user_id:
+            return SystemPromptResponse.degraded(
+                reason="MemoryManagerProvider 未绑定 user_id，拒绝检索长期记忆（防止跨用户泄露）",
+            )
+
         try:
             # 直接调用内部同步方法，避免 async/sync 转换开销
             memories = self.memory_manager._get_and_evaluate_long_term_memories_sync(
                 min_importance=0.6,
                 limit=10,
+                user_id=self.user_id,
                 workspace_id=self.workspace_id,
             )
 
@@ -112,12 +126,13 @@ class MemoryManagerProvider(MemoryProvider):
             return PrefetchResponse.default()
 
         try:
-            # 使用 auto_search_memories 进行智能搜索
+            # 使用 auto_search_memories 进行智能搜索，按绑定 user_id 隔离
             results = await self.memory_manager.auto_search_memories(
                 query=request.intent,
                 workspace_id=self.workspace_id,
                 max_results=5,
                 min_score=0.5,
+                user_id=self.user_id,
             )
 
             if not results:

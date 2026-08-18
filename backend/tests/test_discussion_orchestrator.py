@@ -54,6 +54,7 @@ from core.discussion.definitions import (  # noqa: E402
 )
 from core.discussion.orchestrator import DiscussionOrchestrator  # noqa: E402
 from db.models import Base, DiscussionTask, DiscussionVote, User  # noqa: E402
+import core.subagent_task_runtime_bridge as bridge  # noqa: E402
 
 
 # ── 模块级测试数据库 ──────────────────────────────────────────────
@@ -185,6 +186,67 @@ def _count_all_votes(task_id: str) -> int:
     """统计指定任务的全部投票记录数。"""
     with _TestingSessionLocal() as db:
         return db.query(DiscussionVote).filter(DiscussionVote.discussion_id == task_id).count()
+
+
+def _seed_subagent_delegate_task(
+    *,
+    status: str = "approved",
+    agent: str = "searcher",
+    instruction: str = "调研代码库中子代理实现",
+    context_snippet: str = "",
+) -> str:
+    """直接插入 subagent_delegate 类型的讨论任务，返回任务 ID。"""
+    task_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    with _TestingSessionLocal() as db:
+        task = DiscussionTask(
+            id=task_id,
+            user_id="u1",
+            title="子代理委派",
+            description="委派调研任务",
+            proposed_action={
+                "type": "subagent_delegate",
+                "payload": {
+                    "agent": agent,
+                    "instruction": instruction,
+                    "context_snippet": context_snippet,
+                },
+            },
+            context={},
+            status=status,
+            round=1,
+            max_rounds=3,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(task)
+        db.commit()
+    return task_id
+
+
+def _make_fake_spawn_stream(
+    summary: str = "调研完成，找到相关实现",
+    state: str = "completed",
+):
+    """构造 spawn_agent 的前台事件流 mock，避免依赖真实 LLM。"""
+
+    async def fake_spawn_agent(*args, **kwargs):
+        async def stream():
+            yield {
+                "type": "subagent_start",
+                "agent_id": "agent-mock-1",
+                "agent_type": kwargs.get("agent_type", "Explore"),
+            }
+            yield {
+                "type": "subagent_stop",
+                "state": state,
+                "summary": summary,
+                "agent_id": "agent-mock-1",
+            }
+
+        return stream()
+
+    return fake_spawn_agent
 
 
 # ── fixture ──────────────────────────────────────────────────────
@@ -687,3 +749,75 @@ def test_parse_llm_vote_output_defaults_to_abstain_on_empty():
     orch = DiscussionOrchestrator(db_session_factory=_db_session_factory, llm_caller=_default_approve_caller())
     vote, reason = orch._parse_llm_vote_output("")
     assert vote == "abstain"
+
+
+# ── subagent_delegate 执行器测试（经 task_runtime 委派） ─────────────
+
+
+async def test_execute_subagent_delegate_via_task_runtime(orchestrator):
+    """subagent_delegate 应经 task_runtime.spawn_agent 委派并回写结果。"""
+    task_id = _seed_subagent_delegate_task()
+
+    fake_spawn = _make_fake_spawn_stream(summary="调研完成：入口在 core/agent.py")
+    with patch.object(
+        bridge.task_runtime, "spawn_agent", new=AsyncMock(side_effect=fake_spawn)
+    ) as mock_spawn:
+        result = await orchestrator.execute_approved_action(task_id)
+
+    assert _load_task_status(task_id) == "completed"
+    assert result["ok"] is True
+    assert result["runtime"] == "task_runtime"
+    assert "调研完成" in result["output"]
+
+    # 内置名称 searcher -> task_runtime 原生类型 Explore
+    mock_spawn.assert_awaited_once()
+    call_kwargs = mock_spawn.await_args.kwargs
+    assert call_kwargs["agent_type"] == "Explore"
+    assert call_kwargs["force_foreground"] is True
+    assert call_kwargs["background"] is False
+    # 指令应注入到 prompt（含 context_snippet 为空时不追加）
+    assert "调研代码库中子代理实现" in call_kwargs["prompt"]
+
+
+async def test_execute_subagent_delegate_includes_context_snippet(orchestrator):
+    """context_snippet 应追加到委派 prompt，供子代理可见。"""
+    task_id = _seed_subagent_delegate_task(
+        instruction="分析代码结构", context_snippet="目标目录 backend/core"
+    )
+    fake_spawn = _make_fake_spawn_stream()
+    with patch.object(
+        bridge.task_runtime, "spawn_agent", new=AsyncMock(side_effect=fake_spawn)
+    ) as mock_spawn:
+        await orchestrator.execute_approved_action(task_id)
+
+    prompt = mock_spawn.await_args.kwargs["prompt"]
+    assert "分析代码结构" in prompt
+    assert "backend/core" in prompt
+
+
+async def test_execute_subagent_delegate_fails_when_stream_failed(orchestrator):
+    """委派事件流以 failed 终态结束时，任务应转 failed 并抛 DiscussionExecutionError。"""
+    task_id = _seed_subagent_delegate_task()
+    fake_spawn = _make_fake_spawn_stream(summary="执行出错", state="failed")
+    with patch.object(
+        bridge.task_runtime, "spawn_agent", new=AsyncMock(side_effect=fake_spawn)
+    ):
+        with pytest.raises(DiscussionExecutionError):
+            await orchestrator.execute_approved_action(task_id)
+
+    assert _load_task_status(task_id) == "failed"
+
+
+async def test_execute_subagent_delegate_fails_when_agent_unregistered(orchestrator):
+    """目标代理类型未注册（委派返回 None）时抛 DiscussionExecutionError。"""
+    task_id = _seed_subagent_delegate_task(agent="no_such_agent")
+    with patch.object(bridge.task_runtime, "spawn_agent", new=AsyncMock()):
+        with pytest.raises(DiscussionExecutionError):
+            await orchestrator.execute_approved_action(task_id)
+
+
+async def test_execute_subagent_delegate_rejects_missing_fields(orchestrator):
+    """payload 缺 agent/instruction 时抛 DiscussionExecutionError，不触发委派。"""
+    task_id = _seed_subagent_delegate_task(instruction="")
+    with pytest.raises(DiscussionExecutionError):
+        await orchestrator.execute_approved_action(task_id)

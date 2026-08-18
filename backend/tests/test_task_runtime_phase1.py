@@ -527,6 +527,64 @@ class TestRunnerDatabaseOperations:
         assert len({id(session) for session in created_sessions}) == 3
 
 
+class TestBackgroundExecuteCleanup:
+    """后台/Fork 子代理收尾清理测试。"""
+
+    @pytest.mark.asyncio
+    async def test_finally_clears_running_task_registry(self, monkeypatch):
+        """后台子代理结束后，运行态注册表应清除对应 agent_id 引用，避免 stop_run 拿到已结束任务。"""
+        import asyncio
+
+        from core.agent_lifecycle import (
+            AgentLifecycle,
+            get_agent_lifecycle,
+            set_agent_lifecycle,
+        )
+
+        agent_id = "agt_bg_cleanup_1"
+        previous_lifecycle = get_agent_lifecycle()
+        lifecycle = AgentLifecycle.create_test_instance()
+        set_agent_lifecycle(lifecycle)
+
+        async def _empty_stream(**kwargs):
+            # 空事件流，模拟子代理立即完成
+            if False:
+                yield {}
+
+        async def _fake_update(_agent_id, _state, **kwargs):
+            return None
+
+        async def _fake_trigger(_hook_name, data=None, context=None, default_timeout=30.0):
+            return []
+
+        # 预注册一个占位运行任务，模拟 run_background 中的注册行为
+        dummy_task = asyncio.create_task(asyncio.sleep(0))
+        runners_module._get_running_tasks()[agent_id] = dummy_task
+
+        try:
+            monkeypatch.setattr(runners_module, "_execute_subagent_core", _empty_stream)
+            monkeypatch.setattr(runners_module, "_update_session_record", _fake_update)
+            monkeypatch.setattr(runners_module.hook_manager, "trigger", _fake_trigger)
+
+            await runners_module._background_execute(
+                agent_id=agent_id,
+                agent_type="Explore",
+                prompt="测试",
+                description="测试",
+                provider=None,
+                model=None,
+                context=None,
+                root_chat_session_id=None,
+                agent_def=None,
+            )
+
+            assert agent_id not in runners_module._get_running_tasks()
+        finally:
+            set_agent_lifecycle(previous_lifecycle)
+
+        await dummy_task
+
+
 class TestFacadeDatabaseOperations:
     """外观层同步存储操作必须在线程池中执行。"""
 

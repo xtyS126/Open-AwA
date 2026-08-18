@@ -12,7 +12,11 @@
 
 import pytest
 
-from security.command_validators import ValidationResult, validate_command
+from security.command_validators import (
+    ValidationResult,
+    validate_command,
+    validate_command_for_execution,
+)
 from security.command_whitelist import validate_command_safety_detailed
 
 
@@ -171,3 +175,68 @@ class TestTask12SubcommandSafety:
         assert is_safe, err
         is_safe, err = validate_command_safety_detailed("tar", ["-cf", "archive.tar", "src/"])
         assert is_safe, err
+
+
+class TestUnifiedCommandValidation:
+    """统一命令安全判定入口（validate_command_for_execution）回归测试。"""
+
+    def test_hard_block_rejects_rm_rf_root(self):
+        """系统级硬阻断拒绝 rm -rf /。"""
+        is_safe, err = validate_command_for_execution("rm -rf /")
+        assert is_safe is False
+        assert "硬阻断" in err
+
+    def test_hard_block_rejects_mkfs(self):
+        """系统级硬阻断拒绝 mkfs。"""
+        is_safe, _ = validate_command_for_execution("mkfs.ext4 /dev/sda")
+        assert is_safe is False
+
+    def test_terminal_blacklist_rejects_mv(self):
+        """通用终端黑名单拒绝 mv（消除 mv 白名单/黑名单矛盾）。"""
+        is_safe, _ = validate_command_for_execution("mv a b")
+        assert is_safe is False
+
+    def test_terminal_blacklist_rejects_cp(self):
+        """通用终端黑名单拒绝 cp（消除 cp 白名单/黑名单矛盾）。"""
+        is_safe, _ = validate_command_for_execution("cp a b")
+        assert is_safe is False
+
+    def test_terminal_blacklist_rejects_ssh(self):
+        """通用终端黑名单拒绝 ssh。"""
+        is_safe, _ = validate_command_for_execution("ssh user@host")
+        assert is_safe is False
+
+    def test_allowlist_rejects_mv(self):
+        """白名单模式拒绝 mv。"""
+        is_safe, _ = validate_command_for_execution("mv a b", require_allowlist=True)
+        assert is_safe is False
+
+    def test_allowlist_rejects_cp(self):
+        """白名单模式拒绝 cp。"""
+        is_safe, _ = validate_command_for_execution("cp a b", require_allowlist=True)
+        assert is_safe is False
+
+    def test_substitution_rejected(self):
+        """命令替换 $(...) 被拒绝。"""
+        is_safe, _ = validate_command_for_execution("echo $(id)")
+        assert is_safe is False
+
+    def test_backtick_rejected(self):
+        """反引号命令替换被拒绝。"""
+        is_safe, _ = validate_command_for_execution("echo `id`")
+        assert is_safe is False
+
+    def test_safe_ls_allowed_terminal(self):
+        """通用终端黑名单模式放行安全命令 ls。"""
+        is_safe, err = validate_command_for_execution("ls -la")
+        assert is_safe is True, err
+
+    def test_safe_ls_allowed_allowlist(self):
+        """白名单模式放行安全命令 ls。"""
+        is_safe, err = validate_command_for_execution("ls -la", require_allowlist=True)
+        assert is_safe is True, err
+
+    def test_allowlist_rejects_nonwhitelisted(self):
+        """白名单模式拒绝不在白名单的命令（如 python）。"""
+        is_safe, _ = validate_command_for_execution("python --version", require_allowlist=True)
+        assert is_safe is False

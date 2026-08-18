@@ -10,6 +10,7 @@ from core.agent_state import AgentState
 from core.stream_orchestrator import StreamOrchestrator
 from core.tool_dispatcher import ToolCallContext, ToolDispatcher
 from core.tool_event_emitter import ToolEventEmitter
+from core.tool_registry import ToolDefinition, tool_registry as global_tool_registry
 
 
 class EarlyExit(Exception):
@@ -56,7 +57,7 @@ def _build_budget_tracker():
 
 
 def test_advance_state_machine_length_returns_continue_compact():
-    """透传 finish_reason=length 时应返回 CONTINUE_COMPACT（上下文超限压缩后继续）。"""
+    """透传 finish_reason=length 时应返回 CONTINUE_COMPACT 并触发工具结果预算截断事件。"""
     orchestrator = _build_orchestrator(MagicMock(), _build_budget_tracker())
     state = _build_state()
     round_state = RoundState(1, "", "", state, "测试")
@@ -66,7 +67,9 @@ def test_advance_state_machine_length_returns_continue_compact():
     )
 
     assert state_machine is AgentState.CONTINUE_COMPACT
-    assert status_event is None
+    assert status_event is not None
+    assert status_event["type"] == "status"
+    assert status_event["phase"] == "compacting"
 
 
 def test_advance_state_machine_content_filter_returns_terminal_refusal():
@@ -80,6 +83,44 @@ def test_advance_state_machine_content_filter_returns_terminal_refusal():
     )
 
     assert state_machine is AgentState.TERMINAL_REFUSAL
+
+
+def test_advance_state_machine_content_filter_emits_refused_event():
+    """模型拒绝（content_filter）终态应产出可观测的 refused 原因事件。"""
+    orchestrator = _build_orchestrator(MagicMock(), _build_budget_tracker())
+    state = _build_state()
+    round_state = RoundState(1, "", "", state, "测试")
+
+    _, status_event = orchestrator._advance_state_machine(
+        round_state, False, 10, {}, finish_reason="content_filter",
+    )
+
+    assert status_event is not None
+    assert status_event["type"] == "status"
+    assert status_event["phase"] == "refused"
+
+
+def test_advance_state_machine_max_rounds_emits_max_rounds_event():
+    """达到最大轮次上限终态应产出可观测的 max_rounds 原因事件。"""
+    orchestrator = _build_orchestrator(MagicMock(), _build_budget_tracker())
+    state = _build_state()
+    round_state = RoundState(1, "", "", state, "测试")
+
+    # current_round 达到 max_rounds 时无论 finish_reason 都返回 TERMINAL_MAX_ROUNDS
+    state_machine, status_event = orchestrator._advance_state_machine(
+        round_state, True, 1, {}, finish_reason="stop",
+    )
+
+    assert state_machine is AgentState.TERMINAL_MAX_ROUNDS
+    assert status_event is not None
+    assert status_event["phase"] == "max_rounds"
+
+
+def test_terminal_status_event_end_turn_returns_none():
+    """正常结束（TERMINAL_END_TURN）不产出额外原因事件。"""
+    orchestrator = _build_orchestrator(MagicMock(), _build_budget_tracker())
+    assert orchestrator._terminal_status_event(AgentState.TERMINAL_END_TURN) is None
+    assert orchestrator._terminal_status_event(AgentState.CONTINUE_TOOL_CALLS) is None
 
 
 def test_advance_state_machine_defaults_to_stop_without_finish_reason():
@@ -297,3 +338,157 @@ async def test_regular_tool_timeout_does_not_block_agent_loop():
         "error_code": "tool_call_timeout",
         "tool_name": "builtin_demo",
     }
+
+
+# ==================== 流式并发调度测试 ====================
+
+_CONCURRENT_TOOL_NAMES = [
+    "test_stream_read_a",
+    "test_stream_read_b",
+    "test_stream_write_a",
+    "test_stream_write_b",
+]
+
+
+def _build_concurrent_orchestrator(executor):
+    """构造含真实 dispatcher/emitter 的编排器，用于并发调度测试。"""
+    feedback = MagicMock()
+    feedback.update_memory = AsyncMock()
+    dispatcher = ToolDispatcher(executor, None, EarlyExit)
+    emitter = ToolEventEmitter()
+    budget_tracker = MagicMock()
+    budget_tracker.is_near_completion.return_value = False
+    orchestrator = StreamOrchestrator(
+        executor,
+        feedback,
+        dispatcher,
+        emitter,
+        EarlyExit,
+        budget_tracker,
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+    )
+    return orchestrator, feedback
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_concurrent_tools():
+    """每个测试后清理并发调度测试注册的工具。"""
+    yield
+    for name in _CONCURRENT_TOOL_NAMES:
+        global_tool_registry.unregister(name)
+
+
+def _make_counting_executor():
+    """构造记录最大并行调用数的工具执行器。"""
+    executor = MagicMock()
+    active = 0
+    max_active = 0
+
+    async def fake_execute(tool_call, context, on_subagent_event=None):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        try:
+            await asyncio.sleep(0.05)
+        finally:
+            active -= 1
+        name = tool_call.get("function", {}).get("name")
+        return {"ok": True, "result": {"name": name}, "tool_name": name}
+
+    executor._execute_tool_call = fake_execute
+    executor.build_assistant_tool_call_message.return_value = {"role": "assistant"}
+    executor._build_tool_message.return_value = {"role": "tool"}
+    return executor, lambda: max_active
+
+
+@pytest.mark.asyncio
+async def test_stream_orchestrator_concurrent_executes_read_only_tools_concurrently():
+    """多个只读并发安全工具应在单轮内并发执行（最大并行调用数 > 1）。"""
+    global_tool_registry.register(ToolDefinition(
+        name="test_stream_read_a",
+        description="只读并发安全工具 A",
+        is_read_only=True,
+        is_concurrency_safe=True,
+    ))
+    global_tool_registry.register(ToolDefinition(
+        name="test_stream_read_b",
+        description="只读并发安全工具 B",
+        is_read_only=True,
+        is_concurrency_safe=True,
+    ))
+    executor, get_max_active = _make_counting_executor()
+    orchestrator, feedback = _build_concurrent_orchestrator(executor)
+    context: dict = {}
+    state = {
+        "accumulated_tool_events": [],
+        "user_input": "测试",
+        "full_reasoning": "",
+    }
+    tool_calls = [
+        {"id": "read-a", "function": {"name": "test_stream_read_a", "arguments": "{}"}},
+        {"id": "read-b", "function": {"name": "test_stream_read_b", "arguments": "{}"}},
+    ]
+
+    with patch("core.hook_manager.hook_manager") as hook_mgr:
+        hook_mgr.trigger = AsyncMock()
+        events = [event async for event in orchestrator.handle_tool_calls_in_round(
+            tool_calls, context, None, "session-1",
+            RoundState(1, "", "", state, "测试"),
+        )]
+
+    # 两个只读并发安全工具应并发执行
+    assert get_max_active() == 2, f"期望两个只读工具并发执行，实际最大并行数: {get_max_active()}"
+    # 事件语义：先按声明顺序发射 running，再按完成顺序发射 completed
+    statuses = [e["tool"]["status"] for e in events if e.get("type") == "tool"]
+    assert statuses[:2] == ["running", "running"]
+    assert statuses.count("running") == 2
+    assert statuses.count("completed") == 2
+    # 工具消息按声明顺序稳定产出（1 assistant + 2 tool）
+    assert len(context["_tool_messages"]) == 3
+    feedback.update_memory.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stream_orchestrator_serializes_non_concurrency_safe_tools():
+    """非并发安全工具（写入类）应在单轮内串行执行（最大并行调用数为 1）。"""
+    global_tool_registry.register(ToolDefinition(
+        name="test_stream_write_a",
+        description="写工具 A",
+        is_read_only=False,
+        is_concurrency_safe=False,
+    ))
+    global_tool_registry.register(ToolDefinition(
+        name="test_stream_write_b",
+        description="写工具 B",
+        is_read_only=False,
+        is_concurrency_safe=False,
+    ))
+    executor, get_max_active = _make_counting_executor()
+    orchestrator, feedback = _build_concurrent_orchestrator(executor)
+    context: dict = {}
+    state = {
+        "accumulated_tool_events": [],
+        "user_input": "测试",
+        "full_reasoning": "",
+    }
+    tool_calls = [
+        {"id": "write-a", "function": {"name": "test_stream_write_a", "arguments": "{}"}},
+        {"id": "write-b", "function": {"name": "test_stream_write_b", "arguments": "{}"}},
+    ]
+
+    with patch("core.hook_manager.hook_manager") as hook_mgr:
+        hook_mgr.trigger = AsyncMock()
+        events = [event async for event in orchestrator.handle_tool_calls_in_round(
+            tool_calls, context, None, "session-1",
+            RoundState(1, "", "", state, "测试"),
+        )]
+
+    # 非并发安全工具应串行执行
+    assert get_max_active() == 1, f"期望写工具串行执行，实际最大并行数: {get_max_active()}"
+    statuses = [e["tool"]["status"] for e in events if e.get("type") == "tool"]
+    assert statuses.count("running") == 2
+    assert statuses.count("completed") == 2
+    assert len(context["_tool_messages"]) == 3
+    feedback.update_memory.assert_not_awaited()

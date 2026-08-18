@@ -539,3 +539,70 @@ def test_check_agent_memory_snapshot_with_agent_type():
     """验证 check_agent_memory_snapshot 支持传入 agent_type。"""
     snapshot = check_agent_memory_snapshot("agt_check_002", agent_type="Explore")
     assert snapshot.agent_type == "Explore"
+
+
+# ──────────────────────────────────────────────
+#  子代理记忆写回（runners._persist_subagent_memory）
+# ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_persist_subagent_memory_project_roundtrip(tmp_path):
+    """验证子代理执行结束后 PROJECT 范围记忆可跨会话读回。"""
+    from core.task_runtime.definitions import AgentDefinition
+    from core.task_runtime.runners import _persist_subagent_memory
+
+    agent_def = AgentDefinition(
+        name="Explore",
+        memory_scope=AgentMemoryScope.PROJECT,
+    )
+    with patch(
+        "core.task_runtime.agent_memory._PROJECT_MEMORY_BASE_DIR",
+        tmp_path / "agent_memories",
+    ):
+        await _persist_subagent_memory(
+            agent_id="agt_run_1",
+            agent_type="Explore",
+            agent_def=agent_def,
+            summary="本轮执行发现偏好 4 空格缩进",
+        )
+        prompt = await load_agent_memory_prompt("Explore", AgentMemoryScope.PROJECT)
+
+    assert "4 空格缩进" in prompt
+
+
+@pytest.mark.asyncio
+async def test_persist_subagent_memory_write_error_does_not_raise():
+    """验证记忆写回失败记录告警但不中断子代理主流程。"""
+    from core.task_runtime.definitions import AgentDefinition
+    from core.task_runtime.runners import _persist_subagent_memory
+
+    agent_def = AgentDefinition(name="Explore", memory_scope=AgentMemoryScope.LOCAL)
+    with patch(
+        "core.task_runtime.runners.save_agent_memory",
+        side_effect=RuntimeError("磁盘故障"),
+    ) as mock_save:
+        # 写失败不应向上抛出，主流程可继续
+        await _persist_subagent_memory(
+            agent_id="agt_run_2",
+            agent_type="Explore",
+            agent_def=agent_def,
+            summary="摘要内容",
+        )
+    mock_save.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_persist_subagent_memory_skips_on_empty_summary():
+    """验证摘要为空时不写记忆。"""
+    from core.task_runtime.definitions import AgentDefinition
+    from core.task_runtime.runners import _persist_subagent_memory
+
+    agent_def = AgentDefinition(name="Explore", memory_scope=AgentMemoryScope.PROJECT)
+    with patch("core.task_runtime.runners.save_agent_memory") as mock_save:
+        await _persist_subagent_memory(
+            agent_id="agt_run_3",
+            agent_type="Explore",
+            agent_def=agent_def,
+            summary="   ",
+        )
+    mock_save.assert_not_awaited()

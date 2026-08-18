@@ -6,6 +6,7 @@ import { useMemo } from 'react'
 import type { ModelConfiguration, ModelProvider, ProviderModel } from '@/features/settings/modelsApi'
 import { AddConfigForm } from './AddConfigForm'
 import { ModelManagementTable } from './ModelManagementTable'
+import { ModelTierSection } from './ModelTierSection'
 import { MODALITY_TYPES, MODALITY_LABELS } from '@/features/settings/SettingsPage.utils'
 import { Badge } from '@/shared/components/ui/Badge'
 import { getProviderIcon } from '@/assets/providers'
@@ -227,6 +228,9 @@ export function ModelsTab({
         onEdit={onEditConfig}
         onDelete={onDeleteConfiguration}
       />
+
+      {/* 模型等级分配（Fable/Opus/Sonnet/Haiku） */}
+      <ModelTierSection />
 
       {/* 编辑模态框 */}
       {editingConfigId !== null && editingConfig && (

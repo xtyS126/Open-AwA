@@ -21,6 +21,9 @@ class FeedbackLayer:
     """
     Agent 反馈层:负责在工具调用完成后提取经验,记录对话并持久化记忆.
     依赖外部注入的 MemoryManager 执行实际的记忆写入操作.
+
+    注意：当前流式路径由模型原生工具循环（StreamOrchestrator）驱动执行，
+    本层只负责结果评估/回复生成/记忆持久化等反馈职责，不驱动真实执行步骤。
     """
     def __init__(self):
         """初始化反馈层,memory_manager 需通过 set_memory_manager 注入."""

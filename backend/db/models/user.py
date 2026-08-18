@@ -108,6 +108,8 @@ class AgentRole(Base):
     is_preset: Mapped[bool] = mapped_column(Boolean, default=False)
     # Live2D 模型绑定：角色可关联一个 Live2D 模型，为 None 时使用默认角色立绘
     live2d_model_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # 陪伴角色标记：true 时聊天走陪伴心智闭环（抽取→更新→注入），启用情感演化
+    is_companion: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )

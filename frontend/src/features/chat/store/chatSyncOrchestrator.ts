@@ -99,3 +99,8 @@ export function setupChatSync(): void {
     }
   })
 }
+
+// 模块加载即自动安装跨 Store 订阅（setupChatSync 幂等）。chatStore 兼容入口与 main.tsx
+// 应用入口均通过副作用 import 加载本模块，自调用确保编排层的持久化与跨 Store 联动真正生效，
+// 避免各分域 Store 纯化后持久化失效。
+setupChatSync()

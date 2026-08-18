@@ -5,57 +5,16 @@
 
 import asyncio
 import os
-import re
-import shlex
 import time
 from typing import Dict, Any, List, Optional
 from loguru import logger
 from security.command_hard_block import is_hard_blocked_command
+from security.command_validators import validate_command_for_execution
 
 
-# 禁止执行的危险命令名（完整匹配命令名，非子串匹配）
-BLOCKED_COMMANDS = [
-    'rm', 'rmdir', 'mv', 'cp',
-    'mkfs', 'mke2fs', 'mkfs.ext2', 'mkfs.ext3', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs',
-    'dd', 'shred',
-    'shutdown', 'reboot', 'halt', 'poweroff', 'init',
-    'chmod', 'chown', 'chgrp', 'chattr', 'setfacl', 'getfacl',
-    'kill', 'pkill', 'killall', 'xkill',
-    'iptables', 'ip6tables', 'nft', 'ufw', 'firewall-cmd',
-    'mount', 'umount', 'fdisk', 'parted', 'losetup',
-    'useradd', 'userdel', 'usermod', 'groupadd', 'groupdel',
-    'passwd', 'su', 'sudo', 'doas',
-    'wget', 'curl',
-    'nc', 'ncat', 'netcat', 'socat', 'telnet',
-    'ssh', 'scp', 'sftp', 'rsync',
-    'crontab', 'at', 'systemctl', 'service',
-    'export', 'unset', 'alias', 'source',
-    'chroot', 'nsenter', 'unshare',
-    ':(){', 'fork', 'exec',
-]
-
-# 禁止出现在命令参数中的高危路径
-BLOCKED_PATHS = [
-    '/etc/passwd', '/etc/shadow', '/etc/sudoers', '/etc/crontab',
-    '/etc/ssh/', '/root/', '/boot/', '/sys/', '/proc/',
-    '/dev/sda', '/dev/sdb', '/dev/sdc', '/dev/sdd',
-    '/dev/nvme', '/dev/mem', '/dev/kmem', '/dev/port',
-    r'\.ssh/', r'\.gnupg/',
-]
-
-# 禁止的命令行中出现的模式（正则）
-# 命令串联/管道/逻辑运算符：仅当串联到危险命令时才拦截，避免误拦 echo "Hi" && pwd 等无害组合
-_CHAIN_RISKY_SUFFIX = r'(?:;|\|\||&&|\|)\s*(' + '|'.join(re.escape(c) for c in BLOCKED_COMMANDS) + r')\b'
-BLOCKED_PATTERNS = [
-    r'>\s*/dev/',           # 重定向到设备文件
-    r'>>\s*/dev/',
-    r'<\s*/dev/zero',      # 从 /dev/zero 读取输入
-    r'\$\s*\(',            # $() 命令替换
-    r'`[^`]+`',            # 反引号命令替换
-    _CHAIN_RISKY_SUFFIX,   # 串联到危险命令（如 curl|bash, wget && 执行等）
-    r'\\x[0-9a-fA-F]{2}', # 十六进制编码绕过
-    r'base64\s.*-d',       # base64 解码绕过
-]
+# 命令安全判定已统一到 security.command_validators.validate_command_for_execution
+# （验证器流水线 + 硬阻断 + 终端黑名单/高危路径/危险模式）。本模块不再维护独立的
+# BLOCKED_COMMANDS / BLOCKED_PATHS / BLOCKED_PATTERNS 黑名单，避免与单一真相源漂移。
 
 # 最大输出长度（字符）
 MAX_OUTPUT_LENGTH = 50000
@@ -101,40 +60,18 @@ class TerminalExecutorSkill:
     def _is_command_safe(self, command: str) -> bool:
         """
         检查命令是否安全。
-        多层检查：危险命令名 + 高危路径 + 危险正则模式 + 命令名白名单。
+
+        命令安全已统一到 security.command_validators.validate_command_for_execution
+        （验证器流水线 + 硬阻断 + 终端黑名单/高危路径/危险模式）。本方法仅保留
+        系统级硬阻断作为第一道不可绕过的防线（与统一入口内部幂等），其余校验全部委托。
         """
-        import re
         if is_hard_blocked_command(command):
             logger.warning("命令匹配系统级硬阻断规则")
             return False
-        try:
-            cmd_parts = shlex.split(command)
-        except ValueError:
-            logger.warning(f"命令解析失败（可能包含未闭合的引号等）: {command}")
+        is_safe, err_msg = validate_command_for_execution(command)
+        if not is_safe:
+            logger.warning(f"命令被安全策略拦截: {err_msg}")
             return False
-        if not cmd_parts:
-            return False
-
-        cmd_name = os.path.basename(cmd_parts[0]).lower()
-
-        # 1. 检查命令名是否在禁止列表中
-        if cmd_name in BLOCKED_COMMANDS:
-            logger.warning(f"禁止的危险命令: {cmd_parts[0]}")
-            return False
-
-        # 2. 检查参数中是否包含高危路径
-        cmd_full = command.lower()
-        for blocked_path in BLOCKED_PATHS:
-            if blocked_path.lower() in cmd_full:
-                logger.warning(f"命令中包含禁止的路径: {blocked_path}")
-                return False
-
-        # 3. 检查是否匹配禁止的正则模式
-        for pattern in BLOCKED_PATTERNS:
-            if re.search(pattern, command):
-                logger.warning(f"命令匹配禁止模式 '{pattern}': {command}")
-                return False
-
         return True
 
     def is_initialized(self) -> bool:

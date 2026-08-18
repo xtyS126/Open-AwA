@@ -34,18 +34,14 @@ class AgentState(Enum):
 
     @property
     def is_terminal(self) -> bool:
-        """判断当前状态是否为终态，终态时主循环应退出。"""
+        """判断当前状态是否为终态，终态时主循环应退出。
+
+        继续态（CONTINUE_*）由主循环通过 `not is_terminal` 隐式判定，
+        不再单独暴露 is_continuation 属性（避免与终态判定语义重复的死代码）。
+        """
         return self in (
             AgentState.TERMINAL_END_TURN,
             AgentState.TERMINAL_MAX_ROUNDS,
             AgentState.TERMINAL_REFUSAL,
             AgentState.TERMINAL_BUDGET_EXHAUSTED,
-        )
-
-    @property
-    def is_continuation(self) -> bool:
-        """判断当前状态是否为继续态，继续态时主循环应执行下一轮。"""
-        return self in (
-            AgentState.CONTINUE_TOOL_CALLS,
-            AgentState.CONTINUE_COMPACT,
         )

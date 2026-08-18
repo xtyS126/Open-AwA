@@ -9,6 +9,8 @@ import { disableExternalFontsInNativeApp } from '@/shared/utils/platform'
 import { mark } from '@/shared/perf/metrics'
 import { queryClient } from '@/shared/api/queryClient'
 import { initDesktopBackendUrl } from '@/shared/api/client'
+// 副作用 import：安装 chat 分域 Store 的编排层订阅（持久化与跨 Store 联动单一咽喉点）
+import '@/features/chat/store/chatSyncOrchestrator'
 
 // APP 模式（Capacitor 原生容器）下移除 Google Fonts 外部引用：
 // 消除首屏外部网络依赖，字体回退到系统字体栈

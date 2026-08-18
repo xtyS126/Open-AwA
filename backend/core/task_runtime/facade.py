@@ -86,7 +86,7 @@ class TaskRuntimeFacade:
         background: bool = False,
         fork_mode: bool = False,
         force_foreground: bool = False,
-        isolation: str = "inherit",
+        isolation: Optional[str] = None,
         parent_session_id: Optional[str] = None,
         root_chat_session_id: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
@@ -101,6 +101,9 @@ class TaskRuntimeFacade:
 
         force_foreground 为 True 时忽略代理定义的 background_default，
         强制以前台模式执行并返回事件流；供编排层（如 subagents 委派）同步取回结果。
+
+        isolation 为 None 时使用代理定义的 isolation_mode；否则覆写该值，
+        供编排层将任务级隔离级别映射为隔离模式（如 "worktree"）。
         """
         agent_def = agent_registry.get(agent_type)
         if not agent_def:
@@ -140,6 +143,7 @@ class TaskRuntimeFacade:
                 parent_session_id=parent_session_id,
                 root_chat_session_id=root_chat_session_id,
                 context=effective_context,
+                isolation_mode=isolation,
             )
         else:
             return run_foreground(
@@ -152,6 +156,7 @@ class TaskRuntimeFacade:
                 root_chat_session_id=root_chat_session_id,
                 context=effective_context,
                 fork_mode=fork_mode,
+                isolation_mode=isolation,
             )
 
     # ── SendMessage 能力 ─────────────────────────────────────────

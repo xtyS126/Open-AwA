@@ -17,6 +17,7 @@ from core.litellm_adapter import litellm_check_provider_connection, litellm_list
 from config.settings import settings
 from billing.pricing_manager import PricingManager
 from billing.models import ModelConfiguration
+from billing.model_tier import SUBAGENT_NOTE, get_tier_configs, set_tier_config
 from db.models import LLMUsage, User, VectorModelConfig
 from sqlalchemy.orm import Session
 
@@ -218,6 +219,41 @@ async def get_llm_registry(
         },
         "message": "LLM Provider 注册列表",
     }
+
+
+class TierUpdateRequest(BaseModel):
+    """模型等级绑定更新请求体。"""
+    provider: Optional[str] = Field(default=None, description="绑定的 provider；传 None 表示不修改")
+    model: Optional[str] = Field(default=None, description="绑定的 model；传 None 表示不修改")
+
+
+@router.get("/tiers")
+async def get_model_tiers(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> Dict[str, Any]:
+    """获取四档模型等级配置（含各档用途说明与 Subagent 说明）。"""
+    tiers = get_tier_configs(db)
+    return {
+        "success": True,
+        "tiers": tiers,
+        "subagent_note": SUBAGENT_NOTE,
+    }
+
+
+@router.put("/tiers/{tier}")
+async def update_model_tier(
+    tier: str,
+    request: TierUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> Dict[str, Any]:
+    """设置指定档位绑定的 provider/model。"""
+    try:
+        result = set_tier_config(db, tier, request.provider, request.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"success": True, "data": result}
 
 
 @router.put("/llm/routing")

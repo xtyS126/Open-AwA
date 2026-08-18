@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -29,8 +30,9 @@ from core.streaming_events import (
     emit_agent_message_event,
 )
 from core.hook_manager import hook_manager, HookName
+from core.loop_guard import LoopStopReason, create_loop_guard
 from .worktree_manager import worktree_manager
-from .agent_memory import load_agent_memory_prompt
+from .agent_memory import AgentMemoryEntry, load_agent_memory_prompt, save_agent_memory
 from .permission_guard import permission_guard
 from .fork import (
     build_forked_messages,
@@ -114,6 +116,61 @@ class MaxTurnsExceededError(Exception):
         self.agent_id = agent_id
         self.max_turns = max_turns
         super().__init__(f"Agent {agent_id} 达到最大轮次限制 {max_turns}")
+
+
+# 子代理循环守卫超时（秒）。
+# 与后台代理 lease 续租时长（300s）对齐，避免误杀正常长任务；死循环场景下
+# 通常先由重复失败检测（threshold=3）触发，超时仅作为"无进展但未失败"的兜底。
+_SUBAGENT_LOOP_GUARD_TIMEOUT_SECONDS = 300.0
+
+
+def _apply_subagent_loop_guard(
+    loop_guard: Any,
+    tool_data: Dict[str, Any],
+    pending_args: Dict[str, Dict[str, Any]],
+) -> Optional[LoopStopReason]:
+    """
+    根据子代理工具事件更新循环守卫，返回触发停止的原因（若有）。
+
+    事件语义：
+    - running 事件仅缓存工具参数（按 tool id 关联），供后续 completed/error 事件使用；
+    - completed/error 事件记录一次工具迭代，并用 (tool_name, args) 指纹检测重复失败。
+
+    Args:
+        loop_guard: LoopGuard 实例
+        tool_data: 子代理产出的 tool 事件数据（含 name/status/input/output 等字段）
+        pending_args: running 事件缓存的工具参数映射（tool_id -> args）
+
+    Returns:
+        触发停止时返回 LoopStopReason，否则返回 None
+    """
+    status = str(tool_data.get("status") or "").strip()
+    tool_id = str(tool_data.get("id") or "")
+
+    if status == "running":
+        input_args = tool_data.get("input")
+        pending_args[tool_id] = input_args if isinstance(input_args, dict) else {}
+        return None
+
+    if status not in ("completed", "error"):
+        return None
+
+    # 记录一次工具迭代完成（供 max_iterations 兜底计数）
+    loop_guard.record_iteration()
+
+    tool_name = str(tool_data.get("name") or "")
+    tool_args = pending_args.pop(tool_id, None)
+    if not isinstance(tool_args, dict):
+        tool_args = tool_data.get("input")
+        if not isinstance(tool_args, dict):
+            tool_args = {}
+    success = status == "completed"
+    error_message = None
+    if not success:
+        error_message = str(
+            tool_data.get("output") or tool_data.get("detail") or "工具执行失败"
+        )
+    return loop_guard.record_tool_result(tool_name, tool_args, success, error_message)
 
 
 # 努力程度到 LLM 参数的映射配置
@@ -378,10 +435,12 @@ async def _create_subagent_execution_bundle(
         ).debug(f"已省略项目上下文注入: {agent_id}")
 
     # Task 15: 注入代理记忆 prompt，根据 memory_scope 从对应存储加载。
-    # 存储键使用 agent_type（而非随机 agent_id），保证同类型代理跨会话共享记忆
+    # USER / PROJECT 存储键使用 agent_type（同类型跨会话共享）；LOCAL 按 agent_id（会话级）
     memory_scope = getattr(agent_def, "memory_scope", None) if agent_def else None
     if memory_scope is not None:
-        memory_prompt = await load_agent_memory_prompt(agent_type, memory_scope)
+        memory_prompt = await load_agent_memory_prompt(
+            agent_type, memory_scope, agent_id=agent_id
+        )
         if memory_prompt:
             sub_context["agent_memory"] = memory_prompt
             logger.bind(
@@ -518,6 +577,44 @@ def _format_subagent_stream_chunk(chunk: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+async def _persist_subagent_memory(
+    agent_id: str,
+    agent_type: str,
+    agent_def: Optional[AgentDefinition],
+    summary: str,
+) -> None:
+    """子代理执行结束后，按其 memory_scope 写回一条执行摘要记忆。
+
+    USER / PROJECT 范围按 agent_type 维度持久化，同类型代理跨会话可读回；
+    LOCAL 范围写入会话级内存缓存。写失败记录告警但不中断子代理主流程
+    （记忆持久化属非关键路径，子代理主任务已完成）。
+    """
+    if agent_def is None or agent_def.memory_scope is None:
+        return
+    normalized_summary = str(summary or "").strip()
+    if not normalized_summary:
+        return
+
+    entry = AgentMemoryEntry(
+        agent_id=agent_id,
+        agent_type=agent_type,
+        scope=agent_def.memory_scope,
+        key="last_run_summary",
+        value=normalized_summary,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        metadata={"state": "completed"},
+    )
+    try:
+        await save_agent_memory(entry)
+    except Exception as exc:
+        logger.bind(
+            module="task_runtime",
+            agent_id=agent_id,
+            agent_type=agent_type,
+            memory_scope=agent_def.memory_scope.value,
+        ).warning(f"子代理记忆持久化失败（不影响主流程）: {exc}")
+
+
 async def _execute_subagent_core(
     *,
     agent_id: str,
@@ -568,6 +665,24 @@ async def _execute_subagent_core(
         current_turn = 0
         max_turns_limit: Optional[int] = agent_def.max_turns if agent_def else None
 
+        # LoopGuard 补充防护：检测 (tool_name, args) 重复失败指纹与超时，防止死循环。
+        # max_iterations 与现有 max_turns 对齐（有 max_turns 时取 max_turns，否则默认 15 兜底），
+        # 保证不会比现有 max_turns 语义更早触发。
+        _guard_max_iterations = (
+            max_turns_limit
+            if (isinstance(max_turns_limit, int) and max_turns_limit >= 1)
+            else 15
+        )
+        loop_guard = create_loop_guard(
+            max_iterations=_guard_max_iterations,
+            timeout_seconds=_SUBAGENT_LOOP_GUARD_TIMEOUT_SECONDS,
+        )
+        loop_guard.start()
+        # running 事件缓存的工具参数（tool_id -> args），供 completed/error 事件关联指纹
+        pending_tool_args: Dict[str, Dict[str, Any]] = {}
+        # 循环守卫触发的停止原因（仅在优雅终止时非 None）
+        loop_stop_reason: Optional[LoopStopReason] = None
+
         yielded_messages: list[Dict[str, Any]] = []
 
         async def flush_buffered_agent_message() -> None:
@@ -582,6 +697,17 @@ async def _execute_subagent_core(
                 yielded_messages.append(yield_event)
 
         async for chunk in sub_agent.process_stream(prompt, sub_context):
+            # LoopGuard 超时/迭代上限兜底检查：触发时优雅终止，而非无限循环
+            if not loop_guard.check_iteration():
+                loop_stop_reason = loop_guard.stop_reason
+                logger.bind(
+                    module="task_runtime",
+                    agent_id=agent_id,
+                    agent_type=agent_type,
+                    stop_reason=loop_stop_reason.value if loop_stop_reason else None,
+                ).warning(f"Agent {agent_id} 被循环守卫终止: {loop_guard.get_stop_message()}")
+                break
+
             chunk_type = str(chunk.get("type") or "").strip()
 
             if chunk_type != "chunk":
@@ -599,6 +725,17 @@ async def _execute_subagent_core(
                 tool_results.append(tool_data)
                 # Task 11.2: 每次工具调用记为一次轮次，达到上限时抛出异常
                 current_turn += 1
+                # LoopGuard：记录工具结果，检测 (tool_name, args) 重复失败指纹
+                _guard_stop = _apply_subagent_loop_guard(loop_guard, tool_data, pending_tool_args)
+                if _guard_stop is not None:
+                    loop_stop_reason = _guard_stop
+                    logger.bind(
+                        module="task_runtime",
+                        agent_id=agent_id,
+                        agent_type=agent_type,
+                        stop_reason=loop_stop_reason.value,
+                    ).warning(f"Agent {agent_id} 被循环守卫终止: {loop_guard.get_stop_message()}")
+                    break
                 if max_turns_limit is not None and current_turn >= max_turns_limit:
                     logger.bind(
                         module="task_runtime",
@@ -633,11 +770,14 @@ async def _execute_subagent_core(
         while yielded_messages:
             yield yielded_messages.pop(0)
 
-        # 构建摘要
-        summary = build_summary(
-            {"response": full_response, "tool_results": tool_results},
-            max_length=2000,
-        )
+        # 构建摘要；循环守卫触发时以停止消息作摘要（优雅终止，仍置为 completed 状态）
+        if loop_stop_reason is not None:
+            summary = loop_guard.get_stop_message() or f"被循环守卫终止: {loop_stop_reason.value}"
+        else:
+            summary = build_summary(
+                {"response": full_response, "tool_results": tool_results},
+                max_length=2000,
+            )
 
         # 更新为完成状态
         await _update_session_record(
@@ -660,6 +800,14 @@ async def _execute_subagent_core(
             "state": "completed",
             "summary": summary,
         })
+
+        # 子代理记忆写回：按 memory_scope 持久化执行摘要
+        await _persist_subagent_memory(
+            agent_id=agent_id,
+            agent_type=agent_type,
+            agent_def=agent_def,
+            summary=summary,
+        )
 
         # 发射完成事件 + 摘要消息
         yield emit_subagent_stop_event(agent_id, "completed", summary, agent_type=agent_type, run_mode=run_mode)
@@ -698,6 +846,14 @@ async def _execute_subagent_core(
             "reason": "max_turns_exceeded",
             "summary": max_turns_summary,
         })
+
+        # 子代理记忆写回：达到轮次上限也持久化已收集摘要
+        await _persist_subagent_memory(
+            agent_id=agent_id,
+            agent_type=agent_type,
+            agent_def=agent_def,
+            summary=max_turns_summary,
+        )
 
         yield emit_subagent_stop_event(agent_id, "completed", max_turns_summary, agent_type=agent_type, run_mode=run_mode)
 
@@ -744,6 +900,7 @@ async def run_foreground(
     root_chat_session_id: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
     fork_mode: bool = False,
+    isolation_mode: Optional[str] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     前台执行子代理，直接 yield SSE 事件。
@@ -754,18 +911,21 @@ async def run_foreground(
                    父 Agent 的完整消息上下文，启动后立即返回 task_id，
                    不阻塞主 Agent；子 Agent 完成后通过 task-notification
                    异步推送结果。
+        isolation_mode: 隔离模式覆写；为 None 时使用代理定义的 isolation_mode。
     """
     agent_def = get_agent_definition(agent_type)
     if not agent_def:
         yield {"type": "error", "error": f"未知代理类型: {agent_type}"}
         return
 
+    effective_isolation = isolation_mode if isolation_mode is not None else agent_def.isolation_mode
+
     agent_id = await _create_session_record(
         parent_session_id=parent_session_id,
         root_chat_session_id=root_chat_session_id,
         agent_type=agent_type,
         run_mode="foreground",
-        isolation_mode=agent_def.isolation_mode,
+        isolation_mode=effective_isolation,
     )
     await _update_session_record(agent_id, "queued")
 
@@ -894,21 +1054,26 @@ async def run_background(
     parent_session_id: Optional[str] = None,
     root_chat_session_id: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
+    isolation_mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     后台执行子代理，立即返回 agent_id，异步运行。
     完成后通过 SSE 事件通知前端。
+
+    isolation_mode: 隔离模式覆写；为 None 时使用代理定义的 isolation_mode。
     """
     agent_def = get_agent_definition(agent_type)
     if not agent_def:
         return {"ok": False, "error": f"未知代理类型: {agent_type}"}
+
+    effective_isolation = isolation_mode if isolation_mode is not None else agent_def.isolation_mode
 
     agent_id = await _create_session_record(
         parent_session_id=parent_session_id,
         root_chat_session_id=root_chat_session_id,
         agent_type=agent_type,
         run_mode="background",
-        isolation_mode=agent_def.isolation_mode,
+        isolation_mode=effective_isolation,
     )
     await _update_session_record(agent_id, "queued")
 
@@ -1036,7 +1201,7 @@ async def _background_execute(
             await heartbeat_task
         except asyncio.CancelledError:
             pass
-        _running_background_tasks.pop(agent_id, None)
+        _get_running_tasks().pop(agent_id, None)
 
 
 async def stop_run(agent_id: str) -> Dict[str, Any]:

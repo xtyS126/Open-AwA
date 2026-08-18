@@ -32,7 +32,8 @@ ALLOWED_COMMANDS: frozenset[str] = frozenset([
     'head', 'tail', 'sort', 'uniq', 'wc', 'cut', 'tr', 'tee',
     'diff', 'du', 'df', 'file', 'stat',
     # 文件管理（低风险）
-    'mkdir', 'cp', 'mv',
+    # 注意：mv/cp 已从白名单移除并归入 DANGEROUS_COMMANDS，消除与终端黑名单的语义漂移
+    'mkdir',
     'tar', 'gzip', 'gunzip', 'zip', 'unzip',
     # 跨平台兼容命令（command_executor.py 原 SAFE_COMMANDS 并入）
     'git', 'dir', 'type', 'rg', 'date',
@@ -46,8 +47,9 @@ ALLOWED_COMMANDS: frozenset[str] = frozenset([
 # 参考 project_memory.md ACP 硬阻断策略：rm/sudo/mkfs/dd 等直接拒绝
 # ---------------------------------------------------------------------------
 DANGEROUS_COMMANDS: frozenset[str] = frozenset([
-    # 破坏性删除/权限变更
-    'rm', 'chmod', 'chown', 'xargs', 'awk', 'sed',
+    # 破坏性删除/权限变更；mv/cp 的移动/覆盖写入同样属破坏性文件操作，
+    # 与终端黑名单保持一致，消除"白名单某处允许 mv、黑名单另处拒绝 mv"的矛盾
+    'rm', 'mv', 'cp', 'chmod', 'chown', 'xargs', 'awk', 'sed',
     # 磁盘级破坏
     'dd', 'mkfs', 'fdisk', 'mount', 'umount',
     # 提权/Shell 转义
@@ -86,6 +88,55 @@ DANGEROUS_COMMAND_PATTERNS: list[re.Pattern] = [
     re.compile(r'\bmkfs\b'),                       # mkfs 任意文件系统格式化
     re.compile(r'\bdd\s+if='),                     # dd if= 磁盘级写入
 ]
+
+
+# ---------------------------------------------------------------------------
+# 终端高危命令黑名单（收敛自 core/builtin_tools/terminal_executor.py 原
+# BLOCKED_COMMANDS / BLOCKED_PATHS / BLOCKED_PATTERNS，作为通用终端命令执行
+# （黑名单模式）的唯一真相源）。命令替换 $() 与反引号已由 command_validators
+# 的 validate_command_substitution 覆盖，Shell 元字符 ;|& 及串联危险命令已由
+# validate_shell_metacharacters 覆盖，故此黑名单仅保留命令名、高危路径与
+# 设备重定向 / hex 编码 / base64 解码等示意性模式。
+# ---------------------------------------------------------------------------
+
+# 终端禁止执行的高危命令名（完整匹配命令名，非子串匹配）
+TERMINAL_BLOCKED_COMMANDS: frozenset[str] = frozenset([
+    'rm', 'rmdir', 'mv', 'cp',
+    'mkfs', 'mke2fs', 'mkfs.ext2', 'mkfs.ext3', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs',
+    'dd', 'shred',
+    'shutdown', 'reboot', 'halt', 'poweroff', 'init',
+    'chmod', 'chown', 'chgrp', 'chattr', 'setfacl', 'getfacl',
+    'kill', 'pkill', 'killall', 'xkill',
+    'iptables', 'ip6tables', 'nft', 'ufw', 'firewall-cmd',
+    'mount', 'umount', 'fdisk', 'parted', 'losetup',
+    'useradd', 'userdel', 'usermod', 'groupadd', 'groupdel',
+    'passwd', 'su', 'sudo', 'doas',
+    'wget', 'curl',
+    'nc', 'ncat', 'netcat', 'socat', 'telnet',
+    'ssh', 'scp', 'sftp', 'rsync',
+    'crontab', 'at', 'systemctl', 'service',
+    'export', 'unset', 'alias', 'source',
+    'chroot', 'nsenter', 'unshare',
+    ':(){', 'fork', 'exec',
+])
+
+# 终端禁止出现在命令参数中的高危路径（子串匹配，忽略大小写）
+TERMINAL_BLOCKED_PATHS: tuple[str, ...] = (
+    '/etc/passwd', '/etc/shadow', '/etc/sudoers', '/etc/crontab',
+    '/etc/ssh/', '/root/', '/boot/', '/sys/', '/proc/',
+    '/dev/sda', '/dev/sdb', '/dev/sdc', '/dev/sdd',
+    '/dev/nvme', '/dev/mem', '/dev/kmem', '/dev/port',
+    r'\.ssh/', r'\.gnupg/',
+)
+
+# 终端禁止的命令行模式（正则）：设备重定向、hex 编码绕过、base64 解码绕过
+TERMINAL_BLOCKED_COMMAND_PATTERNS: tuple[re.Pattern, ...] = (
+    re.compile(r'>\s*/dev/'),                   # 重定向到设备文件
+    re.compile(r'>>\s*/dev/'),
+    re.compile(r'<\s*/dev/zero'),               # 从 /dev/zero 读取输入
+    re.compile(r'\\x[0-9a-fA-F]{2}'),           # 十六进制编码绕过
+    re.compile(r'base64\s.*-d'),                # base64 解码绕过
+)
 
 
 # ---------------------------------------------------------------------------

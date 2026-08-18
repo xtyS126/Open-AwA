@@ -6,8 +6,7 @@ Task 13/15: Fork 机制上下文克隆与调用链测试。
 2. FORK_PLACEHOLDER_RESULT 占位符常量
 3. is_in_fork_child 防递归检测（外部状态标志 + 对话内容检测）
 4. build_child_message 子任务消息构造（含防递归指令）
-5. SubagentPolicy 的 allow_fork / max_fork_depth / can_fork 控制
-6. facade.spawn_agent(fork_mode=True) -> run_foreground fork 分支调用链
+5. facade.spawn_agent(fork_mode=True) -> run_foreground fork 分支调用链
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.subagent_policy import SubagentPolicy
 from core.task_runtime import task_runtime
 from core.task_runtime import facade as facade_module
 from core.task_runtime.fork import (
@@ -243,81 +241,6 @@ class TestBuildChildMessage:
 
         assert message["role"] == "user"
         assert "Fork 子 Agent" in message["content"]
-
-
-# ──────────────────────────────────────────────
-#  SubagentPolicy Fork 控制测试
-# ──────────────────────────────────────────────
-
-class TestSubagentPolicyFork:
-    """验证 SubagentPolicy 的 Fork 控制字段。"""
-
-    def test_subagent_policy_allow_fork_default(self):
-        """验证默认策略不允许 Fork。"""
-        policy = SubagentPolicy()
-
-        assert policy.allow_fork is False
-        assert policy.max_fork_depth == 2
-
-    def test_subagent_policy_can_fork_within_depth(self):
-        """验证深度内允许 Fork。"""
-        policy = SubagentPolicy(allow_fork=True, max_fork_depth=3)
-
-        # 深度 0、1、2 均允许（< 3）
-        assert policy.can_fork(0) is True
-        assert policy.can_fork(1) is True
-        assert policy.can_fork(2) is True
-
-    def test_subagent_policy_can_fork_exceeds_depth(self):
-        """验证超深度拒绝 Fork。"""
-        policy = SubagentPolicy(allow_fork=True, max_fork_depth=2)
-
-        # 深度 2 已达到上限（不 < 2），拒绝
-        assert policy.can_fork(2) is False
-        assert policy.can_fork(3) is False
-        assert policy.can_fork(100) is False
-
-    def test_subagent_policy_can_fork_disabled(self):
-        """验证 allow_fork=False 时任何深度都拒绝 Fork。"""
-        policy = SubagentPolicy(allow_fork=False, max_fork_depth=5)
-
-        assert policy.can_fork(0) is False
-        assert policy.can_fork(1) is False
-
-    def test_subagent_policy_max_fork_depth_validation(self):
-        """验证 max_fork_depth 参数校验。"""
-        # 小于 1 应抛出异常
-        with pytest.raises(ValueError, match="max_fork_depth"):
-            SubagentPolicy(max_fork_depth=0)
-
-        with pytest.raises(ValueError, match="max_fork_depth"):
-            SubagentPolicy(max_fork_depth=-1)
-
-    def test_subagent_policy_to_dict_includes_fork_fields(self):
-        """验证 to_dict 序列化包含 Fork 字段。"""
-        policy = SubagentPolicy(allow_fork=True, max_fork_depth=4)
-        d = policy.to_dict()
-
-        assert d["allow_fork"] is True
-        assert d["max_fork_depth"] == 4
-
-    def test_subagent_policy_from_dict_includes_fork_fields(self):
-        """验证 from_dict 反序列化包含 Fork 字段。"""
-        data = {
-            "allow_fork": True,
-            "max_fork_depth": 5,
-        }
-        policy = SubagentPolicy.from_dict(data)
-
-        assert policy.allow_fork is True
-        assert policy.max_fork_depth == 5
-
-    def test_subagent_policy_from_dict_defaults(self):
-        """验证 from_dict 缺失 Fork 字段时使用默认值。"""
-        policy = SubagentPolicy.from_dict({})
-
-        assert policy.allow_fork is False
-        assert policy.max_fork_depth == 2
 
 
 # ──────────────────────────────────────────────

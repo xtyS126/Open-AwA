@@ -1,5 +1,5 @@
 """
-MCP 工具执行策略：处理 mcp_ 前缀的工具调用。
+MCP 工具执行策略：处理 mcp__ 前缀（三段式 mcp__<server_id>__<tool>）的工具调用。
 """
 from __future__ import annotations
 
@@ -26,7 +26,8 @@ class MCPToolStrategy(ToolExecutionStrategy):
         func_args = dict(context.tool_input)
         raw_context = context.raw_context
 
-        remaining = func_name[len("mcp_"):]
+        # 工具名统一为 mcp__<server_id>__<tool>，去掉 mcp__ 前缀后按 __ 拆出 server_id
+        remaining = func_name[len("mcp__"):]
         if "__" in remaining:
             server_id, mcp_tool_name = remaining.split("__", 1)
         else:

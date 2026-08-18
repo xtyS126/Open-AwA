@@ -5,9 +5,7 @@ SKILL.md skill 的 AI 自主调用链路单元测试。
 验证一个 execution-mode: prompt 的 SKILL.md 格式技能能否被 AI 自主调用：
 1. SkillGuidance 能从注册表列出已安装的 SKILL.md skill
 2. SkillGuidance.format_skills_guidance 生成的系统提示包含该 skill
-3. SkillMatcher 能根据用户意图匹配到该 skill
-4. SkillEngine.execute_skill（prompt 模式）能从 config.prompt 读取并返回指令文本
-5. 端到端链路：guidance -> matcher -> engine 串联可用
+3. SkillEngine.execute_skill（prompt 模式）能从 config.prompt 读取并返回指令文本
 
 测试隔离：每个测试用例使用独立的内存 SQLite 数据库，不依赖全局状态。
 """
@@ -17,7 +15,7 @@ from __future__ import annotations
 import sys
 import types
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytest
 from sqlalchemy import create_engine
@@ -44,7 +42,6 @@ if "bcrypt" not in sys.modules:
 from core.skill_guidance import SkillGuidance  # noqa: E402
 from db.models import Base, Skill  # noqa: E402
 from skills.skill_engine import SkillEngine  # noqa: E402
-from skills.skill_matcher import SkillMatcher  # noqa: E402
 
 
 # ==================== 测试常量：SKILL.md 格式技能样本 ====================
@@ -241,96 +238,6 @@ class TestSkillGuidanceFormatsSkillmd:
         assert "## 可用技能" in result.skills_text
 
 
-# ==================== 测试 3：SkillMatcher 匹配 SKILL.md skill ====================
-
-
-def _build_available_skills_for_matcher() -> List[Dict[str, Any]]:
-    """构造包含 commit-message-helper 的可用技能列表（用于 SkillMatcher 测试）。"""
-    return [
-        {
-            "name": SKILLMD_NAME,
-            "description": SKILLMD_DESCRIPTION,
-            "category": "development",
-        },
-        {
-            "name": "pdf",
-            "description": "PDF 文档处理与解析",
-            "category": "document",
-        },
-        {
-            "name": "browser_cdp",
-            "description": "通过 CDP 协议自动化 Chrome 浏览器",
-            "category": "browser",
-        },
-    ]
-
-
-class TestSkillMatcherMatchesSkillmd:
-    """SkillMatcher 应根据用户意图匹配到 SKILL.md skill。"""
-
-    def test_match_returns_skillmd_for_commit_intent(self):
-        """用户意图为'帮我写一个 git 提交信息'时应匹配到 commit-message-helper。"""
-        matcher = SkillMatcher()
-        available = _build_available_skills_for_matcher()
-
-        results = matcher.match(
-            user_intent="帮我写一个 git 提交信息",
-            available_skills=available,
-        )
-
-        assert len(results) > 0, "匹配结果不应为空"
-        names = [r.skill_name for r in results]
-        assert SKILLMD_NAME in names, (
-            f"匹配结果应包含 {SKILLMD_NAME}，实际命中: {names}"
-        )
-
-    def test_match_single_best_returns_skillmd(self):
-        """match_single_best 应返回 commit-message-helper 作为最佳匹配。"""
-        matcher = SkillMatcher()
-        available = _build_available_skills_for_matcher()
-
-        best = matcher.match_single_best(
-            user_intent="帮我写一个 git 提交信息",
-            available_skills=available,
-            threshold=0.05,
-        )
-
-        assert best is not None, "应能匹配到最佳技能"
-        assert best.skill_name == SKILLMD_NAME
-
-    def test_match_with_min_score_zero_includes_skillmd(self):
-        """使用 min_score=0.0 时，commit-message-helper 必出现在结果中。"""
-        matcher = SkillMatcher()
-        available = _build_available_skills_for_matcher()
-
-        results = matcher.match(
-            user_intent="commit",
-            available_skills=available,
-            min_score=0.0,
-        )
-
-        names = [r.skill_name for r in results]
-        assert SKILLMD_NAME in names
-
-    def test_description_similarity_calculated_positive(self):
-        """直接验证描述相关性计算：意图与描述共享'git 提交信息'等词。"""
-        matcher = SkillMatcher()
-        score = matcher._calculate_description_similarity(
-            "帮我写一个 git 提交信息",
-            SKILLMD_DESCRIPTION,
-        )
-        assert score > 0.0, "描述相关性分数应大于 0"
-
-    def test_name_similarity_calculated_positive(self):
-        """直接验证名称相似性：'commit' 出现在技能名 commit-message-helper 中。"""
-        matcher = SkillMatcher()
-        score = matcher._calculate_name_similarity(
-            "commit message",
-            SKILLMD_NAME,
-        )
-        assert score > 0.0, "名称相似性分数应大于 0"
-
-
 # ==================== 测试 4：SkillEngine prompt 模式执行 ====================
 
 
@@ -398,43 +305,3 @@ class TestSkillEnginePromptModeExecution:
         )
         assert result["success"] is False
         assert "not found" in result["error"].lower()
-
-
-# ==================== 测试 5：端到端 AI 自主调用链路 ====================
-
-
-class TestEndToEndInvocationChain:
-    """端到端验证 AI 自主调用链路：guidance -> matcher -> engine。"""
-
-    @pytest.mark.asyncio
-    async def test_full_invocation_chain(self, skill_guidance, skill_engine):
-        """完整链路：列出技能 -> 匹配用户意图 -> 执行 prompt 模式技能。"""
-        # 步骤 1：SkillGuidance 列出可用技能（模拟 Agent 启动时注入系统提示）
-        available_skills = await skill_guidance.get_available_skills()
-        assert len(available_skills) > 0
-
-        # 步骤 2：生成系统提示文本（验证可注入到 LLM system prompt）
-        guidance_text = skill_guidance.format_skills_guidance(
-            available_skills, context_window=128000
-        )
-        assert SKILLMD_NAME in guidance_text
-
-        # 步骤 3：SkillMatcher 根据用户意图匹配技能（模拟 Agent 收到用户消息后选择技能）
-        matcher = SkillMatcher()
-        results = matcher.match(
-            user_intent="帮我写一个 git 提交信息",
-            available_skills=available_skills,
-        )
-        assert len(results) > 0
-        best = max(results, key=lambda r: r.score)
-        assert best.skill_name == SKILLMD_NAME
-
-        # 步骤 4：SkillEngine 执行匹配到的技能（prompt 模式，返回 SKILL.md 指令）
-        execution = await skill_engine.execute_skill(
-            skill_name=best.skill_name,
-            inputs={},
-            context={},
-        )
-        assert execution["success"] is True
-        assert execution["execution_mode"] == "prompt"
-        assert "Commit Message Helper" in execution["prompt"]

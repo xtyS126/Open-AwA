@@ -10,6 +10,7 @@ Agent 级运行时权限管理器，实现 ask/assert/reply 权限模型。
 """
 
 import asyncio
+import contextvars
 import json
 import time
 from dataclasses import dataclass, field
@@ -339,8 +340,7 @@ class PermissionManager:
                 PermissionRule(action="write", resource="*", effect=PermissionEffect.DENY),
                 PermissionRule(action="edit", resource="*", effect=PermissionEffect.DENY),
                 PermissionRule(action="delete", resource="*", effect=PermissionEffect.DENY),
-                PermissionRule(action="bash", resource="*", effect=PermissionEffect.DENY),
-                PermissionRule(action="execute", resource="*", effect=PermissionEffect.DENY),
+                PermissionRule(action="command:execute", resource="*", effect=PermissionEffect.DENY),
                 PermissionRule(action="plugin", resource="*", effect=PermissionEffect.DENY),
                 PermissionRule(action="system", resource="*", effect=PermissionEffect.DENY),
                 PermissionRule(action="user", resource="*", effect=PermissionEffect.DENY),
@@ -354,7 +354,7 @@ class PermissionManager:
         elif agent_id == "general-purpose":
             # 通用代理：只读操作自动放行，其余操作默认 ASK 要求用户确认。
             # 使用 effect 优先级：只读白名单 allow 在前，ASK(*) 兜底在后，
-            # 未被白名单覆盖的写操作（write/edit/bash 等）命中 ASK 需要确认。
+            # 未被白名单覆盖的写操作（write/edit/command:execute 等）命中 ASK 需要确认。
             return [
                 PermissionRule(action="read", resource="*", effect=PermissionEffect.ALLOW),
                 PermissionRule(action="glob", resource="*", effect=PermissionEffect.ALLOW),
@@ -705,10 +705,33 @@ class PermissionManager:
         self._saved_cache = None
 
 
-# 全局单例
-_default_manager: Optional[PermissionManager] = None
+# 请求/任务级实例容器：基于 contextvars 实现，随 asyncio task / 线程上下文生命周期自动释放，
+# 避免跨请求、跨用户泄漏 denial_state，同时保证同一请求内的多次工具调用复用同一实例。
+_permission_manager_context: contextvars.ContextVar[Optional[PermissionManager]] = (
+    contextvars.ContextVar("permission_manager_request", default=None)
+)
 
 
 def get_permission_manager(db_session=None) -> PermissionManager:
-    """获取全局 PermissionManager 实例（非单例，按需创建）"""
-    return PermissionManager(db_session)
+    """
+    获取当前请求/任务上下文内的 PermissionManager 实例，实现任务级复用。
+
+    同一 asyncio task（对应 FastAPI 单个请求 / 流式会话 / WebSocket 连接）内多次调用
+    返回同一实例，使 denial_state（连续 / 累计拒绝计数）能够跨多次工具调用累积，
+    auto 模式下"连续拒绝回退人工"的安全兜底得以生效。task 结束后 ContextVar 自动释放，
+    不会跨请求、跨用户泄漏状态。
+
+    兼容性：
+    - 保持签名 get_permission_manager(db_session=None) 不变
+    - 支持先无 db_session 后带 db_session：复用实例并补齐会话引用，保证已保存规则可查询
+    """
+    manager = _permission_manager_context.get()
+    if manager is None:
+        manager = PermissionManager(db_session)
+        _permission_manager_context.set(manager)
+        return manager
+
+    # 复用上下文实例；若先前实例未绑定 db 而本次携带 db，补齐会话引用
+    if manager._db_session is None and db_session is not None:
+        manager._db_session = db_session
+    return manager

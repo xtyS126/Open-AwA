@@ -22,6 +22,7 @@ from billing.token_counter import count_from_usage
 from core.agent_capability_builder import (
     summarize_skill_capabilities,
     summarize_plugin_capabilities,
+    build_dynamic_tool_concurrency_map,
 )
 from core.agent_context_builder import (
     strip_reasoning_content,
@@ -305,6 +306,11 @@ class AIAgent:
             summarize_plugins=summarize_plugin_capabilities,
             build_native_tools=self.native_tool_builder,
         )
+        # 构建 plugin/MCP/task 动态工具的并发属性映射，供并发执行器
+        # （StreamingToolExecutor）判定未注册工具的并发/只读/破坏性属性。
+        capabilities = context.get("agent_capabilities")
+        if isinstance(capabilities, dict):
+            context["_tool_concurrency"] = build_dynamic_tool_concurrency_map(capabilities)
 
     def _schedule_record(
         self,
@@ -835,6 +841,8 @@ class AIAgent:
                 role = role_engine.load_role(role_id)
                 if role:
                     context = role_engine.apply_role_to_context(role, context)
+                    if getattr(role, "is_companion", False):
+                        await _run_companion_mental_turn(context, role_id, user_input, request_db)
                     if hasattr(self, 'soul_state_manager') and self.soul_state_manager is not None:
                         self.soul_state_manager.mark_injection_completed()
         with ttft_stage_logger("inject_capabilities", ttft_session_id, stage_started_at):
@@ -1660,3 +1668,91 @@ class AIAgent:
             "response": f"自主纠错 {max_rounds} 轮后仍失败，需要人工介入",
             "error": str(error),
         }
+
+
+def _inject_companion_guidance_text(context: Dict[str, Any], guidance: str) -> None:
+    """把心智引导文本注入 system_prompt_override。"""
+    existing = context.get("system_prompt_override", "") or ""
+    context["system_prompt_override"] = f"{existing}\n\n[当前心智状态] {guidance}".strip()
+
+
+def _build_companion_guidance(engine: Any, recalled_memories: list) -> str:
+    """构建注入用的心智引导文本：情绪 + 双通道占比 + 召回记忆。"""
+    lines = [engine.guidance_text()]
+    recalled = [str(m.content) for m in recalled_memories if getattr(m, "content", "")]
+    if recalled:
+        lines.append("相关回忆：" + "；".join(recalled[:3]))
+    return "\n".join(lines)
+
+
+def _inject_existing_companion_guidance(context: Dict[str, Any], role_id: str, db: Any) -> None:
+    """只读注入既有心智状态引导（不触发抽取/更新），用于抽取失败时的降级。"""
+    user_id = context.get("user_id")
+    if not user_id:
+        return
+    try:
+        from companion.state_manager import CompanionStateManager
+
+        manager = CompanionStateManager(db)
+        engine = manager.get_or_create_engine(str(user_id), role_id)
+        _inject_companion_guidance_text(context, engine.guidance_text())
+    except Exception as exc:
+        logger.bind(
+            event="companion_guidance_inject_failed",
+            module="agent",
+            user_id=str(user_id),
+        ).debug(f"只读注入既有心智状态失败: {exc}")
+
+
+async def _run_companion_mental_turn(
+    context: Dict[str, Any],
+    role_id: str,
+    user_input: str,
+    db: Any,
+) -> None:
+    """陪伴角色每轮执行完整心智闭环：抽取 → 更新 → 持久化 → 注入引导。
+
+    抽取层失败（如未配置 Haiku 档模型）不阻断聊天，降级为只读注入既有状态。
+    """
+    user_id = context.get("user_id")
+    if not user_id:
+        return
+    user_id_str = str(user_id)
+    try:
+        from companion.state_manager import CompanionStateManager
+        from companion.extraction import extract_mental_state
+
+        manager = CompanionStateManager(db)
+        engine = manager.get_or_create_engine(user_id_str, role_id)
+
+        # 1. 抽取层：用 Haiku 档模型解析用户消息
+        extraction = await extract_mental_state(db, user_input, engine)
+
+        # 2. 确定性人格更新（信念/情绪/灾变/记忆/认知）
+        update = engine.process_turn(extraction)
+
+        # 3. 持久化状态、新记忆与灾变里程碑
+        manager.save(user_id_str, role_id, engine)
+        if extraction.new_memory is not None:
+            manager.save_memory(user_id_str, role_id, extraction.new_memory)
+        for belief_name in update.milestones:
+            manager.record_milestone(
+                user_id=user_id_str,
+                role_id=role_id,
+                milestone_type="catastrophe",
+                detail=f"信念维度 {belief_name} 触发灾变",
+                turn=engine.turn,
+                belief_name=belief_name,
+            )
+
+        # 4. 注入更新后的引导（情绪 + 双通道 + 召回记忆）
+        _inject_companion_guidance_text(
+            context, _build_companion_guidance(engine, update.recalled_memories)
+        )
+    except Exception as exc:
+        logger.bind(
+            event="companion_mental_turn_failed",
+            module="agent",
+            user_id=user_id_str,
+        ).warning(f"陪伴心智轮次未完成（降级为只读注入）: {exc}")
+        _inject_existing_companion_guidance(context, role_id, db)

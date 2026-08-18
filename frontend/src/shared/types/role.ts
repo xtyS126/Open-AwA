@@ -46,6 +46,7 @@ export interface AgentRole {
   is_public: boolean
   usage_count: number
   is_preset: boolean
+  is_companion: boolean
   live2d_model_id: string | null
   live2d_model?: Live2DModelInfo | null
   created_at: string
@@ -65,6 +66,7 @@ export interface RoleCreateRequest {
   allowed_skills?: string[]
   model_config_override?: Partial<RoleModelConfig>
   is_public?: boolean
+  is_companion?: boolean
 }
 
 /** 更新角色请求（所有字段均可选） */

@@ -722,30 +722,6 @@ class TestAgentStateEnum:
         """CONTINUE_COMPACT 不应是终态。"""
         assert AgentState.CONTINUE_COMPACT.is_terminal is False
 
-    def test_agent_state_is_continuation_tool_calls(self):
-        """CONTINUE_TOOL_CALLS 应被识别为继续态。"""
-        assert AgentState.CONTINUE_TOOL_CALLS.is_continuation is True
-
-    def test_agent_state_is_continuation_compact(self):
-        """CONTINUE_COMPACT 应被识别为继续态。"""
-        assert AgentState.CONTINUE_COMPACT.is_continuation is True
-
-    def test_agent_state_is_continuation_end_turn_false(self):
-        """TERMINAL_END_TURN 不应是继续态。"""
-        assert AgentState.TERMINAL_END_TURN.is_continuation is False
-
-    def test_agent_state_is_continuation_max_rounds_false(self):
-        """TERMINAL_MAX_ROUNDS 不应是继续态。"""
-        assert AgentState.TERMINAL_MAX_ROUNDS.is_continuation is False
-
-    def test_agent_state_is_continuation_refusal_false(self):
-        """TERMINAL_REFUSAL 不应是继续态。"""
-        assert AgentState.TERMINAL_REFUSAL.is_continuation is False
-
-    def test_agent_state_is_continuation_budget_exhausted_false(self):
-        """TERMINAL_BUDGET_EXHAUSTED 不应是继续态。"""
-        assert AgentState.TERMINAL_BUDGET_EXHAUSTED.is_continuation is False
-
 
 # ==================== finish_reason 到 AgentState 映射测试 ====================
 

@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from loguru import logger
-
 
 # 内置工具名 → (管理器内部工具名, action) 映射
 BUILTIN_TOOL_ACTION_MAP: Dict[str, tuple[str, str]] = {
@@ -42,14 +40,6 @@ BUILTIN_TOOL_ACTION_MAP: Dict[str, tuple[str, str]] = {
     "browser_snapshot": ("browser_extended", "snapshot"),
     "browser_navigate": ("browser_extended", "navigate"),
     "ask_user": ("ask_user", "ask"),
-}
-
-# 旧式 API（通过 tools/registry.py 和 workflow）使用的 action 到内部 tool_name 的反向映射
-LEGACY_TOOL_ACTION_MAP: Dict[str, str] = {
-    "file_manager": "file_manager",
-    "terminal_executor": "terminal_executor",
-    "web_search": "web_search",
-    "local_search": "local_search",
 }
 
 # 内置工具的定义（OpenAI function calling 格式）
@@ -670,35 +660,3 @@ class BuiltInToolManager:
 
 
 builtin_tool_manager = BuiltInToolManager()
-
-
-def ensure_ask_user_permissions() -> None:
-    """向 tool_entries 模块动态注入 ask_user 的权限和并发属性。
-
-    由于 tool_entries.py 文件可能被运行中的 backend 进程锁定无法直接编辑，
-    此函数在 register_builtin_tools 之前调用，动态向 _BUILTIN_PERMISSION_MAP
-    和 _TOOL_CONCURRENCY_ATTRS 注入 ask_user 条目。
-
-    ask_user 的并发属性：
-    - is_concurrency_safe = False：串行执行，避免多个问题并发困扰用户
-    - is_read_only = True：无副作用
-    - is_destructive = False：非破坏性
-    """
-    try:
-        from core import tool_entries as _te
-
-        if "ask_user" not in _te._BUILTIN_PERMISSION_MAP:
-            _te._BUILTIN_PERMISSION_MAP["ask_user"] = ("interact", "ask_user:interact")
-            logger.info("已动态注入 ask_user 权限映射: interact / ask_user:interact")
-
-        if "ask_user" not in _te._TOOL_CONCURRENCY_ATTRS:
-            _te._TOOL_CONCURRENCY_ATTRS["ask_user"] = {
-                "is_read_only": True,
-                "is_concurrency_safe": False,
-                "is_destructive": False,
-            }
-            logger.info("已动态注入 ask_user 并发属性: 串行/只读/非破坏性")
-    except ImportError:
-        logger.warning("无法导入 tool_entries 模块，ask_user 权限和并发属性注入失败")
-    except Exception as exc:
-        logger.error(f"注入 ask_user 权限和并发属性失败: {exc}")

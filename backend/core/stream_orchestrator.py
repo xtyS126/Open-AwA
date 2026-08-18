@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple, Type
 
@@ -14,7 +15,8 @@ from core.agent_helpers import build_status_event, map_finish_reason_to_state
 from core.agent_state import AgentState
 from core.content_replacement import enforce_tool_result_budget
 from core.executor import resolve_max_tool_call_rounds
-from core.tool_dispatcher import ToolCallContext
+from core.streaming_events import emit_tool_event
+from core.tool_dispatcher import ToolCallContext, ToolNames
 
 
 class StreamOrchestrator:
@@ -266,10 +268,12 @@ class StreamOrchestrator:
         finish_reason: Optional[str] = None,
         usage: Optional[Dict[str, Any]] = None,
     ) -> Tuple[AgentState, Optional[Dict[str, Any]]]:
-        """推进轮次状态机并在预算接近耗尽时发射状态事件。
+        """推进轮次状态机并发射可观测状态事件。
 
         使用流式透传的真实 finish_reason（length -> CONTINUE_COMPACT、
         content_filter -> TERMINAL_REFUSAL），未透传时回退到 tool_calls/stop 判定。
+        终态（MAX_ROUNDS/REFUSAL/BUDGET_EXHAUSTED）产出终态原因事件，
+        CONTINUE_COMPACT 触发工具结果预算截断后继续，避免静默退出。
         """
         if tool_calls_detected:
             resolved_finish_reason = "tool_calls"
@@ -291,7 +295,17 @@ class StreamOrchestrator:
         if tool_calls_detected:
             self._budget_tracker.mark_progress()
         if not self._budget_tracker.is_near_completion():
-            return state_machine, None
+            # 上下文超限（finish_reason=length）降级策略：立即截断历史工具结果预算
+            # 并产出可观测事件后继续下一轮。完整上下文压缩压缩成本高、风险大，
+            # 此处不空转，而是显式触发工具结果预算截断（每轮开头仍会再兜底一次）。
+            if state_machine is AgentState.CONTINUE_COMPACT:
+                self._apply_tool_result_budget(context)
+                return (
+                    state_machine,
+                    build_status_event("compacting", "上下文接近上限，已截断历史工具结果预算后继续"),
+                )
+            # 终态需产出可观测的终态原因事件，避免静默退出
+            return state_machine, self._terminal_status_event(state_machine)
         logger.bind(
             event="budget_near_completion",
             module="stream_orchestrator",
@@ -303,6 +317,15 @@ class StreamOrchestrator:
             AgentState.TERMINAL_BUDGET_EXHAUSTED,
             build_status_event("budget_exhausted", "预算即将耗尽，提前结束本轮对话"),
         )
+
+    @staticmethod
+    def _terminal_status_event(state_machine: AgentState) -> Optional[Dict[str, Any]]:
+        """把预算耗尽之外的终态映射为可观测的终态原因事件；正常结束返回 None。"""
+        if state_machine is AgentState.TERMINAL_MAX_ROUNDS:
+            return build_status_event("max_rounds", "达到最大工具调用轮次上限，提前结束")
+        if state_machine is AgentState.TERMINAL_REFUSAL:
+            return build_status_event("refused", "模型拒绝本次请求（内容过滤）")
+        return None
 
     async def finalize(self, finalization: StreamFinalizationContext) -> None:
         """完成流式钩子、记忆更新、数据采集及任务资源释放。"""
@@ -364,9 +387,43 @@ class StreamOrchestrator:
         session_id: str,
         round_state: RoundState,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """执行单轮工具调用并把结果消息写回上下文。"""
+        """执行单轮工具调用并把结果消息写回上下文。
+
+        仅当本轮全部为普通工具（非 ask_user / spawn_agent）时启用并发调度，
+        否则回退到串行路径，保留交互式工具与子代理事件流转发的既有语义。
+        """
         logger.info(f"Detected {len(tool_calls)} tool_calls in stream mode, executing...")
         self._save_snapshot(context, round_state.round_count)
+        if self._has_special_tool(tool_calls):
+            async for event in self._handle_tool_calls_serial(
+                tool_calls, context, current_task, session_id, round_state,
+            ):
+                yield event
+            return
+        async for event in self._handle_tool_calls_concurrent(
+            tool_calls, context, current_task, session_id, round_state,
+        ):
+            yield event
+
+    @staticmethod
+    def _has_special_tool(tool_calls: List[Dict[str, Any]]) -> bool:
+        """判断本轮是否包含需串行处理的交互式或子代理工具。"""
+        special_names = {ToolNames.ASK_USER, ToolNames.SPAWN_AGENT}
+        for tool_call in tool_calls:
+            name = str((tool_call.get("function") or {}).get("name") or "")
+            if name in special_names:
+                return True
+        return False
+
+    async def _handle_tool_calls_serial(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        context: Dict[str, Any],
+        current_task: Optional[asyncio.Task],
+        session_id: str,
+        round_state: RoundState,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """串行执行工具调用，保留问询与子代理事件转发语义。"""
         tool_results: List[Dict[str, Any]] = []
         background_subagent_spawned = False
         for tool_call in tool_calls:
@@ -407,6 +464,153 @@ class StreamOrchestrator:
             yield build_status_event("waiting_subagents", "子代理已创建，等待运行结果")
             raise self._early_exit_type()
         context["_tool_messages"] = tool_messages
+
+    async def _handle_tool_calls_concurrent(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        context: Dict[str, Any],
+        current_task: Optional[asyncio.Task],
+        session_id: str,
+        round_state: RoundState,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """用 StreamingToolExecutor 并发调度普通工具调用。
+
+        运行事件按工具声明顺序发射，完成事件按实际完成顺序发射，
+        最终工具消息按工具声明顺序稳定构造。
+        """
+        call_contexts: Dict[str, ToolCallContext] = {}
+        tool_calls_by_id: Dict[str, Dict[str, Any]] = {}
+        for tool_call in tool_calls:
+            if current_task and current_task.cancelled():
+                yield {"type": "cancelled", "content": "", "reasoning_content": ""}
+                raise self._early_exit_type()
+            function = tool_call.get("function") or {}
+            tool_name = str(function.get("name") or "unknown")
+            tool_id = str(tool_call.get("id") or "")
+            func_args = self._tool_dispatcher._parse_arguments(
+                function.get("arguments", "{}"),
+            )
+            call_context = ToolCallContext()
+            call_context.mark_running(tool_name, tool_id, func_args)
+            call_contexts[tool_id] = call_context
+            tool_calls_by_id[tool_id] = tool_call
+            yield emit_tool_event({
+                "id": tool_id,
+                "kind": call_context.tool_kind,
+                "name": tool_name,
+                "status": "running",
+                "input": func_args,
+            })
+
+        from core.streaming_tool_executor import StreamingToolExecutor
+        from core.tool_registry import tool_registry as global_tool_registry
+
+        streaming_executor = StreamingToolExecutor(
+            tool_registry=global_tool_registry,
+            max_concurrent=5,
+            tool_concurrency=context.get("_tool_concurrency"),
+        )
+        for tool_call in tool_calls:
+            function = tool_call.get("function") or {}
+            streaming_executor.submit(
+                str(tool_call.get("id") or ""),
+                str(function.get("name") or ""),
+                self._tool_dispatcher._parse_arguments(function.get("arguments", "{}")),
+            )
+
+        schedule_task = asyncio.create_task(
+            streaming_executor.process_queue(self._make_stream_execute_fn(context, session_id))
+        )
+
+        results_by_id: Dict[str, Dict[str, Any]] = {}
+        async for tracked in streaming_executor.yield_completed():
+            tool_call = tool_calls_by_id[tracked.tool_call_id]
+            call_context = call_contexts[tracked.tool_call_id]
+            exec_result = self._tracked_to_exec_result(tracked)
+            call_context.set_result(exec_result)
+            results_by_id[tracked.tool_call_id] = exec_result
+            async for event in self._tool_event_emitter.emit(
+                tool_call,
+                context,
+                call_context,
+                round_state.shared_state["accumulated_tool_events"],
+            ):
+                yield event
+        await schedule_task
+
+        tool_results = [
+            {
+                "tool_call": tool_call,
+                "result": results_by_id.get(
+                    str(tool_call.get("id") or ""),
+                    {"ok": False, "error": "工具结果丢失"},
+                ),
+            }
+            for tool_call in tool_calls
+        ]
+        tool_messages = self._build_tool_messages(
+            context,
+            tool_calls,
+            tool_results,
+            round_state.round_content,
+            round_state.round_reasoning,
+        )
+        context["_tool_messages"] = tool_messages
+
+    @staticmethod
+    def _tracked_to_exec_result(tracked: Any) -> Dict[str, Any]:
+        """把 StreamingToolExecutor 的跟踪结果转换为工具执行结果字典。"""
+        if tracked.error is not None:
+            return {"ok": False, "error": str(tracked.error), "tool_name": tracked.tool_name}
+        if isinstance(tracked.result, dict):
+            return tracked.result
+        return {"ok": True, "result": tracked.result, "tool_name": tracked.tool_name}
+
+    def _make_stream_execute_fn(
+        self,
+        context: Dict[str, Any],
+        session_id: str,
+    ) -> Callable:
+        """构造并发调度用的单工具执行函数，保留超时与权限/钩子语义。"""
+
+        async def _execute_fn(
+            tool_name: str,
+            input_params: dict,
+            abort_controller: Optional[Any] = None,
+        ) -> Dict[str, Any]:
+            exec_context = dict(context)
+            if abort_controller is not None:
+                exec_context["abort_controller"] = abort_controller
+            synthetic_tool_call = {
+                "id": "",
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": json.dumps(input_params, ensure_ascii=False),
+                },
+            }
+            timeout_seconds = self._tool_dispatcher._resolve_tool_timeout(input_params)
+            execution_task = asyncio.create_task(
+                self._executor._execute_tool_call(synthetic_tool_call, exec_context)
+            )
+            try:
+                done, _ = await asyncio.wait({execution_task}, timeout=timeout_seconds)
+                if not done:
+                    execution_task.cancel()
+                    self._tool_dispatcher._consume_background_task_result(execution_task, session_id)
+                    return {
+                        "ok": False,
+                        "error": "工具调用超时",
+                        "error_code": "tool_call_timeout",
+                        "tool_name": tool_name,
+                    }
+                return execution_task.result()
+            except asyncio.CancelledError:
+                execution_task.cancel()
+                self._tool_dispatcher._consume_background_task_result(execution_task, session_id)
+                raise
+
+        return _execute_fn
 
     @staticmethod
     def _save_snapshot(context: Dict[str, Any], round_count: int) -> None:

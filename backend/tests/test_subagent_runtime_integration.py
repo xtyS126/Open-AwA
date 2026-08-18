@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from api.routes import subagents as subagents_routes
 from core.subagent import (
     AgentState,
+    IsolationLevel,
     SubagentTask,
     SubagentLifecycleState,
 )
@@ -30,6 +31,7 @@ from core.subagent_task_runtime_bridge import (
     run_task_via_task_runtime,
     make_llm_aware_handler,
     resolve_task_runtime_agent_type,
+    isolation_level_to_mode,
 )
 import core.subagent_task_runtime_bridge as bridge
 import core.task_runtime.facade as facade_module
@@ -148,6 +150,30 @@ class TestTaskRuntimeDelegation:
         # 无任何指定时默认 Explore
         task = SubagentTask(task_id="t1", instruction="x")
         assert resolve_task_runtime_agent_type(task) == "Explore"
+
+    def test_resolve_task_runtime_agent_type_native_type_passthrough(self):
+        """agent_name 本身就是已注册的 task_runtime 原生类型时直接使用。"""
+        task = SubagentTask(
+            task_id="t1", instruction="x", metadata={"agent_name": "verification"}
+        )
+        assert resolve_task_runtime_agent_type(task) == "verification"
+
+
+class TestIsolationLevelConvergence:
+    """验证 subagent.py IsolationLevel 与 task_runtime isolation_mode 的单一映射。"""
+
+    def test_isolation_level_to_mode_returns_none_for_context(self):
+        """CONTEXT 返回 None，表示不覆写代理定义的 isolation_mode。"""
+        assert isolation_level_to_mode(IsolationLevel.CONTEXT) is None
+
+    def test_isolation_level_to_mode_returns_worktree_for_process(self):
+        """PROCESS 映射到 worktree。"""
+        assert isolation_level_to_mode(IsolationLevel.PROCESS) == "worktree"
+
+    def test_isolation_level_to_mode_raises_for_sandbox(self):
+        """SANDBOX 未实现时显式失败，禁止静默降级。"""
+        with pytest.raises(ValueError):
+            isolation_level_to_mode(IsolationLevel.SANDBOX)
 
 
 # ── 图节点 LLM 感知包装测试 ────────────────────────────────

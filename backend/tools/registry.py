@@ -55,8 +55,13 @@ class BuiltInToolRegistry:
             registered = tool_registry.get(f"builtin_{flat_name}")
             if registered is not None:
                 try:
+                    exec_ctx = dict(context or {})
+                    if config is not None:
+                        # 工具配置（如 allowed_directories）经上下文透传给执行层，
+                        # 避免 ToolRegistry 路径丢失 config 导致文件工具误判越权。
+                        exec_ctx["_tool_config"] = config
                     exec_result = await tool_registry.execute(
-                        f"builtin_{flat_name}", params, context or {}
+                        f"builtin_{flat_name}", params, exec_ctx
                     )
                     if exec_result.status.value == "completed" and isinstance(exec_result.result, dict):
                         return exec_result.result

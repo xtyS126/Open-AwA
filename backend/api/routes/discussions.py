@@ -134,13 +134,13 @@ def _get_orchestrator() -> DiscussionOrchestrator:
     传入参数：
       - db_session_factory=SessionLocal：复用全局 SQLAlchemy 会话工厂
       - llm_caller=_async_default_llm_caller：复用 ExecutionLayer 的 LLM 调用能力
-      - subagent_manager/subagent_orchestrator=None：
-        subagent_delegate 执行器暂不接入，调用时会抛 DiscussionExecutionError
 
     [NOTE] DiscussionOrchestrator 未提供 init() 方法注册内置角色 Agent，
     SubTask 3.9 跳过：三个角色（critic/validator/approver）的 system prompt 已由
     core/discussion/roles.py 静态定义，orchestrator 在 run_discussion_round 中
     按顺序调用 build_role_messages 构建 messages，无需运行时注册。
+    subagent_delegate 执行器在 orchestrator 内部经 task_runtime.spawn_agent 委派，
+    无需在此注入任何子代理管理器。
     """
     global _orchestrator
     if _orchestrator is None:
@@ -150,8 +150,6 @@ def _get_orchestrator() -> DiscussionOrchestrator:
                 _orchestrator = DiscussionOrchestrator(
                     db_session_factory=SessionLocal,
                     llm_caller=_async_default_llm_caller,
-                    subagent_manager=None,
-                    subagent_orchestrator=None,
                 )
                 logger.bind(
                     event="discussion_orchestrator_initialized",

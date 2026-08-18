@@ -150,3 +150,75 @@ class TestLoopGuard:
         assert guard.config.max_iterations == 10
         assert guard.config.timeout_seconds == 60.0
         assert guard.config.repeated_failure_threshold == 5
+
+
+class TestSubagentLoopGuardIntegration:
+    """子代理执行链接入循环守卫的单元测试（runners._apply_subagent_loop_guard）。"""
+
+    def test_repeated_failure_terminates_subagent(self):
+        """连续 3 次相同 (tool_name, args) 失败应触发重复失败终止。"""
+        from core.task_runtime.runners import _apply_subagent_loop_guard
+
+        guard = LoopGuard(
+            LoopGuardConfig(max_iterations=100, timeout_seconds=100.0, repeated_failure_threshold=3)
+        )
+        guard.start()
+        pending_args: dict = {}
+
+        # 三轮：每轮 running(缓存 args) + error(相同 name 相同参数)
+        for i in range(3):
+            tool_id = f"call_{i}"
+            assert _apply_subagent_loop_guard(
+                guard,
+                {"id": tool_id, "name": "read_file", "status": "running", "input": {"path": "/x"}},
+                pending_args,
+            ) is None
+            result = _apply_subagent_loop_guard(
+                guard,
+                {"id": tool_id, "name": "read_file", "status": "error", "output": "Not found"},
+                pending_args,
+            )
+            if i < 2:
+                assert result is None
+            else:
+                assert result == LoopStopReason.REPEATED_FAILURE
+
+        assert guard.is_stopped is True
+
+    def test_success_resets_failure_chain(self):
+        """成功调用应重置连续失败计数，不触发终止。"""
+        from core.task_runtime.runners import _apply_subagent_loop_guard
+
+        guard = LoopGuard(
+            LoopGuardConfig(max_iterations=100, timeout_seconds=100.0, repeated_failure_threshold=3)
+        )
+        guard.start()
+        pending_args: dict = {}
+
+        # 两次失败后一次成功，失败链被重置，不应触发终止
+        first = _apply_subagent_loop_guard(
+            guard,
+            {"id": "c1", "name": "read_file", "status": "running", "input": {"path": "/x"}},
+            pending_args,
+        )
+        assert first is None
+        fail = _apply_subagent_loop_guard(
+            guard,
+            {"id": "c1", "name": "read_file", "status": "error", "output": "Not found"},
+            pending_args,
+        )
+        assert fail is None
+
+        success = _apply_subagent_loop_guard(
+            guard,
+            {"id": "c2", "name": "read_file", "status": "running", "input": {"path": "/x"}},
+            pending_args,
+        )
+        assert success is None
+        ok = _apply_subagent_loop_guard(
+            guard,
+            {"id": "c2", "name": "read_file", "status": "completed", "output": "ok"},
+            pending_args,
+        )
+        assert ok is None
+        assert guard.is_stopped is False

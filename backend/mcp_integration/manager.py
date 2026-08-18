@@ -10,81 +10,30 @@ MCP 管理器模块（基于官方 mcp Python SDK）。
 """
 
 import asyncio
-import importlib.util
 import json
 import re
-import sys
 import threading
 import uuid
 from contextlib import asynccontextmanager
 from enum import Enum
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 # ===========================================================================
-# 官方 mcp Python SDK 导入（本地模块已重命名为 mcp_integration，不再与官方 SDK 冲突）
+# 官方 mcp Python SDK 导入
 # ===========================================================================
-# 使用 importlib 加载官方 SDK 并注册为 _official_mcp，以绕过本地兼容层
-# backend/mcp/（若存在）。本地模块已从 mcp 重命名为 mcp_integration，
-# 所有内部 import 路径已更新，不再需要复杂的命名空间交换逻辑。
+# 本地兼容层 backend/mcp/ 已移除，本地模块统一为 mcp_integration，
+# 因此可直接从官方 mcp SDK 导入，无需命名空间交换逻辑。
 
-_OFFICIAL_MCP_NAME = "_official_mcp"
-_LOCAL_BACKEND_DIR = Path(__file__).resolve().parent.parent
-
-if _OFFICIAL_MCP_NAME not in sys.modules:
-    _sdk_dir = None
-    for _path_entry in sys.path:
-        if not _path_entry:
-            continue
-        try:
-            _resolved = Path(_path_entry).resolve()
-        except (OSError, RuntimeError):
-            continue
-        _sdk_init = _resolved / "mcp" / "__init__.py"
-        if _sdk_init.exists() and _resolved / "mcp" != _LOCAL_BACKEND_DIR / "mcp":
-            _sdk_dir = _resolved / "mcp"
-            break
-    if _sdk_dir is None:
-        raise ImportError(
-            "无法从 site-packages 定位官方 mcp SDK。"
-            "请确认已执行 `pip install mcp`。"
-        )
-    _spec = importlib.util.spec_from_file_location(
-        _OFFICIAL_MCP_NAME,
-        _sdk_dir / "__init__.py",
-        submodule_search_locations=[str(_sdk_dir)],
-    )
-    if _spec is None or _spec.loader is None:
-        raise ImportError(f"无法为 mcp SDK 创建模块 spec: {_sdk_dir}")
-    _official_mcp = importlib.util.module_from_spec(_spec)
-    sys.modules[_OFFICIAL_MCP_NAME] = _official_mcp
-    # 临时将官方 SDK 注册为 sys.modules["mcp"]，确保 SDK 内部 import mcp.types
-    # 等绝对导入经由官方 SDK 的 __path__ 解析，而非本地兼容层 backend/mcp/
-    _saved_mcp = sys.modules.pop("mcp", None)
-    sys.modules["mcp"] = _official_mcp
-    try:
-        _spec.loader.exec_module(_official_mcp)
-    finally:
-        # 恢复兼容层（若原先存在），移除临时注册的官方 SDK
-        sys.modules.pop("mcp", None)
-        if _saved_mcp is not None:
-            sys.modules["mcp"] = _saved_mcp
-
-# 从官方 SDK 顶层导入
-ClientSession = _official_mcp.ClientSession
-McpError = _official_mcp.McpError
-StdioServerParameters = _official_mcp.StdioServerParameters
-
-# 从官方 SDK 子模块导入
-from _official_mcp.client.sse import sse_client as _mcp_sse_client
-from _official_mcp.client.stdio import (
+from mcp import ClientSession, McpError, StdioServerParameters
+from mcp.client.sse import sse_client as _mcp_sse_client
+from mcp.client.stdio import (
     get_default_environment,
     stdio_client as _mcp_stdio_client,
 )
-from _official_mcp.types import (
+from mcp.types import (
     BlobResourceContents,
     CallToolResult,
     JSONRPCMessage,
@@ -96,7 +45,7 @@ from _official_mcp.types import (
     TextResourceContents,
     Tool,
 )
-from _official_mcp.shared.message import SessionMessage
+from mcp.shared.message import SessionMessage
 
 # 项目内部导入
 from core.utils.memoize import memoize_with_lru, memoize_with_ttl
@@ -141,6 +90,36 @@ def build_mcp_tool_name(server: str, tool: str) -> str:
     return f"{MCP_TOOL_NAME_PREFIX}{server}{MCP_TOOL_NAME_SEPARATOR}{tool}"
 
 
+def map_tool_annotations(annotations: Any) -> Dict[str, bool]:
+    """
+    将官方 SDK 的 Tool.annotations 映射为并发属性。
+
+    失败关闭原则：annotations 为 None 或 hint 缺失时返回全 False（不并发、非只读、非破坏性）。
+
+    Args:
+        annotations: 官方 SDK 的 ToolAnnotations 对象（可能为 None）
+
+    Returns:
+        包含 is_read_only / is_destructive / is_concurrency_safe 的字典
+    """
+    if annotations is None:
+        read_only_hint = None
+        destructive_hint = None
+    else:
+        read_only_hint = getattr(annotations, "readOnlyHint", None)
+        destructive_hint = getattr(annotations, "destructiveHint", None)
+
+    is_read_only = bool(read_only_hint)
+    is_destructive = bool(destructive_hint)
+    # 只读且非破坏性的工具可并发执行；破坏性工具强制串行（失败关闭）
+    is_concurrency_safe = is_read_only and not is_destructive
+    return {
+        "is_read_only": is_read_only,
+        "is_destructive": is_destructive,
+        "is_concurrency_safe": is_concurrency_safe,
+    }
+
+
 class TransportType(str, Enum):
     """MCP 传输类型枚举"""
     STDIO = "stdio"
@@ -155,6 +134,11 @@ class MCPTool(BaseModel):
     description: Optional[str] = Field(None, description="工具描述")
     input_schema: Optional[Dict[str, Any]] = Field(None, alias="inputSchema", description="工具输入参数的 JSON Schema")
     server_name: Optional[str] = Field(None, description="所属 MCP Server 名称，用于生成全限定名")
+    # 并发属性：由官方 SDK 的 Tool.annotations（readOnlyHint/destructiveHint）映射而来，
+    # 失败关闭默认 False，供并发执行器判定 MCP 工具是否可并发执行。
+    is_read_only: bool = Field(False, description="是否只读工具（annotations.readOnlyHint 映射）")
+    is_destructive: bool = Field(False, description="是否破坏性工具（annotations.destructiveHint 映射）")
+    is_concurrency_safe: bool = Field(False, description="是否并发安全（readOnlyHint=True 且 destructiveHint=False）")
 
     @computed_field  # type: ignore[misc]
     @property
@@ -771,15 +755,19 @@ class MCPClient:
             raise MCPClientError(f"获取工具列表失败: {e}") from e
 
         # 转换官方 SDK 的 Tool 类型为项目 MCPTool 类型
-        self._tools = [
-            MCPTool(
+        # 同时把官方 SDK 的 Tool.annotations 映射为并发属性（失败关闭），
+        # 使只读 MCP 工具可被并发执行器正确判定为并发安全。
+        converted: List[MCPTool] = []
+        for tool in result.tools:
+            concurrency = map_tool_annotations(getattr(tool, "annotations", None))
+            converted.append(MCPTool(
                 name=tool.name,
                 description=tool.description,
                 input_schema=tool.inputSchema,
                 server_name=self._config.name,
-            )
-            for tool in result.tools
-        ]
+                **concurrency,
+            ))
+        self._tools = converted
         # 写入 LRU 缓存
         _cache_tools.cache_set(self._cache_key, self._tools)
         return self._tools

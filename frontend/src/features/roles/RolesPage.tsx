@@ -33,6 +33,7 @@ function RoleEditorModal({
   const [temperature, setTemperature] = useState(role?.model_config?.temperature ?? 0.7)
   const [maxTokens, setMaxTokens] = useState(role?.model_config?.max_tokens ?? 4096)
   const [live2dModelId, setLive2dModelId] = useState<string | null>(role?.live2d_model_id || null)
+  const [isCompanion, setIsCompanion] = useState(role?.is_companion || false)
 
   const handleSubmit = () => {
     if (!name.trim() || !systemPrompt.trim()) return
@@ -42,6 +43,7 @@ function RoleEditorModal({
       system_prompt: systemPrompt,
       personality: { tone, verbosity, creativity, formality },
       model_config_override: { temperature, max_tokens: maxTokens },
+      is_companion: isCompanion,
     }, live2dModelId)
   }
 
@@ -70,6 +72,17 @@ function RoleEditorModal({
             rows={6}
             placeholder="定义角色的行为和回复风格"
           />
+        </div>
+
+        <div className={styles.formGroup}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={isCompanion}
+              onChange={e => setIsCompanion(e.target.checked)}
+            />
+            <span>陪伴角色（启用情感心智演化：情绪、信念随对话改变）</span>
+          </label>
         </div>
 
         <div className={styles.formRow}>

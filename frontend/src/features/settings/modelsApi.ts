@@ -210,6 +210,21 @@ export interface ProviderModelsResponse {
   } | null
 }
 
+// 模型等级（Model Tier）：系统内四档模型，各绑定一个 provider/model
+export interface ModelTier {
+  tier: string
+  name: string
+  description: string
+  provider: string
+  model: string
+}
+
+export interface ModelTiersResponse {
+  success: boolean
+  tiers: ModelTier[]
+  subagent_note: string
+}
+
 export const modelsAPI = {
   getConfigurations: () =>
     api.get('/billing/configurations'),
@@ -297,6 +312,16 @@ export const modelsAPI = {
   // 获取所有提供商连接状态
   getProvidersStatus: () =>
     api.get<ProvidersStatusResponse>('/models/providers'),
+
+  // ── 模型等级 Tier API ──────────────────────────────────────────
+
+  /** 获取四档模型等级配置（含各档用途说明与 Subagent 说明） */
+  getModelTiers: () =>
+    api.get<ModelTiersResponse>('/models/tiers'),
+
+  /** 设置某档位绑定的 provider/model */
+  updateModelTier: (tier: string, data: { provider: string; model: string }) =>
+    api.put(`/models/tiers/${tier}`, data),
 
   // ── Provider 凭据 API ──────────────────────────────────────────
 

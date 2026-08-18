@@ -252,5 +252,6 @@ def init_db(bind_engine=None):
         _migrations._migrate_execution_trace(_inspector, _conn)
         _migrations._migrate_role_switch_event(_inspector, _conn)
         _migrations._migrate_user_feedback_add_columns(_inspector, _conn)
+        _migrations._migrate_agent_role_is_companion(_inspector, _conn)
     # 索引补齐：为高频查询字段补充索引（幂等，已存在则跳过）
     _ensure_missing_indexes(use_engine=use_engine)

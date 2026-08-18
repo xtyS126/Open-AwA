@@ -84,8 +84,8 @@ class CompactionConfig:
 # 这些工具的输出通常较大且可安全清除，用于 MicroCompact 轻量级压缩
 COMPACTABLE_TOOLS = {"Read", "Shell", "Grep", "Glob", "WebSearch", "Edit", "Write"}
 
-# MicroCompact 保留的最近消息条数：超出此阈值之前的工具输出会被清除
-MICRO_COMPACT_RECENT_THRESHOLD = 5
+# MicroCompact 保留的最近消息条数由 config.thresholds.MICRO_COMPACT_KEEP_RECENT 提供（默认 5），
+# 支持环境变量 OPENAWAS_MICRO_COMPACT_KEEP_RECENT 覆盖。
 
 # 会话级 CompactionManager 注册表：同一 session_id 复用同一实例，
 # 使断路器失败计数在多次 compact() 调用之间保持（跨 agent / magic_commands / 路由调用点共享）。
@@ -485,7 +485,7 @@ class CompactionManager:
         轻量级压缩：替换旧工具输出为清除标记。
 
         不调用 LLM，仅替换 COMPACTABLE_TOOLS 中工具的旧输出内容。
-        "旧"定义为消息索引早于最近 N 条消息（N=MICRO_COMPACT_RECENT_THRESHOLD）。
+        "旧"定义为消息索引早于最近 N 条消息（N=MICRO_COMPACT_KEEP_RECENT）。
 
         Args:
             messages: 消息列表
@@ -504,7 +504,7 @@ class CompactionManager:
                 tool_name = msg.get("name", "")
                 # 判断是否为可压缩工具且为旧消息
                 is_compactable = tool_name in COMPACTABLE_TOOLS
-                is_old = index < total - MICRO_COMPACT_RECENT_THRESHOLD
+                is_old = index < total - MICRO_COMPACT_KEEP_RECENT
                 if is_compactable and is_old:
                     # 替换 content 为清除标记，复制消息避免修改原列表
                     new_msg = dict(msg)

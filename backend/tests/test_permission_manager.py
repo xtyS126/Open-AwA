@@ -4,8 +4,11 @@ PermissionManager 单元测试。
 """
 
 import asyncio
+import contextvars
+
 import pytest
 
+from core.denial_tracking import DENIAL_LIMITS
 from core.permission_manager import (
     PermissionManager,
     PermissionRule,
@@ -13,6 +16,7 @@ from core.permission_manager import (
     PermissionDeniedError,
     evaluate_effect,
     evaluate_permission,
+    get_permission_manager,
     wildcard_match,
 )
 
@@ -285,7 +289,7 @@ class TestEffectPriority:
         assert await manager.evaluate("glob", "src", "plan") == PermissionEffect.ALLOW
         assert await manager.evaluate("edit", "file", "plan") == PermissionEffect.DENY
         assert await manager.evaluate("write", "file", "plan") == PermissionEffect.DENY
-        assert await manager.evaluate("bash", "ls", "plan") == PermissionEffect.DENY
+        assert await manager.evaluate("command:execute", "ls", "plan") == PermissionEffect.DENY
         assert await manager.evaluate("delete", "file", "plan") == PermissionEffect.DENY
 
     @pytest.mark.asyncio
@@ -295,7 +299,7 @@ class TestEffectPriority:
         assert await manager.evaluate("read", "file", "general-purpose") == PermissionEffect.ALLOW
         assert await manager.evaluate("edit", "file", "general-purpose") == PermissionEffect.ASK
         assert await manager.evaluate("write", "file", "general-purpose") == PermissionEffect.ASK
-        assert await manager.evaluate("bash", "ls", "general-purpose") == PermissionEffect.ASK
+        assert await manager.evaluate("command:execute", "ls", "general-purpose") == PermissionEffect.ASK
 
     @pytest.mark.asyncio
     async def test_plan_agent_deny_not_overridden_by_saved_allow(self):
@@ -308,3 +312,64 @@ class TestEffectPriority:
         # 模拟已保存规则作为最后一个规则集合参与评估
         effect = evaluate_effect("edit", "file", manager._get_agent_rules("plan"), saved_rules)
         assert effect == PermissionEffect.DENY
+
+
+class TestPermissionManagerFactory:
+    """get_permission_manager 请求/任务级复用语义测试"""
+
+    def test_reuses_instance_within_same_context(self):
+        """同一请求上下文内多次获取返回同一实例，denial_state 可跨调用累积"""
+        def _run():
+            m1 = get_permission_manager()
+            m2 = get_permission_manager()
+            return m1, m2
+
+        m1, m2 = contextvars.Context().run(_run)
+        assert m1 is m2
+
+    def test_isolated_across_contexts(self):
+        """不同请求上下文返回不同实例，避免跨请求/跨用户泄漏 denial_state"""
+        m1 = contextvars.Context().run(get_permission_manager)
+        m2 = contextvars.Context().run(get_permission_manager)
+        assert m1 is not m2
+
+    def test_binds_db_session_when_provided_later(self):
+        """先无 db_session 后带 db_session 时复用实例并补齐会话引用"""
+        def _run():
+            m1 = get_permission_manager()
+            assert m1._db_session is None
+            m2 = get_permission_manager(DBSessionStub())
+            return m1, m2
+
+        m1, m2 = contextvars.Context().run(_run)
+        assert m1 is m2
+        assert m1._db_session is not None
+
+
+class DBSessionStub:
+    """最小数据库会话桩，用于验证 db_session 补齐逻辑。"""
+    pass
+
+
+class TestAutoModeDenialFallback:
+    """auto 模式下连续拒绝回退人工模式的集成测试"""
+
+    @pytest.mark.asyncio
+    async def test_auto_mode_falls_back_after_consecutive_denials(self):
+        """开启 auto 模式后，同一实例内连续拒绝达到阈值应触发回退"""
+        manager = get_permission_manager()
+        manager.set_auto_mode(True)
+
+        max_consecutive = DENIAL_LIMITS["max_consecutive"]
+        for _ in range(max_consecutive):
+            with pytest.raises(PermissionDeniedError):
+                await manager.ask(
+                    session_id="sess-auto",
+                    action="edit",
+                    resources=["file.txt"],
+                    agent_id="plan",  # plan 代理对 edit 操作命中 DENY
+                )
+
+        # 达到阈值后 auto 模式应已关闭（安全兜底触发）
+        assert manager.auto_mode is False
+        assert manager.denial_state.consecutive_denials == max_consecutive

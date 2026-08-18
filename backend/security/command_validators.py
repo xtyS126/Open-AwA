@@ -13,15 +13,17 @@ Bash 命令验证器流水线模块。
 - 各 validate_* 验证器函数
 """
 
+import os
 import re
+import shlex
 from enum import Enum
-from typing import Callable, List, Pattern
+from typing import Callable, List, Optional, Pattern, Tuple
 
 from security.bash_security import (
     COMMAND_SUBSTITUTION_PATTERNS,
     ZSH_DANGEROUS_COMMANDS,
-    extract_quoted_content,
 )
+from security.command_hard_block import is_hard_blocked_command
 
 
 class ValidationResult(Enum):
@@ -33,6 +35,15 @@ class ValidationResult(Enum):
 
 # 危险元字符正则：; | & 等 Shell 命令分隔符与控制符
 _SHELL_METACHAR_PATTERN = re.compile(r'[;|&]')
+
+# 命令替换执行模式：接入 bash_security.COMMAND_SUBSTITUTION_PATTERNS 中会真正执行
+# 子命令的两项——$(...) 命令替换与 `...` 反引号。其余模式（${...} 参数扩展、
+# =() 进程替换、花括号扩展）分别由 validate_ifs_injection / validate_zsh_dangerous_commands /
+# validate_brace_expansion 覆盖，避免对合法变量引用误伤。
+_COMMAND_SUBSTITUTION_EXEC_PATTERNS: List[Pattern[str]] = [
+    COMMAND_SUBSTITUTION_PATTERNS[0],   # $(...) 命令替换
+    COMMAND_SUBSTITUTION_PATTERNS[1],   # `...` 反引号命令替换
+]
 
 # 危险变量模式：$IFS、PATH 赋值、LD_PRELOAD 等
 _DANGEROUS_VARIABLE_PATTERNS: List[Pattern[str]] = [
@@ -238,6 +249,25 @@ def validate_shell_metacharacters(command: str) -> ValidationResult:
     """
     if _SHELL_METACHAR_PATTERN.search(command):
         return ValidationResult.ASK
+    return ValidationResult.PASSTHROUGH
+
+
+def validate_command_substitution(command: str) -> ValidationResult:
+    """
+    验证命令替换。
+
+    检测 $(...) 命令替换与 `...` 反引号，此类结构会在执行命令时
+    通过子 shell 执行其中的代码，是命令注入的高危载体，需要用户确认。
+
+    Args:
+        command: 待验证的命令字符串
+
+    Returns:
+        含命令替换返回 ASK，否则返回 PASSTHROUGH
+    """
+    for pattern in _COMMAND_SUBSTITUTION_EXEC_PATTERNS:
+        if pattern.search(command):
+            return ValidationResult.ASK
     return ValidationResult.PASSTHROUGH
 
 
@@ -679,6 +709,7 @@ _VALIDATORS: List[Callable[[str], ValidationResult]] = [
     validate_mid_word_hash,
     validate_comment_quote_desync,
     validate_shell_metacharacters,
+    validate_command_substitution,
     validate_brace_expansion,
     validate_dangerous_variables,
     validate_ifs_injection,
@@ -712,3 +743,88 @@ def validate_command(command: str) -> ValidationResult:
         if result != ValidationResult.PASSTHROUGH:
             return result
     return ValidationResult.ALLOW
+
+
+def validate_command_for_execution(
+    command: str,
+    *,
+    command_list: Optional[List[str]] = None,
+    require_allowlist: bool = False,
+) -> Tuple[bool, Optional[str]]:
+    """
+    统一命令安全判定入口（唯一真相源）。
+
+    所有命令执行入口（终端 run_command、技能 shell 动作、步骤 execute_command）
+    必须通过本函数判定，组合以下四层防御，任一拒绝立即返回 False：
+
+    1. 系统级硬阻断 is_hard_blocked_command（rm -rf / / sudo rm -rf / / mkfs /
+       dd if=，不可绕过、不降级为审批）
+    2. 验证器流水线 validate_command（多个纯函数验证器，返回 ASK 即拒绝）
+    3. 终端高危命令黑名单 + 高危路径 + 危险模式（收敛自原 _is_command_safe 的
+       BLOCKED_COMMANDS / BLOCKED_PATHS / BLOCKED_PATTERNS，统一存放于 command_whitelist）
+    4. 白名单校验（可选）：require_allowlist=True 时额外要求 executable 在
+       ALLOWED_COMMANDS 白名单内，并校验子命令/标志安全（git 只读、tar/unzip 防穿越）
+
+    边界说明：命令在裸子进程中执行（create_subprocess_exec 非 shell 模式），
+    未做 OS 级资源/文件系统隔离（chroot/seccomp/Job Object/setrlimit）。
+    MCP 侧已有的 Job Object / setrlimit 沙箱（mcp_integration/sandbox.py）独立于
+    本判定，本函数不会影响它。
+
+    Args:
+        command: 原始命令字符串。
+        command_list: 预解析的命令参数列表（可选，缺省时内部 shlex.split）。
+        require_allowlist: 是否要求白名单校验（受控脚本场景 True，通用终端场景 False）。
+
+    Returns:
+        (is_safe, error_message) 元组，is_safe 为 True 时 error_message 为 None。
+    """
+    from security import command_whitelist
+
+    # 1. 系统级硬阻断（最高优先级，不可绕过）
+    if is_hard_blocked_command(command):
+        return False, "命令匹配系统级硬阻断规则（rm -rf / / mkfs / dd if= 等）"
+
+    # 2. 验证器流水线
+    result = validate_command(command)
+    if result == ValidationResult.ASK:
+        return False, "命令被安全验证器流水线拒绝执行（需用户确认）"
+
+    # 3. 解析命令（空命令/纯空白命令拒绝执行）
+    parsed: Optional[List[str]] = command_list
+    if parsed is None:
+        try:
+            parsed = shlex.split(command)
+        except ValueError as exc:
+            return False, f"命令解析失败（可能包含未闭合的引号）: {exc}"
+    if not parsed:
+        return False, "命令不能为空"
+
+    executable = os.path.basename(parsed[0]).lower()
+    args = parsed[1:]
+
+    # 终端高危命令黑名单（收敛自原 _is_command_safe 的 BLOCKED_COMMANDS）
+    if executable in command_whitelist.TERMINAL_BLOCKED_COMMANDS:
+        return False, f"禁止的危险命令: {parsed[0]}"
+
+    # 高危路径（收敛自原 BLOCKED_PATHS）
+    cmd_lower = command.lower()
+    for blocked_path in command_whitelist.TERMINAL_BLOCKED_PATHS:
+        if blocked_path.lower() in cmd_lower:
+            return False, f"命令中包含禁止的路径: {blocked_path}"
+
+    # 危险模式（收敛自原 BLOCKED_PATTERNS 的设备重定向 / hex 编码 / base64 解码；
+    # 命令替换与反引号已由流水线 validate_command_substitution 覆盖，
+    # Shell 元字符与串联危险命令已由 validate_shell_metacharacters 覆盖）
+    for pattern in command_whitelist.TERMINAL_BLOCKED_COMMAND_PATTERNS:
+        if pattern.search(command):
+            return False, f"命令匹配禁止模式: {command}"
+
+    # 4. 白名单校验（受控脚本场景：白名单 + 危险命令 + 参数模式 + 子命令安全）
+    if require_allowlist:
+        is_safe, err_msg = command_whitelist.validate_command_safety_detailed(
+            parsed[0], args
+        )
+        if not is_safe:
+            return False, err_msg
+
+    return True, None

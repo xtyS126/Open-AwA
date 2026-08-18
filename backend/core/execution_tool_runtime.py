@@ -37,7 +37,9 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 # 工具名到权限 action 类别的精确映射（与 PermissionManager 规则 action 对齐：
-# read/glob/grep/web_search/web_fetch/skill/write/edit/delete/bash 等）
+# read/glob/grep/web_search/web_fetch/skill/write/edit/delete/command:execute 等）。
+# 命令类工具（execute_command/run_command/run_shell）统一为 command:execute，
+# 与 core/task_runtime/permission_guard.py 及 core/tool_entries.py 保持一致。
 _TOOL_ACTION_EXACT_MAP: Dict[str, str] = {
     "read_file": "read",
     "list_files": "read",
@@ -52,8 +54,9 @@ _TOOL_ACTION_EXACT_MAP: Dict[str, str] = {
     "edit_file": "edit",
     "apply_patch": "edit",
     "delete_file": "delete",
-    "execute_command": "bash",
-    "run_shell": "bash",
+    "execute_command": "command:execute",
+    "run_command": "command:execute",
+    "run_shell": "command:execute",
 }
 
 # 只读工具名前缀
@@ -64,15 +67,17 @@ _WRITE_TOOL_PREFIXES = ("write_", "create_", "save_", "upload_")
 _EDIT_TOOL_PREFIXES = ("edit_", "patch_", "update_", "modify_")
 # 删除工具名前缀
 _DELETE_TOOL_PREFIXES = ("delete_", "remove_", "drop_", "truncate_", "purge_")
-# 命令执行工具名前缀
-_BASH_TOOL_PREFIXES = ("execute_", "run_", "bash", "shell_", "terminal")
+# 命令执行工具名前缀（映射到统一权限 action command:execute）
+_COMMAND_TOOL_PREFIXES = ("execute_", "run_", "bash", "shell_", "terminal")
 
 
 def _infer_permission_action(tool_name: str) -> str:
     """
-    根据工具名推断权限 action 类别（read/write/edit/delete/bash 等）。
+    根据工具名推断权限 action 类别（read/write/edit/delete/command:execute 等）。
 
     供 PermissionManager 规则评估使用，与 _get_agent_rules 中的规则 action 对齐。
+    命令类工具统一映射为 command:execute，与 _request_user_permission 的 action
+    及 core/task_runtime/permission_guard.py 的 _TOOL_OPERATION_MAP 保持一致。
     未识别时返回工具名本身，保证未知工具至少可被 catch-all 规则约束。
     """
     name = tool_name
@@ -92,8 +97,8 @@ def _infer_permission_action(tool_name: str) -> str:
         return "edit"
     if name.startswith(_DELETE_TOOL_PREFIXES):
         return "delete"
-    if name.startswith(_BASH_TOOL_PREFIXES):
-        return "bash"
+    if name.startswith(_COMMAND_TOOL_PREFIXES):
+        return "command:execute"
     if name.startswith("plugin_"):
         return "plugin"
     if name.startswith("task_"):
@@ -120,6 +125,38 @@ def _extract_permission_resources(tool_args: Dict[str, Any], tool_name: str) -> 
     if not resources:
         resources = [tool_name]
     return resources
+
+
+def _tool_rbac_permission(tool_name: str) -> str:
+    """
+    将工具名映射为用户级 RBAC 的 resource:action 权限字符串。
+
+    与 core/tool_entries._BUILTIN_PERMISSION_MAP 的 resource 字段保持一致
+    （命令工具统一为 command:execute，读文件统一为 file:read 等）。
+    未收录的工具回退到 _infer_permission_action 的 action 值，保证 RBAC
+    仍能对未知工具施加最小约束。
+    """
+    name = tool_name
+    if name.startswith("builtin_"):
+        name = name[len("builtin_"):]
+
+    try:
+        from core.tool_entries import _BUILTIN_PERMISSION_MAP as _builtin_permission_map
+    except ImportError:
+        _builtin_permission_map = {}
+
+    entry = _builtin_permission_map.get(name)
+    if entry:
+        # entry 为 (permission_action, permission_resource)，resource 即 resource:action 字符串
+        return entry[1]
+    return _infer_permission_action(tool_name)
+
+
+def _has_explicit_user_role(db: Any, user_id: str) -> bool:
+    """判断用户是否被显式分配过角色（存在 UserRole 记录）。"""
+    from db.models import UserRole
+
+    return db.query(UserRole).filter(UserRole.user_id == user_id).first() is not None
 
 
 class ExecutionToolRuntimeMixin:
@@ -348,19 +385,19 @@ class ExecutionToolRuntimeMixin:
         elif "delete" in tool_name:
             save_rules.append(f"delete:{resources[0]}" if resources else "delete:*")
         elif "execute" in tool_name or "bash" in tool_name or "terminal" in tool_name:
-            save_rules.append(f"execute:{resources[0]}" if resources else "execute:*")
+            save_rules.append(f"command:execute:{resources[0]}" if resources else "command:execute:*")
         elif "read" in tool_name:
             save_rules.append(f"read:{resources[0]}" if resources else "read:*")
         else:
             save_rules.append(f"{tool_name}:*")
 
-        # 推断 action 显示名称
+        # 推断 action 显示名称（命令类工具统一为 command:execute）
         if "write" in tool_name or "edit" in tool_name:
             action = "write"
         elif "delete" in tool_name:
             action = "delete"
         elif "execute" in tool_name or "bash" in tool_name or "terminal" in tool_name:
-            action = "execute"
+            action = "command:execute"
         elif "read" in tool_name:
             action = "read"
         else:
@@ -403,6 +440,86 @@ class ExecutionToolRuntimeMixin:
         ).info(f"权限请求回复: {tool_name} -> {reply}")
         return reply
 
+    async def _check_user_rbac_permission(
+        self,
+        tool_name: str,
+        context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        用户级 RBAC / 细粒度权限检查（安全加严，独立于代理级权限规则）。
+
+        仅在用户被显式分配角色（存在 UserRole 记录）时启用，保证默认
+        （无 RBAC 配置）下工具权限决策行为完全不变；命中后按 resource:action
+        权限字符串（如 command:execute）校验，用户无该权限则拒绝。
+        RBAC 模块缺失时按默认放行（与无配置语义一致）；权限数据损坏时
+        fine_grained 校验内部 fail-closed 返回拒绝，不降级放行。
+
+        返回 None 表示放行（无显式角色 / 拥有权限 / 模块缺失），
+        dict 表示拒绝结果。
+        """
+        db = context.get("db")
+        user_id = str(context.get("user_id", "") or "")
+        if db is None or not user_id:
+            # 无数据库会话或无用户标识：无法做用户级校验，按默认放行保持行为不变
+            return None
+
+        try:
+            from db.models import UserRole
+            from security.fine_grained_permissions import (
+                FineGrainedPermissionManager,
+            )
+        except ImportError:
+            logger.bind(
+                module="executor",
+                event="rbac_module_missing",
+                tool_name=tool_name,
+            ).warning("用户级 RBAC 模块缺失，工具权限检查按默认放行")
+            return None
+
+        # 仅当管理员显式分配过角色时才施加用户级 RBAC 约束
+        has_explicit_role = await asyncio.to_thread(
+            _has_explicit_user_role, db, user_id,
+        )
+        if not has_explicit_role:
+            return None
+
+        permission = _tool_rbac_permission(tool_name)
+        try:
+            allowed = await FineGrainedPermissionManager(db).check_permission(
+                user_id, permission,
+            )
+        except Exception as exc:  # noqa: BLE001 - RBAC 校验异常需 fail-closed
+            logger.bind(
+                module="executor",
+                event="rbac_check_failed",
+                tool_name=tool_name,
+                permission=permission,
+                error=str(exc),
+            ).warning(f"用户级 RBAC 校验异常，拒绝工具调用: {tool_name}")
+            return {
+                "ok": False,
+                "error": f"用户级 RBAC 校验失败，拒绝工具调用: {tool_name}",
+                "tool_name": tool_name,
+                "denied_by": "rbac",
+            }
+
+        if allowed:
+            return None
+
+        logger.bind(
+            module="executor",
+            event="rbac_permission_denied",
+            tool_name=tool_name,
+            permission=permission,
+            user_id=user_id,
+        ).warning(f"用户级 RBAC 拒绝工具调用: {tool_name} 缺少权限 {permission}")
+        return {
+            "ok": False,
+            "error": f"用户缺少权限 {permission}，工具调用被拒绝: {tool_name}",
+            "tool_name": tool_name,
+            "denied_by": "rbac",
+        }
+
     async def _check_tool_permission(
         self,
         tool_name: str,
@@ -410,16 +527,18 @@ class ExecutionToolRuntimeMixin:
         context: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
         """
-        工具分发前的权限检查链（PermissionGuard 模式检查 + PermissionManager 规则评估 + 拒绝追踪）。
+        工具分发前的权限检查链（用户级 RBAC + PermissionGuard 模式检查 + PermissionManager 规则评估 + 拒绝追踪）。
 
         检查顺序：
-        1. PermissionGuard 模式检查（plan/accept_edits/dont_ask），仅在 context 配置了
+        1. 用户级 RBAC / 细粒度权限检查，仅在用户存在显式角色分配时启用，
+           无 RBAC 配置时默认放行，保持既有行为不变
+        2. PermissionGuard 模式检查（plan/accept_edits/dont_ask），仅在 context 配置了
            非 default 的 permission_mode 时启用，避免破坏默认行为
-        2. PermissionManager 规则评估（deny > allow > ask），仅在存在生效规则时启用，
+        3. PermissionManager 规则评估（deny > allow > ask），仅在存在生效规则时启用，
            无规则时默认放行，避免默认 ASK 破坏既有行为
-        3. 需要确认时触发 enqueue_permission_request（经 _request_user_permission），
+        4. 需要确认时触发 enqueue_permission_request（经 _request_user_permission），
            用户回复 once/always 继续执行，reject 拒绝执行
-        4. 拒绝追踪：deny/拒绝时 record_denial，放行时 record_success，
+        5. 拒绝追踪：deny/拒绝时 record_denial，放行时 record_success，
            auto 模式下连续拒绝超限自动回退到人工确认模式
 
         返回 None 表示放行，返回 dict 表示拦截结果（直接作为工具执行结果返回）。
@@ -437,6 +556,14 @@ class ExecutionToolRuntimeMixin:
         # 仅对非 default 的强制模式启用；bypass_permissions 全部放行（直接跳过整个检查链）。
         if permission_mode == "bypass_permissions":
             return None
+
+        # 用户级 RBAC / 细粒度权限检查（安全加严）。
+        # 仅在用户被显式分配角色时启用，无 RBAC 配置（无 db 或无 UserRole 记录）时
+        # 默认放行，保持既有行为不变；命中无权限时拒绝。
+        rbac_result = await self._check_user_rbac_permission(tool_name, context)
+        if rbac_result is not None:
+            return rbac_result
+
         if permission_mode in ("plan", "accept_edits", "dont_ask"):
             try:
                 from core.task_runtime.permission_guard import permission_guard as _guard
@@ -936,6 +1063,7 @@ class ExecutionToolRuntimeMixin:
         streaming_executor = StreamingToolExecutor(
             tool_registry=global_tool_registry,
             max_concurrent=5,
+            tool_concurrency=context.get("_tool_concurrency"),
         )
 
         # 提交所有工具调用到调度队列

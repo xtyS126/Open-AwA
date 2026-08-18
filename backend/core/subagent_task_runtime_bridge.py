@@ -21,6 +21,7 @@ from collections.abc import AsyncGenerator
 from core.task_runtime import task_runtime, agent_registry
 from core.subagent import (
     AgentState,
+    IsolationLevel,
     SubagentResult,
     SubagentTask,
     SubagentLifecycleState,
@@ -39,6 +40,55 @@ BUILTIN_TO_TASK_RUNTIME_TYPE: Dict[str, str] = {
     "searcher": "Explore",
     "data_analyst": "general-purpose",
 }
+
+# ── subagent.py 与 task_runtime 的语义收敛（单一映射点） ────────────
+# 避免 subagent.py 的 IsolationLevel/ResourceLimits 与
+# core/task_runtime/definitions.py 的 isolation_mode/max_turns/effort 各自漂移。
+#
+# 1) 隔离级别：subagent.py 三级 IsolationLevel -> task_runtime isolation_mode
+#    - CONTEXT(1)  语义等同 isolation_mode="inherit"（共享进程/文件系统）
+#    - PROCESS(2)  对应 isolation_mode="worktree"（git worktree 隔离）
+#    - SANDBOX(3)  task_runtime 未实现，禁止静默降级（isolation_level_to_mode 抛 ValueError）
+#
+# 2) 资源限制：subagent.py 的 ResourceLimits 是"任务级运行时配额"，
+#    task_runtime 的 AgentDefinition.max_turns/effort 是"代理类型级静态配置"。
+#    - ResourceLimits.max_turns        <-> AgentDefinition.max_turns（轮次上限）
+#    - ResourceLimits.max_tokens 等其余字段 在 task_runtime 无对应（由 provider/model 或编排层超时控制）
+#    - AgentDefinition.effort          无任务级等价（仅代理类型级努力程度）
+#    桥接委派时以 AgentDefinition 为准（其内置 max_turns 更严格，如 verification=10/guide=5），
+#    不把 ResourceLimits.max_turns 的默认值强制覆写过去，避免放宽内置限制。
+
+ISOLATION_LEVEL_TO_MODE: Dict[IsolationLevel, str] = {
+    IsolationLevel.CONTEXT: "inherit",
+    IsolationLevel.PROCESS: "worktree",
+}
+
+
+def isolation_level_to_mode(level: IsolationLevel) -> Optional[str]:
+    """
+    将 subagent.py 的隔离级别转换为 task_runtime 的 isolation_mode 覆写值。
+
+    - CONTEXT：语义等同 isolation_mode="inherit"，但桥接委派时返回 None，
+      表示不覆写 AgentDefinition 自身的 isolation_mode，避免把 fresh 等内置语义误覆盖。
+    - PROCESS：返回 "worktree"。
+    - SANDBOX：task_runtime 未实现，抛 ValueError，禁止静默降级。
+
+    Args:
+        level: subagent.py 的 IsolationLevel 枚举
+
+    Returns:
+        用于 spawn_agent(isolation=...) 的覆写值；None 表示不覆写
+
+    Raises:
+        ValueError: SANDBOX 等未实现的隔离级别
+    """
+    if level == IsolationLevel.SANDBOX:
+        raise ValueError(
+            f"IsolationLevel.SANDBOX 在 task_runtime 未实现，禁止静默降级: {level}"
+        )
+    if level == IsolationLevel.CONTEXT:
+        return None
+    return ISOLATION_LEVEL_TO_MODE.get(level)
 
 
 async def consume_spawn_stream(stream: Any) -> tuple[str, str, str]:
@@ -82,14 +132,21 @@ def resolve_task_runtime_agent_type(task: SubagentTask) -> Optional[str]:
     优先级:
       1. task.metadata.agent_type 显式指定（直接使用 task_runtime 原生类型名）
       2. task.metadata.agent_name 按内置映射表转换
-      3. 默认 Explore（只读调研代理）
+      3. task.metadata.agent_name 本身就是已注册的 task_runtime 原生类型
+      4. 默认 Explore（只读调研代理）
     """
     explicit = str(task.metadata.get("agent_type") or "").strip()
     if explicit:
         return explicit
     agent_name = str(task.metadata.get("agent_name") or "").strip()
     if agent_name:
-        return BUILTIN_TO_TASK_RUNTIME_TYPE.get(agent_name)
+        mapped = BUILTIN_TO_TASK_RUNTIME_TYPE.get(agent_name)
+        if mapped:
+            return mapped
+        # agent_name 本身就是 task_runtime 原生类型（如 verification/Explore）时直接使用
+        if agent_registry.get(agent_name):
+            return agent_name
+        return None
     return "Explore"
 
 
@@ -99,10 +156,23 @@ async def run_task_via_task_runtime(task: SubagentTask) -> Optional[SubagentResu
 
     返回 SubagentResult 表示委派成功；返回 None 表示 task_runtime 侧不可用
     （代理类型未注册 / 非流式返回），调用方应回退到内置规则执行器。
+
+    Raises:
+        ValueError: 任务请求了 task_runtime 未实现的隔离级别（如 SANDBOX）
     """
     agent_type = resolve_task_runtime_agent_type(task)
     if not agent_type or not agent_registry.get(agent_type):
         return None
+
+    # 隔离级别经单一映射转换为 isolation_mode 覆写；CONTEXT 返回 None 表示不覆写
+    isolation = isolation_level_to_mode(task.isolation_level)
+
+    # 委派上下文：显式元数据 + 上下文片段，透传给真实 LLM 子代理
+    spawn_context = dict(task.metadata or {})
+    if task.context_snippet:
+        spawn_context.setdefault("context_snippet", task.context_snippet)
+    if task.allowed_tools:
+        spawn_context.setdefault("allowed_tools", list(task.allowed_tools))
 
     stream = await task_runtime.spawn_agent(
         agent_type=agent_type,
@@ -110,7 +180,8 @@ async def run_task_via_task_runtime(task: SubagentTask) -> Optional[SubagentResu
         description=f"Subagent 编排委派（{task.task_id}）",
         background=False,
         force_foreground=True,
-        context=dict(task.metadata or {}),
+        isolation=isolation,
+        context=spawn_context,
     )
     if not isinstance(stream, AsyncGenerator):
         # 后台模式/未知类型错误：无法同步取回结果，交由调用方回退

@@ -311,7 +311,7 @@ def _register_builtin_tools_at_startup() -> None:
     """启动时注册内置工具到 ToolRegistry。
 
     幂等：重复调用只补充未注册的工具，不覆盖已注册的高优先级定义。
-    ask_user 的权限映射与并发属性由模块级 ensure_ask_user_permissions() 注入。
+    ask_user 的权限映射与并发属性由 tool_entries 模块静态声明。
     """
     from core.tool_entries import register_builtin_tools
     from core.tool_registry import tool_registry
@@ -1706,9 +1706,6 @@ app.include_router(test_runner_router)
 from api.routes.ask_user import router as ask_user_router
 app.include_router(ask_user_router)
 
-# 注册内置工具前注入 ask_user 权限和并发属性（动态注入，避免 tool_entries.py 重复编辑）
-from core.builtin_tools.manager import ensure_ask_user_permissions
-ensure_ask_user_permissions()
 app.include_router(workspace_router)
 app.include_router(heartbeat_router)
 app.include_router(coding_router)

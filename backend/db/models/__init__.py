@@ -165,6 +165,16 @@ from db.models.bilibili_toolkit import (
     BilibiliToolkitVideo,
 )
 
+# ---- 陪伴系统域 ----
+from db.models.companion import (
+    CompanionMemory,
+    CompanionMilestone,
+    CompanionState,
+)
+
+# ---- 模型等级域 ----
+from db.models.model_tier import ModelTierConfig
+
 from db.models.event_log import EventLog
 from db.models.vector_model import VectorModelConfig  # noqa: E402
 from db.permission_models import PermissionSaved  # noqa: E402
@@ -271,6 +281,12 @@ __all__ = [
     "BilibiliToolkitPage",
     "BilibiliToolkitSubscription",
     "BilibiliToolkitVideo",
+    # 陪伴系统域
+    "CompanionState",
+    "CompanionMemory",
+    "CompanionMilestone",
+    # 模型等级域
+    "ModelTierConfig",
     # 外部依赖模型
     "PermissionSaved",
     "EventLog",

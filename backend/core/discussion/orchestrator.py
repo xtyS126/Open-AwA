@@ -75,8 +75,6 @@ class DiscussionOrchestrator:
         self,
         db_session_factory: DbSessionFactory,
         llm_caller: LLMCaller,
-        subagent_manager: Optional[Any] = None,
-        subagent_orchestrator: Optional[Any] = None,
     ) -> None:
         """
         初始化编排器。
@@ -84,14 +82,11 @@ class DiscussionOrchestrator:
         Args:
             db_session_factory: 返回 SQLAlchemy Session 上下文管理器的可调用对象
             llm_caller: 异步函数 (messages: list[dict]) -> str，由调用方注入
-            subagent_manager: 可选的 SubAgentManager 实例，用于 subagent_delegate 执行器
-            subagent_orchestrator: 可选的 SubagentOrchestrator 实例；
-                                   未提供时 subagent_delegate 执行器将抛 DiscussionExecutionError
+            subagent_delegate 执行器经 core/subagent_task_runtime_bridge.py
+            复用 task_runtime.spawn_agent（唯一委派运行时），无需额外注入。
         """
         self._db_session_factory = db_session_factory
         self._llm_caller = llm_caller
-        self._subagent_manager = subagent_manager
-        self._subagent_orchestrator = subagent_orchestrator
         # 事件订阅队列：task_id -> 队列列表
         self._event_queues: Dict[str, List[asyncio.Queue]] = {}
         # 订阅列表并发保护锁
@@ -893,15 +888,16 @@ class DiscussionOrchestrator:
 
     async def _execute_subagent_delegate(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        委派任务给子代理执行。
+        委派任务给子代理执行（经 task_runtime 唯一委派运行时）。
 
         payload 结构：
             {"agent": str, "instruction": str, "context_snippet": str, "allowed_tools": list}
 
-        通过注入的 SubagentOrchestrator.delegate_one() 委派任务。
+        通过 core/subagent_task_runtime_bridge.run_task_via_task_runtime 复用
+        task_runtime.spawn_agent 派生真实 LLM 子代理，与 subagents 图编排共用同一委派路径。
 
         Raises:
-            DiscussionExecutionError: 子代理编排器不可用或执行失败
+            DiscussionExecutionError: 委派不可用或执行失败
         """
         agent_name = payload.get("agent")
         instruction = payload.get("instruction")
@@ -911,100 +907,44 @@ class DiscussionOrchestrator:
                 f"subagent_delegate 缺少必填字段 agent/instruction: {payload}"
             )
 
-        if self._subagent_orchestrator is None:
-            raise DiscussionExecutionError(
-                "SubagentOrchestrator 未注入，无法执行 subagent_delegate"
-            )
-        if self._subagent_manager is None:
-            raise DiscussionExecutionError(
-                "SubAgentManager 未注入，无法执行 subagent_delegate"
-            )
+        # 上下文片段追加到指令，确保真实 LLM 子代理可见必要上下文
+        context_snippet = str(payload.get("context_snippet") or "").strip()
+        prompt = str(instruction).strip()
+        if context_snippet:
+            prompt = f"{prompt}\n\n[上下文]\n{context_snippet}"
 
-        # 检查目标 agent 是否已注册
-        registered = self._subagent_manager.get_registered_agents()
-        registered_names = [info["name"] for info in registered]
-        if agent_name not in registered_names:
-            raise DiscussionExecutionError(
-                f"子代理 '{agent_name}' 未注册，已注册: {registered_names}"
-            )
-
-        # 构造 SubagentTask
         try:
-            from core.subagent import (
-                IsolationLevel,
-                SubagentResult,
-                SubagentTask,
-            )
+            from core.subagent import SubagentTask
+            from core.subagent_task_runtime_bridge import run_task_via_task_runtime
         except ImportError as e:
             raise DiscussionExecutionError(
-                f"子代理模块不可用: {e}"
+                f"子代理桥接模块不可用: {e}"
             ) from e
 
-        task_id = str(uuid.uuid4())
         subagent_task = SubagentTask(
-            task_id=task_id,
-            instruction=instruction,
-            context_snippet=payload.get("context_snippet", ""),
-            allowed_tools=list(payload.get("allowed_tools", [])),
-            isolation_level=IsolationLevel.CONTEXT,
+            task_id=str(uuid.uuid4()),
+            instruction=prompt,
+            context_snippet=context_snippet,
+            allowed_tools=list(payload.get("allowed_tools") or []),
+            metadata={"agent_name": agent_name},
         )
 
-        # 构造执行器：调用 SubAgentManager 中注册的 handler
-        async def _executor(t: SubagentTask) -> SubagentResult:
-            # manager 内部 _registered_agents 是私有属性，通过 get_registered_agents 拿不到 handler
-            # 这里直接访问私有字典获取 handler
-            agent_info = self._subagent_manager._registered_agents.get(t.task_id) or \
-                self._subagent_manager._registered_agents.get(agent_name)
-            if not agent_info:
-                return SubagentResult(
-                    task_id=t.task_id,
-                    success=False,
-                    output="",
-                    error=f"子代理 '{agent_name}' 未注册",
-                )
-            handler = agent_info["handler"]
-            from core.subagent import AgentState
-            state = AgentState()
-            state.add_message("user", t.instruction)
-            state.context["context_snippet"] = t.context_snippet
-            state.context["allowed_tools"] = t.allowed_tools
-            try:
-                result_state = await handler(state)
-                output = ""
-                if isinstance(result_state, AgentState):
-                    # 取最后一条 assistant 消息作为输出
-                    for msg in reversed(result_state.messages):
-                        if msg.get("role") == "assistant":
-                            output = str(msg.get("content", ""))
-                            break
-                    if not output and result_state.messages:
-                        output = str(result_state.messages[-1].get("content", ""))
-                return SubagentResult(
-                    task_id=t.task_id,
-                    success=True,
-                    output=output,
-                )
-            except Exception as e:
-                return SubagentResult(
-                    task_id=t.task_id,
-                    success=False,
-                    output="",
-                    error=f"子代理执行异常: {e}",
-                )
-
         try:
-            result = await self._subagent_orchestrator.delegate_one(
-                subagent_task, _executor
-            )
-        except (AttributeError, RuntimeError) as e:
+            result = await run_task_via_task_runtime(subagent_task)
+        except ValueError as e:
+            # 任务级隔离级别等非法参数，必须显式失败
             raise DiscussionExecutionError(
-                f"子代理编排器调用失败: {e}"
+                f"子代理委派参数非法: {e}"
             ) from e
-        except TimeoutError as e:
+        except Exception as e:
             raise DiscussionExecutionError(
-                f"子代理 '{agent_name}' 执行超时: {e}"
+                f"子代理 '{agent_name}' 委派执行失败: {e}"
             ) from e
 
+        if result is None:
+            raise DiscussionExecutionError(
+                f"子代理 '{agent_name}' 未注册或 task_runtime 不可用"
+            )
         if not result.success:
             raise DiscussionExecutionError(
                 f"子代理 '{agent_name}' 执行失败: {result.error or '未知错误'}"
@@ -1016,6 +956,7 @@ class DiscussionOrchestrator:
             "output": result.output,
             "tokens_used": result.tokens_used,
             "elapsed_seconds": result.elapsed_seconds,
+            "runtime": "task_runtime",
         }
 
     # ── 数据库访问辅助方法 ──────────────────────────────────────────

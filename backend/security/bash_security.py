@@ -1,13 +1,16 @@
 """
 Bash 命令安全基础模块。
 
-提供引号状态机、命令替换模式定义、Zsh 危险命令集合等基础设施，
+提供命令替换模式定义、Zsh 危险命令集合等基础设施，
 供 command_validators 模块使用。
 
 主要导出：
-- extract_quoted_content：引号状态机提取引号内内容
 - COMMAND_SUBSTITUTION_PATTERNS：命令替换/参数扩展/算术扩展正则模式列表
 - ZSH_DANGEROUS_COMMANDS：Zsh 危险命令集合
+
+说明：extract_quoted_content（引号内内容提取）已被删除。验证器直接对原始命令字符串
+匹配危险模式，引号不影响正则匹配，故无需先提取引号内容；command_validators 内部的
+validate_comment_quote_desync / validate_quoted_newline 各自持有内联引号状态机。
 """
 
 import re
@@ -49,39 +52,3 @@ ZSH_DANGEROUS_COMMANDS = frozenset([
     'mkfs',         # 格式化文件系统
     'fdisk',        # 分区表操作
 ])
-
-
-def extract_quoted_content(command: str) -> str:
-    """
-    使用引号状态机提取引号内的内容。
-
-    状态机有三视图：单引号、双引号、无引号。
-    - 单引号内：所有字符原样保留，直到遇到闭合单引号
-    - 双引号内：所有字符原样保留，直到遇到闭合双引号
-    - 无引号：仅识别引号起始，不收集字符
-
-    Args:
-        command: 待解析的命令字符串
-
-    Returns:
-        所有引号内内容的拼接结果（不含引号本身）
-    """
-    result: List[str] = []
-    state = 'none'  # 状态：none/single/double
-    for char in command:
-        if state == 'none':
-            if char == "'":
-                state = 'single'
-            elif char == '"':
-                state = 'double'
-        elif state == 'single':
-            if char == "'":
-                state = 'none'
-            else:
-                result.append(char)
-        elif state == 'double':
-            if char == '"':
-                state = 'none'
-            else:
-                result.append(char)
-    return ''.join(result)

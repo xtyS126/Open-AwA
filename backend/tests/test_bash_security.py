@@ -2,7 +2,7 @@
 Bash 安全验证器流水线单元测试。
 
 测试覆盖：
-- extract_quoted_content 引号状态机
+- 命令替换模式定义与 Zsh 危险命令集合
 - 各验证器的正常路径与异常路径
 - validate_command 流水线的 PASSTHROUGH 透传与首个非 PASSTHROUGH 停止行为
 """
@@ -12,7 +12,6 @@ import pytest
 from security.bash_security import (
     COMMAND_SUBSTITUTION_PATTERNS,
     ZSH_DANGEROUS_COMMANDS,
-    extract_quoted_content,
 )
 from security.command_validators import (
     ValidationResult,
@@ -20,6 +19,7 @@ from security.command_validators import (
     validate_backslash_escaped_whitespace,
     validate_brace_expansion,
     validate_command,
+    validate_command_substitution,
     validate_comment_quote_desync,
     validate_control_characters,
     validate_dangerous_patterns,
@@ -39,40 +39,6 @@ from security.command_validators import (
     validate_unicode_whitespace,
     validate_zsh_dangerous_commands,
 )
-
-
-class TestExtractQuotedContent:
-    """测试引号状态机提取引号内内容。"""
-
-    def test_extract_quoted_content_single_quote(self):
-        """单引号内容提取。"""
-        command = "echo 'hello world'"
-        result = extract_quoted_content(command)
-        assert result == "hello world"
-
-    def test_extract_quoted_content_double_quote(self):
-        """双引号内容提取。"""
-        command = 'echo "hello world"'
-        result = extract_quoted_content(command)
-        assert result == "hello world"
-
-    def test_extract_quoted_content_mixed_quotes(self):
-        """混合引号内容提取。"""
-        command = "echo 'hello' \"world\""
-        result = extract_quoted_content(command)
-        assert result == "helloworld"
-
-    def test_extract_quoted_content_no_quotes(self):
-        """无引号时返回空字符串。"""
-        command = "echo hello world"
-        result = extract_quoted_content(command)
-        assert result == ""
-
-    def test_extract_quoted_content_unclosed_quote(self):
-        """未闭合引号：提取到字符串末尾。"""
-        command = "echo 'unclosed"
-        result = extract_quoted_content(command)
-        assert result == "unclosed"
 
 
 class TestCommandSubstitutionPatterns:
@@ -208,6 +174,22 @@ class TestValidateShellMetacharacters:
     def test_validate_safe_passthrough(self):
         """安全命令返回 PASSTHROUGH。"""
         assert validate_shell_metacharacters("ls -la") == ValidationResult.PASSTHROUGH
+
+
+class TestValidateCommandSubstitution:
+    """测试命令替换验证器。"""
+
+    def test_validate_dollar_paren(self):
+        """$(...) 命令替换返回 ASK。"""
+        assert validate_command_substitution("echo $(id)") == ValidationResult.ASK
+
+    def test_validate_backtick(self):
+        """反引号命令替换返回 ASK。"""
+        assert validate_command_substitution("echo `id`") == ValidationResult.ASK
+
+    def test_validate_safe_passthrough(self):
+        """安全命令返回 PASSTHROUGH。"""
+        assert validate_command_substitution("ls -la") == ValidationResult.PASSTHROUGH
 
 
 class TestValidateDangerousVariables:

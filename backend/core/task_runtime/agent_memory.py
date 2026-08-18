@@ -7,9 +7,9 @@
 - LOCAL: 会话级内存，仅当前代理会话可见，不持久化
 
 设计要点：
-1. 存储键使用 agent_type（+scope）而非随机 agent_id：同一类型的代理实例
-   跨会话共享记忆池，保证跨会话记忆复用；PROJECT 目录不存在时自动创建
-2. LOCAL 范围使用模块级 dict 缓存，不持久化
+1. USER / PROJECT 范围存储键使用 agent_type（而非随机 agent_id）：同一类型的
+   代理实例跨会话共享记忆池，保证跨会话记忆复用；PROJECT 目录不存在时自动创建
+2. LOCAL 范围存储键使用 agent_id（仅当前代理会话可见），模块级 dict 缓存，不持久化
 3. USER 范围复用现有 memory 模块的 MemoryManager 公开异步接口
    （get_long_term_memories / add_long_term_memory），按 agent_type 维度过滤
 4. 异常使用具体类型，禁止静默吞异常
@@ -245,17 +245,22 @@ def _load_local_scope_memories(agent_id: str) -> List[AgentMemoryEntry]:
     return list(cache.values())
 
 
-async def load_agent_memory_prompt(agent_type: str, scope: AgentMemoryScope) -> str:
+async def load_agent_memory_prompt(
+    agent_type: str,
+    scope: AgentMemoryScope,
+    agent_id: Optional[str] = None,
+) -> str:
     """根据 scope 动态加载记忆并返回格式化的 prompt 字符串。
 
-    根据 scope 从不同存储加载记忆，存储键为 agent_type（+scope）：
+    根据 scope 从不同存储加载记忆：
     - USER: 从 memory/ 长期记忆表加载（按 agent_type 维度过滤）
     - PROJECT: 从 .openawa/agent_memories/{agent_type}/project.json 加载
-    - LOCAL: 从会话级内存加载
+    - LOCAL: 从会话级内存加载（按 agent_id 作为缓存键，与写入键一致）
 
     参数:
-        agent_type: 代理类型
+        agent_type: 代理类型（USER / PROJECT 范围的存储键与过滤维度）
         scope: 记忆范围（USER / PROJECT / LOCAL）
+        agent_id: 代理 ID（LOCAL 范围的缓存键；为 None 时回退到 agent_type）
 
     返回:
         格式化的记忆 prompt 字符串；无记忆时返回空字符串
@@ -265,7 +270,8 @@ async def load_agent_memory_prompt(agent_type: str, scope: AgentMemoryScope) -> 
     elif scope == AgentMemoryScope.PROJECT:
         entries = _load_project_scope_memories(agent_type)
     elif scope == AgentMemoryScope.LOCAL:
-        entries = _load_local_scope_memories(agent_type)
+        local_key = agent_id if agent_id is not None else agent_type
+        entries = _load_local_scope_memories(local_key)
     else:
         logger.bind(module="agent_memory", agent_type=agent_type).warning(
             f"未知记忆范围: {scope}"

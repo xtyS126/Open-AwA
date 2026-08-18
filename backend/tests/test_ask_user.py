@@ -241,10 +241,6 @@ def test_ask_user_permission_mapping():
     """ask_user 应在 _BUILTIN_PERMISSION_MAP 中有 interact 权限。"""
     from core.tool_entries import _BUILTIN_PERMISSION_MAP
 
-    # ensure_ask_user_permissions 动态注入，模拟 main.py 启动时的调用
-    from core.builtin_tools.manager import ensure_ask_user_permissions
-    ensure_ask_user_permissions()
-
     assert "ask_user" in _BUILTIN_PERMISSION_MAP
     action, resource = _BUILTIN_PERMISSION_MAP["ask_user"]
     assert action == "interact"
@@ -254,8 +250,6 @@ def test_ask_user_permission_mapping():
 def test_ask_user_concurrency_attrs():
     """ask_user 应配置为串行执行（is_concurrency_safe=False）。"""
     from core.tool_entries import _TOOL_CONCURRENCY_ATTRS
-    from core.builtin_tools.manager import ensure_ask_user_permissions
-    ensure_ask_user_permissions()
 
     assert "ask_user" in _TOOL_CONCURRENCY_ATTRS
     attrs = _TOOL_CONCURRENCY_ATTRS["ask_user"]

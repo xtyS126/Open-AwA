@@ -27,10 +27,11 @@ class TestMemoryManagerProvider:
     def test_initialization(self):
         """测试初始化。"""
         mock_manager = Mock()
-        provider = MemoryManagerProvider(mock_manager, workspace_id="test_workspace")
+        provider = MemoryManagerProvider(mock_manager, workspace_id="test_workspace", user_id="user_1")
         
         assert provider.memory_manager is mock_manager
         assert provider.workspace_id == "test_workspace"
+        assert provider.user_id == "user_1"
         assert len(provider._session_ended) == 0
 
     def test_system_prompt_block_with_memories(self):
@@ -49,7 +50,7 @@ class TestMemoryManagerProvider:
             mock_memory1, mock_memory2
         ]
         
-        provider = MemoryManagerProvider(mock_manager)
+        provider = MemoryManagerProvider(mock_manager, user_id="user_1")
         request = SystemPromptRequest(workspace_root=Path("/tmp/test"))
         response = provider.system_prompt_block(request)
         
@@ -59,25 +60,59 @@ class TestMemoryManagerProvider:
         assert "重要记忆内容2" in response.markdown
         assert "[0.80]" in response.markdown
         assert "[0.70]" in response.markdown
+        # 校验检索已按绑定用户隔离
+        call_kwargs = mock_manager._get_and_evaluate_long_term_memories_sync.call_args.kwargs
+        assert call_kwargs["user_id"] == "user_1"
 
     def test_system_prompt_block_no_memories(self):
         """测试构建记忆块（无记忆）。"""
         mock_manager = Mock()
         mock_manager._get_and_evaluate_long_term_memories_sync.return_value = []
         
-        provider = MemoryManagerProvider(mock_manager)
+        provider = MemoryManagerProvider(mock_manager, user_id="user_1")
         request = SystemPromptRequest(workspace_root=Path("/tmp/test"))
         response = provider.system_prompt_block(request)
         
         assert response.status.value == "ready"
         assert "暂无高重要性记忆" in response.markdown
 
+    def test_system_prompt_block_requires_user_id(self):
+        """测试未绑定 user_id 时拒绝检索（防止跨用户泄露）。"""
+        mock_manager = Mock()
+        provider = MemoryManagerProvider(mock_manager)
+        request = SystemPromptRequest(workspace_root=Path("/tmp/test"))
+        response = provider.system_prompt_block(request)
+        
+        assert response.status.value == "degraded"
+        assert "user_id" in response.reason
+        # 不得触达任何长期记忆检索
+        mock_manager._get_and_evaluate_long_term_memories_sync.assert_not_called()
+
+    def test_system_prompt_block_user_isolation(self):
+        """测试不同绑定用户检索参数互不相同（用户级隔离）。"""
+        mock_manager = Mock()
+        mock_manager._get_and_evaluate_long_term_memories_sync.return_value = []
+        
+        provider_a = MemoryManagerProvider(mock_manager, user_id="user_a")
+        provider_b = MemoryManagerProvider(mock_manager, user_id="user_b")
+        request = SystemPromptRequest(workspace_root=Path("/tmp/test"))
+        
+        provider_a.system_prompt_block(request)
+        provider_b.system_prompt_block(request)
+        
+        # 两次调用传入的 user_id 分别为各自绑定用户，不得互见
+        user_ids = [
+            call.kwargs.get("user_id")
+            for call in mock_manager._get_and_evaluate_long_term_memories_sync.call_args_list
+        ]
+        assert user_ids == ["user_a", "user_b"]
+
     def test_system_prompt_block_error(self):
         """测试构建记忆块失败。"""
         mock_manager = Mock()
         mock_manager._get_and_evaluate_long_term_memories_sync.side_effect = Exception("DB error")
         
-        provider = MemoryManagerProvider(mock_manager)
+        provider = MemoryManagerProvider(mock_manager, user_id="user_1")
         request = SystemPromptRequest(workspace_root=Path("/tmp/test"))
         response = provider.system_prompt_block(request)
         

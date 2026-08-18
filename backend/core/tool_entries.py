@@ -33,7 +33,7 @@ _BUILTIN_PERMISSION_MAP: Dict[str, tuple[str, str]] = {
     "delete_file": ("write", "file:delete"),
     "file_exists": ("read", "file:exists"),
     "create_directory": ("write", "file:create"),
-    "run_command": ("execute", "command:execute"),
+    "run_command": ("command:execute", "command:execute"),
     "get_system_status": ("read", "system:info"),
     "web_search": ("web_search", "network:web_search"),
     "local_search": ("read", "local:search"),
@@ -112,6 +112,15 @@ async def _execute_tool_async(parameters: Dict[str, Any], context: Dict[str, Any
     # 通过适配器从 context 提取 ToolUseContext（支持 Dict 和 ToolUseContext 两种传入形式）
     tool_ctx = coerce_tool_context(context.get("_tool_use_context") or context)
 
+    # ToolUseContext 字段消费边界说明：
+    # - abort_controller / record_latency：本函数真实消费（中止检查 + 延迟记录）。
+    # - content_replacement_state：已由 stream_orchestrator 在消息列表层消费
+    #   （enforce_tool_result_budget），单工具执行层无对应消费点，故此处不消费。
+    # - record_usage：内置工具执行不产生 LLM token 用量（用量在 LLM 调用层记录），
+    #   当前架构无真实消费者，预留未接线。
+    # - spawn_subagent：子代理生成走 task_runtime.spawn_agent（TaskToolStrategy），
+    #   不经过本执行链，预留未接线。
+
     # 中止检查：若 abort_controller 已触发，跳过工具执行
     if tool_ctx.abort_controller is not None and tool_ctx.abort_controller.is_aborted():
         return {"success": False, "error": f"工具执行已被中止: {tool_name}"}
@@ -119,8 +128,12 @@ async def _execute_tool_async(parameters: Dict[str, Any], context: Dict[str, Any
     import time as _time
     _started = _time.perf_counter()
     try:
-        # 透传 context（含 user_id/session_id）供记忆类工具做用户隔离
-        result = await builtin_tool_manager.execute_tool(tool_name, parameters, context=context)
+        # 透传 context（含 user_id/session_id）供记忆类工具做用户隔离。
+        # 从 context 提取经 _execute_wrapper 透传的工具级 config（如 allowed_directories）。
+        _tool_config = context.get("_tool_config") if isinstance(context, dict) else None
+        result = await builtin_tool_manager.execute_tool(
+            tool_name, parameters, context=context, config=_tool_config
+        )
         return result
     except Exception as e:
         return {"success": False, "error": f"工具执行异常: {type(e).__name__}: {str(e)}"}
@@ -167,8 +180,14 @@ def register_builtin_tools(registry: Optional[ToolRegistry] = None) -> ToolRegis
 
         # 构造执行封装函数（通过闭包捕获循环变量 current_name）
         _current_name = internal_name
-        async def _execute_wrapper(params: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
-            ctx_with_name = {**(ctx or {}), "tool_name": _current_name}
+        async def _execute_wrapper(
+            params: Dict[str, Any],
+            ctx: Dict[str, Any],
+            _tool_name: str = _current_name,
+        ) -> Dict[str, Any]:
+            # 默认参数在定义时求值，规避 for 循环闭包捕获同一变量导致所有工具
+            # 都路由到最后一个内置工具（ask_user）的经典陷阱。
+            ctx_with_name = {**(ctx or {}), "tool_name": _tool_name}
             return await _execute_tool_async(params, ctx_with_name)
 
         # 组装工具配置，合并并发属性
@@ -196,8 +215,3 @@ def register_builtin_tools(registry: Optional[ToolRegistry] = None) -> ToolRegis
 
     logger.info(f"已注册 {len(BUILTIN_TOOL_DEFINITIONS)} 个内置工具到 ToolRegistry")
     return reg
-
-
-def get_builtin_permission(action: str) -> Optional[tuple[str, str]]:
-    """根据操作名获取内建工具的权限信息（用于向后兼容）。"""
-    return _BUILTIN_PERMISSION_MAP.get(action)

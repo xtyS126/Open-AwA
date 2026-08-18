@@ -11,15 +11,12 @@ import { safeGetItem } from '@/shared/utils/safeStorage'
 import { getThinkingEnabled } from '@/features/chat/store/chatSyncRegistry'
 import {
   getActiveSessionId,
-  setActiveSessionId,
   getConversationSummaries,
-  setConversationSummaries,
   loadMessages,
   saveMessages,
   removeMessages,
   isChatPersistenceAvailable,
 } from '@/features/chat/storage/chatPersistence'
-import { persistPinnedConversations } from '@/features/chat/store/chatStoreEffects'
 import { registerLogoutHandler } from '@/shared/store/authStore'
 import type { ChatMessage, ConversationSessionSummary } from '@/features/chat/types'
 
@@ -228,9 +225,8 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
 
   resetForLogout: () => {
     ++loadSequenceNumber
-    setActiveSessionId('default')
-    setConversationSummaries([])
-    persistPinnedConversations([])
+    // 活跃会话/会话摘要/置顶列表持久化由 chatSyncOrchestrator 订阅统一接管，
+    // 此处仅重置内存状态，避免与订阅层重复写 localStorage。
     set({
       messages: [],
       isLoading: false,
@@ -252,7 +248,7 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
   },
 
   setSessionId: (id) => {
-    setActiveSessionId(id)
+    // 活跃会话 ID 持久化由 chatSyncOrchestrator 订阅统一接管。
     // 不再 set({ messages: [] }) 清空消息，保留旧消息直到新数据到达，
     // 避免 StrictMode dev 双 mount 或快速切换会话时出现空白闪烁。
     // IndexedDB 加载完成后由 loadSequenceNumber 防护再 set({ messages })。
@@ -275,7 +271,7 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
   },
 
   setConversations: (items, total, hasMore) => {
-    setConversationSummaries(items)
+    // 会话摘要持久化由 chatSyncOrchestrator 订阅统一接管。
     set({
       conversations: items,
       conversationsTotal: total ?? items.length,
@@ -294,7 +290,6 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
       } else {
         nextItems.unshift(item)
       }
-      setConversationSummaries(nextItems)
       return {
         conversations: nextItems,
         conversationsTotal: Math.max(state.conversationsTotal, nextItems.length),
@@ -306,8 +301,8 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
       const nextItems = state.conversations.filter(
         (item) => item.session_id !== sessionId
       )
+      // 删除该会话的 IndexedDB 消息缓存；会话摘要持久化由 chatSyncOrchestrator 订阅统一接管。
       void removeMessages(sessionId)
-      setConversationSummaries(nextItems)
       return {
         conversations: nextItems,
         conversationsTotal: Math.max(0, state.conversationsTotal - 1),
@@ -320,14 +315,14 @@ export const useSessionStore = createWithEqualityFn<SessionState>((set, get) => 
       // 最多固定 10 个对话
       if (state.pinnedConversations.length >= 10) return state
       const next = [sessionId, ...state.pinnedConversations]
-      persistPinnedConversations(next)
+      // 置顶列表持久化由 chatSyncOrchestrator 订阅统一接管。
       return { pinnedConversations: next }
     }),
 
   unpinConversation: (sessionId) =>
     set((state) => {
       const next = state.pinnedConversations.filter((id) => id !== sessionId)
-      persistPinnedConversations(next)
+      // 置顶列表持久化由 chatSyncOrchestrator 订阅统一接管。
       return { pinnedConversations: next }
     }),
 

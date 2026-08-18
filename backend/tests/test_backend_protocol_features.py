@@ -906,11 +906,11 @@ async def test_execute_step_uses_idempotency_key_cache():
     execution_layer = ExecutionLayer()
     call_count = {"value": 0}
 
-    async def mock_execute_command(step):
+    async def mock_execute_tool_action(action, step, context):
         call_count["value"] += 1
         return {"status": "completed", "stdout": "ok", "stderr": "", "returncode": 0}
 
-    execution_layer._execute_command = mock_execute_command
+    execution_layer._execute_step_tool_action = mock_execute_tool_action
     step = {
         "action": "execute_command",
         "command": "echo ok",

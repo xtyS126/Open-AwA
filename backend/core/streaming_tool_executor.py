@@ -145,16 +145,25 @@ class StreamingToolExecutor:
     - 队列中有破坏性工具时，阻塞其他工具
     """
 
-    def __init__(self, tool_registry: Any, max_concurrent: int = 5):
+    def __init__(
+        self,
+        tool_registry: Any,
+        max_concurrent: int = 5,
+        tool_concurrency: Optional[Dict[str, Dict[str, Any]]] = None,
+    ):
         """
         初始化流式工具执行器。
 
         Args:
             tool_registry: 工具注册中心，用于查找工具定义
             max_concurrent: 最大并发执行数，默认 5
+            tool_concurrency: 未注册工具（plugin/mcp/task 动态工具）的并发属性映射，
+                键为工具全限定名，值为 {is_read_only, is_destructive, is_concurrency_safe}；
+                缺失时回退到 TOOL_DEFAULTS 失败关闭默认值。
         """
         self.tool_registry = tool_registry
         self.max_concurrent = max_concurrent
+        self._tool_concurrency: Dict[str, Dict[str, Any]] = tool_concurrency or {}
         # 待调度的工具队列
         self._queue: List[TrackedTool] = []
         # 已完成工具的异步队列，供 yield_completed 消费
@@ -248,16 +257,10 @@ class StreamingToolExecutor:
             tool_def = self._get_tool_definition(tracked.tool_name)
 
             if tool_def is None:
-                # 工具未在注册中心注册（如 plugin_/mcp_/task_ 等动态工具）
-                # 使用保守的默认定义：非并发安全、非只读、非破坏性
-                # 确保未注册工具串行执行，避免并发副作用
-                tool_def = ToolDefinition(
-                    name=tracked.tool_name,
-                    description="未注册工具，使用保守串行策略",
-                    is_concurrency_safe=False,
-                    is_read_only=False,
-                    is_destructive=False,
-                )
+                # 工具未在注册中心注册（plugin_/mcp_/task_ 等动态工具）。
+                # 优先从动态工具并发映射（能力采集时由 annotations 映射/TOOL_DEFAULTS 生成）取属性，
+                # 缺失时回退到 TOOL_DEFAULTS 失败关闭默认值。
+                tool_def = self._build_dynamic_tool_definition(tracked.tool_name)
 
             if can_execute_tool(tracked, self._executing, tool_def):
                 # 可以执行，启动任务
@@ -338,6 +341,36 @@ class StreamingToolExecutor:
         if self.tool_registry is None:
             return None
         return self.tool_registry.get(tool_name)
+
+    def _build_dynamic_tool_definition(self, tool_name: str) -> ToolDefinition:
+        """
+        为未注册工具构建并发属性定义。
+
+        优先从动态工具并发映射（能力采集阶段由 MCP annotations 映射 / TOOL_DEFAULTS
+        生成）读取属性；映射缺失时回退到 TOOL_DEFAULTS 失败关闭默认值。
+
+        Args:
+            tool_name: 工具全限定名
+
+        Returns:
+            携带并发属性的 ToolDefinition 实例
+        """
+        from core.tool_factory import build_tool
+
+        concurrency = self._tool_concurrency.get(tool_name)
+        if concurrency is not None:
+            return ToolDefinition(
+                name=tool_name,
+                description="动态工具（plugin/mcp/task），并发属性来自能力采集映射",
+                is_concurrency_safe=bool(concurrency.get("is_concurrency_safe", False)),
+                is_read_only=bool(concurrency.get("is_read_only", False)),
+                is_destructive=bool(concurrency.get("is_destructive", False)),
+            )
+        # 动态映射缺失：走 TOOL_DEFAULTS 失败关闭默认值（统一来源，避免硬编码）
+        return build_tool({
+            "name": tool_name,
+            "description": "未注册工具，使用 TOOL_DEFAULTS 保守串行策略",
+        })
 
     async def _execute_tool(self, tracked: TrackedTool, execute_fn: Callable) -> None:
         """

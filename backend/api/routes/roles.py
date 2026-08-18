@@ -32,6 +32,7 @@ class RoleCreate(BaseModel):
     allowed_skills: List[str] = Field(default=list, description="允许的技能列表")
     model_config_override: Dict[str, Any] = Field(default=dict, description="模型配置")
     is_public: bool = Field(default=False, description="是否公开")
+    is_companion: bool = Field(default=False, description="是否陪伴角色（启用情感心智演化）")
 
 
 class RoleUpdate(BaseModel):
@@ -47,6 +48,7 @@ class RoleUpdate(BaseModel):
     allowed_skills: Optional[List[str]] = None
     model_config_override: Optional[Dict[str, Any]] = None
     is_public: Optional[bool] = None
+    is_companion: Optional[bool] = None
 
 
 class RoleResponse(BaseModel):
@@ -68,6 +70,7 @@ class RoleResponse(BaseModel):
     is_public: bool
     usage_count: int
     is_preset: bool
+    is_companion: bool = False
     live2d_model_id: Optional[str] = None
     live2d_model: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
@@ -132,6 +135,7 @@ def _build_role_response(role: AgentRole, db: Session) -> Dict[str, Any]:
         "is_public": role.is_public,
         "usage_count": role.usage_count,
         "is_preset": role.is_preset,
+        "is_companion": role.is_companion,
         "live2d_model_id": role.live2d_model_id,
         "live2d_model": None,
         "created_at": role.created_at,
@@ -184,6 +188,7 @@ async def create_role(
         model_config=role_data.model_config_override,
         creator_id=current_user.get("id"),
         is_public=role_data.is_public,
+        is_companion=role_data.is_companion,
     )
     db.add(role)
     db.commit()

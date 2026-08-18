@@ -46,10 +46,14 @@ class ToolUseContext:
     user_id: str
     agent_id: str
     abort_controller: Optional[AbortController] = None
+    # 工具结果 token 预算状态：已由 stream_orchestrator 在消息列表层消费（enforce_tool_result_budget），
+    # 单工具执行层无消费点，此处仅透传。
     content_replacement_state: Optional[ContentReplacementState] = None
-    record_usage: Optional[Callable[[dict], None]] = None  # 记录 token 使用量
+    # 记录 token 使用量回调：预留未接线（内置工具执行不产生 LLM token 用量）
+    record_usage: Optional[Callable[[dict], None]] = None
     record_latency: Optional[Callable[[str, float], None]] = None  # 记录工具延迟
-    spawn_subagent: Optional[Callable[[str, dict], str]] = None  # 启动子 Agent
+    # 启动子 Agent 回调：预留未接线（子代理生成走 task_runtime.spawn_agent）
+    spawn_subagent: Optional[Callable[[str, dict], str]] = None
     metadata: dict = field(default_factory=dict)  # 额外元数据
 
 

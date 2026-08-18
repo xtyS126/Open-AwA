@@ -861,3 +861,315 @@ async def test_sandboxed_stdio_client_launch_failure_raises():
         ctx = _sandboxed_stdio_client(params)
         with pytest.raises(MCPClientError, match="沙箱启动 MCP Server 失败"):
             await ctx.__aenter__()
+
+
+# ==================== chat 链路 MCP 工具三段式命名与 schema 透传测试 ====================
+
+_MCP_SERVER_ID = "550e8400-e29b-41d4-a716-446655440000"
+
+
+def test_append_mcp_tools_uses_server_id_and_passes_input_schema():
+    """注入 LLM 的 MCP 工具名服务段应为 server_id，且透传 inputSchema 到 parameters。"""
+    from core.agent_capability_builder import _append_mcp_tools
+
+    capabilities = {
+        "mcp": {
+            "chat_dispatch_enabled": True,
+            "tools": [
+                {
+                    "server_id": _MCP_SERVER_ID,
+                    "server_name": "filesystem",
+                    "name": "read_file",
+                    "description": "读取文件内容",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                        "required": ["path"],
+                    },
+                }
+            ],
+        }
+    }
+    tools: list = []
+    _append_mcp_tools(capabilities, tools, set())
+
+    assert len(tools) == 1
+    function = tools[0]["function"]
+    # 服务段使用 server_id，保证执行侧能命中 MCPManager._clients 键
+    assert function["name"] == f"mcp__{_MCP_SERVER_ID}__read_file"
+    # 显示名保留在 description 中
+    assert "filesystem" in function["description"]
+    # input_schema 透传为 LLM 可见的 parameters
+    assert function["parameters"] == {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    }
+
+
+def test_append_mcp_tools_falls_back_to_empty_schema_when_input_missing():
+    """input_schema 缺失时应回退为空 object schema，而非丢弃参数定义。"""
+    from core.agent_capability_builder import _append_mcp_tools
+
+    capabilities = {
+        "mcp": {
+            "chat_dispatch_enabled": True,
+            "tools": [
+                {
+                    "server_id": _MCP_SERVER_ID,
+                    "server_name": "filesystem",
+                    "name": "read_file",
+                    "description": "",
+                }
+            ],
+        }
+    }
+    tools: list = []
+    _append_mcp_tools(capabilities, tools, set())
+
+    assert len(tools) == 1
+    assert tools[0]["function"]["parameters"] == {"type": "object", "properties": {}}
+
+
+@pytest.mark.asyncio
+async def test_collect_mcp_capabilities_passes_input_schema():
+    """collect_mcp_capabilities 应透传 get_all_tools 返回的 input_schema。"""
+    from core.agent_capability_builder import collect_mcp_capabilities
+
+    class FakeManager:
+        def get_all_servers(self):
+            return []
+
+        async def get_all_tools(self):
+            return [
+                {
+                    "server_id": _MCP_SERVER_ID,
+                    "server_name": "filesystem",
+                    "tool": {
+                        "name": "read_file",
+                        "description": "读取文件内容",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"path": {"type": "string"}},
+                        },
+                    },
+                }
+            ]
+
+    with patch("mcp_integration.manager.MCPManager", return_value=FakeManager()):
+        result = await collect_mcp_capabilities({"enable_mcp_tool_dispatch": True})
+
+    assert result["tools"][0]["server_id"] == _MCP_SERVER_ID
+    assert result["tools"][0]["input_schema"] == {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_mcp_strategy_parses_server_id_from_tool_name():
+    """MCPToolStrategy 应能从 mcp__<server_id>__<tool> 中解析出 server_id 并命中连接。"""
+    from core.tool_execution.base import ToolExecutionContext
+    from core.tool_execution.mcp_strategy import MCPToolStrategy
+
+    captured: dict = {}
+
+    class FakeManager:
+        def __call__(self, *args, **kwargs):
+            return self
+
+        async def call_tool(self, server_id, tool_name, arguments):
+            captured["server_id"] = server_id
+            captured["tool_name"] = tool_name
+            captured["arguments"] = arguments
+            return "ok"
+
+    strategy = MCPToolStrategy()
+    with patch("mcp_integration.manager.MCPManager", new=FakeManager()):
+        result = await strategy.execute(
+            ToolExecutionContext(
+                session_id="s1",
+                user_id=1,
+                tool_name=f"mcp__{_MCP_SERVER_ID}__read_file",
+                tool_input={"path": "/tmp/a.txt"},
+                tool_call_id="c1",
+            )
+        )
+
+    assert result.error is None
+    assert captured["server_id"] == _MCP_SERVER_ID
+    assert captured["tool_name"] == "read_file"
+    assert captured["arguments"] == {"path": "/tmp/a.txt"}
+
+
+@pytest.mark.asyncio
+async def test_mcp_permission_service_rule_matches_uuid_server_id(reset_global_permission_rules):
+    """服务段为 UUID 时，服务级规则 mcp__<server_id> 仍应命中该服务下所有工具。"""
+    pm = get_permission_manager()
+    pm.set_global_rules([
+        PermissionRule(
+            action=f"mcp__{_MCP_SERVER_ID}",
+            resource="*",
+            effect=PermissionEffect.DENY,
+        ),
+    ])
+    runtime = ExecutionToolRuntimeMixin()
+    context = {"user_id": "u1"}
+    with patch("core.permission_manager.get_permission_manager", return_value=pm):
+        denied = await runtime._check_mcp_permission(
+            full_tool_name=f"mcp__{_MCP_SERVER_ID}__read_file",
+            server_id=_MCP_SERVER_ID,
+            context=context,
+        )
+        assert denied is not None
+        assert denied["denied_by"] == "permission"
+        # 其他服务的工具不受影响
+        other = await runtime._check_mcp_permission(
+            full_tool_name="mcp__another-server-id__read_file",
+            server_id="another-server-id",
+            context=context,
+        )
+        assert other is None
+
+
+# ==================== MCP annotations 映射与动态工具并发属性 ====================
+
+
+def test_map_tool_annotations_read_only():
+    """readOnlyHint=True 应映射为只读且可并发。"""
+    from mcp_integration.manager import map_tool_annotations
+
+    annotations = MagicMock()
+    annotations.readOnlyHint = True
+    annotations.destructiveHint = False
+
+    result = map_tool_annotations(annotations)
+    assert result == {
+        "is_read_only": True,
+        "is_destructive": False,
+        "is_concurrency_safe": True,
+    }
+
+
+def test_map_tool_annotations_destructive():
+    """destructiveHint=True 应映射为破坏性且串行（即使 readOnlyHint=True）。"""
+    from mcp_integration.manager import map_tool_annotations
+
+    annotations = MagicMock()
+    annotations.readOnlyHint = True
+    annotations.destructiveHint = True
+
+    result = map_tool_annotations(annotations)
+    assert result == {
+        "is_read_only": True,
+        "is_destructive": True,
+        "is_concurrency_safe": False,
+    }
+
+
+def test_map_tool_annotations_none_fails_closed():
+    """annotations 为 None 时失败关闭，全 False。"""
+    from mcp_integration.manager import map_tool_annotations
+
+    assert map_tool_annotations(None) == {
+        "is_read_only": False,
+        "is_destructive": False,
+        "is_concurrency_safe": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_tools_maps_annotations_into_concurrency_fields():
+    """list_tools 应把官方 SDK 的 Tool.annotations 映射为 MCPTool 并发字段。"""
+    from types import SimpleNamespace
+
+    config = MCPServerConfig(
+        name="test", transport_type=TransportType.STDIO, command="echo"
+    )
+    client = MCPClient(config)
+
+    mock_session = MagicMock()
+    mock_session.list_tools = AsyncMock(return_value=SimpleNamespace(
+        tools=[
+            SimpleNamespace(
+                name="read_tool",
+                description="只读工具",
+                inputSchema={},
+                annotations=SimpleNamespace(readOnlyHint=True, destructiveHint=False),
+            ),
+            SimpleNamespace(
+                name="delete_tool",
+                description="破坏性工具",
+                inputSchema={},
+                annotations=SimpleNamespace(readOnlyHint=False, destructiveHint=True),
+            ),
+        ]
+    ))
+    client._session = mock_session
+
+    tools = await client.list_tools()
+    assert len(tools) == 2
+
+    read_tool = next(t for t in tools if t.name == "read_tool")
+    assert read_tool.is_read_only is True
+    assert read_tool.is_destructive is False
+    assert read_tool.is_concurrency_safe is True
+
+    delete_tool = next(t for t in tools if t.name == "delete_tool")
+    assert delete_tool.is_read_only is False
+    assert delete_tool.is_destructive is True
+    assert delete_tool.is_concurrency_safe is False
+
+
+def test_build_dynamic_tool_concurrency_map_defaults_and_mcp():
+    """plugin/MCP/task 动态工具应获得明确的并发属性来源（MCP 用 annotations，其余失败关闭）。"""
+    from core.agent_capability_builder import build_dynamic_tool_concurrency_map
+
+    capabilities = {
+        "plugins": [
+            {"name": "hello", "tools": [{"name": "tool1", "description": "d", "parameters": {}}]}
+        ],
+        "mcp": {
+            "chat_dispatch_enabled": True,
+            "tools": [
+                {
+                    "server_id": "srv1",
+                    "server_name": "srv1",
+                    "name": "list_files",
+                    "is_read_only": True,
+                    "is_destructive": False,
+                    "is_concurrency_safe": True,
+                },
+                {
+                    "server_id": "srv1",
+                    "server_name": "srv1",
+                    "name": "delete_file",
+                    "is_read_only": False,
+                    "is_destructive": True,
+                    "is_concurrency_safe": False,
+                },
+            ],
+        },
+    }
+
+    concurrency = build_dynamic_tool_concurrency_map(capabilities)
+
+    # plugin 工具：失败关闭默认值
+    assert concurrency["plugin_hello__tool1"] == {
+        "is_read_only": False,
+        "is_destructive": False,
+        "is_concurrency_safe": False,
+    }
+    # MCP 只读工具：可并发
+    assert concurrency["mcp__srv1__list_files"] == {
+        "is_read_only": True,
+        "is_destructive": False,
+        "is_concurrency_safe": True,
+    }
+    # MCP 破坏性工具：串行
+    assert concurrency["mcp__srv1__delete_file"]["is_destructive"] is True
+    assert concurrency["mcp__srv1__delete_file"]["is_concurrency_safe"] is False
+    # task 工具：失败关闭默认值（task_spawn_agent 由 build_task_runtime_tool_definitions 生成）
+    assert concurrency["task_spawn_agent"]["is_read_only"] is False
+    assert concurrency["task_spawn_agent"]["is_destructive"] is False
+    assert concurrency["task_spawn_agent"]["is_concurrency_safe"] is False

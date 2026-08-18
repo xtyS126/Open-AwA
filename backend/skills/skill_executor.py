@@ -29,8 +29,8 @@ from security.command_whitelist import (
     ALLOWED_COMMANDS,
     DANGEROUS_ARG_PATTERNS,
     is_path_allowed as _is_path_in_workspace,
-    validate_command_safety_detailed as _validate_command_safety_detailed,
 )
+from security.command_validators import validate_command_for_execution
 
 
 # ---------------------------------------------------------------------------
@@ -436,10 +436,11 @@ class SkillExecutor:
 
         executable = command_list[0]
 
-        # 委托给 command_whitelist.validate_command_safety_detailed 进行统一校验
-        # 包括：危险命令黑名单 + 白名单 + 参数危险模式 + ACP 硬阻断模式（rm -rf / 等）
-        is_safe, err_msg = _validate_command_safety_detailed(
-            executable, command_list[1:]
+        # 命令安全统一到 security.command_validators.validate_command_for_execution：
+        # 系统级硬阻断 + 验证器流水线 + 终端黑名单/高危路径/危险模式 +
+        # 白名单（require_allowlist=True，含危险命令黑名单、参数模式与子命令安全）。
+        is_safe, err_msg = validate_command_for_execution(
+            command, command_list=command_list, require_allowlist=True
         )
         if not is_safe:
             raise RuntimeError(err_msg or "命令被安全策略拒绝")

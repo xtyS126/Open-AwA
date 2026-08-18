@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-import asyncio
+import json
 from typing import Any, Dict
 
 from loguru import logger
 
 from core.metrics import record_tool_execution_metric
 from memory.experience_manager import ExperienceManager
+
+
+# 步骤级 action -> 内置工具名 映射。
+# 历史计划中 read_files/execute_command 是独立的步骤动作，现在统一收敛到
+# builtin_read_file / builtin_run_command 的工具策略分发入口，消除执行层的重复实现。
+_STEP_ACTION_TOOL_MAP: Dict[str, str] = {
+    "read_files": "builtin_read_file",
+    "execute_command": "builtin_run_command",
+}
 
 
 class ExecutionStepRuntimeMixin:
@@ -65,10 +74,9 @@ class ExecutionStepRuntimeMixin:
             return result
 
         try:
-            if action == "read_files":
-                result = await self._execute_read_files(step)
-            elif action == "execute_command":
-                result = await self._execute_command(step)
+            if action in _STEP_ACTION_TOOL_MAP:
+                # 工具类动作统一委托到工具策略分发入口，不再为每个动作硬编码独立实现
+                result = await self._execute_step_tool_action(action, step, context)
             elif action == "llm_generate":
                 result = await self._execute_llm(step, context)
             elif action == "llm_query":
@@ -107,63 +115,91 @@ class ExecutionStepRuntimeMixin:
                 "idempotency_key": idempotency_key,
             }
 
-    async def _execute_read_files(self, step: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_step_tool_action(
+        self,
+        action: str,
+        step: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """
-        读取指定文件列表的内容。包含路径穿越防护：所有文件路径限制在工作区目录内。
-        支持 workspace 环境变量 OPENAWA_WORKSPACE 自定义工作区根路径。
-        """
-        files = step.get("targets", [])
-        results = {}
+        工具类步骤动作（read_files/execute_command）的统一委托入口。
 
-        from pathlib import Path as _Path
-        import os as _os
-        _workspace = _Path(_os.environ.get("OPENAWA_WORKSPACE", _os.getcwd())).resolve()
+        历史计划中这两个动作各自实现了文件读取与命令执行的逻辑，与
+        builtin_read_file / builtin_run_command 的工具策略重复。此处统一构造
+        工具调用并委托到 _execute_tool_call 的策略分发，保留步骤级返回契约。
+        """
+        if action == "read_files":
+            return await self._execute_read_files_via_tool(step, context)
+        if action == "execute_command":
+            return await self._execute_command_via_tool(step, context)
+        return {"status": "error", "message": f"Unknown action: {action}"}
+
+    async def _execute_read_files_via_tool(
+        self,
+        step: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        读取文件列表：复用 builtin_read_file 策略逐文件读取。
+
+        保留历史返回契约 {"status": "completed", "results": {path: {...}}}。
+        路径穿越防护由 builtin_read_file 内部的 FileManagerSkill.is_path_safe 承担
+        （realpath + relative_to/commonpath 白名单校验，等价于原工作区边界约束）。
+        """
+        files = self._resolve_step_param(step, "files", "targets") or []
+        if isinstance(files, str):
+            files = [files]
+        if not isinstance(files, (list, tuple)):
+            return {
+                "status": "error",
+                "message": f"参数 'files' 应为列表类型，实际为 {type(files).__name__}",
+            }
+
+        results: Dict[str, Any] = {}
         for file_path in files:
-            # 路径穿越防护：使用 Path.resolve() + relative_to() 替代 startswith
-            # startswith 可被符号链接或 .. 序列绕过，relative_to 是项目硬约束
-            try:
-                resolved = (_workspace / str(file_path).lstrip("/\\")).resolve()
-                # 触发 relative_to 校验，不在工作区内则抛 ValueError
-                resolved.relative_to(_workspace)
-            except (ValueError, OSError):
+            tool_call = {
+                "id": "",
+                "type": "function",
+                "function": {
+                    "name": "builtin_read_file",
+                    "arguments": json.dumps({"path": file_path}, ensure_ascii=False),
+                },
+            }
+            tool_result = await self._execute_tool_call(tool_call, context)
+            if tool_result.get("ok"):
+                inner = tool_result.get("result") or {}
+                if isinstance(inner, dict) and inner.get("success"):
+                    results[file_path] = {
+                        "status": "success",
+                        "content": inner.get("content"),
+                    }
+                else:
+                    results[file_path] = {
+                        "status": "error",
+                        "message": (inner if isinstance(inner, dict) else {}).get("error") or "读取失败",
+                    }
+            else:
                 results[file_path] = {
                     "status": "error",
-                    "message": "Path traversal denied"
-                }
-                continue
-            try:
-                # 将同步文件读取包装到 asyncio.to_thread，
-                # 避免在异步协程中阻塞事件循环。
-                def _read_file(path: str) -> str:
-                    with open(path, 'r', encoding='utf-8') as _f:
-                        return _f.read()
-                content = await asyncio.to_thread(_read_file, resolved)
-                results[file_path] = {
-                    "status": "success",
-                    "content": content
-                }
-            except FileNotFoundError:
-                results[file_path] = {
-                    "status": "error",
-                    "message": f"File not found: {file_path}"
-                }
-            except Exception as e:
-                results[file_path] = {
-                    "status": "error",
-                    "message": str(e)
+                    "message": tool_result.get("error") or "读取失败",
                 }
 
-        return {
-            "status": "completed",
-            "results": results
-        }
+        return {"status": "completed", "results": results}
 
-    async def _execute_command(self, step: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_command_via_tool(
+        self,
+        step: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """
-        在沙箱中异步执行 Shell 命令。包含三层安全防护：
-        命令长度限制（512 字符）、security.sandbox 白名单校验、30 秒超时自动终止。
+        执行 Shell 命令：复用 builtin_run_command 策略执行。
+
+        安全语义保持不变：命令长度限制（512 字符）与统一命令安全判定
+        （validate_command_for_execution，含系统级硬阻断 + 验证器流水线 + 白名单）
+        仍作为步骤级前置门禁；底层命令执行委托给 builtin_run_command。
+        保留历史返回契约 {"status": "completed", "returncode", "stdout", "stderr"}。
         """
-        command = step.get("command", "")
+        command = str(step.get("command", "") or "")
 
         # 命令长度限制，防止超长命令被注入
         if len(command) > 512:
@@ -172,83 +208,46 @@ class ExecutionStepRuntimeMixin:
                 "message": f"Command too long: {len(command)} characters (max 512)"
             }
 
-        import shlex
-        proc = None
+        # 命令安全统一到 security.command_validators.validate_command_for_execution：
+        # 系统级硬阻断 + 验证器流水线 + 终端黑名单 + 白名单（require_allowlist=True）。
+        from security.command_validators import validate_command_for_execution
+        is_safe, err_msg = validate_command_for_execution(command, require_allowlist=True)
+        if not is_safe:
+            return {
+                "status": "error",
+                "message": err_msg or "Command rejected by security policy"
+            }
 
-        async def _terminate_process() -> None:
-            """终止子进程并限制等待时长，避免清理路径本身无限阻塞。"""
-            if proc is None or proc.returncode is not None:
-                return
-            try:
-                proc.kill()
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                logger.bind(
-                    module="executor",
-                    event="process_kill_wait_timeout",
-                    pid=proc.pid,
-                ).error("子进程终止后未在限定时间内退出")
-            except Exception as exc:
-                logger.bind(
-                    module="executor",
-                    event="process_kill_error",
-                    pid=proc.pid,
-                    error_type=type(exc).__name__,
-                ).warning("子进程清理失败")
-
+        timeout_seconds = step.get("timeout_seconds", step.get("timeout", 30))
         try:
-            args = shlex.split(command)
-            if not args:
-                return {
-                    "status": "error",
-                    "message": "Empty command"
-                }
+            timeout_seconds = float(timeout_seconds)
+        except (TypeError, ValueError):
+            timeout_seconds = 30.0
+        timeout_seconds = min(max(timeout_seconds, 1.0), 300.0)
 
-            # 使用白名单校验可执行文件，防止任意命令执行
-            from security.sandbox import validate_command_safety
-            is_safe, err_msg = validate_command_safety(args[0], args[1:] if len(args) > 1 else [])
-            if not is_safe:
-                return {
-                    "status": "error",
-                    "message": err_msg or "Command rejected by security policy"
-                }
-
-            proc = await asyncio.create_subprocess_exec(
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-
-            timeout_seconds = step.get("timeout_seconds", step.get("timeout", 30))
-            try:
-                timeout_seconds = float(timeout_seconds)
-            except (TypeError, ValueError):
-                timeout_seconds = 30.0
-            timeout_seconds = min(max(timeout_seconds, 1.0), 300.0)
-
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=timeout_seconds,
-            )
-
+        tool_call = {
+            "id": "",
+            "type": "function",
+            "function": {
+                "name": "builtin_run_command",
+                "arguments": json.dumps(
+                    {"command": command, "timeout": timeout_seconds},
+                    ensure_ascii=False,
+                ),
+            },
+        }
+        tool_result = await self._execute_tool_call(tool_call, context)
+        if tool_result.get("ok"):
+            inner = tool_result.get("result") or {}
+            if not isinstance(inner, dict):
+                return {"status": "error", "message": "命令执行返回异常结果"}
             return {
                 "status": "completed",
-                "returncode": proc.returncode,
-                "stdout": stdout.decode("utf-8", errors="replace") if stdout else "",
-                "stderr": stderr.decode("utf-8", errors="replace") if stderr else ""
+                "returncode": inner.get("exit_code"),
+                "stdout": inner.get("stdout", ""),
+                "stderr": inner.get("stderr", ""),
             }
-        except asyncio.TimeoutError:
-            await _terminate_process()
-            return {
-                "status": "error",
-                "message": "Command execution timeout"
-            }
-        except Exception as e:
-            await _terminate_process()
-            return {
-                "status": "error",
-                "message": str(e)
-            }
+        return {"status": "error", "message": tool_result.get("error") or "命令执行失败"}
 
     async def _execute_llm(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
