@@ -6,6 +6,7 @@
  * - 启动时若未配置后端，直接进入服务器选择页，不发起无效的 /api 探测
  */
 import { Capacitor } from '@capacitor/core'
+import type { DesktopApi } from '@/shared/types/desktop'
 
 /** 是否运行在 Capacitor 原生容器内（非浏览器） */
 export const isNativeApp = (): boolean => {
@@ -33,4 +34,28 @@ export function disableExternalFontsInNativeApp(): void {
       'link[href*="fonts.googleapis.com"], link[href*="fonts.gstatic.com"]',
     )
     .forEach((link) => link.remove())
+}
+
+/**
+ * 是否运行在 Electron 桌面端（通过 preload 注入的 __OPENAWA_DESKTOP__ 检测）。
+ * 与 isNativeApp() 不同：isNativeApp() 检测 Capacitor 容器（Android/iOS），
+ * isDesktop() 检测 Electron 桌面端。
+ */
+export function isDesktop(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.__OPENAWA_DESKTOP__ !== undefined
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 获取桌面端 API（类型安全），非桌面端返回 null。
+ */
+export function getDesktopApi(): DesktopApi | null {
+  try {
+    return window.__OPENAWA_DESKTOP__ ?? null
+  } catch {
+    return null
+  }
 }

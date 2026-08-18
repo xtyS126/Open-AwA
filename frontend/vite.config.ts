@@ -87,6 +87,8 @@ export default defineConfig(({ mode }) => {
     // 使用前端专用且已被 .gitignore 覆盖的缓存目录。
     // 禁止与后端或构建任务共享 var/cache，避免 Windows 下 results.json 文件锁冲突。
     cacheDir: path.resolve(import.meta.dirname, '.vite-cache'),
+    // 桌面端 Electron 通过 file:// 协议加载本地 HTML，需要相对路径
+    base: './',
     build: {
       // P0: target 升级到 es2020，减少 polyfill 体积
       target: 'es2020',

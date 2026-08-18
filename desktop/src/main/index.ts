@@ -11,7 +11,8 @@ import { setupMenu } from './menu'
 import { setupTray, destroyTray } from './tray'
 import { registerGlobalShortcuts, unregisterAllShortcuts } from './shortcuts'
 import { initAutoUpdater, disposeAutoUpdater } from './updater'
-import { getBackendUrl } from '../shared/config-store'
+import { getBackendUrl, getPetConfig } from '../shared/config-store'
+import { createPetOverlay, destroyPetOverlay } from './pet-overlay'
 
 // 配置日志
 log.transports.file.level = 'info'
@@ -84,11 +85,12 @@ app.on('window-all-closed', () => {
   }
 })
 
-// 退出时清理资源：注销全局快捷键 + 销毁托盘 + 清理更新定时器
+// 退出时清理资源：注销全局快捷键 + 销毁托盘 + 清理更新定时器 + 销毁宠物悬浮窗
 app.on('will-quit', () => {
   unregisterAllShortcuts()
   destroyTray()
   disposeAutoUpdater()
+  destroyPetOverlay()
 })
 
 /** 引导窗口引用 */
@@ -103,14 +105,14 @@ function showOnboardingWindow(): void {
   }
 
   const onboardingWin = new BrowserWindow({
-    width: 480,
-    height: 400,
+    width: 600,
+    height: 600,
     resizable: false,
     minimizable: false,
     maximizable: false,
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'onboarding.js'),
+      preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -119,7 +121,17 @@ function showOnboardingWindow(): void {
 
   onboardingWindow = onboardingWin
 
-  onboardingWin.loadFile(path.join(__dirname, '..', '..', 'resources', 'onboarding.html'))
+  // 加载引导页面（React 路由 /onboarding）
+  const frontendUrl = process.env.OPENAWA_FRONTEND_URL
+  if (frontendUrl) {
+    // 开发模式：加载 dev server
+    onboardingWin.loadURL(frontendUrl + '/onboarding')
+  } else {
+    // 生产模式：加载本地 frontend，通过 query 参数指定路由（与宠物悬浮窗同样机制）
+    const frontendPath = path.join(__dirname, '..', '..', 'resources', 'frontend', 'index.html')
+    onboardingWin.loadFile(frontendPath, { query: { route: 'onboarding' } })
+  }
+
   onboardingWin.once('ready-to-show', () => {
     onboardingWin.show()
   })
@@ -150,4 +162,10 @@ function startMainWindow(): void {
   setupTray()
   registerGlobalShortcuts()
   initAutoUpdater()
+
+  // 如果宠物功能启用，创建宠物悬浮窗
+  const petConfig = getPetConfig()
+  if (petConfig.enabled) {
+    createPetOverlay()
+  }
 }

@@ -1,0 +1,458 @@
+/**
+ * Live2DModelManager 模型管理页面样式
+ */
+
+.page {
+  padding: var(--space-4, 16px) var(--space-4, 16px) var(--space-6, 24px);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4, 16px);
+  flex-wrap: wrap;
+  gap: var(--space-2, 8px);
+}
+
+.titleBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.titleIcon {
+  color: var(--color-primary, #0d9488);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-xl, 20px);
+  font-weight: 600;
+  color: var(--color-text-primary, #111);
+}
+
+.subtitle {
+  margin-left: var(--space-2, 8px);
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary, #999);
+}
+
+/* 上传按钮 */
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--text-sm, 13px);
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: var(--color-primary, #0d9488);
+  color: #fff;
+  white-space: nowrap;
+}
+
+.btnPrimary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 错误横幅 */
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 var(--space-3, 12px);
+  padding: 8px 12px;
+  background: var(--color-error-bg, #fef2f2);
+  color: var(--color-error-strong, #dc2626);
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--text-sm, 13px);
+}
+
+/* 加载状态 */
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: var(--space-6, 24px);
+  color: var(--color-text-tertiary, #999);
+  justify-content: center;
+}
+
+/* 模型卡片网格 */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3, 12px);
+}
+
+/* 模型卡片 */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: var(--space-3, 12px);
+  background: var(--color-bg-primary, #fff);
+  border: 1px solid var(--color-border, #eee);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.04));
+}
+
+/* 预览区域 */
+.previewBox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 160px;
+  background:
+    linear-gradient(45deg, var(--color-bg-tertiary, #f5f5f5) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--color-bg-tertiary, #f5f5f5) 25%, transparent 25%);
+  background-size: 16px 16px;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+
+.previewPlaceholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-tertiary, #999);
+  font-size: var(--text-xs, 12px);
+}
+
+/* 模型信息 */
+.cardInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.name {
+  margin: 0;
+  font-size: var(--text-base, 15px);
+  font-weight: 600;
+  color: var(--color-text-primary, #111);
+}
+
+.desc {
+  margin: 0;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary, #888);
+  line-height: 1.4;
+  min-height: 1.4em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs, 11px);
+  color: var(--color-text-tertiary, #aaa);
+  flex-wrap: wrap;
+}
+
+.metaItem {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* 卡片操作按钮 */
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  margin-top: auto;
+}
+
+.btnPreview {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--text-xs, 12px);
+  cursor: pointer;
+  border: 1px solid var(--color-border, #ddd);
+  background: transparent;
+  color: var(--color-text-secondary, #666);
+}
+
+.btnPreview:hover {
+  background: var(--color-bg-tertiary, #f5f5f5);
+}
+
+.btnDelete {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--text-xs, 12px);
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: var(--color-error-bg, #fef2f2);
+  color: var(--color-error-strong, #dc2626);
+}
+
+.btnDelete:hover {
+  background: #fee2e2;
+}
+
+.btnDelete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 空状态 */
+.empty {
+  padding: var(--space-6, 24px);
+  text-align: center;
+  color: var(--color-text-tertiary, #999);
+  font-size: var(--text-sm, 13px);
+  background: var(--color-bg-tertiary, #f9f9f9);
+  border-radius: var(--radius-md, 8px);
+}
+
+/* 上传模态框 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.modal {
+  background: var(--color-bg-primary, #fff);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0,0,0,0.12));
+  width: 90vw;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4, 16px);
+  border-bottom: 1px solid var(--color-border, #eee);
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: var(--text-lg, 18px);
+  font-weight: 600;
+  color: var(--color-text-primary, #111);
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary, #999);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 6px);
+}
+
+.closeBtn:hover {
+  background: var(--color-bg-tertiary, #f5f5f5);
+}
+
+.modalBody {
+  padding: var(--space-4, 16px);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--space-3, 12px);
+}
+
+.fieldLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm, 13px);
+  font-weight: 500;
+  color: var(--color-text-secondary, #444);
+}
+
+.fileInput {
+  padding: 8px;
+  border: 1px dashed var(--color-border, #ddd);
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--text-sm, 13px);
+  cursor: pointer;
+}
+
+.fileName {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-primary, #0d9488);
+}
+
+.tip {
+  margin: 0 0 var(--space-3, 12px);
+  font-size: var(--text-xs, 11px);
+  color: var(--color-text-tertiary, #aaa);
+}
+
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2, 8px);
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  border-top: 1px solid var(--color-border, #eee);
+}
+
+.btnGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--text-sm, 13px);
+  cursor: pointer;
+  border: 1px solid var(--color-border, #ddd);
+  background: transparent;
+  color: var(--color-text-secondary, #666);
+}
+
+.btnGhost:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 预览模态框 */
+.previewModal {
+  background: var(--color-bg-primary, #fff);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0,0,0,0.12));
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.previewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  border-bottom: 1px solid var(--color-border, #eee);
+}
+
+.previewTitle {
+  margin: 0;
+  font-size: var(--text-base, 15px);
+  font-weight: 600;
+  color: var(--color-text-primary, #111);
+}
+
+.previewBody {
+  padding: var(--space-4, 16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 320px;
+  min-height: 440px;
+}
+
+.previewFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2, 8px);
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  border-top: 1px solid var(--color-border, #eee);
+}
+
+/* 表情切换按钮组 */
+.expressionRow {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.expressionBtn {
+  padding: 3px 8px;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  font-size: 11px;
+  color: var(--color-text-secondary, #666);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.expressionBtn:hover {
+  background: var(--color-bg-tertiary, #f5f5f5);
+}
+
+.expressionBtnActive {
+  border-color: var(--color-primary, #0d9488);
+  background: var(--color-info-bg, #eff6ff);
+  color: var(--color-primary, #0d9488);
+}
+
+/* 口型同步滑动条 */
+.lipSyncRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.lipSyncLabel {
+  font-size: 11px;
+  color: var(--color-text-tertiary, #999);
+  white-space: nowrap;
+}
+
+.lipSyncSlider {
+  flex: 1;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #0d9488);
+}
+
+/* ============================================================
+ * 移动端适配（≤ 768px）
+ * ============================================================ */
+@media (max-width: 768px) {
+  .page {
+    padding: var(--space-3, 12px) var(--space-3, 12px) var(--space-4, 16px);
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal {
+    width: 95vw;
+    max-width: none;
+  }
+
+  .previewBody {
+    min-width: auto;
+    min-height: 360px;
+  }
+}

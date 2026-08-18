@@ -961,7 +961,7 @@ def test_websocket_sends_chunked_messages_with_seq_and_checksum(monkeypatch):
             return self
 
         def first(self):
-            return fake_user
+            return SimpleNamespace(user_id="user-1", conversation_metadata={})
 
     class FakeSession:
         def query(self, *args, **kwargs):

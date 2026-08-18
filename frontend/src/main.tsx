@@ -8,6 +8,7 @@ import { appLogger } from '@/shared/utils/logger'
 import { disableExternalFontsInNativeApp } from '@/shared/utils/platform'
 import { mark } from '@/shared/perf/metrics'
 import { queryClient } from '@/shared/api/queryClient'
+import { initDesktopBackendUrl } from '@/shared/api/client'
 
 // APP 模式（Capacitor 原生容器）下移除 Google Fonts 外部引用：
 // 消除首屏外部网络依赖，字体回退到系统字体栈
@@ -75,10 +76,16 @@ if (import.meta.hot) {
   })
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </React.StrictMode>,
-)
+// 桌面端：先从主进程拉取后端 URL，再渲染应用
+async function bootstrap(): Promise<void> {
+  await initDesktopBackendUrl()
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </React.StrictMode>,
+  )
+}
+
+bootstrap()

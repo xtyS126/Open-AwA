@@ -52,3 +52,9 @@ export async function activateRole(roleId: string, sessionId: string): Promise<R
   const { data } = await api.post(`${BASE}/${roleId}/activate`, { session_id: sessionId })
   return data
 }
+
+/** 绑定或解绑角色的 Live2D 模型 */
+export async function bindRoleLive2D(roleId: string, live2dModelId: string | null): Promise<AgentRole> {
+  const { data } = await api.put(`${BASE}/${roleId}/live2d`, { live2d_model_id: live2dModelId })
+  return data
+}

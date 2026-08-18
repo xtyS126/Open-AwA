@@ -52,7 +52,7 @@ async def test_ai_agent_process_stream_emits_status_before_plan(monkeypatch):
         return []
 
     async def fake_recognize_intent(user_input):
-        return "chat"
+        return {"type": "chat", "action": "respond"}
 
     async def fake_extract_entities(user_input):
         return {}
@@ -143,7 +143,7 @@ async def test_ai_agent_process_stream_replays_reasoning_content_after_tool_call
         return []
 
     async def fake_recognize_intent(user_input):
-        return "chat"
+        return {"type": "chat", "action": "respond"}
 
     async def fake_extract_entities(user_input):
         return {}
@@ -233,7 +233,7 @@ async def test_ai_agent_process_stream_forwards_foreground_subagent_events_befor
         return []
 
     async def fake_recognize_intent(user_input):
-        return "chat"
+        return {"type": "chat", "action": "respond"}
 
     async def fake_extract_entities(user_input):
         return {}
@@ -362,7 +362,7 @@ async def test_ai_agent_process_stream_allows_more_than_five_tool_rounds(monkeyp
         return []
 
     async def fake_recognize_intent(user_input):
-        return "chat"
+        return {"type": "chat", "action": "respond"}
 
     async def fake_extract_entities(user_input):
         return {}

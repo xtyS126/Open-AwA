@@ -3,11 +3,23 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  createHashHistory,
 } from '@tanstack/react-router'
 import { Navigate, useParams } from '@/shared/routing'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
 import { DevTestRoute, RootGuard } from './RouteGuards'
+
+// 宠物悬浮窗检测：通过 loadFile 的 query 参数 overlay=pet 识别
+// hash history 模式下，路由路径存放在 location.hash；query 参数仍在 location.search
+if (typeof window !== 'undefined') {
+  const search = window.location.search
+  if (search.includes('overlay=pet')) {
+    window.location.hash = '#/pet-overlay'
+  } else if (search.includes('route=onboarding')) {
+    window.location.hash = '#/onboarding'
+  }
+}
 
 const LoginPage = React.lazy(() => import('@/features/auth/LoginPage'))
 const ServerSelectPage = React.lazy(() => import('@/features/server/ServerSelectPage'))
@@ -34,6 +46,8 @@ const VibeCodingPage = React.lazy(() => import('@/features/vibe-coding/VibeCodin
 const DiscussionsPage = React.lazy(() => import('@/features/discussions/DiscussionsPage'))
 const AutomationsOverviewPage = React.lazy(() => import('@/features/automations/AutomationsOverviewPage'))
 const WorkbenchShell = React.lazy(() => import('@/features/workbench/WorkbenchShell'))
+const PetOverlayApp = React.lazy(() => import('@/features/pet-overlay/PetOverlayApp'))
+const OnboardingPage = React.lazy(() => import('@/features/onboarding/OnboardingPage'))
 
 function PageSkeleton() {
   return (
@@ -145,6 +159,10 @@ export const routeDefinitions: AppRouteDefinition[] = [
   { path: '/discussions', element: <Navigate to="/automations/runs" replace />, kind: 'redirect' },
   { path: '/discussions/$id', element: <LegacyDiscussionRedirect />, kind: 'redirect' },
   { path: '/pets', element: <Navigate to="/settings/appearance?section=companion" replace />, kind: 'redirect' },
+  // 宠物悬浮窗路由（仅在桌面端 Electron 悬浮窗中使用）
+  { path: '/pet-overlay', element: withPageBoundary('PetOverlay', <PetOverlayApp />) },
+  // 引导窗口路由（桌面端首次启动配置后端 URL，无需认证）
+  { path: '/onboarding', element: withPageBoundary('Onboarding', <OnboardingPage />) },
 ]
 
 const rootRoute = createRootRoute({
@@ -191,4 +209,4 @@ const childRoutes = [
 
 const routeTree = rootRoute.addChildren(childRoutes)
 
-export const router = createRouter({ routeTree })
+export const router = createRouter({ routeTree, history: createHashHistory() })

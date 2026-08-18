@@ -21,20 +21,18 @@ import { getWindowBounds, setWindowBounds, getIsMaximized, setIsMaximized } from
  * 该方法在 app ready 后、窗口创建前调用一次，对所有 BrowserWindow 生效。
  */
 export function installSecurityHeaders(): void {
-  // 生产模式 CSP（最严格）：禁用 unsafe-inline、禁用外部连接（除本地后端）
+  // style 与 font 在生产/开发模式均需允许内联与 data: 字体
+  // Vite 构建产物使用内联样式属性与 base64 内嵌字体（图标/KaTeX 字体）
   const isDev = !!process.env.OPENAWA_FRONTEND_URL
-  const styleSrc = isDev
-    ? "'self' 'unsafe-inline' https://fonts.googleapis.com"
-    : "'self' https://fonts.googleapis.com"
   const connectSrc = isDev
     ? "'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*"
     : "'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*"
 
   const csp = [
     "default-src 'self'",
-    `script-src 'self'`,
-    `style-src ${styleSrc}`,
-    "font-src 'self' https://fonts.gstatic.com",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data: blob: https:",
     `connect-src ${connectSrc}`,
     "frame-src 'self'",
@@ -151,7 +149,7 @@ export function createMainWindow(): BrowserWindow {
     x: bounds.x ?? undefined,
     y: bounds.y ?? undefined,
     minWidth: 1024,
-    minHeight: 600,
+    minHeight: 700,
     show: false,
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -177,11 +175,11 @@ export function createMainWindow(): BrowserWindow {
       // 仅允许同源导航
       if (target.origin !== current.origin) {
         event.preventDefault()
-        log.warning(`阻止导航到外部 URL: ${url}`)
+        log.warn(`阻止导航到外部 URL: ${url}`)
       }
     } catch {
       event.preventDefault()
-      log.warning(`阻止非法 URL 导航: ${url}`)
+      log.warn(`阻止非法 URL 导航: ${url}`)
     }
   })
 

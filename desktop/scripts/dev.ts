@@ -7,8 +7,10 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 
-// __file__ = desktop/scripts/dev.ts；上溯 3 级到项目根，再进入 frontend
-const frontendDir = path.resolve(__dirname, '..', '..', '..', 'frontend')
+// 脚本通过 npm run dev 从 desktop 目录执行，process.cwd() 即 desktop 根目录
+// 注意：desktop 包为 CommonJS，此处不可使用 import.meta
+const desktopDir = process.cwd()
+const frontendDir = path.resolve(desktopDir, '..', 'frontend')
 const frontendPort = process.env.OPENAWA_FRONTEND_PORT || '5173'
 const frontendUrl = `http://localhost:${frontendPort}`
 
@@ -31,7 +33,7 @@ setTimeout(() => {
   }
 
   const electronProcess = spawn('npx', ['electron', '.'], {
-    cwd: path.resolve(__dirname, '..'),
+    cwd: desktopDir,
     stdio: 'inherit',
     shell: true,
     env,

@@ -23,6 +23,7 @@ import com.xtys126.open_awa.features.subagents.SubAgentScreen
 import com.xtys126.open_awa.features.tts.TtsScreen
 import com.xtys126.open_awa.features.user.UserCenterScreen
 import com.xtys126.open_awa.features.vibecoding.VibeCodingScreen
+import com.xtys126.open_awa.features.live2d.Live2DScreen
 import com.xtys126.open_awa.features.workflow.WorkflowScreen
 import com.xtys126.open_awa.features.workspace.WorkspaceScreen
 
@@ -66,6 +67,7 @@ fun AppNavGraph(navController: NavHostController) {
         composable("plugins/manage") { PluginsScreen() }
         composable("memory") { MemoryScreen() }
         composable("experience") { ExperienceScreen() }
+        composable("live2d") { Live2DScreen() }
 
         // 设置分组
         composable("settings") { SettingsScreen() }

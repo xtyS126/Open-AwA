@@ -38,6 +38,49 @@ export const IPC_CHANNELS = {
   // 开机自启
   AUTOSTART_GET: 'autostart:get',
   AUTOSTART_SET: 'autostart:set',
+
+  // 陪伴通知
+  COMPANION_NOTIFY: 'companion:notify',
+  COMPANION_NOTIFY_CLICKED: 'companion:notify-clicked',
+
+  // 语音
+  VOICE_START_LISTENING: 'voice:start-listening',
+  VOICE_STOP_LISTENING: 'voice:stop-listening',
+  VOICE_AUDIO_CHUNK: 'voice:audio-chunk',
+  VOICE_PERMISSION_REQUEST: 'voice:permission-request',
+
+  // 宠物悬浮窗
+  PET_OVERLAY_SHOW: 'pet:show',
+  PET_OVERLAY_HIDE: 'pet:hide',
+  PET_OVERLAY_TOGGLE: 'pet:toggle',
+  PET_OVERLAY_SET_POSITION: 'pet:set-position',
+  PET_OVERLAY_PLAY_ANIMATION: 'pet:play-animation',
+  PET_OVERLAY_SET_EXPRESSION: 'pet:set-expression',
+  PET_OVERLAY_CLICKED: 'pet:clicked',
+  PET_OVERLAY_GET_CONFIG: 'pet:get-config',
+  PET_OVERLAY_SET_CONFIG: 'pet:set-config',
+
+  // 文件系统
+  FS_OPEN_FILE: 'fs:open-file',
+  FS_SAVE_FILE: 'fs:save-file',
+  FS_READ_FILE: 'fs:read-file',
+  FS_WRITE_FILE: 'fs:write-file',
+
+  // Shell
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
+  SHELL_SHOW_ITEM: 'shell:show-item',
+
+  // 对话框
+  DIALOG_MESSAGE: 'dialog:message',
+  DIALOG_CONFIRM: 'dialog:confirm',
+  DIALOG_ERROR: 'dialog:error',
+
+  // 剪贴板
+  CLIPBOARD_READ: 'clipboard:read',
+  CLIPBOARD_WRITE: 'clipboard:write',
+
+  // 应用
+  APP_IS_DESKTOP: 'app:is-desktop',
 } as const
 
 /** IPC 通道名类型 */

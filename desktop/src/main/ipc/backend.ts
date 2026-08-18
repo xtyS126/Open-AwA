@@ -67,7 +67,7 @@ export async function handleTestConnection(
   const start = Date.now()
   try {
     // 构造健康检查 URL
-    const healthUrl = url.endsWith('/api') ? `${url}/health` : `${url}/api/health`
+    const healthUrl = url.replace(/\/+$/, '') + '/health'
     const response = await fetch(healthUrl, {
       method: 'GET',
       signal: AbortSignal.timeout(5000),

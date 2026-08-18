@@ -39,6 +39,8 @@ export interface AppConfig {
   tray: TrayConfig
   autostart: boolean
   update: UpdateConfig
+  companion: CompanionConfig
+  pet: PetConfig
 }
 
 /** 默认配置 */
@@ -47,7 +49,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     url: '',
   },
   window: {
-    bounds: { x: null, y: null, width: 1280, height: 800 },
+    bounds: { x: null, y: null, width: 1440, height: 900 },
     isMaximized: false,
   },
   tray: {
@@ -57,6 +59,19 @@ export const DEFAULT_CONFIG: AppConfig = {
   update: {
     autoCheck: true,
     source: '',
+  },
+  companion: {
+    notificationsEnabled: true,
+    bondNotifications: true,
+    diaryNotifications: true,
+    inactivityReminder: true,
+  },
+  pet: {
+    enabled: false,
+    petId: '',
+    position: { x: -1, y: -1 },
+    size: 250,
+    alwaysOnTop: true,
   },
 }
 
@@ -94,6 +109,40 @@ export interface UpdateStatusPayload {
 export interface BackendInfo {
   url: string
   version: string
+}
+
+/** 陪伴事件类型 */
+export type CompanionEventType = 'bond_upgrade' | 'milestone' | 'diary_ready' | 'inactivity_reminder'
+
+/** 陪伴通知请求参数 */
+export interface CompanionNotifyRequest {
+  type: CompanionEventType
+  title: string
+  body: string
+  navigateTo?: string
+}
+
+/** 陪伴通知点击事件参数 */
+export interface CompanionNotifyClickedPayload {
+  type: CompanionEventType
+  navigateTo?: string
+}
+
+/** 陪伴通知配置 */
+export interface CompanionConfig {
+  notificationsEnabled: boolean
+  bondNotifications: boolean
+  diaryNotifications: boolean
+  inactivityReminder: boolean
+}
+
+/** 宠物悬浮窗配置 */
+export interface PetConfig {
+  enabled: boolean
+  petId: string
+  position: { x: number; y: number }
+  size: number
+  alwaysOnTop: boolean
 }
 
 /** preload 注入的桌面端 API */

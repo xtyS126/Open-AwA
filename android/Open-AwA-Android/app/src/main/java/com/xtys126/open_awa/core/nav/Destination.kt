@@ -103,6 +103,9 @@ sealed class Destination(
     /** IM 渠道 */
     data object Im : Destination("im", 0, Icons.Outlined.Notifications)
 
+    /** Live2D 模型 */
+    data object Live2D : Destination("live2d", 0, Icons.Outlined.Spa)
+
     /** 用户中心 */
     data object UserCenter : Destination("user", 0, Icons.Outlined.AccountCircle)
 
@@ -113,7 +116,7 @@ sealed class Destination(
             Chat, Coding, VibeCoding, Workspace, Dashboard, Billing, Inbox, ScheduledTasks,
             // 智能体
             Tts, Roles, RoleMarket, Skills, SkillMarket, Workflows,
-            SubAgents, Discussions, Plugins, Memory, Experience,
+            SubAgents, Discussions, Plugins, Memory, Experience, Live2D,
             // 设置
             Settings, Im, UserCenter,
         )
@@ -126,7 +129,7 @@ sealed class Destination(
         /** 智能体分组 */
         val agentGroup: List<Destination> = listOf(
             Tts, Roles, RoleMarket, Skills, SkillMarket, Workflows,
-            SubAgents, Discussions, Plugins, Memory, Experience,
+            SubAgents, Discussions, Plugins, Memory, Experience, Live2D,
         )
 
         /** 设置分组 */

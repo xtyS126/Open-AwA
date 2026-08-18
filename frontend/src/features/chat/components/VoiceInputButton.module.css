@@ -1,0 +1,129 @@
+/* VoiceInputButton 语音输入按钮样式 */
+
+/* 按钮容器 */
+.voice-btn-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* 语音按钮：与 attach-btn 保持一致的尺寸和风格 */
+.voice-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  position: relative;
+  overflow: visible;
+}
+
+.voice-btn:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.voice-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 录音中状态：红色脉冲 */
+.voice-btn.recording {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.voice-btn.recording:hover {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/* 波形动画容器 */
+.wave-animation {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* 波形条 */
+.wave-bar {
+  display: block;
+  width: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  animation: wave 0.8s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(1) {
+  height: 6px;
+  animation-delay: 0s;
+}
+
+.wave-bar:nth-child(2) {
+  height: 10px;
+  animation-delay: 0.1s;
+}
+
+.wave-bar:nth-child(3) {
+  height: 14px;
+  animation-delay: 0.2s;
+}
+
+.wave-bar:nth-child(4) {
+  height: 10px;
+  animation-delay: 0.3s;
+}
+
+.wave-bar:nth-child(5) {
+  height: 6px;
+  animation-delay: 0.4s;
+}
+
+@keyframes wave {
+  0%, 100% {
+    transform: scaleY(0.5);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* 错误提示 */
+.voice-error {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+  white-space: nowrap;
+  background: var(--color-bg);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-danger);
+  z-index: 1;
+}
+
+/* 移动端适配 */
+@media (max-width: 767px) {
+  .voice-btn {
+    width: 32px;
+    height: 32px;
+  }
+}

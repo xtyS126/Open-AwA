@@ -271,6 +271,29 @@
   cursor: not-allowed;
 }
 
+/* Live2D 模型预览 */
+.live2dPreview {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.live2dPreviewLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.live2dPreviewMeta {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
 /* === 移动端适配（≤ 768px，对应 --breakpoint-md 令牌） === */
 @media (max-width: 768px) {
   .container {

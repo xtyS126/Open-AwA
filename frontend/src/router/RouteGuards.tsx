@@ -46,6 +46,18 @@ export function RootGuard() {
   const needsServerSelection = useAuthStore((s) => s.needsServerSelection)
   const location = useLocation()
 
+  // 宠物悬浮窗路由：跳过所有认证检查，直接渲染内容
+  // 该路由仅在桌面端 Electron 宠物悬浮窗 BrowserWindow 中使用
+  if (location.pathname === '/pet-overlay') {
+    return <Outlet />
+  }
+
+  // 引导窗口路由：桌面端首次启动配置后端 URL，无需认证
+  // 该路由仅在桌面端 Electron 引导窗口 BrowserWindow 中使用
+  if (location.pathname === '/onboarding') {
+    return <Outlet />
+  }
+
   let content: React.ReactNode
 
   if (!isInitialized) {

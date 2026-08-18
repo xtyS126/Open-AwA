@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { appLogger } from '@/shared/utils/logger'
-import { isNativeApp } from '@/shared/utils/platform'
+import { isNativeApp, isDesktop, getDesktopApi } from '@/shared/utils/platform'
 import { checkForUpdate, buildDownloadUrl, type UpdateInfo } from '@/shared/api/updateApi'
 import { appUpdatePlugin } from '@/shared/api/appUpdatePlugin'
 
@@ -22,12 +22,40 @@ interface AppUpdateState {
   check: () => Promise<void>
   dismiss: () => void
   startDownload: () => Promise<void>
+  /** 桌面端：下载完成后触发安装重启 */
+  install: () => Promise<void>
   reset: () => void
 }
 
+/** electron-updater 状态 → 前端 UpdateStatus 映射 */
+function mapElectronStatus(
+  status: string,
+  data?: Record<string, unknown>,
+): { status: UpdateStatus; errors?: string } {
+  switch (status) {
+    case 'checking':
+      return { status: 'checking' }
+    case 'available':
+      return { status: 'available' }
+    case 'not-available':
+      return { status: 'idle' }
+    case 'downloading':
+      return { status: 'downloading' }
+    case 'downloaded':
+      return { status: 'idle' }
+    case 'error':
+      return {
+        status: 'error',
+        errors: typeof data?.message === 'string' ? data.message : '更新出错',
+      }
+    default:
+      return { status: 'idle' }
+  }
+}
+
 /**
- * APP 局域网 OTA 更新状态机：检查 → 提示 → 用户选择 → 下载 → 安装。
- * 仅原生容器（isNativeApp）生效；Web 端 check 为空操作。
+ * APP 更新状态机：支持 Electron 桌面端 IPC 更新 + Android 原生容器 OTA 更新。
+ * Web 端 check 为空操作。
  */
 export function useAppUpdate(): AppUpdateState {
   const [status, setStatus] = useState<UpdateStatus>('idle')
@@ -38,9 +66,36 @@ export function useAppUpdate(): AppUpdateState {
   const listenerRef = useRef<{ remove: () => void } | null>(null)
   const checkingRef = useRef(false)
   const dismissedRef = useRef(false)
+  const desktopListenerRef = useRef<(() => void) | null>(null)
   dismissedRef.current = dismissed
 
   const check = useCallback(async () => {
+    // ===== Electron 桌面端 =====
+    if (isDesktop()) {
+      if (checkingRef.current) return
+      checkingRef.current = true
+      setStatus('checking')
+      try {
+        await getDesktopApi()?.ipc.invoke('update:check')
+        // 状态变更由 update:status-changed 监听器处理
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        appLogger.error({
+          event: 'desktop_update_check_failed',
+          module: 'app-update',
+          action: 'check',
+          status: 'failure',
+          message,
+        })
+        setError(`更新检查失败：${message}`)
+        setStatus('error')
+      } finally {
+        checkingRef.current = false
+      }
+      return
+    }
+
+    // ===== Android 原生容器：OTA 更新 =====
     if (!isNativeApp() || checkingRef.current) return
     checkingRef.current = true
     setStatus('checking')
@@ -74,6 +129,20 @@ export function useAppUpdate(): AppUpdateState {
   }, [])
 
   const startDownload = useCallback(async () => {
+    // ===== Electron 桌面端 =====
+    if (isDesktop()) {
+      setStatus('downloading')
+      try {
+        await getDesktopApi()?.ipc.invoke('update:download')
+        // 下载进度和结果由 update:status-changed 监听器处理
+      } catch (e) {
+        setStatus('error')
+        setError(e instanceof Error ? e.message : String(e))
+      }
+      return
+    }
+
+    // ===== Android 原生容器：OTA 下载 =====
     if (!updateInfo) return
     setStatus('downloading')
     setProgress({ loaded: 0, total: updateInfo.apk_size, percent: 0 })
@@ -100,7 +169,18 @@ export function useAppUpdate(): AppUpdateState {
     }
   }, [updateInfo])
 
-  // 下载进度订阅（原生插件 notifyListeners('updateProgress')）
+  /** 桌面端：下载完成后触发安装重启，Android 端无独立安装步骤 */
+  const install = useCallback(async () => {
+    if (!isDesktop()) return
+    try {
+      await getDesktopApi()?.ipc.invoke('update:install-and-restart')
+    } catch (e) {
+      setStatus('error')
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
+
+  // ===== Android 原生容器：下载进度订阅 =====
   useEffect(() => {
     if (!isNativeApp()) return
     let active = true
@@ -120,6 +200,55 @@ export function useAppUpdate(): AppUpdateState {
     }
   }, [])
 
+  // ===== Electron 桌面端：监听主进程更新状态变化 =====
+  useEffect(() => {
+    if (!isDesktop()) return
+
+    const unsubscribe = getDesktopApi()?.ipc.on(
+      'update:status-changed',
+      (...args: unknown[]) => {
+        const electronStatus = typeof args[0] === 'string' ? args[0] : ''
+        const data = (typeof args[1] === 'object' && args[1] !== null ? args[1] : {}) as Record<string, unknown>
+        const mapped = mapElectronStatus(electronStatus, data)
+
+        if (electronStatus === 'available') {
+          // 构造 UpdateInfo：桌面端主进程传递版本号和变更日志等
+          setUpdateInfo({
+            has_update: true,
+            latest_version: typeof data?.version === 'string' ? data.version : '',
+            latest_version_code: 0,
+            apk_size: typeof data?.size === 'number' ? data.size : 0,
+            apk_sha256: '',
+            changelog: typeof data?.changelog === 'string' ? data.changelog : '',
+            download_url: '',
+            published_at: typeof data?.published_at === 'string' ? data.published_at : '',
+          })
+          setError('')
+        }
+
+        if (electronStatus === 'downloading') {
+          setProgress({
+            loaded: typeof data?.loaded === 'number' ? data.loaded : 0,
+            total: typeof data?.total === 'number' ? data.total : 0,
+            percent: typeof data?.percent === 'number' ? data.percent : 0,
+          })
+        }
+
+        if (mapped.errors) {
+          setError(mapped.errors)
+        }
+
+        setStatus(mapped.status)
+      },
+    )
+
+    desktopListenerRef.current = unsubscribe ?? null
+
+    return () => {
+      desktopListenerRef.current?.()
+    }
+  }, [])
+
   const dismiss = useCallback(() => {
     setDismissed(true)
     setStatus('idle')
@@ -133,5 +262,5 @@ export function useAppUpdate(): AppUpdateState {
     setError('')
   }, [])
 
-  return { status, updateInfo, progress, error, dismissed, check, dismiss, startDownload, reset }
+  return { status, updateInfo, progress, error, dismissed, check, dismiss, startDownload, install, reset }
 }

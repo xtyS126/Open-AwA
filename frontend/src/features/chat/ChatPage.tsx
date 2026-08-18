@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from '@/shared/routing'
 import { PanelLeft } from 'lucide-react'
 import { chatAPI, diaryAPI } from '@/shared/api/api'
+import { ttsApi } from '@/features/tts/ttsApi'
 import { useConversationHistory } from '@/features/chat/hooks/useConversationHistory'
 import { useStreamExecutionState } from '@/features/chat/hooks/useStreamExecutionState'
 import { useChatBroadcastEffects } from '@/features/chat/hooks/useChatBroadcastEffects'
@@ -13,10 +14,14 @@ import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 import { shallow } from 'zustand/shallow'
 import { useI18nStore } from '@/i18n'
 import { appLogger } from '@/shared/utils/logger'
+import { getDesktopApi } from '@/shared/utils/platform'
+import { petEventBus } from '@/shared/events/petEventBus'
+import { PetEventType, detectSentiment } from '@/shared/events/petEvents'
 import { useToast } from '@/shared/components/Toast'
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
+import RoleLive2DWidget from '@/features/pets/live2d/RoleLive2DWidget'
 import { useChatStream } from './hooks/useChatStream'
 import { useSubagentSync } from './hooks/useSubagentSync'
 import { useMessageCache } from './hooks/useMessageCache'
@@ -34,6 +39,17 @@ const AskUserCard = React.lazy(() => import('./components/AskUserCard').then(m =
 import type { TodoItem } from './components/TodoPanel'
 import type { AskUserRequest } from './types'
 import styles from './ChatPage.module.css'
+
+/** 向事件总线与桌面端悬浮窗同时发出宠物事件 */
+function emitPetEvent(type: string, payload?: Record<string, unknown>) {
+  const event = { type: type as PetEventType, payload, timestamp: Date.now() }
+  petEventBus.emit(event)
+  // 桌面端：通过 IPC 转发到宠物悬浮窗
+  const desktop = getDesktopApi()
+  if (desktop) {
+    desktop.ipc.invoke('pet:play-animation', { eventType: type, payload }).catch(() => {})
+  }
+}
 
 function ChatPage() {
   const navigate = useNavigate()
@@ -54,6 +70,7 @@ function ChatPage() {
   const selectedModel = useModelStore(s => s.selectedModel)
   const thinkingEnabled = usePreferenceStore(s => s.thinkingEnabled)
   const thinkingDepth = usePreferenceStore(s => s.thinkingDepth)
+  const autoReadAloud = usePreferenceStore(s => s.autoReadAloud)
   // Actions — 在 create() 中定义后引用永不变，单独提取避免触发数据订阅
   const setLoading = useSessionStore(s => s.setLoading)
   const setSessionId = useSessionStore(s => s.setSessionId)
@@ -256,6 +273,81 @@ function ChatPage() {
     broadcastStreamEnd,
     shouldBroadcastCurrentStreamRef,
   })
+
+  // TTS 自动朗读：当 AI 回复完成且 autoReadAloud 开关开启时，自动调用 TTS 合成语音并播放
+  // 同时发出宠物事件：AI 开始思考 / AI 回复完成 / 情绪检测
+  const prevStreamingIdRef = useRef<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  useEffect(() => {
+    const prevId = prevStreamingIdRef.current
+    prevStreamingIdRef.current = streamingAssistantId
+
+    // 检测流式开始：从 null 变为非空
+    if (!prevId && streamingAssistantId) {
+      emitPetEvent(PetEventType.CHAT_AI_THINKING, {})
+    }
+
+    // 检测流式结束：从非空变为 null
+    if (prevId && !streamingAssistantId) {
+      emitPetEvent(PetEventType.CHAT_AI_REPLY, {})
+
+      // 查找最后一条 assistant 消息
+      const lastAssistantMsg = [...messages].reverse().find(
+        (m) => m.role === 'assistant'
+      )
+      if (lastAssistantMsg && lastAssistantMsg.content) {
+        // 情绪检测
+        const sentiment = detectSentiment(lastAssistantMsg.content)
+        if (sentiment === 'positive') {
+          emitPetEvent(PetEventType.CHAT_POSITIVE, {})
+        } else if (sentiment === 'negative') {
+          emitPetEvent(PetEventType.CHAT_NEGATIVE, {})
+        }
+
+        if (autoReadAloud) {
+          const textToRead = lastAssistantMsg.content
+          // 异步调用 TTS 合成并播放
+          void (async () => {
+            try {
+              const audioBlob = await ttsApi.synthesize({ text: textToRead })
+              const audioUrl = URL.createObjectURL(audioBlob)
+
+              // 释放之前的音频资源
+              if (audioRef.current) {
+                audioRef.current.pause()
+                URL.revokeObjectURL(audioRef.current.src)
+              }
+
+              const audio = new Audio(audioUrl)
+              audioRef.current = audio
+              audio.onended = () => {
+                URL.revokeObjectURL(audioUrl)
+                audioRef.current = null
+              }
+              audio.onerror = () => {
+                URL.revokeObjectURL(audioUrl)
+                audioRef.current = null
+              }
+              await audio.play()
+            } catch (err) {
+              appLogger.warning({ event: 'tts_auto_read_error', module: 'chat_page', message: String(err) })
+            }
+          })()
+        }
+      }
+    }
+  }, [streamingAssistantId, autoReadAloud, messages])
+
+  // 组件卸载时释放音频资源
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        URL.revokeObjectURL(audioRef.current.src)
+        audioRef.current = null
+      }
+    }
+  }, [])
 
   // handleSend 的 ref 镜像：供 useChatConversationActions 中的 handleRegenerate 调用。
   // 必须在 useChatConversationActions 之前声明，避免变量在声明前被访问。
@@ -566,6 +658,11 @@ function ChatPage() {
       messageText.length > 0 && !options?.hiddenUserMessage && !options?.continuation
     shouldBroadcastCurrentStreamRef.current = shouldBroadcastStart
 
+    // 用户发送消息时发出宠物事件
+    if (messageText.length > 0 && !options?.hiddenUserMessage) {
+      emitPetEvent(PetEventType.CHAT_USER_MESSAGE, { message: messageText.slice(0, 200) })
+    }
+
     await chatStream.handleSendMessage(
       userMessage,
       uploadedAttachments,
@@ -824,6 +921,15 @@ function ChatPage() {
         </ErrorBoundary>
 
         <div className={styles['chat-main']}>
+          {/* 角色 Live2D 模型展示 */}
+          <ErrorBoundary name="RoleLive2DWidget">
+            <RoleLive2DWidget
+              sessionId={sessionId}
+              width={180}
+              height={240}
+            />
+          </ErrorBoundary>
+
           <ErrorBoundary name="PermissionRequestNotification">
             <PermissionRequestNotification
               pendingRequests={permissionRequests}

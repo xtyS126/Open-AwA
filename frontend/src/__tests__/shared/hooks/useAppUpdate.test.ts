@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppUpdate } from '@/shared/hooks/useAppUpdate'
 import { checkForUpdate } from '@/shared/api/updateApi'
 
-vi.mock('@/shared/utils/platform', () => ({ isNativeApp: () => true }))
+vi.mock('@/shared/utils/platform', () => ({
+  isNativeApp: () => true,
+  isDesktop: () => false,
+  getDesktopApi: () => null,
+}))
 vi.mock('@/shared/api/updateApi', () => ({
   checkForUpdate: vi.fn(),
   buildDownloadUrl: vi.fn(() => 'http://lan:8000/api/system/apk/download'),

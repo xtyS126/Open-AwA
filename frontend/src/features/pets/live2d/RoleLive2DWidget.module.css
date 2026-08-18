@@ -1,0 +1,80 @@
+/**
+ * RoleLive2DWidget 样式
+ */
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-bg-secondary, #fafafa);
+  border: 1px solid var(--color-border, #e5e7eb);
+  min-width: 120px;
+}
+
+.live2dContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.avatarPlaceholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.avatar {
+  border-radius: var(--radius-md, 8px);
+  object-fit: cover;
+  border: 2px solid var(--color-border, #e5e7eb);
+}
+
+.avatarFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md, 8px);
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 32px;
+  font-weight: 700;
+  border: 2px solid var(--color-border, #e5e7eb);
+}
+
+.roleName {
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+  color: var(--color-text-secondary, #666);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--color-text-tertiary, #999);
+}
+
+.placeholderIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--color-bg-tertiary, #f0f0f0);
+  border: 2px dashed var(--color-border, #e5e7eb);
+}
+
+.placeholderText {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary, #999);
+}

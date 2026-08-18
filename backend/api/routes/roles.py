@@ -1,5 +1,5 @@
 """
-AI 角色管理 API 路由，提供角色 CRUD、切换和预设模板接口。
+AI 角色管理 API 路由，提供角色 CRUD、切换、预设模板接口和 Live2D 模型绑定。
 """
 
 import uuid
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user, get_db
 from core.role_engine import RoleEngine
-from db.models import AgentRole
+from db.models import AgentRole, Live2DModel
 
 router = APIRouter(prefix="/roles", tags=["roles"])
 
@@ -68,8 +68,25 @@ class RoleResponse(BaseModel):
     is_public: bool
     usage_count: int
     is_preset: bool
+    live2d_model_id: Optional[str] = None
+    live2d_model: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class Live2DModelInfoResponse(BaseModel):
+    """Live2D 模型简要信息（用于角色详情嵌入）。"""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    model_name: str
+    texture_paths: List[str] = Field(default_factory=list)
+    version: int = 1
+
+
+class RoleLive2DBindRequest(BaseModel):
+    """绑定/解绑 Live2D 模型请求。"""
+    live2d_model_id: Optional[str] = Field(default=None, description="Live2D 模型 ID，为 None 表示解绑")
 
 
 class RoleActivateRequest(BaseModel):
@@ -97,17 +114,52 @@ async def get_presets(
     return RoleEngine.get_preset_roles()
 
 
+def _build_role_response(role: AgentRole, db: Session) -> Dict[str, Any]:
+    """构建角色响应，附带 Live2D 模型信息（如果已绑定）。"""
+    result = {
+        "id": role.id,
+        "name": role.name,
+        "description": role.description,
+        "avatar_url": role.avatar_url,
+        "system_prompt": role.system_prompt,
+        "personality": role.personality,
+        "expertise": role.expertise,
+        "knowledge_base_ids": role.knowledge_base_ids,
+        "allowed_tools": role.allowed_tools,
+        "allowed_skills": role.allowed_skills,
+        "model_config": role.model_config,
+        "creator_id": role.creator_id,
+        "is_public": role.is_public,
+        "usage_count": role.usage_count,
+        "is_preset": role.is_preset,
+        "live2d_model_id": role.live2d_model_id,
+        "live2d_model": None,
+        "created_at": role.created_at,
+        "updated_at": role.updated_at,
+    }
+    if role.live2d_model_id:
+        live2d_model = db.get(Live2DModel, role.live2d_model_id)
+        if live2d_model:
+            result["live2d_model"] = {
+                "id": live2d_model.id,
+                "model_name": live2d_model.model_name,
+                "texture_paths": live2d_model.texture_paths or [],
+                "version": live2d_model.version,
+            }
+    return result
+
+
 @router.get("/{role_id}", response_model=RoleResponse)
 async def get_role(
     role_id: str,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """获取角色详情。"""
+    """获取角色详情（包含 Live2D 模型绑定信息）。"""
     role = db.query(AgentRole).filter(AgentRole.id == role_id).first()
     if not role:
         raise HTTPException(status_code=404, detail="角色不存在")
-    return role
+    return _build_role_response(role, db)
 
 
 @router.post("", response_model=RoleResponse, status_code=201)
@@ -181,6 +233,52 @@ async def delete_role(
 
     db.delete(role)
     db.commit()
+
+
+@router.put("/{role_id}/live2d", response_model=RoleResponse)
+async def bind_live2d_to_role(
+    role_id: str,
+    body: RoleLive2DBindRequest,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    绑定或解绑角色的 Live2D 模型。
+
+    - live2d_model_id 不为空时：校验模型存在，绑定到角色
+    - live2d_model_id 为 None 时：解绑角色的 Live2D 模型
+    """
+    role = db.query(AgentRole).filter(AgentRole.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail="角色不存在")
+
+    # 校验用户权限：只能修改自己创建的角色
+    user_id = current_user.get("id")
+    role_creator_id = role.creator_id
+    if role_creator_id is not None and str(role_creator_id) != str(user_id):
+        raise HTTPException(status_code=403, detail="无权修改该角色的 Live2D 绑定")
+
+    if body.live2d_model_id is not None:
+        # 校验 Live2D 模型存在
+        live2d_model = db.get(Live2DModel, body.live2d_model_id)
+        if live2d_model is None:
+            raise HTTPException(status_code=404, detail="Live2D 模型不存在")
+        role.live2d_model_id = body.live2d_model_id
+    else:
+        # 解绑
+        role.live2d_model_id = None
+
+    db.commit()
+    db.refresh(role)
+
+    logger.bind(
+        event="role_live2d_bind",
+        module="roles",
+        role_id=role_id,
+        live2d_model_id=body.live2d_model_id,
+    ).info(f"角色 {role_id} {'绑定' if body.live2d_model_id else '解绑'} Live2D 模型")
+
+    return _build_role_response(role, db)
 
 
 @router.post("/{role_id}/activate")

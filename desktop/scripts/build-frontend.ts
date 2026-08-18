@@ -5,10 +5,12 @@ import { execSync } from 'node:child_process'
 import { cpSync, mkdirSync, existsSync, rmSync } from 'node:fs'
 import path from 'node:path'
 
-// __file__ = desktop/scripts/build-frontend.ts；上溯 3 级到项目根，再进入 frontend
-const frontendDir = path.resolve(__dirname, '..', '..', '..', 'frontend')
+// 脚本通过 npm run build:frontend 从 desktop 目录执行，process.cwd() 即 desktop 根目录
+// 注意：desktop 包为 CommonJS，此处不可使用 import.meta
+const desktopDir = process.cwd()
+const frontendDir = path.resolve(desktopDir, '..', 'frontend')
 const frontendDist = path.join(frontendDir, 'dist')
-const targetDir = path.resolve(__dirname, '..', 'resources', 'frontend')
+const targetDir = path.resolve(desktopDir, 'resources', 'frontend')
 
 console.log('[build-frontend] 开始构建前端...')
 

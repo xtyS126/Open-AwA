@@ -1445,6 +1445,39 @@ class PetImportResponse(BaseModel):
     pet: PetResponse
 
 
+# -------- Live2D 模型管理 --------
+
+class Live2DModelResponse(BaseModel):
+    """Live2D 模型元数据响应。"""
+    id: str
+    model_name: str
+    model_path: str
+    model3_json_path: str
+    moc3_path: str
+    texture_paths: List[str] = Field(default_factory=list)
+    expressions_json: List[Any] = Field(default_factory=list)
+    motions_json: List[Any] = Field(default_factory=list)
+    physics_json: Optional[str] = None
+    pose_json: Optional[str] = None
+    version: int = 1
+    user_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class Live2DModelListResponse(BaseModel):
+    """Live2D 模型列表响应。"""
+    models: List[Live2DModelResponse] = Field(default_factory=list)
+    total: int = 0
+
+
+class Live2DModelUploadResponse(BaseModel):
+    """Live2D 模型上传响应。"""
+    model: Live2DModelResponse
+
+
 # -------- 工作台项目与当前上下文 --------
 
 class WorkbenchProjectCreate(BaseModel):

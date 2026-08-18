@@ -1,8 +1,10 @@
 import { memo, useState, useRef, useCallback, useEffect } from 'react'
-import { X, Paperclip, Send, Square } from 'lucide-react'
+import { X, Paperclip, Send, Square, Volume2, VolumeX } from 'lucide-react'
 import { appLogger } from '@/shared/utils/logger'
 import { useI18nStore, t as i18nT } from '@/i18n'
 import { useVisualViewport } from '@/shared/hooks/useVisualViewport'
+import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
+import { VoiceInputButton } from './VoiceInputButton'
 import styles from './ChatInput.module.css'
 
 export interface FileAttachment {
@@ -58,6 +60,8 @@ function fileToBase64(file: File): Promise<{ data: string; mimeType: string }> {
 export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, aborting, onDiaryCommand, editContent, focusTrigger }: ChatInputProps) {
   // 使用选择器精确订阅，避免整个 store 变化触发重渲染
   const t = useI18nStore(s => s.t)
+  const autoReadAloud = usePreferenceStore(s => s.autoReadAloud)
+  const setAutoReadAloud = usePreferenceStore(s => s.setAutoReadAloud)
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<FileAttachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
@@ -217,6 +221,20 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
     await onSend(userMessage, attachmentsWithBase64)
   }, [input, attachments, isLoading, onSend, onDiaryCommand])
 
+  /** 语音识别结果回调：自动填入输入框并发送 */
+  const handleVoiceTranscription = useCallback((text: string) => {
+    if (!text.trim()) return
+    setInput(text)
+    // 延迟执行发送，确保 input 状态已更新
+    // 使用 setTimeout 在下一个事件循环中调用 handleSend
+    setTimeout(() => {
+      const currentAttachments = attachments
+      // 直接调用 onSend，避免依赖 handleSend 闭包中的旧 input 值
+      void onSend(text.trim(), currentAttachments)
+      setInput('')
+    }, 0)
+  }, [attachments, onSend])
+
   const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -277,6 +295,10 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
         >
           <Paperclip size={20} strokeWidth={2} />
         </button>
+        <VoiceInputButton
+          onTranscriptionResult={handleVoiceTranscription}
+          disabled={isLoading}
+        />
         <textarea
           ref={textareaRef}
           className={styles['chat-input']}
@@ -291,24 +313,46 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
           data-testid="chat-input-textarea"
         />
         {streamingAssistantId ? (
-          <button
-            className={`btn ${styles['stop-btn']}`}
-            onClick={onAbort}
-            disabled={aborting}
-            title={aborting ? t('chat.stopping') : t('chat.stopGeneration')}
-            aria-label={aborting ? t('chat.stopping') : t('chat.stopGeneration')}
-          >
-            <Square size={18} />
-          </button>
+          <>
+            <button
+              className={`${styles['auto-read-btn']} ${autoReadAloud ? styles['auto-read-active'] : ''}`}
+              onClick={() => setAutoReadAloud(!autoReadAloud)}
+              title={autoReadAloud ? '关闭自动朗读' : '自动朗读 AI 回复'}
+              aria-label={autoReadAloud ? '关闭自动朗读' : '自动朗读 AI 回复'}
+              disabled={false}
+            >
+              {autoReadAloud ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+            <button
+              className={`btn ${styles['stop-btn']}`}
+              onClick={onAbort}
+              disabled={aborting}
+              title={aborting ? t('chat.stopping') : t('chat.stopGeneration')}
+              aria-label={aborting ? t('chat.stopping') : t('chat.stopGeneration')}
+            >
+              <Square size={18} />
+            </button>
+          </>
         ) : (
-          <button
-            className={`btn btn-primary ${styles['send-btn']}`}
-            onClick={() => void handleSend()}
-            disabled={(!input.trim() && attachments.length === 0) || isLoading}
-            aria-label={t('chat.send') || 'send message'}
-          >
-            <Send size={18} />
-          </button>
+          <>
+            <button
+              className={`${styles['auto-read-btn']} ${autoReadAloud ? styles['auto-read-active'] : ''}`}
+              onClick={() => setAutoReadAloud(!autoReadAloud)}
+              title={autoReadAloud ? '关闭自动朗读' : '自动朗读 AI 回复'}
+              aria-label={autoReadAloud ? '关闭自动朗读' : '自动朗读 AI 回复'}
+              disabled={false}
+            >
+              {autoReadAloud ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+            <button
+              className={`btn btn-primary ${styles['send-btn']}`}
+              onClick={() => void handleSend()}
+              disabled={(!input.trim() && attachments.length === 0) || isLoading}
+              aria-label={t('chat.send') || 'send message'}
+            >
+              <Send size={18} />
+            </button>
+          </>
         )}
       </div>
       <span className={styles['char-count']}>

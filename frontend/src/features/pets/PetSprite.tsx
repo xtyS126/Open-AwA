@@ -11,7 +11,23 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { getPetSpritesheetUrl } from './petsApi'
 import type { PetResponse, PetAnimationFrame } from './types'
+import type { PetEvent } from '@/shared/events/petEvents'
+import { PetEventType } from '@/shared/events/petEvents'
 import { useMediaQuery } from '@/shared/hooks/useMediaQuery'
+
+/** 宠物事件到动画名称的映射 */
+const EVENT_ANIMATION_MAP: Record<string, string> = {
+  [PetEventType.CHAT_USER_MESSAGE]: 'listen',
+  [PetEventType.CHAT_AI_THINKING]: 'think',
+  [PetEventType.CHAT_AI_REPLY]: 'talk',
+  [PetEventType.CHAT_POSITIVE]: 'happy',
+  [PetEventType.CHAT_NEGATIVE]: 'worry',
+  [PetEventType.COMPANION_BOND_UPGRADE]: 'celebrate',
+  [PetEventType.COMPANION_MILESTONE]: 'special',
+}
+
+/** 事件触发动画持续时间（毫秒），超时后回退到默认动画 */
+const EVENT_ANIMATION_DURATION_MS = 3000
 
 interface PetSpriteProps {
   /** 宠物信息 */
@@ -26,6 +42,8 @@ interface PetSpriteProps {
   className?: string
   /** 附加内联样式 */
   style?: CSSProperties
+  /** 宠物事件：触发临时动画切换，超时后回退到 animationName */
+  petEvent?: PetEvent | null
 }
 
 type ImageStatus = 'loading' | 'ready' | 'error'
@@ -37,6 +55,7 @@ export default function PetSprite({
   scale = 1,
   className,
   style,
+  petEvent,
 }: PetSpriteProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   /** 已加载的精灵表图片实例，跨渲染复用，仅由图片加载流程写入 */
@@ -45,6 +64,34 @@ export default function PetSprite({
   const playingRef = useRef(playing)
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const [imageStatus, setImageStatus] = useState<ImageStatus>('loading')
+  /** 事件触发的临时动画名，为 null 时使用 animationName prop */
+  const [eventAnimation, setEventAnimation] = useState<string | null>(null)
+  const eventTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 宠物事件触发临时动画切换
+  useEffect(() => {
+    if (!petEvent) return
+    const mapped = EVENT_ANIMATION_MAP[petEvent.type]
+    if (!mapped) return
+    // 仅在精灵表包含该动画名时才切换
+    if (!pet.animations || !pet.animations[mapped]) return
+    setEventAnimation(mapped)
+    // 清除之前的定时器
+    if (eventTimerRef.current) {
+      clearTimeout(eventTimerRef.current)
+    }
+    eventTimerRef.current = setTimeout(() => {
+      setEventAnimation(null)
+    }, EVENT_ANIMATION_DURATION_MS)
+    return () => {
+      if (eventTimerRef.current) {
+        clearTimeout(eventTimerRef.current)
+      }
+    }
+  }, [petEvent, pet.animations])
+
+  // 计算实际使用的动画名：事件动画优先，否则使用 prop
+  const effectiveAnimation = eventAnimation || animationName
 
   // 字段容错：精灵表未就绪或缺少关键尺寸时无法切片绘制
   const canDraw =
@@ -116,7 +163,7 @@ export default function PetSprite({
     // 解析目标动画：找不到指定动画时回退到首个可用动画
     const animations = pet.animations || {}
     const animation =
-      animations[animationName] || Object.values(animations)[0] || null
+      animations[effectiveAnimation] || Object.values(animations)[0] || null
     if (!animation || animation.frames.length === 0) return
 
     const frames: PetAnimationFrame[] = animation.frames
@@ -185,7 +232,7 @@ export default function PetSprite({
 
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
-  }, [canDraw, imageStatus, pet.id, pet.frame_width, pet.frame_height, pet.columns, pet.animations, animationName, scale, prefersReducedMotion])
+  }, [canDraw, imageStatus, pet.id, pet.frame_width, pet.frame_height, pet.columns, pet.animations, effectiveAnimation, scale, prefersReducedMotion])
 
   const showOverlay = !canDraw || imageStatus !== 'ready'
   const overlayText = !canDraw

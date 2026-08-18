@@ -81,6 +81,38 @@
   cursor: not-allowed;
 }
 
+/* 自动朗读开关按钮 */
+.auto-read-btn {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.auto-read-btn:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.auto-read-active {
+  color: var(--color-primary);
+  background: var(--color-primary-softest-bg);
+}
+
+.auto-read-active:hover {
+  color: var(--color-primary-hover);
+  background: var(--color-primary-softest-bg);
+}
+
 /* 发送按钮：对齐 Canvas send-btn（34x34，radius-full，primary 背景，hover scale 1.05） */
 .send-btn {
   align-self: flex-end;
@@ -312,6 +344,7 @@
 
   /* 附件/发送按钮移动端保持 32px 触摸目标（不缩小到不可点） */
   .attach-btn,
+  .auto-read-btn,
   .send-btn,
   .stop-btn {
     width: 32px;

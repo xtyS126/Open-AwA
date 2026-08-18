@@ -15,20 +15,20 @@ win:
     - target: nsis
       arch:
         - x64
-  icon: resources/icons/icon.png
+  icon: resources/icons/icon.ico
 mac:
   target:
     - target: dmg
       arch:
         - x64
         - arm64
-  icon: resources/icons/icon.png
+  icon: resources/icons/icon.ico
 linux:
   target:
     - target: AppImage
       arch:
         - x64
-  icon: resources/icons/icon.png
+  icon: resources/icons/icon.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

@@ -21,6 +21,14 @@ export interface RoleModelConfig {
   max_tokens: number
 }
 
+/** Live2D 模型简要信息 */
+export interface Live2DModelInfo {
+  id: string
+  model_name: string
+  texture_paths: string[]
+  version: number
+}
+
 /** AI 角色定义 */
 export interface AgentRole {
   id: string
@@ -38,6 +46,8 @@ export interface AgentRole {
   is_public: boolean
   usage_count: number
   is_preset: boolean
+  live2d_model_id: string | null
+  live2d_model?: Live2DModelInfo | null
   created_at: string
   updated_at: string
 }

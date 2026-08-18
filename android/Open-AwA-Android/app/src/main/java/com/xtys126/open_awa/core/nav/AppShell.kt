@@ -347,6 +347,7 @@ private fun destinationTitle(dest: Destination): String {
         Destination.Plugins -> "插件"
         Destination.Memory -> "记忆"
         Destination.Experience -> "经验"
+        Destination.Live2D -> "Live2D 模型"
         Destination.Settings -> "设置"
         Destination.Im -> "IM 渠道"
         Destination.UserCenter -> "用户中心"

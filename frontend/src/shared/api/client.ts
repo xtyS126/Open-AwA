@@ -11,7 +11,7 @@
  */
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
-import { isNativeApp } from '@/shared/utils/platform'
+import { isNativeApp, isDesktop, getDesktopApi } from '@/shared/utils/platform'
 import { safeGetItem, safeSetItem, safeSessionGetItem, safeSessionSetItem } from '@/shared/utils/safeStorage'
 import { asRecord } from '@/shared/types/api'
 
@@ -62,7 +62,7 @@ function isValidBackendUrl(url: string): boolean {
 
 /**
  * 动态解析后端 baseURL
- * 优先级：preload 注入 > localStorage > 默认 /api
+ * 优先级：preload 注入 > localStorage > 桌面端 IPC > 默认 /api
  */
 function resolveBaseURL(): string {
   // 优先级 1：桌面端 preload 注入
@@ -78,6 +78,46 @@ function resolveBaseURL(): string {
   }
   // 优先级 3：默认相对路径（web 模式走 Vite proxy）
   return '/api'
+}
+
+/**
+ * 桌面端初始化：从主进程拉取已保存的后端 URL 并设置到 axios/live bindings
+ * 应在应用启动时尽早调用（main.tsx 或 App.tsx 的初始化阶段）
+ */
+export async function initDesktopBackendUrl(): Promise<void> {
+  if (!isDesktop()) return
+  try {
+    const desktopApi = getDesktopApi()
+    if (!desktopApi) return
+    const url = (await desktopApi.ipc.invoke('backend:get-url')) as string
+    if (url && typeof url === 'string' && url.trim()) {
+      const trimmed = url.trim().replace(/\/+$/, '')
+      if (isValidBackendUrl(trimmed)) {
+        // 后端 API 端点统一挂在 /api 前缀下（如 /api/system/init-status）。
+        // 桌面端 electron-store 保存的是服务器根地址（如 http://localhost:8000），
+        // 此处补全 /api，与前端的 setBackendUrl 约定（接收已含 /api 的地址）保持一致。
+        const apiBase = trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`
+        // 不写入 localStorage，保持桌面端 electron-store 为唯一权威源
+        API_BASE_URL = apiBase
+        api.defaults.baseURL = apiBase
+        appLogger.info({
+          event: 'desktop_backend_url_initialized',
+          module: 'api',
+          status: 'success',
+          message: '已从桌面端获取后端 URL',
+          extra: { url: apiBase },
+        })
+      }
+    }
+  } catch (err) {
+    appLogger.warning({
+      event: 'desktop_backend_url_init_failed',
+      module: 'api',
+      status: 'failure',
+      message: '无法从桌面端获取后端 URL',
+      extra: { error: String(err) },
+    })
+  }
 }
 
 // 模块级可变绑定：ES Module live binding 保证 import 方始终读到最新值。
@@ -103,6 +143,10 @@ export let API_BASE_URL = resolveBaseURL()
  */
 export function isBackendConfigured(): boolean {
   if (typeof window !== 'undefined' && window.__OPENAWA_BACKEND__?.url) {
+    return true
+  }
+  // 桌面端：通过 initDesktopBackendUrl() 已设置 API_BASE_URL
+  if (isDesktop() && isValidBackendUrl(API_BASE_URL)) {
     return true
   }
   if (typeof window !== 'undefined') {

@@ -106,6 +106,8 @@ class AgentRole(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
     is_preset: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Live2D 模型绑定：角色可关联一个 Live2D 模型，为 None 时使用默认角色立绘
+    live2d_model_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )

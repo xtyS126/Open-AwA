@@ -4,7 +4,9 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Trash2, Edit3, Star, Users } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getRoles, createRole, updateRole, deleteRole } from '@/shared/api/rolesApi'
+import { getRoles, createRole, updateRole, deleteRole, bindRoleLive2D } from '@/shared/api/rolesApi'
+import { listLive2DModels } from '@/shared/api/live2dApi'
+import type { Live2DModelResponse } from '@/shared/api/live2dApi'
 import type { AgentRole, RoleCreateRequest, RolePersonality } from '@/shared/types/role'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './RolesPage.module.css'
@@ -12,11 +14,13 @@ import styles from './RolesPage.module.css'
 /** 角色编辑器模态框 */
 function RoleEditorModal({
   role,
+  live2dModels,
   onSave,
   onClose,
 }: {
   role: AgentRole | null
-  onSave: (data: RoleCreateRequest) => void
+  live2dModels: Live2DModelResponse[]
+  onSave: (data: RoleCreateRequest, live2dModelId: string | null) => void
   onClose: () => void
 }) {
   const [name, setName] = useState(role?.name || '')
@@ -28,6 +32,7 @@ function RoleEditorModal({
   const [verbosity, setVerbosity] = useState<RolePersonality['verbosity']>(role?.personality?.verbosity || 'normal')
   const [temperature, setTemperature] = useState(role?.model_config?.temperature ?? 0.7)
   const [maxTokens, setMaxTokens] = useState(role?.model_config?.max_tokens ?? 4096)
+  const [live2dModelId, setLive2dModelId] = useState<string | null>(role?.live2d_model_id || null)
 
   const handleSubmit = () => {
     if (!name.trim() || !systemPrompt.trim()) return
@@ -37,8 +42,10 @@ function RoleEditorModal({
       system_prompt: systemPrompt,
       personality: { tone, verbosity, creativity, formality },
       model_config_override: { temperature, max_tokens: maxTokens },
-    })
+    }, live2dModelId)
   }
+
+  const selectedModel = live2dModels.find(m => m.id === live2dModelId)
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -107,6 +114,32 @@ function RoleEditorModal({
           </div>
         </div>
 
+        {/* Live2D 模型绑定 */}
+        <div className={styles.formGroup}>
+          <label>Live2D 模型</label>
+          <select
+            value={live2dModelId || ''}
+            onChange={e => setLive2dModelId(e.target.value || null)}
+          >
+            <option value="">无（使用默认角色立绘）</option>
+            {live2dModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.model_name} {model.user_id ? '' : '(内置)'} v{model.version}
+              </option>
+            ))}
+          </select>
+          {selectedModel && (
+            <div className={styles.live2dPreview}>
+              <span className={styles.live2dPreviewLabel}>
+                已选择: {selectedModel.model_name} (v{selectedModel.version})
+              </span>
+              <span className={styles.live2dPreviewMeta}>
+                {selectedModel.texture_paths?.length || 0} 个纹理
+              </span>
+            </div>
+          )}
+        </div>
+
         <div className={styles.modalActions}>
           <button className={styles.cancelBtn} onClick={onClose}>取消</button>
           <button className={styles.saveBtn} onClick={handleSubmit} disabled={!name.trim() || !systemPrompt.trim()}>
@@ -138,7 +171,18 @@ function RolesPage({ embedded = false }: RolesPageProps) {
     retry: false,
   })
 
+  // Live2D 模型列表查询
+  const live2dQuery = useQuery<Live2DModelResponse[], Error>({
+    queryKey: ['live2d', 'models'],
+    queryFn: async () => {
+      const result = await listLive2DModels()
+      return result.models
+    },
+    retry: false,
+  })
+
   const roles = rolesQuery.data ?? []
+  const live2dModels = live2dQuery.data ?? []
   const loading = rolesQuery.isLoading
 
   // 加载失败时记录日志（error 变化时触发）
@@ -189,12 +233,30 @@ function RolesPage({ embedded = false }: RolesPageProps) {
   }
 
   // 保存角色（创建或更新）
-  const handleSave = async (data: RoleCreateRequest) => {
+  const handleSave = async (data: RoleCreateRequest, live2dModelId: string | null) => {
     try {
+      let savedRole: AgentRole
       if (editingRole) {
-        await updateRole(editingRole.id, data)
+        savedRole = await updateRole(editingRole.id, data)
       } else {
-        await createRole(data)
+        savedRole = await createRole(data)
+      }
+      // 绑定 Live2D 模型（与角色保存独立，不影响角色创建/更新成功）
+      try {
+        await bindRoleLive2D(savedRole.id, live2dModelId)
+      } catch (live2dError) {
+        appLogger.warning({
+          event: 'roles_page_live2d_bind_failed',
+          module: 'roles',
+          action: 'save',
+          status: 'warning',
+          message: 'Live2D 模型绑定失败（角色已保存）',
+          extra: {
+            role_id: savedRole.id,
+            live2d_model_id: live2dModelId,
+            error: live2dError instanceof Error ? live2dError.message : String(live2dError),
+          },
+        })
       }
       setShowEditor(false)
       // 失效角色列表查询，触发后台刷新
@@ -292,6 +354,7 @@ function RolesPage({ embedded = false }: RolesPageProps) {
       {showEditor && (
         <RoleEditorModal
           role={editingRole}
+          live2dModels={live2dModels}
           onSave={handleSave}
           onClose={() => setShowEditor(false)}
         />

@@ -22,6 +22,20 @@ from core.tool_execution import (
 )
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    """安全地将值转换为 int，字符串 ID 等非数值回退到 default。"""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
 # 工具名到权限 action 类别的精确映射（与 PermissionManager 规则 action 对齐：
 # read/glob/grep/web_search/web_fetch/skill/write/edit/delete/bash 等）
 _TOOL_ACTION_EXACT_MAP: Dict[str, str] = {
@@ -867,7 +881,7 @@ class ExecutionToolRuntimeMixin:
         # 策略模式分发：根据工具名前缀查找匹配的执行策略并委托执行
         _strategy_context = ToolExecutionContext(
             session_id=str(context.get("session_id", "") or ""),
-            user_id=int(context.get("user_id", 0) or 0),
+            user_id=_safe_int(context.get("user_id"), 0),
             tool_name=func_name,
             tool_input=func_args,
             tool_call_id=tool_call.get("id", ""),

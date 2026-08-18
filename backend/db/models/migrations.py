@@ -354,6 +354,12 @@ def _migrate_conversation_columns(use_engine=None):
             session_id
             for session_id, in db.query(Conversation.session_id).all()
         }
+        # 查询现有用户 ID 集合，避免对不存在用户创建会话（FK 约束）
+        from db.models import User
+        existing_user_ids = {
+            uid
+            for uid, in db.query(User.id).all()
+        }
         latest_records = (
             db.query(ConversationRecord)
             .order_by(ConversationRecord.timestamp.asc())
@@ -362,6 +368,8 @@ def _migrate_conversation_columns(use_engine=None):
         pending_rows: Dict[str, Conversation] = {}
         for record in latest_records:
             if record.session_id in existing_session_ids:
+                continue
+            if record.user_id not in existing_user_ids:
                 continue
             preview = (record.user_message or "").strip()
             title = preview.splitlines()[0][:80] if preview else "新对话"

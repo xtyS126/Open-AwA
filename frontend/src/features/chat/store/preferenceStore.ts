@@ -18,9 +18,12 @@ interface PreferenceState {
   thinkingEnabled: boolean
   /** 思考深度（0-5） */
   thinkingDepth: number
+  /** 是否自动朗读 AI 回复 */
+  autoReadAloud: boolean
   setOutputMode: (mode: 'stream' | 'direct', options?: PreferenceMutationOptions) => void
   setThinkingEnabled: (enabled: boolean, options?: PreferenceMutationOptions) => void
   setThinkingDepth: (depth: number, options?: PreferenceMutationOptions) => void
+  setAutoReadAloud: (enabled: boolean, options?: PreferenceMutationOptions) => void
 }
 
 // 初始化时读取本地缓存的选中模型，用于推断思考模式默认值
@@ -31,6 +34,7 @@ export const usePreferenceStore = create<PreferenceState>((set) => ({
   outputMode: safeGetItem('chat_output_mode', 'stream') as 'stream' | 'direct',
   thinkingEnabled: safeGetItem('chat_thinking_enabled', isInitialReasoner ? 'true' : 'false') === 'true',
   thinkingDepth: Number(safeGetItem('chat_thinking_depth', '0')) || 0,
+  autoReadAloud: safeGetItem('chat_auto_read_aloud', 'false') === 'true',
 
   setOutputMode: (mode, options) => {
     // 记录同步意图，由 chatSyncOrchestrator subscribe 集中处理持久化
@@ -48,5 +52,10 @@ export const usePreferenceStore = create<PreferenceState>((set) => ({
     const validDepth = Math.max(0, Math.min(5, depth))
     markSync('thinkingDepth', options?.syncToServer !== false)
     set({ thinkingDepth: validDepth })
+  },
+
+  setAutoReadAloud: (enabled, options) => {
+    markSync('autoReadAloud', options?.syncToServer !== false)
+    set({ autoReadAloud: enabled })
   },
 }))

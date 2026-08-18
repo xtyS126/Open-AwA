@@ -24,6 +24,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks, soul, discussions, search_config, profile_settings  # [NEW] Task 3+9: 讨论任务 + 搜索配置 + 画像设置路由
 from api.routes import issue_feedback  # 全局问题反馈路由
 from api.routes import apk_dist  # 局域网 APK 分发页（手机浏览器下载安装）
+from api.routes.companion import router as companion_router  # 陪伴通知检查路由
+from api.routes.voice import router as voice_router  # 语音转文本路由
 from api.routes.data import router as data_router
 from api.dependencies import get_current_user
 from api.routes.diary import router as diary_router
@@ -1677,6 +1679,7 @@ app.include_router(workflows.router, prefix=settings.API_V1_STR)
 app.include_router(scheduled_tasks.router, prefix=settings.API_V1_STR)
 app.include_router(soul.router)
 app.include_router(diary_router, prefix=settings.API_V1_STR)
+app.include_router(companion_router, prefix=settings.API_V1_STR)  # 陪伴通知检查
 app.include_router(prompts.router, prefix=settings.API_V1_STR)
 app.include_router(behavior.router, prefix=settings.API_V1_STR)
 app.include_router(experiences.router, prefix=settings.API_V1_STR)
@@ -1733,6 +1736,7 @@ app.include_router(discussions.router)
 app.include_router(search_config.router)  # [NEW] Task 9: 搜索配置路由
 app.include_router(issue_feedback.router)  # 全局问题反馈路由
 app.include_router(profile_settings.router)  # [NEW] Task 9: 用户画像设置路由
+app.include_router(voice_router)  # 语音转文本路由
 app.include_router(apk_dist.router)  # [NEW] 局域网 APK 分发页
 # [NOTE] Task 3 SubTask 3.9: DiscussionOrchestrator 未提供独立的 init() 方法，
 # 三个角色（critic/validator/approver）的 system prompt 已由 core/discussion/roles.py

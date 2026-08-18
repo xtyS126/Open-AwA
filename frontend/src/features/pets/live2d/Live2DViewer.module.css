@@ -1,0 +1,307 @@
+/**
+ * Live2DViewer 容器样式
+ * 模拟模式下的全部动画效果（呼吸、眨眼、口型、表情、拖拽）均在此定义。
+ */
+
+/* 外层容器 */
+.container {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-bg-tertiary, #f5f5f5);
+  user-select: none;
+  touch-action: none;
+}
+
+/* Canvas 元素 */
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 模拟模式占位容器 */
+.simContainer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 800px;
+}
+
+/* 模拟模式角色主体（可拖拽旋转） */
+.simCharacter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: filter 0.4s ease, transform 0.1s ease-out;
+  will-change: transform, filter;
+}
+
+/* 角色占位圆形（模拟头部） */
+.simHead {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f9a8d4 0%, #f472b6 50%, #ec4899 100%);
+  box-shadow: 0 4px 16px rgba(236, 72, 153, 0.3);
+  position: relative;
+  transition: background 0.4s ease, filter 0.4s ease, box-shadow 0.4s ease;
+}
+
+/* 模拟眼睛 */
+.simEye {
+  position: absolute;
+  width: 12px;
+  height: 14px;
+  background: #1e1b4b;
+  border-radius: 50%;
+  top: 28px;
+  transition: transform 0.15s ease;
+}
+
+.simEyeLeft {
+  left: 22px;
+}
+
+.simEyeRight {
+  right: 22px;
+}
+
+/* 模拟嘴巴（口型同步） */
+.simMouth {
+  position: absolute;
+  width: 16px;
+  height: 6px;
+  background: #be185d;
+  border-radius: 0 0 8px 8px;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  transition: height 0.1s ease, border-radius 0.1s ease;
+}
+
+/* 模拟身体 */
+.simBody {
+  width: 56px;
+  height: 40px;
+  border-radius: 12px 12px 16px 16px;
+  background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+
+/* 模型名称标签 */
+.simLabel {
+  margin-top: 6px;
+  font-size: var(--text-xs, 11px);
+  color: var(--color-text-tertiary, #999);
+  text-align: center;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 加载状态 */
+.loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-tertiary, #f5f5f5);
+  color: var(--color-text-tertiary, #999);
+  font-size: var(--text-sm, 13px);
+  z-index: 2;
+}
+
+/* 错误状态 */
+.error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--color-error-bg, #fef2f2);
+  color: var(--color-error-strong, #dc2626);
+  font-size: var(--text-sm, 13px);
+  z-index: 2;
+  padding: 12px;
+  text-align: center;
+}
+
+.errorRetry {
+  padding: 4px 12px;
+  border: 1px solid var(--color-error-strong, #dc2626);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--color-error-strong, #dc2626);
+  font-size: var(--text-xs, 12px);
+  cursor: pointer;
+}
+
+/* ============================================================
+ * 呼吸动画 —— 默认待机时自动播放缓慢的 scale(1.0-1.02)
+ * ============================================================ */
+.breathing {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+/* ============================================================
+ * 眨眼动画 —— 周期性闭眼效果
+ * ============================================================ */
+.blinking .simEye {
+  animation: blink 3s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 90%, 100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+/* ============================================================
+ * 表情切换 —— 通过 CSS filter 变化表示不同表情
+ * 通过 data-expression 属性控制
+ * ============================================================ */
+
+/* 开心：暖色调 + 亮度提升 */
+[data-expression="happy"] .simHead {
+  filter: brightness(1.15) saturate(1.3);
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4);
+}
+
+[data-expression="happy"] .simBody {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+}
+
+/* 难过：冷色调 + 低亮度 */
+[data-expression="sad"] .simHead {
+  filter: brightness(0.8) saturate(0.7) hue-rotate(-30deg);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2);
+}
+
+[data-expression="sad"] .simBody {
+  filter: brightness(0.85);
+}
+
+/* 惊讶：高亮度 + 高饱和度 */
+[data-expression="surprised"] .simHead {
+  filter: brightness(1.3) saturate(1.5);
+  box-shadow: 0 4px 24px rgba(168, 85, 247, 0.5);
+}
+
+[data-expression="surprised"] .simBody {
+  filter: brightness(1.2);
+}
+
+/* 生气：红色调 */
+[data-expression="angry"] .simHead {
+  filter: brightness(0.9) saturate(1.2) hue-rotate(15deg);
+  background: linear-gradient(135deg, #f87171 0%, #ef4444 50%, #dc2626 100%);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+}
+
+[data-expression="angry"] .simBody {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+}
+
+/* 默认/中性 */
+[data-expression="neutral"] .simHead {
+  filter: brightness(1) saturate(1) hue-rotate(0deg);
+}
+
+/* ============================================================
+ * 口型同步动画 —— 通过 CSS animation 的 scale 变化模拟口型开合
+ * ============================================================ */
+.lipSyncActive .simMouth {
+  animation: lipSync 0.15s ease-in-out infinite;
+}
+
+@keyframes lipSync {
+  0%, 100% {
+    height: 6px;
+    border-radius: 0 0 8px 8px;
+  }
+  50% {
+    height: 14px;
+    border-radius: 0 0 12px 12px;
+  }
+}
+
+/* 口型同步值映射到不同的嘴巴高度，通过 CSS 自定义属性控制 */
+.lipSyncValue {
+  /* --lip-sync-scale 由 JS 动态设置 */
+}
+
+/* ============================================================
+ * 动作播放动画（模拟模式）
+ * ============================================================ */
+.motionPlaying {
+  animation: motionBounce 0.5s ease-in-out;
+}
+
+@keyframes motionBounce {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-8px) scale(1.05);
+  }
+  60% {
+    transform: translateY(-4px) scale(0.98);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ============================================================
+ * 拖拽提示与交互
+ * ============================================================ */
+.draggable {
+  cursor: grab;
+}
+
+.dragging {
+  cursor: grabbing;
+}
+
+/* 提示文字 */
+.dragHint {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--color-text-tertiary, #aaa);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.container:hover .dragHint {
+  opacity: 0.7;
+}

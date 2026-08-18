@@ -1,5 +1,6 @@
 // ESLint 9 flat config - 桌面端主进程
 // 注意：ESLint 9 强制使用 flat config（导出数组），旧的 CommonJS module.exports 已不支持
+// 使用 .mjs 扩展名：desktop 包为 CommonJS（主进程/preload 编译为 CJS），ESM 配置需显式 .mjs
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 

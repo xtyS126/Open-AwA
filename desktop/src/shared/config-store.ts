@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { DEFAULT_CONFIG, type AppConfig, type WindowBounds, type UpdateConfig } from './types'
+import { DEFAULT_CONFIG, type AppConfig, type WindowBounds, type UpdateConfig, type CompanionConfig, type PetConfig } from './types'
 
 let _store: Store<AppConfig> | null = null
 
@@ -137,4 +137,24 @@ export function getUpdateConfig(): UpdateConfig {
 /** 设置自动更新配置 */
 export function setUpdateConfig(autoCheck: boolean, source: string): void {
   getConfigStore().set('update', { autoCheck, source })
+}
+
+/** 获取陪伴通知配置 */
+export function getCompanionConfig(): CompanionConfig {
+  return getConfigStore().get('companion')
+}
+
+/** 设置陪伴通知配置 */
+export function setCompanionConfig(config: CompanionConfig): void {
+  getConfigStore().set('companion', config)
+}
+
+/** 获取宠物悬浮窗配置 */
+export function getPetConfig(): PetConfig {
+  return getConfigStore().get('pet')
+}
+
+/** 设置宠物悬浮窗配置 */
+export function setPetConfig(config: PetConfig): void {
+  getConfigStore().set('pet', config)
 }

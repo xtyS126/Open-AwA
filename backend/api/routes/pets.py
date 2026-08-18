@@ -7,12 +7,15 @@
 - 自定义宠物完全由用户持有，落盘在 var/pets/custom/<user_id>/<pet_id>/，
   清单与精灵表均校验 V2 宠物契约后再持久化。
 - 激活态通过 user_active_pets 单行映射维护；pet_id=disable 表示禁用宠物。
+- Live2D 模型路由：上传、列表、文件读取、删除。
 """
 
 import io
 import json
 import os
 import re
+import shutil
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,14 +29,19 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
 from api.schemas import (
+    Live2DModelListResponse,
+    Live2DModelResponse,
+    Live2DModelUploadResponse,
     PetActiveRequest,
     PetActiveResponse,
     PetImportResponse,
     PetListResponse,
     PetResponse,
 )
-from db.models import Pet, User, UserActivePet, get_db
+from db.models import Live2DModel, Pet, User, UserActivePet, get_db
 from pets import catalog, manifest, asset_pack
+from pets.live2d import LIVED2D_DATA_DIR, MAX_MODEL_ARCHIVE_BYTES
+from pets.live2d.validator import Live2DValidationError, validate_live2d_archive
 
 router = APIRouter(prefix="/pets", tags=["Pets"])
 
@@ -490,3 +498,224 @@ def get_pet_manifest(
     if manifest_file.exists():
         return JSONResponse(json.loads(manifest_file.read_text(encoding="utf-8")))
     raise HTTPException(status_code=404, detail="宠物清单文件缺失")
+
+
+# ============================================================
+# Live2D 模型管理路由
+# ============================================================
+
+# 文件扩展名 -> MIME 类型映射
+_LIVED2D_MIME_TYPES: Dict[str, str] = {
+    ".json": "application/json",
+    ".moc3": "application/octet-stream",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
+
+def _live2d_model_to_response(model: Live2DModel) -> Live2DModelResponse:
+    """将 Live2DModel ORM 行转换为响应模型。"""
+    return Live2DModelResponse(
+        id=model.id,
+        model_name=model.model_name,
+        model_path=model.model_path,
+        model3_json_path=model.model3_json_path,
+        moc3_path=model.moc3_path,
+        texture_paths=model.texture_paths or [],
+        expressions_json=model.expressions_json or [],
+        motions_json=model.motions_json or [],
+        physics_json=model.physics_json,
+        pose_json=model.pose_json,
+        version=model.version,
+        user_id=model.user_id,
+        created_at=model.created_at,
+    )
+
+
+def _resolve_live2d_model_dir(model: Live2DModel) -> Path:
+    """解析 Live2D 模型存储目录的绝对路径。"""
+    stored = Path(model.model_path)
+    if stored.is_absolute():
+        return stored
+    return LIVED2D_DATA_DIR / stored
+
+
+def _safe_model_file_path(model_dir: Path, filename: str) -> Path:
+    """安全解析模型目录下的文件路径，防止路径穿越。"""
+    resolved = (model_dir / filename).resolve()
+    if not str(resolved).startswith(str(model_dir.resolve())):
+        raise HTTPException(status_code=403, detail="路径越权访问被拒绝")
+    return resolved
+
+
+@router.post("/live2d/upload", response_model=Live2DModelUploadResponse)
+async def upload_live2d_model(
+    archive: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    上传 Live2D 模型 zip 包。
+
+    校验 zip 包内容合法性后，将模型文件解压到 var/pets/live2d/{model_id}/ 目录，
+    并在数据库中创建 Live2DModel 记录。
+    """
+    # 读取上传文件
+    archive_bytes = _read_upload_bytes(archive, MAX_MODEL_ARCHIVE_BYTES)
+
+    # 校验 zip 包内容
+    try:
+        metadata = validate_live2d_archive(archive_bytes)
+    except Live2DValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 生成模型 id 与存储目录
+    model_id = str(uuid.uuid4())
+    model_dir = LIVED2D_DATA_DIR / model_id
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    # 解压文件到磁盘
+    file_map: Dict[str, bytes] = metadata["file_map"]
+    for rel_path, data in file_map.items():
+        # 安全解析目标路径，确保不穿越出模型目录
+        dest = _safe_model_file_path(model_dir, rel_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+
+    # 创建数据库记录
+    model_row = Live2DModel(
+        id=model_id,
+        model_name=metadata["model_name"],
+        model_path=str(model_dir),
+        model3_json_path=metadata["model3_json_path"],
+        moc3_path=metadata["moc3_path"],
+        texture_paths=metadata["texture_paths"],
+        expressions_json=metadata["expressions_json"],
+        motions_json=metadata["motions_json"],
+        physics_json=metadata["physics_json"],
+        pose_json=metadata["pose_json"],
+        version=1,
+        user_id=current_user.id,
+    )
+    db.add(model_row)
+    db.commit()
+    db.refresh(model_row)
+
+    logger.bind(event="live2d_upload", module="pets", model_id=model_id).info(
+        f"用户 {current_user.id} 上传了 Live2D 模型 {model_row.model_name}"
+    )
+
+    return Live2DModelUploadResponse(model=_live2d_model_to_response(model_row))
+
+
+@router.get("/live2d/models", response_model=Live2DModelListResponse)
+def list_live2d_models(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    列出所有可用的 Live2D 模型（内置模型 + 当前用户上传的模型）。
+    """
+    rows = (
+        db.query(Live2DModel)
+        .filter(
+            (Live2DModel.user_id.is_(None)) | (Live2DModel.user_id == current_user.id)
+        )
+        .order_by(Live2DModel.user_id.is_(None).desc(), Live2DModel.model_name.asc())
+        .all()
+    )
+    models = [_live2d_model_to_response(row) for row in rows]
+    return Live2DModelListResponse(models=models, total=len(models))
+
+
+@router.get("/live2d/{model_id}/files/{filename:path}")
+def get_live2d_model_file(
+    model_id: str,
+    filename: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    读取 Live2D 模型目录下的静态文件（纹理、动作、表情等）。
+
+    使用 FileResponse 返回，自动设置 Content-Type。
+    校验路径不穿越出模型目录。
+    返回 Cache-Control 与 ETag 头，支持客户端缓存 Live2D 模型文件（24 小时）。
+    """
+    model = db.get(Live2DModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="模型不存在")
+    # 访问控制：仅允许内置模型或上传者本人访问
+    if model.user_id is not None and model.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问该模型")
+
+    model_dir = _resolve_live2d_model_dir(model)
+    if not model_dir.exists() or not model_dir.is_dir():
+        raise HTTPException(status_code=404, detail="模型文件目录不存在")
+
+    file_path = _safe_model_file_path(model_dir, filename)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    ext = file_path.suffix.lower()
+    media_type = _LIVED2D_MIME_TYPES.get(ext, "application/octet-stream")
+
+    # 生成 ETag：基于文件修改时间与大小，避免重复传输
+    stat = file_path.stat()
+    etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+
+    # 缓存头：模型文件变更频率低，缓存 24 小时
+    headers = {
+        "Cache-Control": "public, max-age=86400",
+        "ETag": etag,
+    }
+
+    return FileResponse(
+        str(file_path),
+        media_type=media_type,
+        filename=file_path.name,
+        headers=headers,
+    )
+
+
+@router.delete("/live2d/{model_id}")
+def delete_live2d_model(
+    model_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    删除 Live2D 模型。
+
+    仅允许删除用户自己上传的模型，内置模型（user_id 为空）不可删除。
+    同时清理磁盘上的模型文件目录。
+    """
+    model = db.get(Live2DModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="模型不存在")
+    if model.user_id is None:
+        raise HTTPException(status_code=403, detail="内置模型不可删除")
+    if model.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权删除该模型")
+
+    model_dir = _resolve_live2d_model_dir(model)
+
+    # 清理磁盘文件
+    if model_dir.exists():
+        try:
+            shutil.rmtree(str(model_dir))
+        except OSError as exc:
+            logger.bind(
+                event="live2d_delete_cleanup_error",
+                module="pets",
+                model_id=model_id,
+            ).warning(f"清理 Live2D 模型目录时出错: {exc}")
+
+    db.delete(model)
+    db.commit()
+
+    logger.bind(event="live2d_delete", module="pets", model_id=model_id).info(
+        f"用户 {current_user.id} 删除了 Live2D 模型 {model_id}"
+    )
+
+    return {"success": True, "message": f"已删除 Live2D 模型 {model_id}"}

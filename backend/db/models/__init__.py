@@ -152,6 +152,11 @@ from db.models.pet import (
     UserActivePet,
 )
 
+# ---- Live2D 模型域 ----
+from db.models.live2d import (
+    Live2DModel,
+)
+
 # ---- Bilibili Toolkit 域 ----
 from db.models.bilibili_toolkit import (
     BilibiliToolkitDownloadTask,
@@ -259,6 +264,8 @@ __all__ = [
     # 宠物域
     "Pet",
     "UserActivePet",
+    # Live2D 模型域
+    "Live2DModel",
     # Bilibili Toolkit 域
     "BilibiliToolkitDownloadTask",
     "BilibiliToolkitPage",
