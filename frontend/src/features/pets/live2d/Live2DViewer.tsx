@@ -128,14 +128,12 @@ const Live2DViewer = forwardRef<Live2DViewerHandle, Live2DViewerProps>(function 
         }
 
         // 尝试获取模型主文件 URL
-        const model3File = modelMeta.files.find(
-          (f: { filename: string }) => f.filename.endsWith('.model3.json') || f.filename.endsWith('.model3')
-        )
-        if (!model3File) {
+        const model3Path = modelMeta.model3_json_path
+        if (!model3Path) {
           throw new Error('模型文件中未找到 .model3.json 或 .model3 入口文件')
         }
 
-        const modelUrl = getLive2DModelFileUrl(modelId, model3File.filename)
+        const modelUrl = getLive2DModelFileUrl(modelId, model3Path)
 
         // 初始化 PIXI Application
         const app = new PIXI.Application({

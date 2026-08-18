@@ -4,38 +4,34 @@
  */
 import api from '@/shared/api/api'
 
-/** Live2D 模型文件信息 */
-export interface Live2DModelFile {
-  /** 文件名 */
-  filename: string
-  /** 文件大小（字节） */
-  size: number
-  /** 文件类型（moc3, model3, physics3, texture 等） */
-  file_type: string
-}
-
 /** Live2D 模型元数据响应 */
 export interface Live2DModelResponse {
   /** 模型唯一标识 */
   id: string
   /** 模型名称 */
-  name: string
-  /** 模型名称（别名，兼容 RolesPage） */
   model_name: string
-  /** 模型描述 */
-  description: string
-  /** 模型文件列表 */
-  files: Live2DModelFile[]
+  /** 模型存储目录路径 */
+  model_path: string
+  /** .model3.json 入口文件路径 */
+  model3_json_path: string
+  /** .moc3 文件路径 */
+  moc3_path: string
+  /** 纹理文件路径列表 */
+  texture_paths: string[]
+  /** 表情定义（从 .model3.json 的 Expressions 解析） */
+  expressions_json: unknown[]
+  /** 动作定义（从 .model3.json 的 Groups 解析） */
+  motions_json: unknown[]
+  /** 物理定义文件路径（可选） */
+  physics_json: string | null
+  /** 姿势定义文件路径（可选） */
+  pose_json: string | null
+  /** 模型版本号 */
+  version: number
+  /** 上传用户 id（null 为内置模型） */
+  user_id: string | null
   /** 创建时间（ISO 字符串） */
   created_at: string
-  /** 是否有预览图 */
-  has_preview: boolean
-  /** 上传用户 id（null 为内置模型，兼容 RolesPage） */
-  user_id: string | null
-  /** 模型版本号（兼容 RolesPage） */
-  version: number
-  /** 纹理文件路径列表（兼容 RolesPage） */
-  texture_paths: string[]
 }
 
 /** 模型列表响应 */

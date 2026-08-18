@@ -38,7 +38,7 @@ class Live2DModel(Base):
     texture_paths: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
 
     # 表情定义（从 .model3.json 的 Expressions 解析）
-    expressions_json: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=list)
+    expressions_json: Mapped[List[Any]] = mapped_column(JSON, nullable=False, default=list)
 
     # 动作定义（从 .model3.json 的 Groups 解析）
     motions_json: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)

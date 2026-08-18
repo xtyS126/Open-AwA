@@ -100,7 +100,7 @@ export default function Live2DModelManager() {
   // 删除模型
   const handleDelete = useCallback(
     async (model: Live2DModelResponse) => {
-      if (!window.confirm(`确定删除模型 ${model.name}？`)) return
+      if (!window.confirm(`确定删除模型 ${model.model_name}？`)) return
       setPendingId(model.id)
       try {
         await deleteLive2DModel(model.id)
@@ -188,20 +188,17 @@ export default function Live2DModelManager() {
               <div className={styles.previewBox}>
                 <div className={styles.previewPlaceholder}>
                   <Smile size={32} />
-                  <span>{model.name}</span>
+                  <span>{model.model_name}</span>
                 </div>
               </div>
 
               {/* 模型信息 */}
               <div className={styles.cardInfo}>
-                <h3 className={styles.name}>{model.name}</h3>
-                {model.description && (
-                  <p className={styles.desc}>{model.description}</p>
-                )}
+                <h3 className={styles.name}>{model.model_name}</h3>
                 <div className={styles.meta}>
                   <span className={styles.metaItem}>
                     <FileArchive size={12} />
-                    {model.files.length} 个文件
+                    {model.texture_paths.length} 个纹理
                   </span>
                   <span>·</span>
                   <span>{new Date(model.created_at).toLocaleDateString('zh-CN')}</span>
@@ -316,7 +313,7 @@ export default function Live2DModelManager() {
         >
           <div className={styles.previewModal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.previewHeader}>
-              <h2 className={styles.previewTitle}>预览：{previewModel.name}</h2>
+              <h2 className={styles.previewTitle}>预览：{previewModel.model_name}</h2>
               <button
                 type="button"
                 className={styles.closeBtn}
