@@ -12,7 +12,7 @@ android {
         applicationId = "com.xtys126.open_awa"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
+        versionCode = 6
         versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
