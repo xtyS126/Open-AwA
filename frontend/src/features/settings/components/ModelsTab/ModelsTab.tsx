@@ -7,6 +7,7 @@ import type { ModelConfiguration, ModelProvider, ProviderModel } from '@/feature
 import { AddConfigForm } from './AddConfigForm'
 import { ModelManagementTable } from './ModelManagementTable'
 import { ModelTierSection } from './ModelTierSection'
+import { SillyTavernConnectionCard } from './SillyTavernConnectionCard'
 import { MODALITY_TYPES, MODALITY_LABELS } from '@/features/settings/SettingsPage.utils'
 import { Badge } from '@/shared/components/ui/Badge'
 import { getProviderIcon } from '@/assets/providers'
@@ -129,6 +130,12 @@ export function ModelsTab({
     return counts
   }, [configurations])
 
+  // 生图模型数量：大于 0 时展示酒馆AI连接说明卡片
+  const imageModelCount = useMemo(
+    () => configurations.filter(config => config.is_image_generation).length,
+    [configurations]
+  )
+
   // 模态类型常量（已从 utils 导入）
 
   return (
@@ -145,6 +152,9 @@ export function ModelsTab({
       <p className={styles['section-desc']}>
         配置可用的AI模型参数，设置的默认模型将自动在聊天页面选中
       </p>
+
+      {/* 酒馆AI生图接入说明（存在生图模型时展示） */}
+      <SillyTavernConnectionCard imageModelCount={imageModelCount} />
 
       {/* 添加配置表单 */}
       {showAddForm && (

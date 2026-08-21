@@ -195,6 +195,118 @@
   font-size: 14px;
 }
 
+/* ===== 酒馆AI（SillyTavern）生图接入说明卡片 ===== */
+.sdwebui-compat-card {
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.sdwebui-compat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.sdwebui-compat-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.sdwebui-compat-badge {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--color-warning, #b45309);
+  background: var(--color-warning-subtle, rgba(180, 83, 9, 0.1));
+  border: 1px solid var(--color-warning, #b45309);
+}
+
+.sdwebui-compat-desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.sdwebui-compat-desc strong {
+  color: var(--color-text);
+}
+
+.sdwebui-compat-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sdwebui-compat-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sdwebui-compat-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.sdwebui-compat-field-value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sdwebui-compat-field-value {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.sdwebui-compat-copy-btn {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  cursor: pointer;
+  transition: var(--transition-base);
+}
+
+.sdwebui-compat-copy-btn:hover {
+  background: var(--color-bg-tertiary, var(--color-bg-secondary));
+}
+
+.sdwebui-compat-field-hint {
+  font-size: 12px;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
+.sdwebui-compat-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
 .setting-item {
   margin-bottom: 20px;
 }
