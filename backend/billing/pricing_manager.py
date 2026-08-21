@@ -1200,10 +1200,16 @@ class PricingManager:
         if "icon" in normalized and normalized.get("icon") is not None:
             normalized["icon"] = normalized["icon"].strip() or None
         if "api_endpoint" in normalized and normalized.get("api_endpoint") is not None:
-            normalized["api_endpoint"] = self._normalize_provider_api_endpoint(
-                normalized.get("provider"),
-                normalized.get("api_endpoint")
-            )
+            if normalized.get("is_image_generation"):
+                # 生图模型端点不做 /v1 后缀规范化：NovelAI（站点根地址）/ SD WebUI
+                # 等协议族由 core/image_generation.py 按协议自行推导端点，
+                # 强制补 /v1 会破坏端点（如 https://host → https://host/v1）
+                normalized["api_endpoint"] = normalized.get("api_endpoint").strip().rstrip("/")
+            else:
+                normalized["api_endpoint"] = self._normalize_provider_api_endpoint(
+                    normalized.get("provider"),
+                    normalized.get("api_endpoint")
+                )
         if "api_key" in normalized and normalized.get("api_key") is not None:
             raw_key = normalized["api_key"].strip()
             if raw_key:
@@ -1298,7 +1304,12 @@ class PricingManager:
         ).first()
         
         if config:
-            normalized = self._normalize_configuration_payload(config_data)
+            payload = dict(config_data)
+            # 端点规范化依赖 is_image_generation 判定生图协议跳过 /v1 后缀；
+            # 部分更新载荷可能缺省该字段，从现有配置回填
+            if payload.get("is_image_generation") is None:
+                payload["is_image_generation"] = getattr(config, "is_image_generation", False)
+            normalized = self._normalize_configuration_payload(payload)
 
             # 生图模型仅用于图像生成，禁止同时标记为默认聊天模型（fail-closed）
             target_is_image = normalized.get(

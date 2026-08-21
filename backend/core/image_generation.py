@@ -1,15 +1,18 @@
 """
-图像生成服务：通过已配置的生图模型（SD / GPT-Image / Qwen-Image 系列）生成图片。
+图像生成服务：通过已配置的生图模型（SD / GPT-Image / Qwen-Image / NovelAI 系列）生成图片。
 
 模型在设置页被手动标记为"生图模型"（is_image_generation=True）并填写用途/限制描述后，
 本服务负责调用其对应协议完成生图：
 
 1. OpenAI 兼容 images/generations（默认协议）：GPT-Image（gpt-image-1）原生支持；
    SD 的 OpenAI 兼容端点（stable-diffusion-api / new-api 等网关）；Qwen-Image 经
-   OpenAI 兼容网关接入。
+   OpenAI 兼容网关接入；智绘姬（penguinsama）Banana/Grok 端点
+   （/api/draw/openai/v1）同为此协议。
 2. DashScope 原生：qwen-image 系列（阿里云百炼原生 multimodal-generation 端点，
    compatible-mode 不提供 images/generations，需走原生接口）。
 3. SD WebUI 原生：/sdapi/v1/txt2img。
+4. NovelAI 原生：/ai/generate-image（NovelAI 官方与智绘姬等兼容站点，
+   ZIP 响应内含 PNG；载荷结构与 SillyTavern novelai.js 对齐）。
 
 模型配置与 API Key 复用 PricingManager 凭据体系（provider_credentials 加密存储）。
 生成图片统一保存到 {DATA_DIR}/generated 目录，接口返回 base64 + 文件路径。
@@ -17,9 +20,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import io
+import random
 import re
 import time
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
@@ -39,6 +46,36 @@ IMAGE_OUTPUT_DIR: Path = DATA_DIR / "generated"
 # 生图请求超时：SD 等本地生图可能耗时数分钟，统一放宽到 300 秒
 _GENERATION_TIMEOUT = httpx.Timeout(300.0)
 
+# NovelAI 协议合法采样器（对齐 SillyTavern loadNovelSamplers 硬编码列表）
+_NOVELAI_SAMPLERS = {
+    "k_euler_ancestral",
+    "k_euler",
+    "k_dpmpp_2m",
+    "k_dpmpp_sde",
+    "k_dpmpp_2s_ancestral",
+    "k_dpm_fast",
+    "ddim",
+}
+
+# A1111 采样器名到 NovelAI 采样器的别名映射（酒馆AI经兼容层接入时名称转换）
+_NOVELAI_SAMPLER_ALIASES = {
+    "euler a": "k_euler_ancestral",
+    "euler ancestral": "k_euler_ancestral",
+    "euler": "k_euler",
+    "dpm++ 2m": "k_dpmpp_2m",
+    "dpm++ sde": "k_dpmpp_sde",
+    "dpm++ 2s a": "k_dpmpp_2s_ancestral",
+    "dpm fast": "k_dpm_fast",
+    "dpm2": "k_dpm_fast",
+}
+
+# NovelAI 协议合法噪声调度器
+_NOVELAI_NOISE_SCHEDULES = {"native", "karras", "exponential", "polyexponential"}
+
+# NovelAI 兼容站点（如智绘姬）队列满（429）时的自动重试：递增退避，总等待约 100 秒
+_NOVELAI_MAX_RETRIES = 4
+_NOVELAI_RETRY_DELAYS = (10.0, 20.0, 30.0, 40.0)
+
 
 def _parse_size(size: str) -> Tuple[int, int]:
     """解析图片尺寸字符串（宽x高），非法格式直接报错。"""
@@ -48,12 +85,19 @@ def _parse_size(size: str) -> Tuple[int, int]:
     return int(match.group(1)), int(match.group(2))
 
 
-def _detect_protocol(provider: str, endpoint: Optional[str]) -> str:
-    """按 provider 名与端点判定生图协议：dashscope / sdwebui / openai。"""
+def _detect_protocol(provider: str, endpoint: Optional[str], model: Optional[str] = None) -> str:
+    """按 provider 名、端点与模型名判定生图协议：dashscope / novelai / sdwebui / openai。"""
     ep = (endpoint or "").lower()
     provider_lower = provider.lower()
+    model_lower = (model or "").lower()
     if "dashscope" in ep or "dashscope" in provider_lower:
         return "dashscope"
+    if (
+        "novelai" in provider_lower
+        or "nai-diffusion" in model_lower
+        or "/ai/generate-image" in ep
+    ):
+        return "novelai"
     if "sdapi" in ep or "sd" in provider_lower or "stable" in provider_lower:
         return "sdwebui"
     return "openai"
@@ -92,6 +136,34 @@ def _sdwebui_endpoint(endpoint: str) -> str:
     if base.endswith("/sdapi/v1/txt2img"):
         return base
     return f"{base}/sdapi/v1/txt2img"
+
+
+def _novelai_endpoint(endpoint: str) -> str:
+    """推导 NovelAI 生图端点（智绘姬等兼容站点，根地址或完整路径均可）。"""
+    base = endpoint.strip().rstrip("/")
+    if base.endswith("/ai/generate-image"):
+        return base
+    return f"{base}/ai/generate-image"
+
+
+def _novelai_sampler(name: Optional[str]) -> str:
+    """把 A1111 采样器名映射为 NovelAI 采样器，未知名称回退 k_euler_ancestral。"""
+    if not name:
+        return "k_euler_ancestral"
+    normalized = name.strip().lower()
+    if normalized in _NOVELAI_SAMPLERS:
+        return normalized
+    if normalized in _NOVELAI_SAMPLER_ALIASES:
+        return _NOVELAI_SAMPLER_ALIASES[normalized]
+    return "k_euler_ancestral"
+
+
+def _novelai_noise_schedule(name: Optional[str]) -> str:
+    """把调度器名映射为 NovelAI 噪声调度器，未知名称回退 karras。"""
+    if not name:
+        return "karras"
+    normalized = name.strip().lower()
+    return normalized if normalized in _NOVELAI_NOISE_SCHEDULES else "karras"
 
 
 def list_image_models(db: Session) -> List[Dict[str, Any]]:
@@ -345,6 +417,120 @@ async def _generate_sdwebui(
     return [{"data": base64.b64decode(item)} for item in raw_images]
 
 
+async def _generate_novelai(
+    config: Dict[str, Any],
+    prompt: str,
+    negative_prompt: Optional[str],
+    width: int,
+    height: int,
+    n: int,
+    generation_params: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """NovelAI 原生协议（NovelAI 官方 / 智绘姬等兼容站点）。
+
+    载荷结构与 SillyTavern novelai.js 对齐；响应为 ZIP 包（内含 PNG），
+    部分站点直接返回 PNG 二进制，两者均兼容。负面提示词原生传递。
+    generation_params 支持 steps / cfg_scale(→scale) / sampler_name / scheduler(→noise_schedule) / seed。
+    """
+    url = _novelai_endpoint(config["endpoint"])
+    params = generation_params or {}
+    seed = params.get("seed")
+    if seed is None or seed < 0:
+        seed = random.randint(0, 9999999999)
+    payload = {
+        "action": "generate",
+        "input": prompt,
+        "model": config["model"],
+        "parameters": {
+            "params_version": 3,
+            "prefer_brownian": True,
+            "negative_prompt": negative_prompt or "",
+            "height": height,
+            "width": width,
+            "scale": params.get("cfg_scale") if params.get("cfg_scale") is not None else 5,
+            "seed": seed,
+            "sampler": _novelai_sampler(params.get("sampler_name")),
+            "noise_schedule": _novelai_noise_schedule(params.get("scheduler")),
+            "steps": params.get("steps") or 28,
+            "n_samples": n,
+            "ucPreset": 0,
+            "qualityToggle": False,
+            "add_original_image": False,
+            "controlnet_strength": 1,
+            "deliberate_euler_ancestral_bug": False,
+            "dynamic_thresholding": False,
+            "legacy": False,
+            "legacy_v3_extend": False,
+            "sm": False,
+            "sm_dyn": False,
+            "uncond_scale": 1,
+            "skip_cfg_above_sigma": None,
+            "use_coords": False,
+            "characterPrompts": [],
+            "reference_image_multiple": [],
+            "reference_information_extracted_multiple": [],
+            "reference_strength_multiple": [],
+            "v4_negative_prompt": {
+                "caption": {"base_caption": negative_prompt or "", "char_captions": []}
+            },
+            "v4_prompt": {
+                "caption": {"base_caption": prompt, "char_captions": []},
+                "use_coords": False,
+                "use_order": True,
+            },
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=_GENERATION_TIMEOUT) as client:
+        response = None
+        for attempt in range(_NOVELAI_MAX_RETRIES + 1):
+            response = await client.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {config['api_key']}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            # 智绘姬等站点队列满时返回 429（响应体含中文队列提示），递增退避后重试
+            if response.status_code == 429 and attempt < _NOVELAI_MAX_RETRIES:
+                delay = _NOVELAI_RETRY_DELAYS[attempt]
+                logger.bind(
+                    event="novelai_queue_retry",
+                    module="image_generation",
+                    model=config["label"],
+                    attempt=attempt + 1,
+                    delay=delay,
+                ).warning(
+                    f"NovelAI 生图队列已满，{delay} 秒后重试 "
+                    f"({attempt + 1}/{_NOVELAI_MAX_RETRIES}): {response.text[:120]}"
+                )
+                await asyncio.sleep(delay)
+                continue
+            break
+        if response.status_code >= 400:
+            _raise_api_error(url, response)
+        content = response.content
+
+    # 标准响应为 ZIP 包内含 PNG；兼容直接返回 PNG 二进制的站点
+    images: List[Dict[str, Any]] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            for name in archive.namelist():
+                if name.lower().endswith(".png"):
+                    images.append({"data": archive.read(name)})
+    except zipfile.BadZipFile:
+        if content.startswith(b"\x89PNG"):
+            images.append({"data": content})
+        else:
+            raise ValueError(
+                f"NovelAI 生图响应既非 ZIP 也非 PNG: {content[:200]!r}"
+            )
+    if not images:
+        raise ValueError("NovelAI 生图未在 ZIP 中找到 PNG 图片")
+    return images
+
+
 def _save_images(images: List[Dict[str, Any]], label: str) -> List[Dict[str, Any]]:
     """将生图结果保存到 var/data/generated 并返回带文件路径与格式的结果列表。"""
     IMAGE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -410,7 +596,7 @@ async def generate_image(
         raise ValueError("生成数量 n 必须在 1 到 6 之间")
 
     config = _resolve_image_configuration(db, config_id)
-    protocol = _detect_protocol(config["provider"], config["endpoint"])
+    protocol = _detect_protocol(config["provider"], config["endpoint"], config["model"])
     logger.bind(
         event="image_generation_started",
         module="image_generation",
@@ -421,6 +607,10 @@ async def generate_image(
 
     if protocol == "dashscope":
         images = await _generate_dashscope(config, prompt, size, n, negative_prompt)
+    elif protocol == "novelai":
+        images = await _generate_novelai(
+            config, prompt, negative_prompt, width, height, n, generation_params
+        )
     elif protocol == "sdwebui":
         images = await _generate_sdwebui(
             config, prompt, negative_prompt, width, height, n, generation_params

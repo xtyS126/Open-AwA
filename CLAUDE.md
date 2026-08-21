@@ -588,6 +588,21 @@ features/settings/
 - CSRF：`/sdapi/v1/` 前缀在 `_CSRF_EXEMPT_PREFIXES` 豁免（Basic 凭证不被浏览器跨站自动附带，无 CSRF 攻击面）
 - 酒馆AI 侧设置：API 类型选 "Stable Diffusion Web UI (AUTOMATIC1111)"，URL 填后端地址，认证填 `用户名:API_KEY`
 
+### 6.9 生图协议族（core/image_generation.py）
+
+`generate_image` 按模型配置自动判定四种协议族（`_detect_protocol` 按 provider 名 / 端点 / 模型名）：
+
+| 协议 | 判定条件 | 端点推导 | 响应处理 |
+|------|---------|---------|---------|
+| `openai` | 默认 | `{base}/v1/images/generations`（`_normalize_openai_base` 补 /v1） | `data[].b64_json` / `url` 下载 |
+| `dashscope` | provider/端点含 dashscope | 原生 multimodal-generation | `output.choices[].message.content[].image` 下载 |
+| `sdwebui` | provider 含 sd/stable 或端点含 sdapi | `{base}/sdapi/v1/txt2img` | `images[]` base64 |
+| `novelai` | provider 含 novelai / 模型名含 nai-diffusion / 端点含 /ai/generate-image | `{base}/ai/generate-image`（`_novelai_endpoint`） | ZIP 内含 PNG 解包（兼容裸 PNG） |
+
+- NovelAI 协议：载荷与 SillyTavern novelai.js 对齐（`action:generate` + v4_prompt 结构）；负面提示词原生传递；A1111 采样器名自动映射（`Euler a`→`k_euler_ancestral` 等）；429 队列满时自动退避重试（10/20/30/40s 共 4 次）
+- 生图配置的 `api_endpoint` 在 `PricingManager._normalize_configuration_payload` 中**跳过 /v1 后缀规范化**（`is_image_generation=True` 时），NovelAI/SD WebUI 协议用站点根地址
+- 智绘姬（penguinsama.com）接入示例：NovelAI 模型（nai-diffusion-*）端点填 `https://api.penguinsama.com`；Banana/Grok 模型（nano-banana-pro / grok-imagine / gpt-image-2 等）端点填 `https://api.penguinsama.com/api/draw/openai/v1`；两者共用站点生图 Key
+
 ---
 
 ## 7. Adding a New API Route (Backend)

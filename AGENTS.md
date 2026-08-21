@@ -363,16 +363,26 @@ cd D:\代码\Open-AwA\android\Open-AwA-Android
 
 ### 5.3 SD WebUI (A1111) 兼容层（酒馆AI 生图接入）
 
-`backend/api/routes/sdwebui_compat.py` 实现 AUTOMATIC1111 `/sdapi/v1/*` 协议（挂载在根路径，不带 `/api` 前缀），供酒馆AI（SillyTavern）等外部客户端以 "Stable Diffusion Web UI (AUTOMATIC1111)" 后端类型直连 Open-AwA 生图。生图请求转发给 `core/image_generation.py` 的三协议族（OpenAI 兼容 / DashScope / SD WebUI）。
+`backend/api/routes/sdwebui_compat.py` 实现 AUTOMATIC1111 `/sdapi/v1/*` 协议（挂载在根路径，不带 `/api` 前缀），供酒馆AI（SillyTavern）等外部客户端以 "Stable Diffusion Web UI (AUTOMATIC1111)" 后端类型直连 Open-AwA 生图。生图请求转发给 `core/image_generation.py` 的四协议族（OpenAI 兼容 / DashScope / SD WebUI / NovelAI 原生）。
 
 关键文件：
 
 - `backend/api/routes/sdwebui_compat.py` - 兼容层路由（txt2img / options / sd-models / samplers / progress / interrupt 等）
-- `backend/core/image_generation.py` - 生图核心（`generate_image` 支持 `negative_prompt` 与 `generation_params` 透传）
+- `backend/core/image_generation.py` - 生图核心（`generate_image` 支持 `negative_prompt` 与 `generation_params` 透传；NovelAI 协议含 ZIP 解包、A1111 采样器名映射与 429 队列满退避重试）
+- `backend/billing/pricing_manager.py` - 生图配置（`is_image_generation=True`）的 `api_endpoint` 跳过 /v1 后缀规范化
 - `backend/main.py` - 路由挂载 + CSRF 前缀豁免（`_CSRF_EXEMPT_PREFIXES = ("/sdapi/v1/",)`）
-- `backend/tests/test_sdwebui_compat.py` / `test_csrf_bearer_token_distinction.py` - 兼容层与 CSRF 豁免测试
+- `backend/tests/test_sdwebui_compat.py` / `test_image_generation.py` / `test_csrf_bearer_token_distinction.py` - 兼容层、生图协议与 CSRF 豁免测试
 
 酒馆AI 侧配置：API 类型选 "Stable Diffusion Web UI (AUTOMATIC1111)"，URL 填 Open-AwA 后端地址（如 `http://localhost:8000`），认证填 `任意用户名:OPENAWA_API_KEY`（HTTP Basic）。生图模型需在 Open-AwA 模型设置页标记 `is_image_generation` 并配置 API Key/端点。
+
+智绘姬（penguinsama.com）生图站点接入示例（已 E2E 验证）：
+
+| 接入方式 | 模型 | 端点配置 |
+|---------|------|---------|
+| NovelAI 原生协议 | nai-diffusion-4-full 等 nai-diffusion-* | `https://api.penguinsama.com`（站点根地址） |
+| OpenAI 兼容（Banana/Grok） | nano-banana-pro / nano-banana-2 / flux-2-pro / flux-2-klein-4b / grok-imagine / gpt-image-2 | `https://api.penguinsama.com/api/draw/openai/v1` |
+
+两种方式共用同一把站点生图 Key；协议族由模型名/端点自动判定，无需手动选择。
 
 ---
 

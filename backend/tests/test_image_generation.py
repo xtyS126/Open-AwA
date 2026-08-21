@@ -17,11 +17,13 @@
 from __future__ import annotations
 
 import base64
+import io
 import sys
+import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -42,7 +44,11 @@ from core.image_generation import (  # noqa: E402
     _dashscope_native_endpoint,
     _detect_binary_format,
     _detect_protocol,
+    _generate_novelai,
     _normalize_openai_base,
+    _novelai_endpoint,
+    _novelai_noise_schedule,
+    _novelai_sampler,
     _parse_size,
     _resolve_image_configuration,
     _sdwebui_endpoint,
@@ -178,6 +184,31 @@ class TestDetectProtocol:
         assert _detect_protocol("openai", "https://api.openai.com/v1") == "openai"
         assert _detect_protocol("azure", "https://xxx.openai.azure.com") == "openai"
 
+    def test_novelai_provider(self):
+        """provider 名为 novelai 判定为 NovelAI 原生协议。"""
+        assert _detect_protocol("novelai", "https://api.penguinsama.com") == "novelai"
+
+    def test_novelai_model_name(self):
+        """模型名含 nai-diffusion 判定为 NovelAI 原生协议（站点根地址场景）。"""
+        assert (
+            _detect_protocol("penguinsama", "https://api.penguinsama.com", "nai-diffusion-4-full")
+            == "novelai"
+        )
+
+    def test_novelai_endpoint(self):
+        """端点含 /ai/generate-image 判定为 NovelAI 原生协议。"""
+        assert (
+            _detect_protocol("penguinsama", "https://api.penguinsama.com/ai/generate-image")
+            == "novelai"
+        )
+
+    def test_novelai_not_triggered_by_plain_model(self):
+        """普通模型名 + 普通端点不误判为 NovelAI。"""
+        assert (
+            _detect_protocol("penguinsama", "https://api.penguinsama.com/api/draw/openai/v1", "nano-banana-pro")
+            == "openai"
+        )
+
 
 class TestNormalizeOpenaiBase:
     """OpenAI 兼容基址规范化。"""
@@ -219,6 +250,45 @@ class TestEndpointDerivation:
     def test_sdwebui_keep_existing_path(self):
         """已含完整路径时保持不变。"""
         assert _sdwebui_endpoint("http://127.0.0.1:7860/sdapi/v1/txt2img") == "http://127.0.0.1:7860/sdapi/v1/txt2img"
+
+    def test_novelai_append_path(self):
+        """裸站点根地址补 /ai/generate-image。"""
+        assert _novelai_endpoint("https://api.penguinsama.com") == "https://api.penguinsama.com/ai/generate-image"
+
+    def test_novelai_keep_existing_path(self):
+        """已含完整路径时保持不变。"""
+        assert (
+            _novelai_endpoint("https://api.penguinsama.com/ai/generate-image")
+            == "https://api.penguinsama.com/ai/generate-image"
+        )
+
+
+class TestNovelaiSamplerMapping:
+    """A1111 采样器名到 NovelAI 采样器的映射。"""
+
+    def test_native_names_passthrough(self):
+        """NovelAI 原生采样器名直接透传。"""
+        assert _novelai_sampler("k_euler_ancestral") == "k_euler_ancestral"
+        assert _novelai_sampler("k_dpmpp_2m") == "k_dpmpp_2m"
+        assert _novelai_sampler("ddim") == "ddim"
+
+    def test_a1111_aliases_mapped(self):
+        """A1111 采样器名映射为 NovelAI 等价采样器。"""
+        assert _novelai_sampler("Euler a") == "k_euler_ancestral"
+        assert _novelai_sampler("DPM++ 2M") == "k_dpmpp_2m"
+        assert _novelai_sampler("Euler") == "k_euler"
+
+    def test_unknown_falls_back(self):
+        """未知采样器名回退 k_euler_ancestral（不因名称不识别而失败）。"""
+        assert _novelai_sampler("Some Weird Sampler") == "k_euler_ancestral"
+        assert _novelai_sampler(None) == "k_euler_ancestral"
+
+    def test_noise_schedule_mapping(self):
+        """调度器映射：合法值透传，非法值回退 karras。"""
+        assert _novelai_noise_schedule("karras") == "karras"
+        assert _novelai_noise_schedule("exponential") == "exponential"
+        assert _novelai_noise_schedule("normal") == "karras"
+        assert _novelai_noise_schedule(None) == "karras"
 
 
 class TestDetectBinaryFormat:
@@ -348,11 +418,12 @@ class TestGenerateImage:
 
     @pytest.fixture
     def mock_protocols(self):
-        """mock 三个协议函数与输出目录。"""
+        """mock 四个协议函数与输出目录。"""
         patches = [
             patch("core.image_generation._generate_openai_compat", new_callable=AsyncMock),
             patch("core.image_generation._generate_dashscope", new_callable=AsyncMock),
             patch("core.image_generation._generate_sdwebui", new_callable=AsyncMock),
+            patch("core.image_generation._generate_novelai", new_callable=AsyncMock),
         ]
         for p in patches:
             p.start()
@@ -486,6 +557,235 @@ class TestGenerateImage:
         assert call_args[5] == 2
         assert result["n"] == 2
         assert len(result["images"]) == 2
+
+    def test_novelai_dispatch(self, db_session: Session, mock_protocols, tmp_output_dir: Path):
+        """NovelAI 原生协议分发（模型名含 nai-diffusion 触发）。"""
+        import asyncio
+
+        from core import image_generation as ig
+
+        png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+        ig._generate_novelai.return_value = [{"data": png_bytes}]
+        config = _create_image_config(
+            db_session,
+            provider="penguinsama",
+            model="nai-diffusion-4-full",
+            api_endpoint="https://api.penguinsama.com",
+            api_key="sk-nai-test",
+        )
+
+        result = asyncio.run(
+            generate_image(
+                db_session,
+                prompt="动漫少女",
+                config_id=config.id,
+                negative_prompt="lowres",
+                generation_params={"steps": 23, "cfg_scale": 5.5, "sampler_name": "Euler a", "seed": 42},
+            )
+        )
+
+        ig._generate_novelai.assert_awaited_once()
+        call_args = ig._generate_novelai.await_args.args
+        # 签名：(config, prompt, negative_prompt, width, height, n, generation_params)
+        assert call_args[0]["model"] == "nai-diffusion-4-full"
+        assert call_args[1] == "动漫少女"
+        assert call_args[2] == "lowres"
+        assert call_args[3] == 1024
+        assert call_args[4] == 1024
+        assert call_args[5] == 1
+        assert call_args[6]["steps"] == 23
+        assert result["protocol"] == "novelai"
+        assert result["images"][0]["format"] == "png"
+
+
+class TestImageConfigEndpointNormalization:
+    """生图配置端点规范化：跳过 /v1 后缀，聊天配置保持原行为。"""
+
+    def test_image_config_endpoint_not_suffixed(self, db_session: Session):
+        """生图配置的端点不做 /v1 后缀规范化（NovelAI/SD 等用站点根地址）。"""
+        pm = PricingManager(db_session)
+        config = pm.create_configuration(
+            {
+                "provider": "penguinsama",
+                "model": "nai-diffusion-4-full",
+                "api_key": "sk-test",
+                "api_endpoint": "https://api.penguinsama.com",
+                "is_image_generation": True,
+            }
+        )
+        assert config.api_endpoint == "https://api.penguinsama.com"
+
+    def test_chat_config_endpoint_keeps_suffix_behavior(self, db_session: Session):
+        """非生图配置仍按聊天协议规范化补 /v1（既有行为不回归）。"""
+        pm = PricingManager(db_session)
+        config = pm.create_configuration(
+            {
+                "provider": "penguinsama",
+                "model": "some-chat-model",
+                "api_key": "sk-test",
+                "api_endpoint": "https://api.penguinsama.com",
+            }
+        )
+        assert config.api_endpoint == "https://api.penguinsama.com/v1"
+
+    def test_image_config_update_endpoint_not_suffixed(self, db_session: Session):
+        """部分更新载荷缺省 is_image_generation 时从现有配置回填，端点不被补 /v1。"""
+        pm = PricingManager(db_session)
+        config = pm.create_configuration(
+            {
+                "provider": "penguinsama",
+                "model": "nai-diffusion-4-full",
+                "api_key": "sk-test",
+                "api_endpoint": "https://api.penguinsama.com",
+                "is_image_generation": True,
+            }
+        )
+        updated = pm.update_configuration(
+            config.id, {"api_endpoint": "https://other.example.com"}
+        )
+        assert updated is not None
+        assert updated.api_endpoint == "https://other.example.com"
+
+
+class TestNovelaiGeneration:
+    """NovelAI 协议生图：ZIP 解析与载荷构造。"""
+
+    PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+
+    @staticmethod
+    def _make_zip(png_bytes: bytes) -> bytes:
+        """构造内含 PNG 的 ZIP 字节流。"""
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr("image_0.png", png_bytes)
+        return buffer.getvalue()
+
+    def _run_generate(self, content: bytes, **kwargs):
+        """mock httpx 响应并执行 _generate_novelai。"""
+        import asyncio
+
+        config = {
+            "id": 1,
+            "provider": "novelai",
+            "model": "nai-diffusion-4-full",
+            "label": "novelai:nai-diffusion-4-full",
+            "api_key": "sk-nai",
+            "endpoint": "https://api.penguinsama.com",
+        }
+        with patch("core.image_generation.httpx.AsyncClient") as mock_client:
+            instance = mock_client.return_value.__aenter__.return_value
+            response = MagicMock()
+            response.status_code = 200
+            response.content = content
+            instance.post = AsyncMock(return_value=response)
+            images = asyncio.run(
+                _generate_novelai(config, "a cat", "lowres", 832, 1216, 1, kwargs.get("generation_params"))
+            )
+            return images, instance.post
+
+    def test_zip_response_extracted(self):
+        """标准 ZIP 响应解出 PNG。"""
+        images, _ = self._run_generate(self._make_zip(self.PNG_BYTES))
+        assert len(images) == 1
+        assert images[0]["data"] == self.PNG_BYTES
+
+    def test_raw_png_response_accepted(self):
+        """直接返回 PNG 二进制的站点兼容。"""
+        images, _ = self._run_generate(self.PNG_BYTES)
+        assert images[0]["data"] == self.PNG_BYTES
+
+    def test_invalid_response_raises(self):
+        """既非 ZIP 也非 PNG 的响应必须显式报错。"""
+        with pytest.raises(ValueError, match="既非 ZIP 也非 PNG"):
+            self._run_generate(b"not an image at all")
+
+    def test_payload_structure(self):
+        """载荷符合 NovelAI 协议：action/input/model/parameters 与采样器映射。"""
+        images, mock_post = self._run_generate(
+            self._make_zip(self.PNG_BYTES),
+            generation_params={"steps": 23, "cfg_scale": 5.5, "sampler_name": "Euler a", "scheduler": "karras", "seed": 42},
+        )
+        assert images
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["action"] == "generate"
+        assert payload["input"] == "a cat"
+        assert payload["model"] == "nai-diffusion-4-full"
+        params = payload["parameters"]
+        assert params["negative_prompt"] == "lowres"
+        assert params["width"] == 832
+        assert params["height"] == 1216
+        assert params["steps"] == 23
+        assert params["scale"] == 5.5
+        assert params["seed"] == 42
+        # A1111 采样器名映射为 NovelAI 等价名
+        assert params["sampler"] == "k_euler_ancestral"
+        assert params["noise_schedule"] == "karras"
+        # v4 提示词结构与 ST novelai.js 对齐
+        assert params["v4_prompt"]["caption"]["base_caption"] == "a cat"
+        assert params["v4_negative_prompt"]["caption"]["base_caption"] == "lowres"
+        # 端点推导：根地址补 /ai/generate-image
+        assert mock_post.call_args.args[0] == "https://api.penguinsama.com/ai/generate-image"
+
+    def test_seed_negative_randomized(self):
+        """seed<0（随机）时载荷内 seed 为 0-9999999999 的随机值。"""
+        images, mock_post = self._run_generate(
+            self._make_zip(self.PNG_BYTES), generation_params={"seed": -1}
+        )
+        assert images
+        seed = mock_post.call_args.kwargs["json"]["parameters"]["seed"]
+        assert 0 <= seed <= 9999999999
+
+    def test_queue_full_retries_then_succeeds(self):
+        """429 队列满时自动退避重试，恢复后成功出图。"""
+        import asyncio
+
+        config = {
+            "id": 1,
+            "provider": "novelai",
+            "model": "nai-diffusion-4-full",
+            "label": "novelai:nai-diffusion-4-full",
+            "api_key": "sk-nai",
+            "endpoint": "https://api.penguinsama.com",
+        }
+        zip_content = self._make_zip(self.PNG_BYTES)
+        with patch("core.image_generation.httpx.AsyncClient") as mock_client, patch(
+            "core.image_generation.asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep:
+            instance = mock_client.return_value.__aenter__.return_value
+            resp_429 = MagicMock(status_code=429, text='{"error":"队列已满（14/14）"}')
+            resp_ok = MagicMock(status_code=200, content=zip_content)
+            instance.post = AsyncMock(side_effect=[resp_429, resp_429, resp_ok])
+            images = asyncio.run(
+                _generate_novelai(config, "a cat", None, 512, 512, 1, None)
+            )
+
+        assert images[0]["data"] == self.PNG_BYTES
+        assert instance.post.await_count == 3
+        # 两次退避等待（10s + 20s）
+        assert mock_sleep.await_count == 2
+
+    def test_queue_full_exhausted_raises(self):
+        """重试耗尽仍 429 时抛出带站点响应明细的错误。"""
+        import asyncio
+
+        config = {
+            "id": 1,
+            "provider": "novelai",
+            "model": "nai-diffusion-4-full",
+            "label": "novelai:nai-diffusion-4-full",
+            "api_key": "sk-nai",
+            "endpoint": "https://api.penguinsama.com",
+        }
+        with patch("core.image_generation.httpx.AsyncClient") as mock_client, patch(
+            "core.image_generation.asyncio.sleep", new_callable=AsyncMock
+        ):
+            instance = mock_client.return_value.__aenter__.return_value
+            resp_429 = MagicMock(status_code=429, text='{"error":"队列已满"}')
+            instance.post = AsyncMock(return_value=resp_429)
+            with pytest.raises(ValueError, match="429"):
+                asyncio.run(_generate_novelai(config, "a cat", None, 512, 512, 1, None))
+        # 初始请求 + 4 次重试
+        assert instance.post.await_count == 5
 
 
 # ---------------------------------------------------------------------------
