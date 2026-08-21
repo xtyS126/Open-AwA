@@ -11,6 +11,7 @@ import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Engineering
 import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Login
@@ -106,6 +107,9 @@ sealed class Destination(
     /** Live2D 模型 */
     data object Live2D : Destination("live2d", 0, Icons.Outlined.Spa)
 
+    /** 陪伴心智（对象名避开 Kotlin 保留的 Companion，路由 path 仍为 companion） */
+    data object CompanionMind : Destination("companion", 0, Icons.Outlined.Favorite)
+
     /** 用户中心 */
     data object UserCenter : Destination("user", 0, Icons.Outlined.AccountCircle)
 
@@ -116,7 +120,7 @@ sealed class Destination(
             Chat, Coding, VibeCoding, Workspace, Dashboard, Billing, Inbox, ScheduledTasks,
             // 智能体
             Tts, Roles, RoleMarket, Skills, SkillMarket, Workflows,
-            SubAgents, Discussions, Plugins, Memory, Experience, Live2D,
+            SubAgents, Discussions, Plugins, Memory, Experience, Live2D, CompanionMind,
             // 设置
             Settings, Im, UserCenter,
         )
@@ -129,7 +133,7 @@ sealed class Destination(
         /** 智能体分组 */
         val agentGroup: List<Destination> = listOf(
             Tts, Roles, RoleMarket, Skills, SkillMarket, Workflows,
-            SubAgents, Discussions, Plugins, Memory, Experience, Live2D,
+            SubAgents, Discussions, Plugins, Memory, Experience, Live2D, CompanionMind,
         )
 
         /** 设置分组 */

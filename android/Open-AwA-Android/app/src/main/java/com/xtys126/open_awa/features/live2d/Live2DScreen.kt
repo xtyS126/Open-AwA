@@ -148,9 +148,8 @@ private fun createLive2DWebView(
             // 启用 HTTP 缓存（复用 Live2D 模型文件缓存头，减少重复下载）
             cacheMode = WebSettings.LOAD_DEFAULT
 
-            // 设置缓存目录到应用私有目录
-            setAppCacheEnabled(true)
-            setAppCachePath(ctx.cacheDir.absolutePath)
+            // 注：setAppCacheEnabled/setAppCachePath 已在 compileSdk 36 中移除，
+            // WebView 默认使用应用私有缓存目录，无需显式设置
             databaseEnabled = true
 
             // 允许混合内容（HTTP 图片等资源，前端开发环境可能需要）

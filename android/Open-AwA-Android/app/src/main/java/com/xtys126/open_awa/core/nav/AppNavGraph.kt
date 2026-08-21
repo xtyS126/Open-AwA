@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import com.xtys126.open_awa.features.auth.LoginScreen
 import com.xtys126.open_awa.features.billing.BillingScreen
 import com.xtys126.open_awa.features.chat.ChatScreen
+import com.xtys126.open_awa.features.companion.CompanionScreen
 import com.xtys126.open_awa.features.coding.CodingScreen
 import com.xtys126.open_awa.features.dashboard.DashboardScreen
 import com.xtys126.open_awa.features.discussions.DiscussionsScreen
@@ -68,6 +69,7 @@ fun AppNavGraph(navController: NavHostController) {
         composable("memory") { MemoryScreen() }
         composable("experience") { ExperienceScreen() }
         composable("live2d") { Live2DScreen() }
+        composable("companion") { CompanionScreen() }
 
         // 设置分组
         composable("settings") { SettingsScreen() }
