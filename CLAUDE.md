@@ -490,6 +490,7 @@ agent.py → agent_turn_coordinator.py → executor.py → feedback.py
 | Tools | `backend/tools/` | Tool registry, built-in tools (file, terminal, search, todo) |
 | System Diagnostics | `backend/api/routes/` | `system.py` (health checks), `test_runner.py` (10 scenario E2E tests) |
 | ACP Vibe Coding | `backend/acp_host/` | `core.py` (dataclasses + exceptions), `client.py` (ACPHostedClient), `service.py` (ACPService singleton), `permissions.py` (hard-block policy), `tool_adapter.py`, `agents/` (4 built-in agents) |
+| Image Generation | `backend/core/` + `backend/api/routes/` | `image_generation.py`（三协议族生图核心）, `sdwebui_compat.py`（A1111 兼容层）, `plugins/image_generation_builtin/`（Agent 工具与内部 REST） |
 
 ### 6.4 Memory API（记忆系统端点速查，Spec memory-experience-redesign）
 
@@ -568,6 +569,24 @@ features/settings/
 - **Hooks** manage cross-tab shared state (e.g., `useSharedSettingsData` caches provider/config data once across all Settings tabs)
 - **Zustand selectors** are atomized to single-field granularity (e.g., `useChatStore(s => s.streamingContent)` not object selectors) to minimize re-renders during streaming
 - Components that receive stable props should be wrapped in `React.memo`
+
+### 6.8 SD WebUI (A1111) 兼容层（酒馆AI 生图接入）
+
+`backend/api/routes/sdwebui_compat.py` 在根路径实现 AUTOMATIC1111 `/sdapi/v1/*` 协议，供酒馆AI（SillyTavern）等外部客户端以 "Stable Diffusion Web UI" 类型直连 Open-AwA 生图：
+
+| 端点 | 说明 |
+|------|------|
+| `GET /sdapi/v1/options` | 连通性检测 + 当前模型（`sd_model_checkpoint`） |
+| `POST /sdapi/v1/options` | 切换生图模型（`sd_model_checkpoint`，进程内存态） |
+| `GET /sdapi/v1/sd-models` | 模型设置页中标记 `is_image_generation` 的配置列表 |
+| `POST /sdapi/v1/txt2img` | 文生图核心：转发 `generate_image`，支持 negative_prompt / steps / cfg_scale / sampler / seed |
+| `GET /sdapi/v1/samplers` `/schedulers` `/sd-vae` `/sd-modules` `/upscalers` `/latent-upscale-modes` | 静态列表（填充酒馆AI设置面板；非 SD 上游不消费） |
+| `GET /sdapi/v1/progress` | 恒返回空闲态（set-model 轮询立即通过） |
+| `POST /sdapi/v1/interrupt` | 空操作（客户端断开时的兼容调用） |
+
+- 认证：`Authorization: Basic base64("任意用户名:OPENAWA_API_KEY")` 或 `Bearer OPENAWA_API_KEY`
+- CSRF：`/sdapi/v1/` 前缀在 `_CSRF_EXEMPT_PREFIXES` 豁免（Basic 凭证不被浏览器跨站自动附带，无 CSRF 攻击面）
+- 酒馆AI 侧设置：API 类型选 "Stable Diffusion Web UI (AUTOMATIC1111)"，URL 填后端地址，认证填 `用户名:API_KEY`
 
 ---
 

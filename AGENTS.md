@@ -361,6 +361,19 @@ cd D:\代码\Open-AwA\android\Open-AwA-Android
 
 > `mobile/` 目录的 Capacitor + Chaquopy 方案于 2026-07-08 23:30 起废弃，2026-07-09 已从仓库删除。所有移动端工作迁移到 `D:\代码\Open-AwA\android\Open-AwA-Android`。架构从"内嵌+远程混合"改为"服务器中心多端一体"瘦客户端，不再维护内嵌 Python 后端。
 
+### 5.3 SD WebUI (A1111) 兼容层（酒馆AI 生图接入）
+
+`backend/api/routes/sdwebui_compat.py` 实现 AUTOMATIC1111 `/sdapi/v1/*` 协议（挂载在根路径，不带 `/api` 前缀），供酒馆AI（SillyTavern）等外部客户端以 "Stable Diffusion Web UI (AUTOMATIC1111)" 后端类型直连 Open-AwA 生图。生图请求转发给 `core/image_generation.py` 的三协议族（OpenAI 兼容 / DashScope / SD WebUI）。
+
+关键文件：
+
+- `backend/api/routes/sdwebui_compat.py` - 兼容层路由（txt2img / options / sd-models / samplers / progress / interrupt 等）
+- `backend/core/image_generation.py` - 生图核心（`generate_image` 支持 `negative_prompt` 与 `generation_params` 透传）
+- `backend/main.py` - 路由挂载 + CSRF 前缀豁免（`_CSRF_EXEMPT_PREFIXES = ("/sdapi/v1/",)`）
+- `backend/tests/test_sdwebui_compat.py` / `test_csrf_bearer_token_distinction.py` - 兼容层与 CSRF 豁免测试
+
+酒馆AI 侧配置：API 类型选 "Stable Diffusion Web UI (AUTOMATIC1111)"，URL 填 Open-AwA 后端地址（如 `http://localhost:8000`），认证填 `任意用户名:OPENAWA_API_KEY`（HTTP Basic）。生图模型需在 Open-AwA 模型设置页标记 `is_image_generation` 并配置 API Key/端点。
+
 ---
 
 ## 6. Code Style

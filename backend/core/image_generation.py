@@ -199,18 +199,26 @@ async def _download_image(client: httpx.AsyncClient, url: str) -> bytes:
     return response.content
 
 
+def _merge_negative_prompt(prompt: str, negative_prompt: Optional[str]) -> str:
+    """把负面提示词附加到正面提示词（供无负面字段的协议使用，如 OpenAI 兼容 / DashScope）。"""
+    if negative_prompt and negative_prompt.strip():
+        return f"{prompt}\n\nNegative prompt: {negative_prompt.strip()}"
+    return prompt
+
+
 async def _generate_openai_compat(
     config: Dict[str, Any],
     prompt: str,
     size: str,
     n: int,
     quality: Optional[str],
+    negative_prompt: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """OpenAI 兼容 images/generations 协议（GPT-Image / SD 兼容端点 / Qwen-Image 网关）。"""
     url = f"{_normalize_openai_base(config['endpoint'])}/images/generations"
     payload: Dict[str, Any] = {
         "model": config["model"],
-        "prompt": prompt,
+        "prompt": _merge_negative_prompt(prompt, negative_prompt),
         "n": n,
         "size": size,
         "response_format": "b64_json",
@@ -245,12 +253,17 @@ async def _generate_dashscope(
     prompt: str,
     size: str,
     n: int,
+    negative_prompt: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """DashScope 原生 multimodal-generation（qwen-image 系列，compatible-mode 不提供生图）。"""
     url = _dashscope_native_endpoint(config["endpoint"])
     payload = {
         "model": config["model"],
-        "input": {"messages": [{"role": "user", "content": [{"text": prompt}]}]},
+        "input": {
+            "messages": [
+                {"role": "user", "content": [{"text": _merge_negative_prompt(prompt, negative_prompt)}]}
+            ]
+        },
         "parameters": {"n": n, "size": size.replace("x", "*"), "prompt_extend": True},
     }
 
@@ -281,20 +294,40 @@ async def _generate_dashscope(
 async def _generate_sdwebui(
     config: Dict[str, Any],
     prompt: str,
+    negative_prompt: Optional[str],
     width: int,
     height: int,
     n: int,
+    generation_params: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
-    """SD WebUI 原生 txt2img（/sdapi/v1/txt2img）。"""
+    """SD WebUI 原生 txt2img（/sdapi/v1/txt2img）。
+
+    generation_params 支持 steps / cfg_scale / sampler_name / scheduler / seed 透传，
+    缺省时 steps=20、其余沿用上游默认。
+    """
     url = _sdwebui_endpoint(config["endpoint"])
-    payload = {
+    params = generation_params or {}
+    payload: Dict[str, Any] = {
         "prompt": prompt,
-        "negative_prompt": "",
+        "negative_prompt": negative_prompt or "",
         "width": width,
         "height": height,
-        "steps": 20,
+        "steps": params.get("steps") or 20,
         "batch_size": n,
     }
+    cfg_scale = params.get("cfg_scale")
+    if cfg_scale is not None:
+        payload["cfg_scale"] = cfg_scale
+    sampler_name = params.get("sampler_name")
+    if sampler_name:
+        payload["sampler_name"] = sampler_name
+    scheduler = params.get("scheduler")
+    if scheduler:
+        payload["scheduler"] = scheduler
+    seed = params.get("seed")
+    # seed=-1 表示随机，透传给上游由其自行随机
+    if seed is not None and seed >= 0:
+        payload["seed"] = seed
 
     async with httpx.AsyncClient(timeout=_GENERATION_TIMEOUT) as client:
         response = await client.post(
@@ -348,6 +381,8 @@ async def generate_image(
     size: str = "1024x1024",
     n: int = 1,
     quality: Optional[str] = None,
+    negative_prompt: Optional[str] = None,
+    generation_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     按模型配置的协议族生图，统一返回图片 base64 与保存路径。
@@ -359,6 +394,9 @@ async def generate_image(
         size: 图片尺寸（宽x高，如 1024x1024）
         n: 生成数量（SD 支持多张；GPT-Image 固定 1 张）
         quality: 质量参数（仅 OpenAI 兼容协议支持，如 high）
+        negative_prompt: 负面提示词（SD WebUI 协议原生传递；其他协议附加到正面提示词）
+        generation_params: 采样参数透传（steps/cfg_scale/sampler_name/scheduler/seed，
+            仅 SD WebUI 协议生效）
 
     Returns:
         {"ok": True, "model": {provider, model, label}, "size": ..., "n": ...,
@@ -382,11 +420,15 @@ async def generate_image(
     ).info(f"开始生图: {config['label']}（协议 {protocol}，尺寸 {size}）")
 
     if protocol == "dashscope":
-        images = await _generate_dashscope(config, prompt, size, n)
+        images = await _generate_dashscope(config, prompt, size, n, negative_prompt)
     elif protocol == "sdwebui":
-        images = await _generate_sdwebui(config, prompt, width, height, n)
+        images = await _generate_sdwebui(
+            config, prompt, negative_prompt, width, height, n, generation_params
+        )
     else:
-        images = await _generate_openai_compat(config, prompt, size, n, quality)
+        images = await _generate_openai_compat(
+            config, prompt, size, n, quality, negative_prompt
+        )
 
     saved_images = _save_images(images, config["label"])
     return {

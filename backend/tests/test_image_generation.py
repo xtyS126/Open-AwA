@@ -479,9 +479,11 @@ class TestGenerateImage:
 
         ig._generate_sdwebui.assert_awaited_once()
         call_args = ig._generate_sdwebui.await_args.args
-        assert call_args[2] == 1024
+        # 新签名：(config, prompt, negative_prompt, width, height, n, generation_params)
+        assert call_args[2] is None
         assert call_args[3] == 1024
-        assert call_args[4] == 2
+        assert call_args[4] == 1024
+        assert call_args[5] == 2
         assert result["n"] == 2
         assert len(result["images"]) == 2
 

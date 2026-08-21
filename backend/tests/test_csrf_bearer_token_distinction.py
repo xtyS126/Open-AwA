@@ -303,9 +303,80 @@ class TestCSRFBearerTokenDistinction:
         request.url.path = "/api/ws"
         request.method = "GET"
         request.headers = headers
-        
+
         # 调用中间件
         response = await csrf_protection_middleware(request, mock_call_next)
-        
+
         # WebSocket 请求应直接放行
+        assert response.status_code == 200
+
+
+class TestCSRFSdwebuiCompatPrefixExempt:
+    """SD WebUI (A1111) 兼容层前缀豁免测试。
+
+    /sdapi/v1/* 供酒馆AI等非浏览器客户端调用，认证走 HTTP Basic API Key，
+    不依赖 Cookie 会话，无 CSRF 攻击面，应豁免 CSRF 校验。
+    """
+
+    def _build_request(self, path: str, headers_dict: dict) -> MagicMock:
+        """构造指定路径与头的请求 mock。"""
+        request = MagicMock(spec=Request)
+        request.url.path = path
+        request.method = "POST"
+        request.headers = Headers(headers_dict)
+        return request
+
+    @pytest.mark.asyncio
+    async def test_sdapi_prefix_post_basic_auth_exempt_from_csrf(
+        self, mock_call_next, mock_csrf_exempt_paths, mock_csrf_checked_methods
+    ):
+        """POST /sdapi/v1/txt2img 携带 Basic 认证且无 CSRF token 应放行（酒馆AI标准形式）"""
+        request = self._build_request(
+            "/sdapi/v1/txt2img",
+            {"authorization": "Basic dGF2ZXJuOmtleQ=="},
+        )
+
+        response = await csrf_protection_middleware(request, mock_call_next)
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_sdapi_prefix_with_cookie_exempt_from_csrf(
+        self, mock_call_next, mock_csrf_exempt_paths, mock_csrf_checked_methods
+    ):
+        """POST /sdapi/v1/options 即使携带 Cookie 也放行（端点不消费 Cookie 会话）"""
+        request = self._build_request(
+            "/sdapi/v1/options",
+            {"authorization": "Basic dGF2ZXJuOmtleQ==", "cookie": "access_token=abc"},
+        )
+
+        response = await csrf_protection_middleware(request, mock_call_next)
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_non_sdapi_prefix_still_requires_csrf(
+        self, mock_call_next, mock_csrf_exempt_paths, mock_csrf_checked_methods
+    ):
+        """非 /sdapi/v1/ 前缀的相似路径仍需 CSRF 校验（前缀匹配不误伤）"""
+        # /sdapi/v2/ 不在豁免前缀内，无 CSRF token 应 403
+        request = self._build_request(
+            "/sdapi/v2/txt2img",
+            {"authorization": "Basic dGF2ZXJuOmtleQ=="},
+        )
+
+        response = await csrf_protection_middleware(request, mock_call_next)
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_sdapi_prefix_no_auth_still_exempt_from_csrf(
+        self, mock_call_next, mock_csrf_exempt_paths, mock_csrf_checked_methods
+    ):
+        """POST /sdapi/v1/interrupt 无认证也应跳过 CSRF 层（认证由端点依赖负责 401）"""
+        request = self._build_request("/sdapi/v1/interrupt", {})
+
+        response = await csrf_protection_middleware(request, mock_call_next)
+
+        # CSRF 层放行（返回 200 由 mock call_next 给出；真实端点会返回 401）
         assert response.status_code == 200

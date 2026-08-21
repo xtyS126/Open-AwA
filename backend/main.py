@@ -61,6 +61,7 @@ from api.adapters.ask_user_adapter import AskUserPortAdapter
 from api.adapters.workflow_repository_adapter import WorkflowRepositoryAdapter
 from plugins.bilibili_toolkit_builtin.api.routes import router as bilibili_toolkit_router
 from plugins.image_generation_builtin.api.routes import router as image_generation_router
+from api.routes.sdwebui_compat import router as sdwebui_compat_router
 
 from billing.routers import billing
 from config.logging import (
@@ -1248,6 +1249,10 @@ app = FastAPI(
 _CSRF_HEADER_NAME = "X-CSRF-Token"
 # 不需要 CSRF 校验的路径前缀（公开只读接口）
 _CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/logs/client-errors", "/api/auth/csrf-token"}
+# CSRF 豁免的路径前缀：外部客户端协议端点（SD WebUI / A1111 兼容层）
+# 安全说明：/sdapi/v1/* 仅供酒馆AI等非浏览器客户端调用，认证走 HTTP Basic API Key
+# （Basic 凭证不会被浏览器跨站自动附带），不依赖 Cookie 会话，因此无 CSRF 攻击面
+_CSRF_EXEMPT_PREFIXES = ("/sdapi/v1/",)
 # 需要 CSRF 校验的请求方法
 _CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
@@ -1378,7 +1383,11 @@ async def csrf_protection_middleware(request: Request, call_next):
         return await call_next(request)
     # 其余情况（无 Authorization、或同时携带 Cookie）继续走下面的 CSRF 校验流程
 
-    if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
+    if (
+        method in _CSRF_CHECKED_METHODS
+        and path not in _CSRF_EXEMPT_PATHS
+        and not path.startswith(_CSRF_EXEMPT_PREFIXES)
+    ):
         header_token = request.headers.get(_CSRF_HEADER_NAME, "")
         if not header_token:
             return JSONResponse(
@@ -1727,6 +1736,9 @@ app.include_router(notifications_router)
 app.include_router(bilibili_toolkit_router, prefix=settings.API_V1_STR)
 # 生图内置插件路由，前缀 /api/image-generation 已内置在 router 定义中
 app.include_router(image_generation_router, prefix=settings.API_V1_STR)
+# SD WebUI (A1111) 协议兼容层，前缀 /sdapi/v1 已内置在 router 定义中，
+# 供酒馆AI（SillyTavern）等外部客户端以 "Stable Diffusion Web UI" 类型直连生图
+app.include_router(sdwebui_compat_router)
 app.include_router(pets_router, prefix=settings.API_V1_STR)
 # [NEW] Task 3: 多 Agent 讨论任务路由，前缀 /api/discussions 已内置在 router 定义中
 app.include_router(discussions.router)
