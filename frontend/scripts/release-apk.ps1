@@ -1,11 +1,9 @@
-# ============================================================
-# release-apk.ps1 —— APP 更新包构建与部署脚本（原生 Android 项目版）
+﻿# ============================================================
+# release-apk.ps1 —— APP 更新包构建与部署脚本
 # 用途：同步版本号 -> 构建 APK -> 生成 manifest.json -> 部署到后端 var/apk/
-# 项目迁移说明：2026-07-09 起废弃 Capacitor 方案（frontend/android），
-#               现行产物来自原生项目 android/Open-AwA-Android。
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File scripts/release-apk.ps1 -Changelog "修复说明"
-#   powershell -ExecutionPolicy Bypass -File scripts/release-apk.ps1 -Changelog "修复" -VersionCode 7
+#   powershell -ExecutionPolicy Bypass -File scripts/release-apk.ps1 -Changelog "修复" -VersionCode 3
 # ============================================================
 param(
     [string]$Changelog = "",
@@ -13,34 +11,25 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-# 本脚本位于 <项目根>/frontend/scripts/，原生 Android 项目位于 <项目根>/android/Open-AwA-Android
-$frontendDir = Split-Path -Parent $PSScriptRoot            # frontend/
-$projectRoot = Split-Path -Parent $frontendDir             # 项目根
-$androidProject = Join-Path $projectRoot "android\Open-AwA-Android"
-$backendApkDir = Join-Path $projectRoot "var\apk"
-$gradleKts = Join-Path $androidProject "app\build.gradle.kts"
-$apkOut = Join-Path $androidProject "app\build\outputs\apk\debug\app-debug.apk"
+$root = Split-Path -Parent $PSScriptRoot   # frontend/
+$backendApkDir = Join-Path $root "..\var\apk"
+$apkOut = Join-Path $root "android\app\build\outputs\apk\debug\app-debug.apk"
 $manifestPath = Join-Path $backendApkDir "manifest.json"
 
-if (-not (Test-Path $gradleKts)) { throw "未找到原生项目构建脚本: $gradleKts" }
-
-# 1. 读取 build.gradle.kts 当前 versionName（原生 App 版本独立于前端 package.json）
-$gradleContent = [System.IO.File]::ReadAllText($gradleKts, [System.Text.Encoding]::UTF8)
-if ($gradleContent -match 'versionName\s*=\s*"([^"]+)"') {
-    $version = $Matches[1]
-} else {
-    throw "无法从 build.gradle.kts 解析 versionName"
-}
+# 1. 读取 package.json 版本
+$pkg = Get-Content (Join-Path $root "package.json") -Raw | ConvertFrom-Json
+$version = $pkg.version
 Write-Host "构建版本: $version"
 
-# 2. versionCode：显式参数优先，否则从 build.gradle.kts 当前 versionCode 递增（首次为 1）
-# 递增基准必须用 build.gradle.kts（git 版本控制的真实现状）而非 manifest：
+# 2. versionCode：显式参数优先，否则从 build.gradle 当前 versionCode 递增（首次为 1）
+# 递增基准必须用 build.gradle（git 版本控制的真实现状）而非 manifest：
 # manifest 可能滞后于设备已装版本（历史上 v0.03 手动构建过 versionCode 5，
 # manifest 却停留在 2/3），从 manifest 递增会发布出比设备更低的 versionCode，
 # 导致设备端 OTA 检查永远 has_update=false、永不提示更新。
-# 另注意：历史上设备装过的最高 versionCode 为 5，原生项目从 6 起步以压过旧包。
 if ($VersionCode -eq 0) {
-    if ($gradleContent -match 'versionCode\s*=\s*(\d+)') {
+    $gradle = Join-Path $root "android\app\build.gradle"
+    $gradleContent = [System.IO.File]::ReadAllText($gradle, [System.Text.Encoding]::UTF8)
+    if ($gradleContent -match 'versionCode (\d+)') {
         $VersionCode = [int]$Matches[1] + 1
     } else {
         $VersionCode = 1
@@ -48,19 +37,22 @@ if ($VersionCode -eq 0) {
 }
 Write-Host "versionCode: $VersionCode"
 
-# 3. 同步 build.gradle.kts（versionName / versionCode）
+# 3. 同步 build.gradle（versionName / versionCode）
 # 注意：PowerShell 5.1 的 Get-Content 无 -Encoding 时按 ANSI(GBK) 解码 UTF-8 文件会破坏中文注释；
 # Set-Content -Encoding UTF8 会写入 BOM（Gradle 不认 BOM 报 Unexpected character）。
 # 必须显式 UTF8 读取 + WriteAllText 无 BOM 写回。
-$content = [System.IO.File]::ReadAllText($gradleKts, [System.Text.Encoding]::UTF8)
-$content = $content -replace 'versionCode\s*=\s*\d+', "versionCode = $VersionCode"
-$content = $content -replace 'versionName\s*=\s*"[^"]+"', "versionName = `"$version`""
-[System.IO.File]::WriteAllText($gradleKts, $content, (New-Object System.Text.UTF8Encoding $false))
-Write-Host "build.gradle.kts 已同步: versionName=$version versionCode=$VersionCode"
+$gradle = Join-Path $root "android\app\build.gradle"
+$content = [System.IO.File]::ReadAllText($gradle, [System.Text.Encoding]::UTF8)
+$content = $content -replace 'versionCode \d+', "versionCode $VersionCode"
+$content = $content -replace 'versionName "[^"]+"', "versionName `"$version`""
+[System.IO.File]::WriteAllText($gradle, $content, (New-Object System.Text.UTF8Encoding $false))
+Write-Host "build.gradle 已同步: versionName=$version versionCode=$VersionCode"
 
-# 4. 构建 APK（JAVA_HOME / ANDROID_HOME 依赖系统环境变量，勿在此硬编码旧路径）
-Push-Location $androidProject
+# 4. 构建 APK
+Push-Location (Join-Path $root "android")
 try {
+    $env:JAVA_HOME = "D:\Program Files\Java\jdk-21"
+    $env:ANDROID_HOME = "D:\Android\Sdk"
     & ".\gradlew.bat" assembleDebug --no-daemon
     if ($LASTEXITCODE -ne 0) { throw "gradle 构建失败" }
 } finally {
