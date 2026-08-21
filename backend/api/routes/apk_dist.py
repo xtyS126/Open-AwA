@@ -20,14 +20,30 @@ from config.settings import settings
 
 router = APIRouter(prefix="/apk", tags=["apk"])
 
-# APK 产物路径：优先环境变量 APK_PATH，其次默认 Capacitor 构建产物
+# APK 产物路径：优先环境变量 APK_PATH，其次原生 Android 项目产物，最后回退旧 Capacitor 产物
 # __file__ = backend/api/routes/apk_dist.py，parents[3] = 项目根
 def _resolve_apk_path() -> Path:
     override = os.getenv("APK_PATH", "").strip()
     if override:
         return Path(override)
+    root = Path(__file__).resolve().parents[3]
+    # 现行方案：原生 Android 项目（android/Open-AwA-Android）
+    native_apk = (
+        root
+        / "android"
+        / "Open-AwA-Android"
+        / "app"
+        / "build"
+        / "outputs"
+        / "apk"
+        / "debug"
+        / "app-debug.apk"
+    )
+    if native_apk.is_file():
+        return native_apk
+    # 回退：已废弃的 Capacitor 构建产物（仅为兼容存量环境）
     return (
-        Path(__file__).resolve().parents[3]
+        root
         / "frontend"
         / "android"
         / "app"
